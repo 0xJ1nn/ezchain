@@ -12,4 +12,4 @@ visual design pass.
 **Verification:** `node tools/check-wireframe.mjs`, `node tools/check-links.mjs`,
 `node tools/check-secrets.mjs`, `node tools/sync-agent-stubs.mjs --check`.
 
-**State:** wireframe in progress.
+**State:** delivered 2026-10-20 — 30-page wireframe, docs, infra, gates green. Next: M1 runtime scaffold (ADR-0001 boundaries first).

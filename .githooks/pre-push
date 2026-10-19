@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Local gate: runs on main pushes only. Install with: bash tools/install-hooks.sh
+set -euo pipefail
+remote="$1"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      echo "pre-push: running tools/ci.sh for main"
+      bash tools/ci.sh
+      ;;
+  esac
+done

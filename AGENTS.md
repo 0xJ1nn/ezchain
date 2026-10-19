@@ -76,8 +76,9 @@ the area. The code is truth; docs go stale. If they disagree, fix the doc in the
 - Adapters must pass the shared adapter contract suite; strategies the SDK conformance
   suite.
 - Explain *why* a test changed. Never edit a test to green without a reason in the PR.
-- CI (`tools/ci.sh`) is the gate: format, lint, typecheck, unit, invariants, docs links,
-  wireframe integrity, secret scan. A red gate is never merged.
+- `tools/ci.sh` is the gate: format, lint, typecheck, unit, invariants, docs links,
+  wireframe integrity, secret scan. A red gate is never merged. GitHub Actions is not
+  available on this account; run the gate locally and quote the result in the PR.
 
 ## Git and PR workflow
 
