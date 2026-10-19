@@ -1,6 +1,6 @@
 # WIREFRAME — screen inventory, flows and the position tile
 
-The wireframe lives in `design/wireframe/` (30 pages, static HTML, no build). It is the
+The wireframe lives in `design/wireframe/` (31 pages, static HTML, no build). It is the
 structural source of truth: layout, content, hierarchy, states, interactions. Visual
 design happens downstream against `design/BRIEF.md`.
 
@@ -70,6 +70,7 @@ Persistent rules:
 | 17 | `17-risk.html` | Risk | How much can I lose? | exposure by chain/token/strategy, limits, drawdown, circuit breakers, kill switch |
 | 18 | `18-ledger.html` | Activity / ledger | Where did the money go? | trades, transfers, fees, PnL attribution, export, reconcile |
 | 19 | `19-reports.html` | Reports | What do I owe / earn? | PnL statement, tax lots, CSV/Parquet export, period selector |
+| 19a | `19a-performance.html` | Performance | Where does the edge come from? | PnL attribution, R-multiples, benchmark, cost drag, exclusions |
 | 20 | `20-chains.html` | Chains & RPC | Which chain is healthy? | registry, tiers, RPC latency, gas, finality, circuit state |
 | 21 | `21-integrations.html` | Integrations | Connect venues | CEX keys (read-only first), DEX aggregators, data providers |
 | 22 | `22-settings.html` | Settings | Make it mine | workspace, appearance, locale, units, notifications defaults, danger zone |
@@ -147,6 +148,7 @@ unsellable, dust, stale mark, closed, quarantined.
 | Backtests | `/backtests`, `/backtests/{id}` |
 | Risk | `/risk/exposure`, `/risk/limits`, `/risk/breakers` |
 | Ledger | `/ledger/entries`, `/ledger/export` |
+| Performance | `/performance?period=…&mode=…`, `/performance/attribution` |
 | Chains | `/chains`, `/chains/health` |
 | Ops | `/ops/services`, `/ops/queues`, `/ops/incidents` |
 
