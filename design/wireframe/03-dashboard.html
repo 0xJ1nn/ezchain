@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="dashboard">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Overview / Dashboard</div>
+        <h1>Dashboard</h1>
+        <p class="sub">One screen to answer: am I safe, am I up, and is anything broken? Every number is labelled with its mode and source.</p>
+      </div>
+      <div class="page-actions">
+        <span class="chip">Last sync <span class="mono">4s</span> ago</span>
+        <a class="btn" href="18-ledger.html">Export</a>
+        <a class="btn primary" href="06-markets.html">New order</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat hero-stat">
+        <div class="label">Equity</div>
+        <div class="value">$3,482.16</div>
+        <div class="meta"><span class="delta up">+4.8%</span> 24h · <span class="mono">23.59 SOL</span></div>
+      </div>
+      <div class="stat">
+        <div class="label">Realized (7d)</div>
+        <div class="value sm ok">+$126.40</div>
+        <div class="meta">28 closes · fees $18.22</div>
+      </div>
+      <div class="stat">
+        <div class="label">Unrealized</div>
+        <div class="value sm ok">+$86.40</div>
+        <div class="meta">4 open positions</div>
+      </div>
+      <div class="stat">
+        <div class="label">Drawdown</div>
+        <div class="value sm">−6.2%</div>
+        <div class="meta">from peak $3,712 · cap −20%</div>
+      </div>
+      <div class="stat">
+        <div class="label">Exposure</div>
+        <div class="value sm">38%</div>
+        <div class="meta">$1,284 of $3,400 cap</div>
+      </div>
+      <div class="stat">
+        <div class="label">Mode</div>
+        <div class="value sm">PAPER</div>
+        <div class="meta"><span class="badge">no live keys in use</span></div>
+      </div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Equity</h2>
+            <span class="sub">USD · after fees · paper</span>
+            <div class="right">
+              <div class="seg"><button>1D</button><button aria-pressed="true">1W</button><button>1M</button><button>ALL</button></div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="chart" aria-label="Equity curve for the last week">
+              <svg viewBox="0 0 900 220" role="img">
+                <line class="gridline" x1="0" y1="30" x2="860" y2="30"/>
+                <line class="gridline" x1="0" y1="80" x2="860" y2="80"/>
+                <line class="gridline" x1="0" y1="130" x2="860" y2="130"/>
+                <line class="gridline" x1="0" y1="180" x2="860" y2="180"/>
+                <line class="axis" x1="860" y1="0" x2="860" y2="210"/>
+                <text class="axis-text" x="866" y="33">$3,700</text>
+                <text class="axis-text" x="866" y="83">$3,500</text>
+                <text class="axis-text" x="866" y="133">$3,300</text>
+                <text class="axis-text" x="866" y="183">$3,100</text>
+                <polyline class="series-2" points="0,150 80,146 160,152 240,140 320,144 400,132 480,136 560,124 640,128 720,118 800,120 860,116"/>
+                <polyline class="series" points="0,168 40,160 80,166 120,150 160,158 200,144 240,150 280,138 320,146 360,128 400,136 440,122 480,130 520,112 560,120 600,104 640,116 680,96 720,108 760,92 800,100 840,88 860,84"/>
+                <circle class="dot" cx="860" cy="84" r="3"/>
+                <line class="crosshair" x1="600" y1="0" x2="600" y2="210"/>
+                <circle class="dot" cx="600" cy="104" r="3"/>
+                <rect x="610" y="60" width="128" height="52" fill="var(--surface)" stroke="var(--line-2)"/>
+                <text class="axis-text" x="618" y="76">Sat 14:00</text>
+                <text class="num-label" x="618" y="92">$3,494.20</text>
+                <text class="axis-text" x="618" y="106">+3.9% / 7d</text>
+                <text class="axis-text" x="2" y="212">Oct 13</text>
+                <text class="axis-text" x="420" y="212">Oct 17</text>
+                <text class="axis-text" x="800" y="212">Oct 20</text>
+              </svg>
+            </div>
+            <div class="between mt-8">
+              <div class="chart-legend">
+                <span><i style="border-color:var(--ink)"></i>Equity</span>
+                <span><i style="border-color:var(--line-2)"></i>Cost basis</span>
+                <span><i style="border-color:var(--err)"></i>Max drawdown −6.2%</span>
+              </div>
+              <span class="small muted">Marks: 1s · snapshots hourly</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Open positions</h2>
+            <span class="sub">4 · sorted by next action</span>
+            <div class="right"><a class="btn sm" href="04-positions.html">All positions</a></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>Token</th><th>State</th><th class="num">PnL</th><th class="num">Value</th><th>Next</th><th>Mark</th><th></th></tr>
+              </thead>
+              <tbody>
+                <tr class="rowlink">
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">BO</span><span><span class="strong">Bonk</span><span class="sub" style="display:block">Solana · Momentum</span></span></span></td>
+                  <td><span class="badge info">RIDING</span></td>
+                  <td class="num ok">+42.6%<span class="sub">+$38.12</span></td>
+                  <td class="num">$127.60</td>
+                  <td class="small">+200% rung</td>
+                  <td><span class="small"><span class="dot-live"></span>1s</span></td>
+                  <td class="right"><a class="btn sm" href="05-position-detail.html">Open</a></td>
+                </tr>
+                <tr class="rowlink">
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">AE</span><span><span class="strong">Aerodrome</span><span class="sub" style="display:block">Base · Manual</span></span></span></td>
+                  <td><span class="badge">PRE-BANK</span></td>
+                  <td class="num err">−8.3%<span class="sub">−$6.12</span></td>
+                  <td class="num">$67.90</td>
+                  <td class="small">stop −12%</td>
+                  <td><span class="small"><span class="dot-live"></span>3s</span></td>
+                  <td class="right"><a class="btn sm" href="05-position-detail.html">Open</a></td>
+                </tr>
+                <tr class="rowlink">
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">MO</span><span><span class="strong">Mochi</span><span class="sub" style="display:block">Solana · Momentum</span></span></span></td>
+                  <td><span class="badge info">ENTERING</span></td>
+                  <td class="num muted">—</td>
+                  <td class="num">$25.00</td>
+                  <td class="small">fill pending</td>
+                  <td><span class="small"><span class="dot-live stale"></span>6s</span></td>
+                  <td class="right"><a class="btn sm" href="05-position-detail.html">Open</a></td>
+                </tr>
+                <tr class="rowlink">
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">SC</span><span><span class="strong">Scamcoin</span><span class="sub" style="display:block">Solana · Manual</span></span></span></td>
+                  <td><span class="badge err">UNSELLABLE</span></td>
+                  <td class="num err">−96.2%<span class="sub">−$142.30</span></td>
+                  <td class="num muted">$0.00*</td>
+                  <td class="small err">no route</td>
+                  <td><span class="small err"><span class="dot-live dead"></span>2m</span></td>
+                  <td class="right"><a class="btn sm" href="05-position-detail.html">Open</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between">
+            <span>* last executable value $0.0041; not marked to zero.</span>
+            <a href="04-positions.html">Open the tile grid →</a>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>PnL attribution</h2>
+            <span class="sub">7 days · after fees · paper</span>
+            <div class="right"><a class="btn sm" href="18-ledger.html">Ledger</a></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Strategy</th><th>Mode</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Fees</th><th class="num">Net PnL</th><th class="num">Share</th></tr></thead>
+              <tbody>
+                <tr><td>Momentum v1.2</td><td><span class="badge">PAPER</span></td><td class="num">18</td><td class="num">44.4%</td><td class="num">$11.40</td><td class="num ok">+$142.10</td><td class="num">74%</td></tr>
+                <tr><td>DCA weekly</td><td><span class="badge">PAPER</span></td><td class="num">6</td><td class="num">—</td><td class="num">$3.12</td><td class="num ok">+$12.80</td><td class="num">7%</td></tr>
+                <tr><td>Mean reversion v0.4</td><td><span class="badge">PAPER</span></td><td class="num">9</td><td class="num">22.2%</td><td class="num">$3.70</td><td class="num err">−$28.50</td><td class="num">−15%</td></tr>
+                <tr><td>Manual</td><td><span class="badge ghost">PAPER</span></td><td class="num">3</td><td class="num">33.3%</td><td class="num">$0.00</td><td class="num ok">+$0.00</td><td class="num">0%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Attribution uses realized cash PnL; unrealized is excluded. One formula, every screen.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Risk</h2><span class="sub">live checks</span><div class="right"><a class="btn sm" href="17-risk.html">Limits</a></div></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Daily loss</span><span class="mono">$42 / $250</span></div>
+            <div class="meter"><div class="fill warn" style="width:17%"></div></div>
+            <div class="between small"><span>Exposure</span><span class="mono">38% / 60%</span></div>
+            <div class="meter"><div class="fill" style="width:63%"></div></div>
+            <div class="between small"><span>Single-token cap</span><span class="mono">Bonk 3.7% / 10%</span></div>
+            <div class="meter"><div class="fill ok" style="width:37%"></div></div>
+            <div class="hr"></div>
+            <div class="list-row"><span class="badge ok">OK</span><span class="grow"><span class="title">All 6 breakers closed</span><span class="sub">last checked 4s ago</span></span></div>
+            <div class="list-row"><span class="badge warn">1</span><span class="grow"><span class="title">Token without a sell route</span><span class="sub">Scamcoin · blocks new intents for the token</span></span><a class="btn sm" href="04-positions.html">Review</a></div>
+            <a class="btn danger block mt-8" href="17-risk.html">Open kill switch</a>
+            <div class="micro center">halts new risk · does not auto-sell</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Automations</h2><span class="sub">3 active</span><div class="right"><a class="btn sm" href="10-automations.html">All</a></div></div>
+          <div class="panel-body flush">
+            <div class="list-row" style="padding:9px 12px"><span class="badge ok">ON</span><span class="grow"><span class="title">Trailing exit · all positions</span><span class="sub">last fired 2m ago · 12 fires today</span></span><a class="btn sm" href="11-automation-builder.html">Edit</a></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge ok">ON</span><span class="grow"><span class="title">DCA · AERO weekly</span><span class="sub">next run Mon 09:00</span></span><a class="btn sm" href="11-automation-builder.html">Edit</a></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge warn">PAUSED</span><span class="grow"><span class="title">Loss-streak guard</span><span class="sub">paused by owner 1h ago</span></span><a class="btn sm" href="10-automations.html">Resume</a></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Signals</h2><span class="sub">routed</span><div class="right"><a class="btn sm" href="14-signals.html">Feed</a></div></div>
+          <div class="panel-body flush">
+            <div class="list-row" style="padding:9px 12px"><span class="badge info">FLOW</span><span class="grow"><span class="title">BONK buy pressure ↑</span><span class="sub">score 0.82 · 2m · → Momentum</span></span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge warn">WALLET</span><span class="grow"><span class="title">Smart wallet 7x…c1 entering MOCHI</span><span class="sub">score 0.71 · 6m · watched only</span></span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge">PRICE</span><span class="grow"><span class="title">AERO broke 1h low</span><span class="sub">score 0.44 · 14m · → risk alert</span></span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Chains</h2><span class="sub">3 connected</span><div class="right"><a class="btn sm" href="20-chains.html">Health</a></div></div>
+          <div class="panel-body flush">
+            <div class="list-row" style="padding:9px 12px"><span class="chain"><span class="sq">S</span>Solana</span><span class="grow small muted">slot 312,884,102 · 14 ms</span><span class="badge ok">ok</span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="chain"><span class="sq">B</span>Base</span><span class="grow small muted">block 24.19M · 38 ms</span><span class="badge ok">ok</span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="chain"><span class="sq">E</span>Ethereum</span><span class="grow small muted">block 21.04M · 61 ms</span><span class="badge warn">gas high</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="grid cols-2 mt-16">
+      <div class="panel">
+        <div class="panel-head"><h2>Wallets</h2><span class="sub">4 wallets · 2 custody tiers</span><div class="right"><a class="btn sm" href="08-wallets.html">Manage</a></div></div>
+        <div class="panel-body flush">
+          <div class="wallet-row"><span class="avatar-lg">M</span><span class="grow"><span class="title strong">Main (hot)</span><span class="sub">Solana · Base · $1,842.20</span></span><span class="badge">local vault</span><span class="bal"><span class="v">$1,842.20</span><span class="sub">synced 4s</span></span></div>
+          <div class="wallet-row"><span class="avatar-lg">L</span><span class="grow"><span class="title strong">Ledger (hardware)</span><span class="sub">Ethereum · Base · $1,402.10</span></span><span class="badge info">hardware</span><span class="bal"><span class="v">$1,402.10</span><span class="sub">synced 31s</span></span></div>
+          <div class="wallet-row"><span class="avatar-lg">W</span><span class="grow"><span class="title strong">Cold watch</span><span class="sub">Bitcoin · watch-only</span></span><span class="badge ghost">watch</span><span class="bal"><span class="v">$237.86</span><span class="sub">synced 12m</span></span></div>
+          <div class="wallet-row"><span class="avatar-lg">B</span><span class="grow"><span class="title strong">Binance</span><span class="sub">read-only API · USDT, BTC</span></span><span class="badge ghost">exchange</span><span class="bal"><span class="v">$0.00</span><span class="sub">scope: read</span></span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Recent activity</h2><span class="sub">ledger view</span><div class="right"><a class="btn sm" href="18-ledger.html">All</a></div></div>
+        <div class="panel-body flush">
+          <div class="list-row" style="padding:9px 12px"><span class="badge ok">BUY</span><span class="grow"><span class="title">25.00 USDC → 5,928.4 MOCHI</span><span class="sub">Momentum v1.2 · Solana · 6s ago</span></span><span class="mono small">−$25.00</span></div>
+          <div class="list-row" style="padding:9px 12px"><span class="badge err">SELL</span><span class="grow"><span class="title">0.5 BONK → 46.20 USDC</span><span class="sub">bank at +125% · 19m ago</span></span><span class="mono small ok">+$46.20</span></div>
+          <div class="list-row" style="padding:9px 12px"><span class="badge ghost">FEE</span><span class="grow"><span class="title">Priority fee · Solana</span><span class="sub">intent 8f2a… · 19m ago</span></span><span class="mono small">−$0.09</span></div>
+          <div class="list-row" style="padding:9px 12px"><span class="badge warn">ADJ</span><span class="grow"><span class="title">Chain reconcile · Base</span><span class="sub">wallet Main · +0.0004 ETH dust</span></span><span class="mono small">—</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

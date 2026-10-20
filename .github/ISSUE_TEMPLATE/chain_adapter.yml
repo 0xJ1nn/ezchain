@@ -1,0 +1,49 @@
+name: Chain adapter
+description: Add or promote support for a blockchain.
+title: "[Chain]: "
+labels: ["chain", "needs-triage"]
+body:
+  - type: input
+    id: chain
+    attributes:
+      label: Chain
+      placeholder: e.g. Sui mainnet
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Target tier
+      options: ["T1 — paper + live execution", "T2 — beta execution", "T3 — read-only"]
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capability matrix
+      description: Native/token transfer, swap, limit order, gasless, mempool, reorg depth, finality, token standards, simulation, rent.
+    validations:
+      required: true
+  - type: input
+    id: venues
+    attributes:
+      label: Venue(s)
+      placeholder: Jupiter, Cetus, Uniswap …
+  - type: textarea
+    id: data
+    attributes:
+      label: Data sources
+      description: RPC providers, indexers, token safety, explorer. State which are free and which require keys.
+    validations:
+      required: true
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Adapter contract
+      options:
+        - label: I read docs/CHAINS.md §1 and the capability interface
+          required: true
+        - label: I can provide recorded mainnet fixtures
+          required: true
+        - label: No core `if chain == …` branch is needed
+          required: true

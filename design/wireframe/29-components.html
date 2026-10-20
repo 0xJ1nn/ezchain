@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Components · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="components">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Reference / Components</div>
+        <h1>Components &amp; tile anatomy</h1>
+        <p class="sub">The structural vocabulary the visual pass must preserve. Tokens, spacing and colour are open; hierarchy, content and states are not.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="27-states.html">States</a>
+        <a class="btn" href="../BRIEF.md">Design brief</a>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Primitives</h2><span class="sub">buttons · inputs · badges</span></div>
+      <div class="panel-body grid cols-3">
+        <div class="stack-sm">
+          <div class="micro">Buttons</div>
+          <div class="row">
+            <button class="btn primary">Primary</button>
+            <button class="btn">Secondary</button>
+            <button class="btn ghost">Ghost</button>
+          </div>
+          <div class="row">
+            <button class="btn danger">Danger</button>
+            <button class="btn armed">SURE? WRITE OFF</button>
+            <button class="btn sm">Small</button>
+            <button class="btn" disabled>Disabled</button>
+          </div>
+          <div class="row">
+            <button class="btn icon-btn" title="Icon">⋯</button>
+            <div class="btn-group"><button class="btn">1D</button><button class="btn">1W</button><button class="btn">1M</button></div>
+          </div>
+          <div class="note">Destructive actions arm in place for 4s; they never rely on colour alone. The armed label states the action.</div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Inputs</div>
+          <label class="field"><span>Label</span><input class="input" placeholder="Placeholder"></label>
+          <label class="field"><span>Numeric with unit</span><div class="row"><input class="input mono" value="0.25" style="max-width:100px"><span class="small muted">SOL</span></div></label>
+          <label class="field"><span>Invalid</span><input class="input" value="0" aria-invalid="true"><span class="error">Must be greater than 0</span></label>
+          <div class="row"><div class="seg"><button aria-pressed="true">Buy</button><button>Sell</button></div><div class="toggle on"></div><span class="checkbox checked"></span><span class="radio on"></span></div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Badges &amp; status</div>
+          <div class="row"><span class="badge">PAPER</span><span class="badge solid">LIVE</span><span class="badge ghost">T2 beta</span><span class="badge info">RIDING</span><span class="badge ok">exec ✓</span><span class="badge warn">stale</span><span class="badge err">NO SELL ROUTE</span></div>
+          <div class="row"><span class="dot-live"></span><span class="small">live</span><span class="dot-live stale"></span><span class="small">delayed</span><span class="dot-live dead"></span><span class="small">no route</span></div>
+          <div class="row"><span class="chain"><span class="sq">S</span>Solana</span><span class="chain"><span class="sq">B</span>Base</span><span class="chain"><span class="sq">E</span>Ethereum</span></div>
+          <div class="row"><span class="token">BO</span><span class="token sq">AE</span><span class="avatar">JW</span><span class="avatar-lg">M</span></div>
+          <div class="note">Every status has a text label; dot/colour is redundant encoding only.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Position tile anatomy</h2><span class="sub">reference implementation — see 04-positions.html</span></div>
+      <div class="panel-body">
+        <div class="grid cols-2">
+          <div>
+            <article class="tile win">
+              <div class="tile-head">
+                <div class="tile-id"><div class="token">BO</div><div><div class="tile-name">Bonk</div><div class="tile-sub">BONK // jupiter // Solana ↗</div></div></div>
+                <div class="tile-pnl"><div class="pct ok">+42.6%</div><div class="usd">+$38.12 · +0.258 SOL</div></div>
+              </div>
+              <div class="tile-price"><span class="px">$0.00003142</span><span class="small muted"><span class="dot-live"></span>live · 1s</span><span class="tile-tags"><span class="badge">PAPER</span><span class="badge ghost">2h old</span></span></div>
+              <div class="tile-chart"><div class="chart" style="height:96px"><svg viewBox="0 0 600 96" role="img"><line class="gridline" x1="0" y1="24" x2="560" y2="24"/><line class="gridline" x1="0" y1="56" x2="560" y2="56"/><line class="gridline" x1="0" y1="88" x2="560" y2="88"/><line class="axis" x1="560" y1="0" x2="560" y2="96"/><line class="level level-entry" x1="0" y1="70" x2="560" y2="70"/><text class="level-label" x="4" y="67">ENTRY</text><line class="level" x1="0" y1="32" x2="560" y2="32"/><text class="level-label" x="4" y="29">BANK</text><polyline class="series" points="0,74 60,68 120,64 180,58 240,50 300,46 360,40 420,36 480,32 560,28"/><circle class="dot" cx="560" cy="28" r="2.5"/></svg></div></div>
+              <div class="tile-market">
+                <div class="mcell"><div class="k">MCap</div><div class="v">$2.41B</div><div class="src">live</div></div>
+                <div class="mcell"><div class="k">Liq</div><div class="v">$4.20M</div><div class="src">live</div></div>
+                <div class="mcell"><div class="k">Holders</div><div class="v">812K</div><div class="src">3s</div></div>
+                <div class="mcell"><div class="k">1H</div><div class="v ok">+6.2%</div><div class="src">ds</div></div>
+                <div class="mcell"><div class="k">M5</div><div class="v ok">+1.8%</div><div class="src">ds</div></div>
+                <div class="mcell"><div class="k">BSR</div><div class="v">1.34</div><div class="src">1h</div></div>
+              </div>
+              <div class="tile-money">
+                <div class="money-cell"><div class="k">In</div><div class="v">$89.48</div></div>
+                <div class="money-cell"><div class="k">Banked</div><div class="v ok">$46.20</div></div>
+                <div class="money-cell"><div class="k">Realized</div><div class="v ok">+$18.90</div></div>
+                <div class="money-cell"><div class="k">Unreal</div><div class="v ok">+$19.22</div></div>
+              </div>
+              <div class="tile-ladder">
+                <div class="ladder-top"><span class="badge info">RIDING</span><span class="small muted">bag 56%</span><span class="tag" style="margin-left:auto">NEXT +200%</span></div>
+                <div class="ladder">
+                  <div class="step"><span class="tick on"></span><span class="lbl on">ARM</span><span class="bar"></span></div>
+                  <div class="step"><span class="tick on"></span><span class="lbl on">BANK</span><span class="bar"></span></div>
+                  <div class="step"><span class="tick next"></span><span class="lbl on">RUNG</span><span class="bar"></span></div>
+                  <div class="step"><span class="tick"></span><span class="lbl">FINAL</span></div>
+                </div>
+              </div>
+              <div class="tile-prov"><span class="badge ghost">mark 1s</span><span class="badge ok">exec ✓</span><span class="badge ok">gate ✓</span><span class="net ok">net +0.258 SOL</span></div>
+              <div class="tile-actions"><div class="budget"><div class="cap">RIDING · NO MAX HOLD</div></div><button class="btn danger sm">Sell now</button><button class="btn sm">⋯</button></div>
+            </article>
+          </div>
+          <div class="stack-sm">
+            <div class="annotation"><b>Z1 · identity + headline</b><br>Avatar, name, symbol // venue // chain, position id (detail only). PnL % is the headline; USD and native amount sit under it. Equity value belongs here, never hidden in a tooltip.</div>
+            <div class="annotation"><b>Z2 · price + provenance</b><br>Live mark first, then freshness/source, then mode, chain, age, hold. Entry price is shown on the chart and full page; the tile may omit it only if it stays in the tooltip.</div>
+            <div class="annotation"><b>Z3 · chart with levels</b><br>Entry, hard stop, trail, arm/bank/rungs. A level appears only after 75% of the distance is covered (no look-ahead). Peak dot and label share one source. Stale tail is dashed.</div>
+            <div class="annotation"><b>Z4 · market strip</b><br>MCAP · LIQ · HOLDERS · 1H · M5 · BSR. Each cell has source + age; live overrides entry snapshot; missing shows —.</div>
+            <div class="annotation"><b>Z5 · money split</b><br>IN · BANKED · REALIZED · UNREAL, all from the ledger. Banked is cash recovered, not profit.</div>
+            <div class="annotation"><b>Z6 · ladder + next</b><br>BAG %, state chip, four ticks (ARM/BANK/RUNG/FINAL) and the next objective. RIDING removes max-hold.</div>
+            <div class="annotation"><b>Z7 · provenance</b><br>Mark label + age, exec/gate status, rule name, net PnL and fees. Every badge has a tooltip with the exact value and source.</div>
+            <div class="annotation"><b>Z8 · budget + actions</b><br>Shrinking hold budget or RIDING. SELL NOW single click; WRITE OFF two-step; ⋯ for note/export/explorer.</div>
+            <div class="annotation"><b>Z9 · note</b><br>One line, full text on hover. Notes are operator memory, not trading logic.</div>
+            <div class="annotation"><b>States</b><br>entering · pre-bank · trail-armed · banked · riding · laddered · unsellable · dust · stale · closed · quarantined. Each has distinct copy, not just a colour.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid cols-2 mb-12">
+      <div class="panel">
+        <div class="panel-head"><h2>Data display</h2><span class="sub">stats · tables · meters</span></div>
+        <div class="panel-body stack">
+          <div class="kpi-band">
+            <div class="stat"><div class="label">Equity</div><div class="value sm">$3,482.16</div><div class="meta"><span class="delta up">+4.8%</span> 24h</div></div>
+            <div class="stat"><div class="label">PnL</div><div class="value sm ok">+$126.40</div><div class="meta">after fees</div></div>
+            <div class="stat"><div class="label">Drawdown</div><div class="value sm err">−6.2%</div><div class="meta">cap −20%</div></div>
+          </div>
+          <div class="table-wrap panel">
+            <table class="table compact">
+              <thead><tr><th>Token</th><th>State</th><th class="num">PnL</th><th class="num">Value</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>BONK</td><td><span class="badge info">RIDING</span></td><td class="num ok">+42.6%</td><td class="num">$127.60</td><td class="right"><a class="btn sm" href="04-positions.html">Open</a></td></tr>
+                <tr><td>AERO</td><td><span class="badge">PRE-BANK</span></td><td class="num err">−8.3%</td><td class="num">$67.90</td><td class="right"><a class="btn sm" href="04-positions.html">Open</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stack-sm">
+            <div class="between small"><span>Daily loss</span><span class="mono">$42 / $250</span></div>
+            <div class="meter"><div class="fill warn" style="width:17%"></div></div>
+            <div class="between small"><span>Paper gate</span><span class="mono">18 / 14 days</span></div>
+            <div class="meter"><div class="fill ok" style="width:100%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Chart frame</h2><span class="sub">required elements</span></div>
+        <div class="panel-body stack-sm">
+          <div class="chart" aria-label="Chart anatomy">
+            <svg viewBox="0 0 640 200" role="img">
+              <line class="gridline" x1="0" y1="20" x2="600" y2="20"/>
+              <line class="gridline" x1="0" y1="70" x2="600" y2="70"/>
+              <line class="gridline" x1="0" y1="120" x2="600" y2="120"/>
+              <line class="gridline" x1="0" y1="170" x2="600" y2="170"/>
+              <line class="axis" x1="600" y1="0" x2="600" y2="190"/>
+              <text class="axis-text" x="606" y="23">$0.000036</text>
+              <text class="axis-text" x="606" y="73">$0.000031</text>
+              <text class="axis-text" x="606" y="123">$0.000027</text>
+              <text class="axis-text" x="606" y="173">$0.000022</text>
+              <line class="level level-entry" x1="0" y1="170" x2="600" y2="170"/>
+              <text class="level-label" x="4" y="167">ENTRY</text>
+              <line class="level level-stop" x1="0" y1="186" x2="600" y2="186"/>
+              <text class="level-label" x="4" y="183">STOP</text>
+              <line class="level level-arm" x1="0" y1="120" x2="600" y2="120"/>
+              <text class="level-label" x="4" y="117">ARM</text>
+              <line class="level" x1="0" y1="70" x2="600" y2="70"/>
+              <text class="level-label" x="4" y="67">BANK</text>
+              <polyline class="series" points="0,176 40,172 80,174 120,160 160,164 200,150 240,152 280,138 320,142 360,124 400,130 440,110 480,116 520,96 560,84 600,86"/>
+              <circle class="peak" cx="560" cy="84" r="5"/>
+              <text class="num-label" x="500" y="78">PEAK</text>
+              <circle class="dot" cx="600" cy="86" r="3"/>
+              <line class="crosshair" x1="440" y1="0" x2="440" y2="190"/>
+              <circle class="dot" cx="440" cy="110" r="3"/>
+              <text class="axis-text" x="2" y="197">0m</text>
+              <text class="axis-text" x="300" y="197">10m</text>
+              <text class="axis-text" x="560" y="197">20m</text>
+            </svg>
+          </div>
+          <div class="chart-legend">
+            <span><i class="l-entry"></i>Entry</span>
+            <span><i class="l-stop"></i>Hard stop</span>
+            <span><i class="l-trail"></i>Trail</span>
+            <span><i class="l-arm"></i>Arm / bank</span>
+            <span><i style="border-color:var(--line-2)"></i>Stale tail</span>
+          </div>
+          <div class="note">Axes carry values, not just numbers. Y labels are prices in the position's quote. X covers the whole hold window; the live dot sits at the right edge. Hover gives time, price, value and PnL. Any level shown must be earned (75% rule).</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Overlays</h2><span class="sub">drawer · modal · toast · confirm</span></div>
+      <div class="panel-body grid cols-3">
+        <div class="drawer-demo">
+          <div class="panel-head"><h2>Position note</h2><span class="sub">BONK · #31</span><div class="right"><button class="btn ghost sm">✕</button></div></div>
+          <div class="panel-body stack-sm">
+            <label class="field"><span>Note</span><textarea class="textarea" rows="4">Watching the creator wallet; exit if the top holder adds.</textarea></label>
+            <div class="row"><button class="btn primary sm">Save</button><button class="btn sm">Cancel</button><span class="small muted">visible on the tile</span></div>
+          </div>
+        </div>
+        <div class="modal-demo">
+          <div class="panel-head"><h2>Go live?</h2><div class="right"><button class="btn ghost sm">✕</button></div></div>
+          <div class="panel-body stack-sm">
+            <div class="small">This enables real orders for <span class="strong">Momentum v1.2</span> on <span class="strong">Main (hot)</span>. The paper gate is complete; allocation is capped at $250/day.</div>
+            <div class="note warn">Live mode uses real funds. Your kill switch remains available.</div>
+            <label class="field"><span>Type LIVE to confirm</span><input class="input mono" placeholder="LIVE"></label>
+            <div class="row"><button class="btn primary">Enable live</button><button class="btn">Cancel</button></div>
+          </div>
+        </div>
+        <div class="stack-sm">
+          <div class="toast-demo"><span class="badge ok">OK</span><span class="grow small">Order filled · 25.00 USDC → 5,928.4 MOCHI</span><button class="btn ghost sm">View</button></div>
+          <div class="toast-demo" style="border-left-color:var(--err)"><span class="badge err">ERR</span><span class="grow small">Quote expired before signing. Nothing was sent.</span><button class="btn ghost sm">Retry</button></div>
+          <div class="toast-demo" style="border-left-color:var(--warn)"><span class="badge warn">STALE</span><span class="grow small">SOL/USD mark is 14s old; USD values are delayed.</span></div>
+          <div class="note">Toasts never carry the only copy of an action. Errors state what happened and whether money moved.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid cols-2 mb-12">
+      <div class="panel">
+        <div class="panel-head"><h2>Type &amp; numbers</h2><span class="sub">rules for the visual pass</span></div>
+        <div class="panel-body grid cols-2">
+          <div class="stack-sm">
+            <div class="micro">UI text</div>
+            <div style="font-size:19px;font-weight:650;letter-spacing:-.015em">Positions</div>
+            <div style="font-size:13px">Body copy at 13px, labels 11px, micro 10px.</div>
+            <div class="micro">Numbers</div>
+            <div class="mono" style="font-size:19px">+42.6% · $127.60</div>
+            <div class="mono small">0.00003142 · 1,284.20 · 812.4K</div>
+            <div class="small muted">Mono/tabular, right-aligned in tables. Trailing zeros trimmed. Negative uses a true minus (−), not a hyphen.</div>
+          </div>
+          <div class="stack-sm">
+            <div class="micro">Sign &amp; colour</div>
+            <div class="row"><span class="delta up">+$38.12</span><span class="delta down">−$6.12</span><span class="delta">—</span></div>
+            <div class="micro">Labels</div>
+            <div class="row"><span class="badge ok">exec ✓</span><span class="badge err">exec ✗</span><span class="badge ghost">unknown</span></div>
+            <div class="micro">Timestamps</div>
+            <div class="mono small">12:04:02 UTC · 41m 12s · 19m left</div>
+            <div class="micro">Sources</div>
+            <div class="small">live jupiter · 1s / entry fallback · 6s / no sell route · 2m</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Spacing &amp; elevation</h2><span class="sub">placeholder tokens</span></div>
+        <div class="panel-body">
+          <div class="legend-grid">
+            <div class="swatch"><span class="box" style="background:var(--surface)"></span><span>surface</span></div>
+            <div class="swatch"><span class="box" style="background:var(--surface-2)"></span><span>surface-2</span></div>
+            <div class="swatch"><span class="box" style="background:var(--surface-3)"></span><span>surface-3</span></div>
+            <div class="swatch"><span class="box" style="background:var(--line)"></span><span>hairline</span></div>
+            <div class="swatch"><span class="box" style="background:var(--ok)"></span><span>success</span></div>
+            <div class="swatch"><span class="box" style="background:var(--err)"></span><span>danger</span></div>
+            <div class="swatch"><span class="box" style="background:var(--warn)"></span><span>warning</span></div>
+            <div class="swatch"><span class="box" style="background:var(--info)"></span><span>info</span></div>
+          </div>
+          <div class="hr"></div>
+          <div class="row" style="gap:14px">
+            <span class="small muted">4</span><span class="small muted">8</span><span class="small muted">12</span><span class="small muted">16</span><span class="small muted">24</span><span class="small muted">32</span>
+          </div>
+          <div class="row mt-12">
+            <span class="badge ghost">radius 3</span><span class="badge ghost">radius 6</span><span class="badge ghost">hairline over shadow</span>
+          </div>
+          <div class="note mt-12">Density is a setting, but the compact mode never hides provenance or the next action.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Component checklist for the visual pass</h2><span class="sub">build these before restyling pages</span></div>
+      <div class="panel-body grid cols-3 small">
+        <div class="stack-sm">
+          <div>1. App shell + nav + mode badge + kill switch</div>
+          <div>2. Buttons (incl. armed) and inputs</div>
+          <div>3. Stat / delta / badge / tag / chain / avatar</div>
+          <div>4. Table (sortable, sticky, selectable, empty)</div>
+          <div>5. Chart frame + levels + crosshair + tooltip</div>
+        </div>
+        <div class="stack-sm">
+          <div>6. Position tile (11 states)</div>
+          <div>7. Drawer / modal / confirm / toast</div>
+          <div>8. Command palette + keyboard help</div>
+          <div>9. Wallet row + policy editor</div>
+          <div>10. Ladder track + hold-budget bar</div>
+        </div>
+        <div class="stack-sm">
+          <div>11. Strategy card + permission list + gate checklist</div>
+          <div>12. Signal row + evidence chips</div>
+          <div>13. Skeleton / empty / error / offline</div>
+          <div>14. Mobile nav + condensed tile</div>
+          <div>15. Print/export layout for reports</div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

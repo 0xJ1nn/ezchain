@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Markets · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="markets">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Overview / Markets</div>
+        <h1>Markets</h1>
+        <p class="sub">Screen venues by what you can actually trade. Liquidity, safety and holder counts carry their source and age; a token with no executable sell route is labelled, not ranked.</p>
+      </div>
+      <div class="page-actions">
+        <span class="chip">Last sweep <span class="mono">3s</span></span>
+        <a class="btn" href="14-signals.html">Signal feed</a>
+        <a class="btn primary" href="07-token.html">Open BONK</a>
+      </div>
+    </header>
+
+    <div class="tabs mb-12">
+      <a class="tab on" href="#all">All chains <span class="count">12</span></a>
+      <a class="tab" href="#solana">Solana <span class="count">5</span></a>
+      <a class="tab" href="#base">Base <span class="count">4</span></a>
+      <a class="tab" href="#ethereum">Ethereum <span class="count">2</span></a>
+      <a class="tab" href="#bnb">BNB <span class="count">1</span></a>
+      <a class="tab" href="20-chains.html">Tiers &amp; RPC →</a>
+    </div>
+
+    <section class="panel">
+      <div class="table-toolbar" style="position:sticky;top:52px;z-index:4;background:var(--surface);border-radius:var(--r) var(--r) 0 0">
+        <span class="field" style="min-width:118px"><select class="select" aria-label="Minimum liquidity"><option>Liq ≥ $500K</option><option>Liq ≥ $100K</option><option>Liq ≥ $1M</option><option>Any liquidity</option></select></span>
+        <span class="field" style="min-width:112px"><select class="select" aria-label="Minimum market cap"><option>MCap ≥ $1M</option><option>MCap ≥ $10M</option><option>MCap ≥ $100M</option><option>Any mcap</option></select></span>
+        <span class="field" style="min-width:100px"><select class="select" aria-label="Age"><option>Age: any</option><option>Age &lt; 1h</option><option>Age &lt; 24h</option><option>Age &gt; 7d</option></select></span>
+        <span class="field" style="min-width:126px"><select class="select" aria-label="Safety"><option>Safety: pass only</option><option>Safety: pass + warn</option><option>Safety: any</option></select></span>
+        <span class="field" style="min-width:132px"><select class="select" aria-label="Sort"><option>Sort: 24h volume</option><option>Sort: 24h change</option><option>Sort: liquidity</option><option>Sort: mcap</option><option>Sort: holders</option></select></span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="input mono" style="width:150px;color:var(--muted)">Search symbol / mint</span>
+        <span class="row"><span class="toggle on" role="switch" aria-checked="true" aria-label="Watchlist only"></span><span class="small">Watchlist</span></span>
+        <a class="btn sm" href="07-token.html">Trade</a>
+      </div>
+      <div class="table-wrap" style="max-height:560px">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Token</th><th>Chain</th><th class="num">Price</th><th class="num">1h</th><th class="num">24h</th>
+              <th class="num">MCap</th><th class="num">Liq</th><th class="num">Vol 24h</th><th class="num">Holders</th>
+              <th>Safety</th><th>7d</th><th>Your position</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">BO</span><span><span class="strong">BONK</span><span class="sub" style="display:block">DezXAZ…W1u</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">0.00003142</td>
+              <td class="num ok">+6.2%</td><td class="num err">−3.4%</td>
+              <td class="num">$2.41B</td><td class="num">$4.20M</td><td class="num">$412.8M</td><td class="num">812.4K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="18,17,19,20,18,21,22,20,23,22,24,23"></span></td>
+              <td><a href="05-position-detail.html"><span class="badge info">RIDING</span> <span class="mono small ok">+42.6%</span></a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">WI</span><span><span class="strong">WIF</span><span class="sub" style="display:block">dogwifhat · EKpQ…TD</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">1.842</td>
+              <td class="num ok">+1.4%</td><td class="num ok">+9.8%</td>
+              <td class="num">$1.84B</td><td class="num">$21.6M</td><td class="num">$188.4M</td><td class="num">241.2K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="20,19,21,20,22,24,23,25,24,26,25,27"></span></td>
+              <td><span class="small muted">closed · +15.0%</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">JU</span><span><span class="strong">JUP</span><span class="sub" style="display:block">JUPyiw…k1</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">0.8420</td>
+              <td class="num err">−0.8%</td><td class="num ok">+2.1%</td>
+              <td class="num">$1.26B</td><td class="num">$18.2M</td><td class="num">$96.2M</td><td class="num">412.8K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="22,23,21,22,20,21,19,20,18,19,18,17"></span></td>
+              <td><span class="small muted">closed · +15.3%</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">MO</span><span><span class="strong">MOCHI</span><span class="sub" style="display:block">Mochi…4xQ</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">0.004218</td>
+              <td class="num ok">+3.1%</td><td class="num ok">+12.4%</td>
+              <td class="num">$4.1M</td><td class="num warn">$612K</td><td class="num">$2.8M</td><td class="num">1.8K</td>
+              <td><span class="badge warn">thin liq</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="10,12,11,14,16,15,18,17,19,21,20,22"></span></td>
+              <td><a href="05-position-detail.html"><span class="badge info">ENTERING</span> <span class="mono small muted">$25.00</span></a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">SC</span><span><span class="strong err">SCAM</span><span class="sub" style="display:block">Scam…9zz</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">0.00000041</td>
+              <td class="num err">−78.4%</td><td class="num err">−96.2%</td>
+              <td class="num">$41.2K</td><td class="num err">$212</td><td class="num">$84.2K</td><td class="num">214</td>
+              <td><span class="badge err">fail · honeypot</span></td>
+              <td><span style="display:inline-block;color:var(--err)" data-spark="30,28,26,20,14,9,6,4,3,2,2,1"></span></td>
+              <td><a href="05-position-detail.html"><span class="badge err">UNSELLABLE</span></a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">AE</span><span><span class="strong">AERO</span><span class="sub" style="display:block">Aerodrome · 0x940…2b</span></span></span></td>
+              <td><span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num mono">1.284</td>
+              <td class="num err">−2.4%</td><td class="num err">−6.1%</td>
+              <td class="num">$1.18B</td><td class="num">$38.4M</td><td class="num">$74.2M</td><td class="num">92.1K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="24,23,24,22,21,22,20,19,20,18,19,18"></span></td>
+              <td><a href="05-position-detail.html"><span class="badge">PRE-BANK</span> <span class="mono small err">−8.3%</span></a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">TO</span><span><span class="strong">TOSHI</span><span class="sub" style="display:block">Toshi · 0xac1…7f</span></span></span></td>
+              <td><span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num mono">0.0001842</td>
+              <td class="num ok">+0.6%</td><td class="num ok">+4.2%</td>
+              <td class="num">$77.2M</td><td class="num">$3.4M</td><td class="num">$12.6M</td><td class="num">61.4K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="14,15,14,16,17,16,18,17,19,18,19,20"></span></td>
+              <td><span class="small muted">closed · 0.0%</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">DE</span><span><span class="strong">DEGEN</span><span class="sub" style="display:block">Degen · 0x4ed…9c</span></span></span></td>
+              <td><span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num mono">0.007412</td>
+              <td class="num err">−1.2%</td><td class="num ok">+18.6%</td>
+              <td class="num">$274M</td><td class="num">$9.8M</td><td class="num">$48.2M</td><td class="num">188.2K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="12,13,12,14,13,16,18,17,19,21,20,22"></span></td>
+              <td><span class="small muted">—</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">BR</span><span><span class="strong">BRETT</span><span class="sub" style="display:block">Brett · 0x532…f3</span></span></span></td>
+              <td><span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num mono">0.0842</td>
+              <td class="num ok">+2.8%</td><td class="num ok">+7.4%</td>
+              <td class="num">$842M</td><td class="num">$14.2M</td><td class="num">$62.4M</td><td class="num">142.6K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="16,17,16,18,19,18,20,21,20,22,23,22"></span></td>
+              <td><span class="small muted">—</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">UN</span><span><span class="strong">UNI</span><span class="sub" style="display:block">Uniswap · 0x1f9…ad</span></span></span></td>
+              <td><span class="chain"><span class="sq">E</span>Ethereum</span></td>
+              <td class="num mono">7.284</td>
+              <td class="num err">−0.4%</td><td class="num ok">+1.2%</td>
+              <td class="num">$4.38B</td><td class="num">$42.8M</td><td class="num">$188.2M</td><td class="num">982.4K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="21,22,21,22,23,22,23,24,23,24,25,24"></span></td>
+              <td><span class="small muted">—</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">PE</span><span><span class="strong">PEPE</span><span class="sub" style="display:block">Pepe · 0x698…76</span></span></span></td>
+              <td><span class="chain"><span class="sq">E</span>Ethereum</span></td>
+              <td class="num mono">0.00000942</td>
+              <td class="num ok">+4.2%</td><td class="num err">−2.8%</td>
+              <td class="num">$3.96B</td><td class="num">$28.4M</td><td class="num">$214.6M</td><td class="num">412.8K</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="19,20,18,19,21,20,18,19,17,18,18,19"></span></td>
+              <td><span class="small muted">—</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">CA</span><span><span class="strong">CAKE</span><span class="sub" style="display:block">PancakeSwap · 0x0e0…b4</span></span></span></td>
+              <td><span class="chain"><span class="sq">N</span>BNB</span></td>
+              <td class="num mono">2.412</td>
+              <td class="num ok">+1.1%</td><td class="num ok">+5.6%</td>
+              <td class="num">$742M</td><td class="num">$18.6M</td><td class="num">$42.8M</td><td class="num">1.42M</td>
+              <td><span class="badge ok">pass</span></td>
+              <td><span style="display:inline-block;color:var(--ink)" data-spark="17,18,17,18,19,18,19,20,19,21,20,21"></span></td>
+              <td><span class="small muted">—</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot">
+        <span>12 of 4,182 markets · filters: liq ≥ $500K, mcap ≥ $1M, safety pass · your positions and watchlist are pinned even when they fail a filter</span>
+        <span>Sort: 24h volume ↓ · page 1/349</span>
+      </div>
+      <div class="panel-foot between">
+        <span>Sources: Jupiter v6 + Raydium pool reserves (Solana) · Uniswap v3 / Aerodrome (Base, Ethereum, BNB) · dexscreener indexer for mcap/vol · Helius + Etherscan for holders.</span>
+        <span class="small">Freshness: quotes ≤ 3s · pools ≤ 9s · holders ≤ 2m · <span class="dot-live"></span>sweep ok</span>
+      </div>
+    </section>
+
+    <div class="split mt-16">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>New pairs</h2><span class="sub">last 60m · safety gate runs before a row is listed</span>
+          <div class="right"><span class="badge ghost">auto-refresh 15s</span></div>
+        </div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <thead><tr><th>Age</th><th>Token</th><th>Chain</th><th class="num">Liq</th><th class="num">MCap</th><th>Gate</th><th>Your call</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">4m</td><td>NOVA <span class="sub">Nova…7r2</span></td><td>Solana</td><td class="num">$48.2K</td><td class="num">$312K</td><td><span class="badge warn">mint auth active</span></td><td><span class="small muted">blocked by rule</span></td></tr>
+              <tr><td class="mono">12m</td><td>GRIZ <span class="sub">Griz…2p8</span></td><td>Base</td><td class="num">$186K</td><td class="num">$1.8M</td><td><span class="badge ok">pass</span></td><td><a class="btn sm" href="07-token.html">Quote</a></td></tr>
+              <tr><td class="mono">27m</td><td>PUMP2 <span class="sub">Pump…9kd</span></td><td>Solana</td><td class="num">$92.4K</td><td class="num">$640K</td><td><span class="badge err">LP unlocked</span></td><td><span class="small muted">watch only</span></td></tr>
+              <tr><td class="mono">38m</td><td>MOCHI <span class="sub">Mochi…4xQ</span></td><td>Solana</td><td class="num">$612K</td><td class="num">$4.1M</td><td><span class="badge warn">thin liq</span></td><td><a class="btn sm" href="07-token.html">Quote</a></td></tr>
+              <tr><td class="mono">51m</td><td>BASED <span class="sub">Based…8j4</span></td><td>Base</td><td class="num">$1.24M</td><td class="num">$9.8M</td><td><span class="badge ok">pass</span></td><td><a class="btn sm" href="07-token.html">Quote</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot">A new pair is listed with whatever is known. Unknown liquidity or holders prints <span class="mono">—</span>, never a guess.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Screen definition</h2><span class="sub">what the table is allowed to claim</span></div>
+        <div class="panel-body stack-sm small muted">
+          <div>• <span class="ink">Price</span> is the last executable mid at ≤ $1,000 size, not a headline ticker.</div>
+          <div>• <span class="ink">Safety</span> = mint/freeze authority, honeypot simulation, LP lock, top-10 concentration. Failing tokens stay listed with a reason.</div>
+          <div>• <span class="ink">Your position</span> links to the position, never to a new order.</div>
+          <div>• A market with no sell route is not tradeable; the trade button in the token page is disabled with that reason.</div>
+          <div>• Tier-3 chains are read-only: prices shown, execution disabled. <a href="20-chains.html">Chain matrix →</a></div>
+        </div>
+        <div class="panel-foot between">
+          <span>Watchlist: 3 tokens · 1 with an active position</span>
+          <a class="small" href="15-alerts.html">Price alerts →</a>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

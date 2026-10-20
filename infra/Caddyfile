@@ -1,0 +1,27 @@
+{
+	# ezCHAIN edge. Local TLS is intentionally off in local mode.
+	http://{$EZCHAIN_DOMAIN}:8080 {
+		encode zstd gzip
+
+		header {
+			X-Content-Type-Options nosniff
+			Referrer-Policy strict-origin-when-cross-origin
+			X-Frame-Options DENY
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			-Server
+		}
+
+		handle /api/* {
+			reverse_proxy api:8000
+		}
+		handle /ws* {
+			reverse_proxy api:8000
+		}
+		handle /healthz {
+			reverse_proxy api:8000
+		}
+		handle {
+			reverse_proxy web:3000
+		}
+	}
+}

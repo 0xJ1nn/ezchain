@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen map · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="index">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">ezCHAIN · wireframe v0.0.0</div>
+        <h1>Screen map &amp; flows</h1>
+        <p class="sub">30 low-fidelity screens covering the full product: portfolio, multi-chain wallets, positions, automations, strategy plugins, signals, risk, ledger, ops and the states between them. Structure only — visual design follows <span class="mono">design/BRIEF.md</span>.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="27-states.html">State gallery</a>
+        <a class="btn primary" href="03-dashboard.html">Open dashboard</a>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Primary flows</h2><span class="sub">click through the product</span></div>
+      <div class="panel-body grid cols-3">
+        <div class="stack-sm">
+          <div class="micro">First run</div>
+          <a href="01-sign-in.html">Sign in</a>
+          <span class="muted small">→</span>
+          <a href="02-onboarding.html">Create vault, add wallet, choose chains</a>
+          <span class="muted small">→</span>
+          <a href="03-dashboard.html">Dashboard (paper)</a>
+          <span class="muted small">→</span>
+          <a href="12-strategies.html">Install a strategy</a>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Trade</div>
+          <a href="06-markets.html">Markets</a>
+          <span class="muted small">→</span>
+          <a href="07-token.html">Token + quote panel</a>
+          <span class="muted small">→</span>
+          <a href="04-positions.html">Position tile</a>
+          <span class="muted small">→</span>
+          <a href="05-position-detail.html">Detail, fills, journal</a>
+          <span class="muted small">→</span>
+          <a href="18-ledger.html">Ledger</a>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Automate &amp; protect</div>
+          <a href="11-automation-builder.html">Build an automation</a>
+          <span class="muted small">→</span>
+          <a href="10-automations.html">Runs &amp; logs</a>
+          <span class="muted small">→</span>
+          <a href="13-strategy-detail.html">Paper gate → live approval</a>
+          <span class="muted small">→</span>
+          <a href="17-risk.html">Limits &amp; kill switch</a>
+          <span class="muted small">→</span>
+          <a href="25-operations.html">Incident</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="stack">
+      <div class="between">
+        <h2 style="font-size:14px">All screens</h2>
+        <div class="row small muted">
+          <span class="badge">structure</span>
+          <span class="badge">content</span>
+          <span class="badge">states</span>
+          <span class="badge">no visual style</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Getting started</h2><span class="sub">2 screens</span></div>
+        <div class="panel-body grid cols-3">
+          <a class="panel dashed" style="padding:12px" href="01-sign-in.html">
+            <div class="micro">01 · auth</div>
+            <div class="strong mt-8">Sign in</div>
+            <div class="small muted mt-8">Passkey / TOTP, self-host note, recovery, lockout states.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="02-onboarding.html">
+            <div class="micro">02 · first run</div>
+            <div class="strong mt-8">Onboarding</div>
+            <div class="small muted mt-8">Create vault, add wallet (watch first), chains, risk profile, paper default.</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Overview</h2><span class="sub">4 screens</span></div>
+        <div class="panel-body grid cols-4">
+          <a class="panel dashed" style="padding:12px" href="03-dashboard.html">
+            <div class="micro">03 · home</div><div class="strong mt-8">Dashboard</div>
+            <div class="small muted mt-8">Equity, exposure, open risk, signals, automation health, chain status.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="04-positions.html">
+            <div class="micro">04 · signature</div><div class="strong mt-8">Positions</div>
+            <div class="small muted mt-8">The position tile in every state; filters, grouping, closed strip.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="05-position-detail.html">
+            <div class="micro">05 · depth</div><div class="strong mt-8">Position detail</div>
+            <div class="small muted mt-8">Full chart, ladder, fills, journal, notes, actions.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="06-markets.html">
+            <div class="micro">06 · discover</div><div class="strong mt-8">Markets</div>
+            <div class="small muted mt-8">Screener, chain tabs, filters, watchlist, sparklines.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="07-token.html">
+            <div class="micro">07 · inspect</div><div class="strong mt-8">Token</div>
+            <div class="small muted mt-8">Chart with levels, quote panel (buy + sell), safety, holders, own position.</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Trade</h2><span class="sub">5 screens</span></div>
+        <div class="panel-body grid cols-3">
+          <a class="panel dashed" style="padding:12px" href="08-wallets.html">
+            <div class="micro">08 · custody</div><div class="strong mt-8">Wallets</div>
+            <div class="small muted mt-8">Multiple wallets, custody tiers, balances per chain, sync and policy.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="09-wallet-detail.html">
+            <div class="micro">09 · operate</div><div class="strong mt-8">Wallet detail</div>
+            <div class="small muted mt-8">Balances, allowances, activity, policy, keys, sweep.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="18-ledger.html">
+            <div class="micro">18 · truth</div><div class="strong mt-8">Activity / ledger</div>
+            <div class="small muted mt-8">Trades, transfers, fees, PnL attribution, reconcile, export.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="19-reports.html">
+            <div class="micro">19 · statements</div><div class="strong mt-8">Reports</div>
+            <div class="small muted mt-8">PnL statement, tax lots, period export, cost basis.</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Automate</h2><span class="sub">6 screens</span></div>
+        <div class="panel-body grid cols-3">
+          <a class="panel dashed" style="padding:12px" href="10-automations.html">
+            <div class="micro">10 · rules</div><div class="strong mt-8">Automations</div>
+            <div class="small muted mt-8">List, status, last run, pause, run log.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="11-automation-builder.html">
+            <div class="micro">11 · builder</div><div class="strong mt-8">Automation builder</div>
+            <div class="small muted mt-8">Trigger → conditions → actions, scope, dry run.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="12-strategies.html">
+            <div class="micro">12 · plugins</div><div class="strong mt-8">Strategies</div>
+            <div class="small muted mt-8">Installed plugins only. No bundled strategies.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="13-strategy-detail.html">
+            <div class="micro">13 · install</div><div class="strong mt-8">Strategy detail</div>
+            <div class="small muted mt-8">Manifest, params, grants, paper gate, intents, logs.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="14-signals.html">
+            <div class="micro">14 · inputs</div><div class="strong mt-8">Signals</div>
+            <div class="small muted mt-8">Feed, sources, evidence, routing to strategies.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="16-backtests.html">
+            <div class="micro">16 · evidence</div><div class="strong mt-8">Backtests</div>
+            <div class="small muted mt-8">Runs, metrics, equity, comparison, data snapshot.</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Protect &amp; system</h2><span class="sub">10 screens</span></div>
+        <div class="panel-body grid cols-4">
+          <a class="panel dashed" style="padding:12px" href="15-alerts.html">
+            <div class="micro">15</div><div class="strong mt-8">Alerts</div>
+            <div class="small muted mt-8">Rules, channels, quiet hours, delivery log.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="17-risk.html">
+            <div class="micro">17</div><div class="strong mt-8">Risk</div>
+            <div class="small muted mt-8">Exposure, limits, drawdown, breakers, kill switch.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="20-chains.html">
+            <div class="micro">20</div><div class="strong mt-8">Chains &amp; RPC</div>
+            <div class="small muted mt-8">Registry, tiers, latency, gas, finality, breakers.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="21-integrations.html">
+            <div class="micro">21</div><div class="strong mt-8">Integrations</div>
+            <div class="small muted mt-8">CEX keys, aggregators, data providers.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="22-settings.html">
+            <div class="micro">22</div><div class="strong mt-8">Settings</div>
+            <div class="small muted mt-8">Workspace, appearance, locale, units, defaults.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="23-security.html">
+            <div class="micro">23</div><div class="strong mt-8">Security</div>
+            <div class="small muted mt-8">Sessions, 2FA, vault, custody, audit, revoke.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="24-developer.html">
+            <div class="micro">24</div><div class="strong mt-8">Developer</div>
+            <div class="small muted mt-8">API keys, scopes, webhooks, SDK, sandbox.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="25-operations.html">
+            <div class="micro">25</div><div class="strong mt-8">Operations</div>
+            <div class="small muted mt-8">Services, queues, breakers, incidents, backup.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="26-workspace.html">
+            <div class="micro">26</div><div class="strong mt-8">Workspace</div>
+            <div class="small muted mt-8">Members, roles, invites, approval policy.</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Reference</h2><span class="sub">3 screens</span></div>
+        <div class="panel-body grid cols-3">
+          <a class="panel dashed" style="padding:12px" href="27-states.html">
+            <div class="micro">27</div><div class="strong mt-8">State gallery</div>
+            <div class="small muted mt-8">Loading, empty, stale, unsellable, offline, quarantine.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="28-mobile.html">
+            <div class="micro">28</div><div class="strong mt-8">Mobile</div>
+            <div class="small muted mt-8">Responsive proof: dashboard, tile, kill switch.</div>
+          </a>
+          <a class="panel dashed" style="padding:12px" href="29-components.html">
+            <div class="micro">29</div><div class="strong mt-8">Components</div>
+            <div class="small muted mt-8">Tile anatomy, buttons, inputs, charts, overlays.</div>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel mt-16">
+      <div class="panel-head"><h2>Reading the wireframe</h2></div>
+      <div class="panel-body grid cols-4">
+        <div class="annotation"><b>Solid borders</b><br>Committed structure: this element and its order are part of the product.</div>
+        <div class="annotation"><b>Dashed borders</b><br>Placeholder or optional container; visual treatment is open.</div>
+        <div class="annotation"><b>Monospace numbers</b><br>All data values. Tabular figures are required in the visual pass.</div>
+        <div class="annotation"><b>Colour</b><br>Only encodes state (profit, loss, warning, error). Final palette: TBD.</div>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automations · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="automations">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Automate / Automations</div>
+        <h1>Automations</h1>
+        <p class="sub">Rules that run without you. Each fire stores its trigger inputs, the policy decision and the resulting action. Automations can only act inside wallet policy.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="#run-log">Run log</a>
+        <a class="btn" href="17-risk.html">Safety limits</a>
+        <a class="btn primary" href="11-automation-builder.html">New automation</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Automations</div><div class="value">6</div><div class="meta">4 enabled · 2 paused</div></div>
+      <div class="stat"><div class="label">Fires today</div><div class="value sm">23</div><div class="meta">7 trailing · 12 webhook · 3 ladder</div></div>
+      <div class="stat"><div class="label">Skipped</div><div class="value sm">3</div><div class="meta">conditions not met · no action</div></div>
+      <div class="stat"><div class="label">Errors</div><div class="value sm err">1</div><div class="meta">unresolved · <span class="mono">no_route:sell</span></div></div>
+      <div class="stat"><div class="label">Mode</div><div class="value sm">PAPER</div><div class="meta">live requires approval</div></div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="table-toolbar">
+        <div class="seg"><button aria-pressed="true">All (6)</button><button>Enabled (4)</button><button>Paused (2)</button><button>Errors (1)</button></div>
+        <span class="spacer" style="flex:1"></span>
+        <span class="input mono" style="width:190px">Search name / tag</span>
+        <span class="select" style="width:130px">All chains</span>
+        <span class="select" style="width:120px">All scopes</span>
+        <button class="btn sm">Bulk pause</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Automation</th><th>Trigger</th><th>Scope</th><th>Mode</th><th>Last run</th><th class="num">Fires today</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="strong">Trailing exit</span><span class="sub" style="display:block">trail-8pct · v3</span></td>
+              <td class="small">Peak giveback ≥ 8%<span class="sub" style="display:block">every mark tick</span></td>
+              <td class="small">All open positions<span class="sub" style="display:block">Solana, Base · Main (hot)</span></td>
+              <td><span class="badge">paper</span></td>
+              <td class="small mono">12:41:08<span class="sub" style="display:block">240 ms</span></td>
+              <td class="num mono">7</td>
+              <td><span class="badge ok">ON</span></td>
+              <td class="right"><span class="row"><a class="btn sm" href="11-automation-builder.html">Edit</a><button class="btn sm">Pause</button></span></td>
+            </tr>
+            <tr>
+              <td><span class="strong">DCA weekly</span><span class="sub" style="display:block">dca-sol-50 · v1</span></td>
+              <td class="small">Schedule · Mon 09:00 UTC<span class="sub" style="display:block">skips if balance &lt; $50</span></td>
+              <td class="small">$50 USDC → SOL<span class="sub" style="display:block">Main (hot) · Solana</span></td>
+              <td><span class="badge">paper</span></td>
+              <td class="small mono">09:00:00<span class="sub" style="display:block">1.2 s</span></td>
+              <td class="num mono">1</td>
+              <td><span class="badge ok">ON</span></td>
+              <td class="right"><span class="row"><a class="btn sm" href="11-automation-builder.html">Edit</a><button class="btn sm">Pause</button></span></td>
+            </tr>
+            <tr>
+              <td><span class="strong">Loss-streak guard</span><span class="sub" style="display:block">guard-3loss · v2</span></td>
+              <td class="small">3 consecutive closes ≤ −2%<span class="sub" style="display:block">on position close</span></td>
+              <td class="small">All strategies<span class="sub" style="display:block">pause 30 min · notify</span></td>
+              <td><span class="badge">paper</span></td>
+              <td class="small mono">Oct 18<span class="sub" style="display:block">last armed</span></td>
+              <td class="num mono">0</td>
+              <td><span class="badge warn">PAUSED</span></td>
+              <td class="right"><span class="row"><a class="btn sm" href="11-automation-builder.html">Edit</a><button class="btn sm">Resume</button></span></td>
+            </tr>
+            <tr>
+              <td><span class="strong">Take-profit ladder</span><span class="sub" style="display:block">tp-ladder-25-50-100 · v4</span></td>
+              <td class="small">PnL ≥ 25% / 50% / 100%<span class="sub" style="display:block">per position, once per rung</span></td>
+              <td class="small">Momentum v1.2 positions<span class="sub" style="display:block">Solana · Main (hot)</span></td>
+              <td><span class="badge">paper</span></td>
+              <td class="small mono">12:35:02<span class="sub" style="display:block">190 ms</span></td>
+              <td class="num mono">3</td>
+              <td><span class="badge ok">ON</span></td>
+              <td class="right"><span class="row"><a class="btn sm" href="11-automation-builder.html">Edit</a><button class="btn sm">Pause</button></span></td>
+            </tr>
+            <tr>
+              <td><span class="strong">Rebalance Base</span><span class="sub" style="display:block">rebal-base-60-40 · v1</span></td>
+              <td class="small">1st of month · drift ≥ 2%<span class="sub" style="display:block">target 60% USDC / 40% ETH</span></td>
+              <td class="small">Ledger (hardware)<span class="sub" style="display:block">Base · approval required</span></td>
+              <td><span class="badge">paper</span></td>
+              <td class="small mono">Oct 01<span class="sub" style="display:block">skipped · drift 0.8%</span></td>
+              <td class="num mono">0</td>
+              <td><span class="badge warn">PAUSED</span></td>
+              <td class="right"><span class="row"><a class="btn sm" href="11-automation-builder.html">Edit</a><button class="btn sm">Resume</button></span></td>
+            </tr>
+            <tr>
+              <td><span class="strong">Webhook on fill</span><span class="sub" style="display:block">hook-fill-json · v2</span></td>
+              <td class="small">Event · order filled<span class="sub" style="display:block">POST JSON · 3s timeout</span></td>
+              <td class="small">All wallets<span class="sub" style="display:block">endpoint hooks.jinn.dev/fills</span></td>
+              <td><span class="badge">paper</span></td>
+              <td class="small mono">12:39:51<span class="sub" style="display:block">84 ms · 200</span></td>
+              <td class="num mono">12</td>
+              <td><span class="badge ok">ON</span></td>
+              <td class="right"><span class="row"><a class="btn sm" href="11-automation-builder.html">Edit</a><button class="btn sm">Pause</button></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot">
+        <span>6 rows · sorted by last run · every row is editable while running</span>
+        <span class="row"><span class="badge ghost">23 fires</span><span class="badge ghost">3 skips</span><span class="badge ghost">1 error</span></span>
+      </div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel" id="run-log">
+          <div class="panel-head"><h2>Run log</h2><span class="sub">last 8 fires · UTC</span><div class="right"><a class="btn sm" href="18-ledger.html">Export CSV</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time</th><th>Automation</th><th>Trigger input</th><th>Result</th><th>Reason / action</th><th class="num">Duration</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="mono">12:41:08</td><td>Trailing exit</td><td class="small">BONK peak −8.0% from $0.0000344</td>
+                  <td><span class="badge ok">OK</span></td>
+                  <td class="small mono">closed 50% · 0.31 SOL</td><td class="num mono">240 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">12:39:51</td><td>Webhook on fill</td><td class="small">fill 5Qm2…7dK · BONK</td>
+                  <td><span class="badge ok">OK</span></td>
+                  <td class="small mono">200 · 84 ms</td><td class="num mono">84 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">12:35:02</td><td>Take-profit ladder</td><td class="small">BONK PnL +42.6% · rung +25%</td>
+                  <td><span class="badge warn">SKIP</span></td>
+                  <td class="small mono">rung_already_filled</td><td class="num mono">12 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">12:22:10</td><td>Trailing exit</td><td class="small">SCAM peak −96.2% · no sell route</td>
+                  <td><span class="badge err">ERR</span></td>
+                  <td class="small mono">no_route:sell · position untouched</td><td class="num mono">1,304 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">11:58:03</td><td>Loss-streak guard</td><td class="small">2 closes ≤ −2% · third still open</td>
+                  <td><span class="badge warn">SKIP</span></td>
+                  <td class="small mono">automation_paused</td><td class="num mono">3 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">11:40:19</td><td>Take-profit ladder</td><td class="small">MOCHI state ENTERING</td>
+                  <td><span class="badge warn">SKIP</span></td>
+                  <td class="small mono">position_not_open</td><td class="num mono">8 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">10:02:00</td><td>Webhook on fill</td><td class="small">fill AERO · Base</td>
+                  <td><span class="badge err">ERR</span></td>
+                  <td class="small mono">endpoint_timeout · retried 1× · 200</td><td class="num mono">3,000 ms</td>
+                </tr>
+                <tr>
+                  <td class="mono">09:00:00</td><td>DCA weekly</td><td class="small">schedule · USDC 421.44 available</td>
+                  <td><span class="badge ok">OK</span></td>
+                  <td class="small mono">bought 0.3398 SOL @ $147.00</td><td class="num mono">1.2 s</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between">
+            <span>Every row links to its stored inputs, policy decision and transaction.</span>
+            <span class="mono">retention 90d</span>
+          </div>
+        </section>
+
+        <section class="panel dashed">
+          <div class="panel-head"><h2>Empty state</h2><span class="sub">filter result with no matches</span></div>
+          <div class="panel-body">
+            <div class="between" style="padding:14px 4px">
+              <div>
+                <div class="strong">No automations match “chain: Arbitrum”.</div>
+                <div class="small muted mt-8">Nothing is running on that chain. Create a rule, or clear the filter to see all 6.</div>
+              </div>
+              <span class="row"><a class="btn sm" href="10-automations.html">Clear filters</a><a class="btn sm primary" href="11-automation-builder.html">New automation</a></span>
+            </div>
+          </div>
+          <div class="panel-foot">The empty state never hides paused automations by default; it names the active filter.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Automation vs strategy</h2><span class="sub">related, not the same layer</span></div>
+          <div class="panel-body stack-sm small">
+            <div><span class="strong">Automation</span> — a declarative rule you compose here: trigger, conditions, bounded actions. The executor evaluates it; no code runs.</div>
+            <div><span class="strong">Strategy plugin</span> — external code that emits trade intents. It needs granted permissions and a passed paper gate before live mode.</div>
+            <div class="hr"></div>
+            <div class="between"><span>Runs as</span><span class="mono">rule · executor</span></div>
+            <div class="between"><span>Firing unit</span><span class="mono">trigger event</span></div>
+            <div class="between"><span>Can open positions</span><span class="mono">only via strategy rule</span></div>
+            <div class="between"><span>Paper gate required</span><span class="mono">no · paper by default</span></div>
+            <div class="note mt-8">Both paths pass the same risk engine. An automation cannot raise a limit or bypass a cooldown.</div>
+            <div class="row mt-8"><a class="btn sm" href="12-strategies.html">Strategies</a><a class="btn sm" href="24-developer.html">Rule schema</a></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Fires · 7 days</h2><span class="sub">by automation</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Webhook on fill</span><span class="mono">71</span></div>
+            <div class="meter"><div class="fill" style="width:88%"></div></div>
+            <div class="between small"><span>Trailing exit</span><span class="mono">34</span></div>
+            <div class="meter"><div class="fill" style="width:42%"></div></div>
+            <div class="between small"><span>Take-profit ladder</span><span class="mono">11</span></div>
+            <div class="meter"><div class="fill" style="width:14%"></div></div>
+            <div class="between small"><span>DCA weekly</span><span class="mono">1</span></div>
+            <div class="meter"><div class="fill" style="width:1%"></div></div>
+            <div class="between small"><span>Loss-streak guard</span><span class="mono">0</span></div>
+            <div class="meter"><div class="fill" style="width:0"></div></div>
+            <div class="between small"><span>Rebalance Base</span><span class="mono">0</span></div>
+            <div class="meter"><div class="fill" style="width:0"></div></div>
+            <div class="note">Zero fires on a scheduled rule is normal. Zero fires on a price rule for 24h raises an alert only if marks are stale.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Guardrails</h2><span class="sub">apply to every fire</span></div>
+          <div class="panel-body small stack-sm">
+            <div class="between"><span>Kill switch</span><span class="badge">off</span></div>
+            <div class="between"><span>Max fires / day</span><span class="mono">50 per rule</span></div>
+            <div class="between"><span>Cooldown</span><span class="mono">30s / token</span></div>
+            <div class="between"><span>Daily loss stop</span><span class="mono">$150</span></div>
+            <div class="between"><span>Missing data</span><span class="mono">treat as fail</span></div>
+            <a class="btn block" href="17-risk.html">Open risk controls</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

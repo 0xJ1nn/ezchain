@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wallet detail · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="wallet-detail">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs"><a href="08-wallets.html">Wallets</a> / Main (hot)</div>
+        <h1>Main (hot) <span class="badge">local vault</span></h1>
+        <p class="sub">Signing key is held by this device. Addresses are derived locally; balances reconcile against chain state on every sync. Policy is enforced before a transaction is built.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="18-ledger.html">Activity</a>
+        <button class="btn">Pause wallet</button>
+        <a class="btn primary" href="#sweep">Sweep to hardware</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat hero-stat"><div class="label">Value</div><div class="value">$1,842.20</div><div class="meta">Solana + Base · 10 tokens</div></div>
+      <div class="stat"><div class="label">Spent today</div><div class="value sm">$101.45</div><div class="meta">of $250.00 cap · resets 00:00 UTC</div></div>
+      <div class="stat"><div class="label">Open positions</div><div class="value sm">2</div><div class="meta">BONK · SCAM (unsellable)</div></div>
+      <div class="stat"><div class="label">Allowances</div><div class="value sm">5</div><div class="meta"><span class="warn">2 stale</span> · 2 unlimited</div></div>
+      <div class="stat"><div class="label">Last sync</div><div class="value sm">4s</div><div class="meta"><span class="dot-live"></span>Solana · Base</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Addresses</h2><span class="sub">one per chain · derived from vault key #1</span></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Chain</th><th>Address</th><th>Type</th><th>Nonce</th><th class="num">Tx count</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+                  <td class="mono">7xKXtg2CW9p4qR8mN1vB6yH3sD5aF7jL0cZ4eQ9wT2u</td>
+                  <td><span class="badge ghost">ed25519</span></td>
+                  <td class="mono">—</td>
+                  <td class="num">1,204</td>
+                  <td class="right"><span class="row"><a class="btn sm" href="#">Copy</a><a class="btn sm" href="#">Explorer</a></span></td>
+                </tr>
+                <tr>
+                  <td><span class="chain"><span class="sq">B</span>Base</span></td>
+                  <td class="mono truncate" style="max-width:280px">0x71c4A9d2fE80b3C6a15D7e9F04b2C8d31a5E9f2a</td>
+                  <td><span class="badge ghost">secp256k1</span></td>
+                  <td class="mono">47</td>
+                  <td class="num">318</td>
+                  <td class="right"><span class="row"><a class="btn sm" href="#">Copy</a><a class="btn sm" href="#">Explorer</a></span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between">
+            <span>Addresses are shown in full only after vault unlock. Copy writes to clipboard, never to a log.</span>
+            <a class="small" href="23-security.html">Vault settings</a>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Balances</h2><span class="sub">marked 12:41:08 UTC · USD</span>
+            <div class="right"><a class="btn sm" href="#sweep">Sweep</a><button class="btn sm">Hide dust</button></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Asset</th><th>Chain</th><th class="num">Balance</th><th class="num">Price</th><th class="num">Value</th><th class="num">Share</th><th>State</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">SOL</span><span class="strong">Solana</span></span></td>
+                  <td class="small">Solana</td>
+                  <td class="num mono">8.7000</td>
+                  <td class="num mono">$147.00</td>
+                  <td class="num mono">$1,278.90</td>
+                  <td class="num">69.4%</td>
+                  <td><span class="badge ok">free</span></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">US</span><span class="strong">USDC</span></span></td>
+                  <td class="small">Base</td>
+                  <td class="num mono">421.44</td>
+                  <td class="num mono">$1.0000</td>
+                  <td class="num mono">$421.44</td>
+                  <td class="num">22.9%</td>
+                  <td><span class="badge ok">free</span></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">BO</span><span class="strong">Bonk</span></span></td>
+                  <td class="small">Solana</td>
+                  <td class="num mono">4,120,000</td>
+                  <td class="num mono">$0.00003097</td>
+                  <td class="num mono">$127.60</td>
+                  <td class="num">6.9%</td>
+                  <td><span class="badge info">in position</span></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">WE</span><span class="strong">Wrapped Ether</span></span></td>
+                  <td class="small">Base</td>
+                  <td class="num mono">0.0008</td>
+                  <td class="num mono">$2,737.50</td>
+                  <td class="num mono">$2.19</td>
+                  <td class="num">0.1%</td>
+                  <td><span class="badge ghost">dust</span></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="token" style="width:20px;height:20px;font-size:8px">··</span><span class="strong">Other dust</span><span class="small muted">6 tokens</span></span></td>
+                  <td class="small">Solana · Base</td>
+                  <td class="num mono">—</td>
+                  <td class="num">—</td>
+                  <td class="num mono">$12.07</td>
+                  <td class="num">0.7%</td>
+                  <td><span class="badge ghost">dust</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between">
+            <span>Total $1,842.20 · cost basis $1,798.61 · unrealized +$43.59</span>
+            <span>Dust threshold $1.00 · 6 tokens below</span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Token allowances</h2><span class="sub">what contracts may move without a new signature</span><div class="right"><span class="badge warn">2 stale</span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Venue</th><th>Chain</th><th>Token</th><th class="num">Allowance</th><th>Last used</th><th>State</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="strong">Jupiter v6</td><td class="small">Solana</td><td class="mono">USDC</td>
+                  <td class="num mono">500.00</td><td class="small">2 min ago</td>
+                  <td><span class="badge ok">in use</span></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Orca Whirlpool</td><td class="small">Solana</td><td class="mono">BONK</td>
+                  <td class="num mono">4,120,000</td><td class="small">12:41 today</td>
+                  <td><span class="badge info">position</span></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Uniswap v3 Router</td><td class="small">Base</td><td class="mono">USDC</td>
+                  <td class="num mono">unlimited</td><td class="small">6 days ago</td>
+                  <td><span class="badge warn">unlimited</span></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Permit2</td><td class="small">Base</td><td class="mono">USDC</td>
+                  <td class="num mono">unlimited</td><td class="small">63 days ago</td>
+                  <td><span class="badge err">stale</span></td>
+                  <td class="right"><button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">1inch Router</td><td class="small">Base</td><td class="mono">WETH</td>
+                  <td class="num mono">0.05</td><td class="small">41 days ago</td>
+                  <td><span class="badge warn">stale</span></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Revoking an allowance that backs an open position can block its exit. ezCHAIN warns first and never revokes automatically.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Activity</h2><span class="sub">this wallet · last 24h</span><div class="right"><a class="btn sm" href="18-ledger.html">Full ledger</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time</th><th>Type</th><th>Detail</th><th class="num">Amount</th><th>Result</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">12:41:08</td><td>Trade</td><td>BONK sell 25% · Momentum v1.2 · tx 5Qm2…7dK</td><td class="num ok">+0.21 SOL</td><td><span class="badge ok">filled</span></td></tr>
+                <tr><td class="mono">12:39:51</td><td>Allowance</td><td>Approve Jupiter v6 · USDC 500.00</td><td class="num">—</td><td><span class="badge ok">confirmed</span></td></tr>
+                <tr><td class="mono">11:58:20</td><td>Transfer</td><td>In from Ledger (hardware) · Base tx 0x9ab…41c</td><td class="num">+120.00 USDC</td><td><span class="badge ok">confirmed</span></td></tr>
+                <tr><td class="mono">10:22:04</td><td>Fee</td><td>Network fee · Base</td><td class="num">−$0.0041</td><td><span class="badge ok">settled</span></td></tr>
+                <tr><td class="mono">09:41:12</td><td>Trade</td><td>BONK add 1,650,000 · avg entry $0.0000309</td><td class="num">−$51.45</td><td><span class="badge ok">filled</span></td></tr>
+                <tr><td class="mono">09:12:19</td><td>Sync</td><td>Reconcile after RPC retry · Solana</td><td class="num">—</td><td><span class="badge warn">retried</span></td></tr>
+                <tr><td class="mono">09:00:00</td><td>Trade</td><td>DCA weekly · bought 0.3398 SOL @ $147.00</td><td class="num">−$50.00</td><td><span class="badge ok">filled</span></td></tr>
+                <tr><td class="mono">08:03:44</td><td>Order</td><td>Denied · <span class="mono">policy:per_order_cap</span> $120.00 &gt; $75.00</td><td class="num">—</td><td><span class="badge err">denied</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Policy</h2><span class="sub">executor-enforced</span><div class="right"><a class="btn sm" href="17-risk.html">Edit</a></div></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Daily spend cap</span><span class="mono">$250.00</span></div>
+            <div class="between small"><span>Per-order cap</span><span class="mono">$75.00</span></div>
+            <div class="between small"><span>Approval threshold</span><span class="mono">$100.00</span></div>
+            <div class="between small"><span>Cooldown</span><span class="mono">30s / token</span></div>
+            <div class="between small"><span>Allowed venues</span><span class="mono">jupiter, orca, uniswap, 1inch</span></div>
+            <div class="between small"><span>Token allowlist</span><span class="mono">off · safety checks on</span></div>
+            <div class="hr"></div>
+            <div class="between small"><span>Spent today</span><span class="mono">$101.45 / $250.00</span></div>
+            <div class="meter"><div class="fill" style="width:41%"></div></div>
+            <div class="between small"><span>Open exposure</span><span class="mono">$130.80 / $300.00 cap</span></div>
+            <div class="meter"><div class="fill warn" style="width:44%"></div></div>
+            <div class="note mt-8">Strategy allocation and wallet policy are intersected. The smaller limit wins; a denied order records both limits.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Custody</h2><span class="sub">local vault</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Key location</span><span class="mono">vault · key #1</span></div>
+            <div class="between small"><span>Unlock</span><span class="mono">passphrase + OS keychain</span></div>
+            <div class="between small"><span>Created</span><span class="mono">2026-03-14</span></div>
+            <div class="between small"><span>Last signed</span><span class="mono">12:41:08</span></div>
+            <div class="between small"><span>Recovery verified</span><span class="mono ok">2026-08-02</span></div>
+            <div class="between small"><span>Hardware approval</span><span class="mono">off</span></div>
+            <div class="note">Exporting this key is blocked for hot wallets. To move funds, sweep to a hardware wallet instead.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Sync &amp; reconcile</h2><span class="sub">live</span><div class="right"><button class="btn sm">Resync</button></div></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span><span class="dot-live"></span>Solana slot</span><span class="mono">372,418,992</span></div>
+            <div class="between small"><span><span class="dot-live"></span>Base block</span><span class="mono">41,882,106</span></div>
+            <div class="between small"><span>Latency</span><span class="mono">4s / 6s</span></div>
+            <div class="between small"><span>Confirmations required</span><span class="mono">1 Solana · 2 Base</span></div>
+            <div class="hr"></div>
+            <div class="micro">Reconcile log</div>
+            <div class="list">
+              <div class="list-row"><span class="mono small">12:41:02</span><span class="grow small">Solana</span><span class="badge ok">matched</span></div>
+              <div class="list-row"><span class="mono small">12:40:58</span><span class="grow small">Base · dust delta +$0.004</span><span class="badge warn">adjusted</span></div>
+              <div class="list-row"><span class="mono small">11:14:30</span><span class="grow small">Solana</span><span class="badge ok">matched</span></div>
+              <div class="list-row"><span class="mono small">09:12:07</span><span class="grow small">Base · rpc_timeout, retried</span><span class="badge warn">retried</span></div>
+            </div>
+          </div>
+          <div class="panel-foot">A mismatch writes an adjustment entry. It never overwrites ledger history.</div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel mt-16" id="sweep">
+      <div class="panel-head"><h2>Sweep</h2><span class="sub">move assets to hardware · positions are not transferable</span></div>
+      <div class="panel-body grid cols-3">
+        <label class="field"><span>From</span><select class="select"><option>Main (hot) · $1,842.20</option></select></label>
+        <label class="field"><span>To</span><select class="select"><option>Ledger (hardware) · 0xA18…04de</option><option>Cold watch · bc1q…7k4m</option></select></label>
+        <label class="field"><span>Asset</span><select class="select"><option>USDC · Base · 421.44</option><option>SOL · Solana · 8.7000</option><option>Wrapped Ether · Base · 0.0008</option></select></label>
+        <label class="field"><span>Amount</span><div class="row"><input class="input mono" value="250.00" style="flex:1"><button class="btn sm">Max</button></div></label>
+        <label class="field"><span>Network</span><select class="select"><option>Base</option><option>Solana</option></select></label>
+        <label class="field"><span>Network fee (est.)</span><input class="input mono" value="$0.0041 · ~2s" readonly></label>
+        <div class="field" style="grid-column:1/-1">
+          <span>Confirmation</span>
+          <div class="note">Sends <span class="mono">250.00 USDC</span> on Base from <span class="mono">0x71c…9f2a</span> to <span class="mono">0xA18…04de</span>. Fee $0.0041, total debit 250.0041 USDC. Requires hardware approval on the device.</div>
+        </div>
+        <div class="row" style="grid-column:1/-1">
+          <span class="checkbox checked"></span><span class="small">I have the Ledger connected and can approve on device.</span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn">Cancel</button>
+          <button class="btn primary">Review sweep</button>
+        </div>
+        <div class="note warn" style="grid-column:1/-1">4,120,000 BONK cannot be swept: it is committed to an open position. Close the position first, or sweep after the exit fills.</div>
+      </div>
+    </section>
+
+    <section class="panel mt-16" style="border-color:var(--err)">
+      <div class="panel-head"><h2 class="err">Danger zone</h2><span class="sub">each action is recorded and reversible only by recovery</span></div>
+      <div class="panel-body stack-sm">
+        <div class="list-row">
+          <div class="grow"><div class="title">Pause wallet</div><div class="sub">Blocks new orders and sweeps. Open positions remain, exits are still allowed. Automations record <span class="mono">skipped:wallet_paused</span>.</div></div>
+          <button class="btn">Pause</button>
+        </div>
+        <div class="list-row">
+          <div class="grow"><div class="title">Revoke signing key</div><div class="sub">Deletes key #1 from the vault. In-flight orders are cancelled, allowances stay on chain. Funds are recoverable only with the seed phrase.</div></div>
+          <button class="btn danger">Revoke key</button>
+        </div>
+        <div class="list-row">
+          <div class="grow"><div class="title">Remove wallet</div><div class="sub">Requires zero balance and no open positions. History and ledger entries are retained; alerts on this address stop.</div></div>
+          <button class="btn danger" disabled>Remove</button>
+        </div>
+      </div>
+      <div class="panel-foot">Type <span class="mono">Main (hot)</span> to confirm destructive actions. There is no undo window.</div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

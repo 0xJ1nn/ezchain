@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backtests · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="backtests">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Automate / Backtests</div>
+        <h1>Backtests</h1>
+        <p class="sub">Replay a strategy against a frozen data snapshot with explicit fees, slippage and fill assumptions. Same snapshot + same seed + same params must produce the same hash.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="13-strategy-detail.html">Strategy</a>
+        <a class="btn" href="#compare">Compare</a>
+        <a class="btn primary" href="#new">New backtest</a>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="panel-body" style="padding:10px 12px">
+        <div class="note warn"><strong>Simulated fills.</strong> A backtest fills at the modelled effective price from the snapshot — it is not a quote and not a guarantee. Fees, slippage, priority and failed routes are approximations. Past paper performance is not evidence of live performance; the paper gate is.</div>
+      </div>
+    </section>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Runs</div><div class="value">42</div><div class="meta">9 this week · 1 failed</div></div>
+      <div class="stat"><div class="label">Selected run</div><div class="value sm">BT-0142</div><div class="meta">Momentum v1.2 · done</div></div>
+      <div class="stat"><div class="label">Net PnL</div><div class="value sm ok">+$412.80</div><div class="meta">+4.13% on $10,000</div></div>
+      <div class="stat"><div class="label">Max drawdown</div><div class="value sm err">−11.4%</div><div class="meta">2026-05-19 → 06-02</div></div>
+      <div class="stat"><div class="label">Sharpe-ish</div><div class="value sm">1.62</div><div class="meta">daily, rf 0 · not annualised</div></div>
+      <div class="stat"><div class="label">Snapshot</div><div class="value sm mono">snap-0931</div><div class="meta">frozen 2026-10-01</div></div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="panel-head">
+        <h2>Runs</h2><span class="sub">newest first</span>
+        <div class="right">
+          <span class="field" style="min-width:140px"><select class="select"><option>All strategies</option><option>Momentum v1.2</option><option>Mean reversion v0.4</option><option>DCA weekly</option><option>Grid experiment</option></select></span>
+          <span class="field" style="min-width:110px"><select class="select"><option>All states</option><option>Done</option><option>Running</option><option>Failed</option></select></span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead>
+            <tr><th>ID</th><th>Strategy</th><th>Window</th><th>Snapshot</th><th>Fees / slip</th><th>Status</th><th class="num">Net PnL</th><th class="num">Max DD</th><th class="num">Sharpe</th><th class="num">Trades</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr style="background:var(--surface-2)">
+              <td class="mono strong">BT-0142</td>
+              <td>Momentum v1.2<span class="sub" style="display:block">commit 7d1f3c2</span></td>
+              <td class="small mono">Apr 01 → Oct 01</td>
+              <td class="mono small">snap-0931</td>
+              <td class="small mono">0.25% / 50bps</td>
+              <td><span class="badge ok">done</span></td>
+              <td class="num ok">+$412.80</td>
+              <td class="num err">−11.4%</td>
+              <td class="num">1.62</td>
+              <td class="num">214</td>
+              <td class="right"><button class="btn sm">Open</button></td>
+            </tr>
+            <tr>
+              <td class="mono">BT-0141</td>
+              <td>Mean reversion v0.4<span class="sub" style="display:block">commit 4b90a11</span></td>
+              <td class="small mono">Jun 01 → Oct 01</td>
+              <td class="mono small">snap-0931</td>
+              <td class="small mono">0.25% / 50bps</td>
+              <td><span class="badge ok">done</span></td>
+              <td class="num ok">+$86.10</td>
+              <td class="num err">−7.2%</td>
+              <td class="num">1.08</td>
+              <td class="num">96</td>
+              <td class="right"><button class="btn sm">Open</button></td>
+            </tr>
+            <tr>
+              <td class="mono">BT-0140</td>
+              <td>DCA weekly<span class="sub" style="display:block">commit 22ac9e0</span></td>
+              <td class="small mono">Oct 01 '25 → Oct 01 '26</td>
+              <td class="mono small">snap-0928</td>
+              <td class="small mono">0.10% / 25bps</td>
+              <td><span class="badge ok">done</span></td>
+              <td class="num ok">+$604.30</td>
+              <td class="num err">−18.9%</td>
+              <td class="num">0.94</td>
+              <td class="num">52</td>
+              <td class="right"><button class="btn sm">Open</button></td>
+            </tr>
+            <tr style="opacity:.85">
+              <td class="mono">BT-0139</td>
+              <td>Grid experiment<span class="sub" style="display:block">commit 9e01b74</span></td>
+              <td class="small mono">Aug 01 → Oct 01</td>
+              <td class="mono small">snap-0928</td>
+              <td class="small mono">0.30% / 75bps</td>
+              <td><span class="badge err">failed</span></td>
+              <td class="num muted">—</td>
+              <td class="num muted">—</td>
+              <td class="num muted">—</td>
+              <td class="num">37 / 61</td>
+              <td class="right"><button class="btn ghost sm">Why?</button></td>
+            </tr>
+            <tr>
+              <td class="mono">BT-0138</td>
+              <td>Momentum v1.1<span class="sub" style="display:block">commit 5c118ab</span></td>
+              <td class="small mono">Apr 01 → Oct 01</td>
+              <td class="mono small">snap-0931</td>
+              <td class="small mono">0.25% / 50bps</td>
+              <td><span class="badge ok">done</span></td>
+              <td class="num ok">+$298.44</td>
+              <td class="num err">−14.8%</td>
+              <td class="num">1.21</td>
+              <td class="num">189</td>
+              <td class="right"><button class="btn sm">Open</button></td>
+            </tr>
+            <tr>
+              <td class="mono">BT-0137</td>
+              <td>Momentum v1.2<span class="sub" style="display:block">commit 7d1f3c2</span></td>
+              <td class="small mono">Jul 01 → Oct 01</td>
+              <td class="mono small">snap-0919</td>
+              <td class="small mono">0.25% / 50bps</td>
+              <td><span class="badge ok">done</span></td>
+              <td class="num ok">+$194.20</td>
+              <td class="num err">−6.1%</td>
+              <td class="num">1.74</td>
+              <td class="num">88</td>
+              <td class="right"><button class="btn sm">Open</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot"><span>6 of 42 · BT-0142 selected</span><span>Sharpe-ish = mean daily return / stdev daily return, rf 0</span></div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="panel-head">
+        <h2>BT-0142 · Momentum v1.2</h2>
+        <span class="sub">2026-04-01 → 2026-10-01 · $10,000 initial · 214 trades</span>
+        <div class="right"><span class="badge ok">done</span><button class="btn sm">Clone run</button><button class="btn sm">Export</button></div>
+      </div>
+      <div class="panel-body">
+        <div class="chart-legend mb-8">
+          <span class="l-entry"><i></i>Equity (modelled)</span>
+          <span><i></i>Running peak</span>
+        </div>
+        <div class="chart" style="height:280px">
+          <svg viewBox="0 0 820 280" style="height:280px" role="img" aria-label="Equity curve from 10,000 up to a 10,700 peak, down 11.4 percent to 9,480, ending at 10,412.80">
+            <line class="gridline" x1="0" y1="30" x2="760" y2="30"/>
+            <line class="gridline" x1="0" y1="82" x2="760" y2="82"/>
+            <line class="gridline" x1="0" y1="135" x2="760" y2="135"/>
+            <line class="gridline" x1="0" y1="187" x2="760" y2="187"/>
+            <line class="gridline" x1="0" y1="240" x2="760" y2="240"/>
+            <line class="axis" x1="760" y1="10" x2="760" y2="250"/>
+            <text class="axis-text" x="766" y="33">$10,800</text>
+            <text class="axis-text" x="766" y="85">$10,400</text>
+            <text class="axis-text" x="766" y="138">$10,000</text>
+            <text class="axis-text" x="766" y="190">$9,600</text>
+            <text class="axis-text" x="766" y="243">$9,200</text>
+            <polygon class="area" points="0,135 40,119 80,124 120,104 160,88 200,65 240,51 280,43 320,65 360,109 400,149 440,188 480,203 520,175 560,142 600,115 640,98 680,90 720,85 760,81 760,250 0,250"/>
+            <polyline class="series" points="0,135 40,119 80,124 120,104 160,88 200,65 240,51 280,43 320,65 360,109 400,149 440,188 480,203 520,175 560,142 600,115 640,98 680,90 720,85 760,81"/>
+            <polyline class="peak" points="0,135 40,119 80,119 120,104 160,88 200,65 240,51 280,43 760,43"/>
+            <line class="level level-entry" x1="0" y1="135" x2="760" y2="135"/>
+            <text class="level-label" x="4" y="132">START $10,000</text>
+            <circle class="peak" cx="280" cy="43" r="5"/>
+            <text class="level-label" x="288" y="38">PEAK $10,700</text>
+            <circle class="dot" cx="480" cy="203" r="2.5"/>
+            <text class="num-label" x="452" y="219">−11.4%</text>
+            <circle class="dot" cx="760" cy="81" r="2.5"/>
+            <text class="num-label" x="672" y="75">$10,412.80</text>
+            <text class="axis-text" x="2" y="270">Apr 01</text>
+            <text class="axis-text" x="170" y="270">Jun</text>
+            <text class="axis-text" x="340" y="270">Aug</text>
+            <text class="axis-text" x="640" y="270">Oct 01</text>
+          </svg>
+        </div>
+
+        <div class="chart-legend mt-12 mb-8">
+          <span class="l-stop"><i></i>Drawdown from running peak</span>
+          <span><i></i>Worst −11.4% (Jun 02)</span>
+        </div>
+        <div class="chart" style="height:140px">
+          <svg viewBox="0 0 420 150" style="height:140px" role="img" aria-label="Drawdown curve, zero to minus 20 percent, worst minus 11.4 percent on 2 June">
+            <line class="axis" x1="0" y1="10" x2="420" y2="10"/>
+            <line class="gridline" x1="0" y1="40" x2="420" y2="40"/>
+            <line class="gridline" x1="0" y1="70" x2="420" y2="70"/>
+            <line class="gridline" x1="0" y1="100" x2="420" y2="100"/>
+            <text class="axis-text" x="2" y="22">0%</text>
+            <text class="axis-text" x="2" y="52">−5%</text>
+            <text class="axis-text" x="2" y="82">−10%</text>
+            <text class="axis-text" x="2" y="112">−15%</text>
+            <polygon class="area" points="0,10 22,17 44,24 66,21 88,29 110,18 132,15 154,23 176,38 198,51 220,65 242,78 264,71 286,60 308,47 330,39 352,29 374,21 396,15 418,11 418,10"/>
+            <polyline class="series" points="0,10 22,17 44,24 66,21 88,29 110,18 132,15 154,23 176,38 198,51 220,65 242,78 264,71 286,60 308,47 330,39 352,29 374,21 396,15 418,11"/>
+            <line class="level level-stop" x1="0" y1="130" x2="420" y2="130"/>
+            <text class="level-label" x="330" y="127">LIMIT −20%</text>
+            <circle class="dot" cx="242" cy="78" r="2.5"/>
+            <text class="num-label" x="208" y="94">−11.4%</text>
+          </svg>
+        </div>
+      </div>
+      <div class="panel-foot">
+        Snapshot <span class="mono">snap-0931</span> · frozen 2026-10-01T00:00Z · 4 chains · 128.4M events ·
+        repro hash <span class="mono">bt-0142:8f2c41d0c7b9a7e2</span> · rerun reproduces byte-identical metrics
+      </div>
+    </section>
+
+    <div class="split mb-12">
+      <section class="panel" id="compare">
+        <div class="panel-head"><h2>Comparison A/B</h2><span class="sub">same window, same snapshot</span></div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <thead><tr><th>Metric</th><th class="num">A · BT-0142 v1.2</th><th class="num">B · BT-0138 v1.1</th><th class="num">Δ</th></tr></thead>
+            <tbody>
+              <tr><td>Net PnL</td><td class="num ok">+$412.80</td><td class="num ok">+$298.44</td><td class="num ok">+$114.36</td></tr>
+              <tr><td>Return</td><td class="num">+4.13%</td><td class="num">+2.98%</td><td class="num ok">+1.15 pp</td></tr>
+              <tr><td>Max drawdown</td><td class="num">−11.4%</td><td class="num">−14.8%</td><td class="num ok">+3.4 pp</td></tr>
+              <tr><td>Sharpe-ish</td><td class="num">1.62</td><td class="num">1.21</td><td class="num ok">+0.41</td></tr>
+              <tr><td>Trades</td><td class="num">214</td><td class="num">189</td><td class="num">+25</td></tr>
+              <tr><td>Win rate</td><td class="num">46.3%</td><td class="num">42.1%</td><td class="num ok">+4.2 pp</td></tr>
+              <tr><td>Profit factor</td><td class="num">1.38</td><td class="num">1.22</td><td class="num ok">+0.16</td></tr>
+              <tr><td>Fees paid</td><td class="num">$94.20</td><td class="num">$88.10</td><td class="num err">−$6.10</td></tr>
+              <tr><td>Snapshot</td><td class="num mono">snap-0931</td><td class="num mono">snap-0931</td><td class="num muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot">A change of &lt; 0.2 Sharpe or &lt; 1 pp return on 200 trades is inside noise; do not promote on it.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Metrics · BT-0142</h2><span class="sub">after fees and slippage</span></div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <tbody>
+              <tr><td>Initial / final equity</td><td class="num mono">$10,000.00 / $10,412.80</td></tr>
+              <tr><td>Net PnL</td><td class="num mono ok">+$412.80</td></tr>
+              <tr><td>Gross PnL</td><td class="num mono">+$568.40</td></tr>
+              <tr><td>Fees</td><td class="num mono">−$94.20</td></tr>
+              <tr><td>Slippage</td><td class="num mono">−$61.40</td></tr>
+              <tr><td>Max drawdown</td><td class="num mono err">−11.4%</td></tr>
+              <tr><td>Longest drawdown</td><td class="num mono">38 days</td></tr>
+              <tr><td>Sharpe-ish / Sortino</td><td class="num mono">1.62 / 2.10</td></tr>
+              <tr><td>Trades / win rate</td><td class="num mono">214 / 46.3%</td></tr>
+              <tr><td>Avg win / avg loss</td><td class="num mono">+$18.42 / −$11.06</td></tr>
+              <tr><td>Avg hold</td><td class="num mono">41m</td></tr>
+              <tr><td>Avg exposure</td><td class="num mono">22%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot">Every metric is derived from the fill log; nothing is typed in by hand.</div>
+      </section>
+    </div>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Trades sample</h2><span class="sub">first 5 of 214 · sorted by time</span><div class="right"><a class="btn sm" href="19-reports.html">Export CSV</a></div></div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>Time</th><th>Token</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Notional</th><th class="num">Fee</th><th class="num">PnL</th><th>Fill model</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">2026-04-02 09:14</td><td>BONK</td><td><span class="badge ok">buy</span></td><td class="num mono">18.2M</td><td class="num mono">$0.00002410</td><td class="num mono">$438.62</td><td class="num mono">$1.10</td><td class="num muted">—</td><td class="small">quote + 25bps</td></tr>
+            <tr><td class="mono">2026-04-02 11:48</td><td>BONK</td><td><span class="badge">sell</span></td><td class="num mono">9.1M</td><td class="num mono">$0.00003050</td><td class="num mono">$277.55</td><td class="num mono">$0.69</td><td class="num ok">+$58.02</td><td class="small">quote + 25bps</td></tr>
+            <tr><td class="mono">2026-04-05 14:02</td><td>AERO</td><td><span class="badge ok">buy</span></td><td class="num mono">312.4</td><td class="num mono">$1.3100</td><td class="num mono">$409.24</td><td class="num mono">$1.02</td><td class="num muted">—</td><td class="small">quote + 25bps</td></tr>
+            <tr><td class="mono">2026-04-05 18:31</td><td>AERO</td><td><span class="badge">sell</span></td><td class="num mono">312.4</td><td class="num mono">$1.2640</td><td class="num mono">$394.87</td><td class="num mono">$0.99</td><td class="num err">−$15.39</td><td class="small">quote + 25bps</td></tr>
+            <tr><td class="mono">2026-04-07 08:11</td><td>MOCHI</td><td><span class="badge ok">buy</span></td><td class="num mono">48.1K</td><td class="num mono">$0.004210</td><td class="num mono">$202.50</td><td class="num mono">$0.51</td><td class="num muted">—</td><td class="small">quote + 25bps</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot">Fill model: effective price = snapshot quote × (1 + slippage bps) on taker side; partial fills are modelled only when liquidity &lt; notional.</div>
+    </section>
+
+    <div class="split">
+      <section class="panel" id="new">
+        <div class="panel-head"><h2>New backtest</h2><span class="sub">queued, runs on the worker</span></div>
+        <div class="panel-body grid cols-2">
+          <label class="field"><span>Strategy</span><select class="select"><option>Momentum v1.2</option><option>Mean reversion v0.4</option><option>DCA weekly</option><option>Grid experiment</option></select></label>
+          <label class="field"><span>Version / commit</span><select class="select"><option>v1.2 · 7d1f3c2</option><option>v1.1 · 5c118ab</option></select></label>
+          <label class="field"><span>Window start</span><input class="input mono" value="2026-04-01"></label>
+          <label class="field"><span>Window end</span><input class="input mono" value="2026-10-01"></label>
+          <label class="field"><span>Universe</span><select class="select"><option>Solana + Base · top 40 by liq</option><option>All T1 chains</option><option>Custom list</option></select></label>
+          <label class="field"><span>Snapshot</span><select class="select"><option>snap-0931 · 2026-10-01</option><option>snap-0928 · 2026-09-28</option><option>Latest complete</option></select></label>
+          <label class="field"><span>Fee model</span><select class="select"><option>0.25% taker + priority</option><option>0.10% taker</option><option>Custom</option></select></label>
+          <label class="field"><span>Fill model</span><select class="select"><option>Quote + 50bps slippage</option><option>Quote + 25bps</option><option>Worst-of-window</option></select></label>
+          <label class="field"><span>Initial capital</span><input class="input mono" value="10000"></label>
+          <label class="field"><span>Seed</span><input class="input mono" value="4217"></label>
+          <label class="field" style="grid-column:1/-1"><span>Params (JSON)</span><textarea class="textarea mono" rows="4">{"entry_score": 75, "trail_pct": 8, "max_positions": 4, "max_hold_h": 24, "cooldown_s": 30}</textarea></label>
+          <div class="note" style="grid-column:1/-1">The run stores params, snapshot id, seed and code commit. Two runs with the same four inputs must yield the same repro hash; a mismatch is a bug, not a new result.</div>
+          <div class="row" style="grid-column:1/-1"><button class="btn primary">Queue run</button><span class="small muted">est. 3–6 min · 1 worker</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Failed run · BT-0139</h2><span class="sub">Grid experiment · stopped at 61%</span></div>
+        <div class="panel-body stack-sm">
+          <div class="row"><span class="badge err">FAILED</span><span class="mono small">code: data_gap</span><span class="small muted">2026-10-01 11:26:04</span></div>
+          <div class="small">The Base indexer snapshot is missing <span class="mono">2026-08-22T02:00Z → 08:00Z</span> (6h). Grid experiment needs a contiguous 5m series; the run stopped instead of forward-filling.</div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Stage</th><th>Result</th></tr></thead>
+              <tbody>
+                <tr><td>Load snapshot</td><td><span class="badge ok">ok</span> 41.2M events</td></tr>
+                <tr><td>Warm-up</td><td><span class="badge ok">ok</span> 30d</td></tr>
+                <tr><td>Replay</td><td><span class="badge err">stopped</span> 37 / 61 trades</td></tr>
+                <tr><td>Metrics</td><td><span class="badge ghost">skipped</span> partial output discarded</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note err"><strong>No partial metrics are published.</strong> A partly-replayed run never appears as a result.</div>
+          <div class="row"><button class="btn sm">Retry with snap-0931</button><a class="btn ghost sm" href="20-chains.html">Inspect Base gap</a></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

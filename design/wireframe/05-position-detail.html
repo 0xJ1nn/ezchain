@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Position detail · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="position-detail">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs"><a href="04-positions.html">Positions</a> / BONK / pos_7f3a91</div>
+        <h1>Bonk · long <span class="badge ok" style="font-size:11px;vertical-align:2px">RIDING</span></h1>
+        <p class="sub">pos_7f3a91 · Solana · Jupiter v6 · Main (hot) · opened 10:42:08 UTC · held 19m. One position, one book: every number below is the server's <span class="mono">PositionView</span>, not a client calculation.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge">PAPER</span>
+        <span class="chip">Momentum v1.2</span>
+        <button class="btn danger">Sell now</button>
+        <button class="btn">Write off</button>
+        <button class="btn">Add note</button>
+        <a class="btn" href="18-ledger.html?ref=pos_7f3a91">Export</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">PnL</div><div class="value ok">+42.6%</div><div class="meta"><span class="delta up">+$38.12</span> vs $89.48 in</div></div>
+      <div class="stat"><div class="label">Equity</div><div class="value">$127.60</div><div class="meta">banked + mark of remainder</div></div>
+      <div class="stat"><div class="label">Banked</div><div class="value sm">$46.20</div><div class="meta">30.5% of bag · BANK L1</div></div>
+      <div class="stat"><div class="label">Realized</div><div class="value sm ok">+$18.90</div><div class="meta">fees $0.17</div></div>
+      <div class="stat"><div class="label">Unrealized</div><div class="value sm ok">+$19.22</div><div class="meta">mark $0.00003142</div></div>
+      <div class="stat"><div class="label">At risk to stop</div><div class="value sm">$40.98</div><div class="meta">1.2% of equity</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>BONK / USD</h2>
+            <span class="sub">marks 1s · entry fallback unused · levels are immutable for this position</span>
+            <div class="right">
+              <span class="badge ghost">v3 of exit plan</span>
+              <div class="seg"><button>1m</button><button aria-pressed="true">5m</button><button>15m</button><button>1h</button></div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="chart" aria-label="BONK price with entry, stop, trail, arm, bank and peak levels; live price 0.00003142">
+              <svg viewBox="0 0 900 320" role="img">
+                <line class="gridline" x1="0" y1="52" x2="840" y2="52"/>
+                <line class="gridline" x1="0" y1="97" x2="840" y2="97"/>
+                <line class="gridline" x1="0" y1="142" x2="840" y2="142"/>
+                <line class="gridline" x1="0" y1="187" x2="840" y2="187"/>
+                <line class="gridline" x1="0" y1="232" x2="840" y2="232"/>
+                <line class="axis" x1="840" y1="8" x2="840" y2="300"/>
+                <text class="axis-text" x="848" y="55">0.000040</text>
+                <text class="axis-text" x="848" y="100">0.000035</text>
+                <text class="axis-text" x="848" y="145">0.000030</text>
+                <text class="axis-text" x="848" y="190">0.000025</text>
+                <text class="axis-text" x="848" y="235">0.000020</text>
+
+                <line class="level level-entry" x1="0" y1="196" x2="840" y2="196"/>
+                <text class="level-label" x="6" y="192">ENTRY $0.00002400</text>
+                <line class="level level-stop" x1="0" y1="272" x2="840" y2="272"/>
+                <text class="level-label err" x="6" y="267">STOP −35% $0.00001560</text>
+                <line class="level level-arm" x1="0" y1="142" x2="840" y2="142"/>
+                <text class="level-label" x="6" y="138">ARM +25% $0.00003000</text>
+                <line class="level level-trail" x1="0" y1="133" x2="840" y2="133"/>
+                <text class="level-label" x="470" y="129">TRAIL −25% FROM PEAK $0.00003096</text>
+                <line class="level" x1="0" y1="46" x2="840" y2="46"/>
+                <text class="level-label" x="6" y="42">BANK L1 $0.00004070 · filled</text>
+                <text class="level-label muted" x="640" y="42">RUNG +125% hidden (see note)</text>
+
+                <polyline class="series" points="0,196 20,193 40,190 60,186 80,180 100,183 120,174 140,168 160,172 180,160 200,150 220,144 240,136 260,128 280,120 300,112 320,104 340,96 360,88 380,78 400,68 420,58 440,48 460,42 480,38 500,45 520,56 540,70 560,84 580,96 600,104 620,110 640,106 660,100 680,108 700,116 720,122 740,118 760,124 780,127 800,125 820,128 840,129"/>
+
+                <circle class="dot" cx="480" cy="38" r="3"/>
+                <circle class="peak" cx="480" cy="38" r="7"/>
+                <text class="num-label" x="386" y="30">PEAK +72.0% $0.00004128</text>
+                <circle class="dot" cx="440" cy="48" r="2.5"/>
+                <text class="level-label" x="300" y="62">BANK FILL 10:53:44</text>
+                <line class="crosshair" x1="840" y1="8" x2="840" y2="300"/>
+                <circle class="dot" cx="840" cy="129" r="3.5"/>
+                <text class="num-label" x="742" y="150">$0.00003142</text>
+
+                <text class="axis-text" x="2" y="312">10:42</text>
+                <text class="axis-text" x="270" y="312">10:49</text>
+                <text class="axis-text" x="545" y="312">10:56</text>
+                <text class="axis-text" x="790" y="312">11:01</text>
+              </svg>
+            </div>
+            <div class="between mt-8">
+              <div class="chart-legend">
+                <span class="l-entry"><i></i>Entry</span>
+                <span class="l-stop"><i></i>Stop</span>
+                <span class="l-trail"><i></i>Trail</span>
+                <span class="l-arm"><i></i>Arm / ladder</span>
+                <span><i style="border-color:var(--line-2)"></i>Bank L1</span>
+              </div>
+              <span class="small muted">Mark: Jupiter v6 · 1s · fallback: last entry quote</span>
+            </div>
+            <div class="note mt-12">Level-reveal rule: a ladder level is drawn only when <strong>75%</strong> of the distance from the previous level is covered. <strong>RUNG +125% ($0.00005400)</strong> is hidden — it reveals at <span class="mono">$0.00005066</span>, and the mark is <span class="mono">$0.00003142</span>. BANK L1 is drawn because it was reached and filled.</div>
+          </div>
+        </section>
+
+        <div class="tabs">
+          <a class="tab on" href="#overview">Overview</a>
+          <a class="tab" href="#fills">Fills <span class="count">2</span></a>
+          <a class="tab" href="#journal">Journal <span class="count">6</span></a>
+          <a class="tab" href="#notes">Notes <span class="count">2</span></a>
+          <a class="tab" href="#raw">Raw event</a>
+        </div>
+
+        <section class="panel" id="overview">
+          <div class="panel-head"><h2>Market</h2><span class="sub">each cell carries source and age; unknown stays <span class="mono">—</span></span></div>
+          <div class="tile-market" style="border-top:1px solid var(--line)">
+            <div class="mcell"><div class="k">Price</div><div class="v">$0.00003142</div><div class="src"><span class="dot-live"></span>jupiter · 1s</div></div>
+            <div class="mcell"><div class="k">MCap</div><div class="v">$2.41B</div><div class="src"><span class="dot-live"></span>dexscreener · 4s</div></div>
+            <div class="mcell"><div class="k">Liquidity</div><div class="v">$4.20M</div><div class="src"><span class="dot-live"></span>pools · 9s</div></div>
+            <div class="mcell"><div class="k">24h vol</div><div class="v">$412.8M</div><div class="src">dexscreener · 38s</div></div>
+            <div class="mcell"><div class="k">Holders</div><div class="v">812.4K</div><div class="src">helius · 2m</div></div>
+            <div class="mcell"><div class="k">24h</div><div class="v err">−3.4%</div><div class="src">dexscreener · 38s</div></div>
+          </div>
+
+          <div class="panel-body">
+            <div class="tile-money" style="border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:12px">
+              <div class="money-cell"><div class="k">In</div><div class="v">$89.48</div></div>
+              <div class="money-cell"><div class="k">Banked</div><div class="v ok">$46.20</div></div>
+              <div class="money-cell"><div class="k">Realized</div><div class="v ok">+$18.90</div></div>
+              <div class="money-cell"><div class="k">Unreal</div><div class="v ok">+$19.22</div></div>
+            </div>
+            <div class="grid cols-4 small">
+              <div><span class="micro">Bag remaining</span><div class="mono">2,591,333 BONK</div></div>
+              <div><span class="micro">Cost basis held</span><div class="mono">$62.18</div></div>
+              <div><span class="micro">Mark value</span><div class="mono">$81.40</div></div>
+              <div><span class="micro">Equity</span><div class="mono">$127.60</div></div>
+            </div>
+
+            <div class="tile-ladder mt-12" style="border:1px solid var(--line);border-radius:var(--r-sm)">
+              <div class="ladder-top">
+                <span class="badge info">RIDING</span>
+                <span class="small muted">bag <span class="mono">69.5%</span> · next level</span>
+                <span class="tag" style="margin-left:auto">RUNG +125% · NOT REVEALED</span>
+              </div>
+              <div class="ladder">
+                <div class="step"><span class="tick on"></span><span class="lbl on">ARM +25</span><span class="bar"></span></div>
+                <div class="step"><span class="tick on"></span><span class="lbl on">BANK +69</span><span class="bar"></span></div>
+                <div class="step"><span class="tick next"></span><span class="lbl">RUNG +125</span><span class="bar"></span></div>
+                <div class="step"><span class="tick"></span><span class="lbl">FINAL +500</span></div>
+              </div>
+              <div class="small muted mt-8">BANK L1 sold 30.5% of the bag at $0.00004070. Remaining 69.5% trails; no max hold while state is RIDING.</div>
+            </div>
+
+            <div class="between mt-16 mb-8">
+              <h3 style="font-size:12px">Exit plan</h3>
+              <span class="row"><span class="badge ghost">immutable per position</span><span class="badge ghost">v3 · written at entry</span></span>
+            </div>
+            <div class="table-wrap">
+              <table class="table compact">
+                <thead><tr><th>Level</th><th class="num">Price</th><th class="num">vs entry</th><th>Action</th><th>State</th><th class="num">Size</th></tr></thead>
+                <tbody>
+                  <tr><td>Stop</td><td class="num mono">0.00001560</td><td class="num err">−35.0%</td><td>sell 100%</td><td><span class="badge ghost">armed</span></td><td class="num">2,591,333</td></tr>
+                  <tr><td>Trail</td><td class="num mono">0.00003096</td><td class="num">+29.0%</td><td>sell 100% on close</td><td><span class="badge warn">1.5% cushion</span></td><td class="num">2,591,333</td></tr>
+                  <tr><td>Arm</td><td class="num mono">0.00003000</td><td class="num">+25.0%</td><td>arm trail, no sale</td><td><span class="badge ok">done</span></td><td class="num">—</td></tr>
+                  <tr><td>Bank L1</td><td class="num mono">0.00004070</td><td class="num">+69.6%</td><td>sell 30.5%</td><td><span class="badge ok">filled 10:53:44</span></td><td class="num">1,137,000</td></tr>
+                  <tr><td>Rung L2</td><td class="num mono">0.00005400</td><td class="num">+125.0%</td><td>sell 50% of remainder</td><td><span class="badge ghost">pending</span></td><td class="num">1,295,666</td></tr>
+                  <tr><td>Final</td><td class="num mono">0.00014400</td><td class="num">+500.0%</td><td>sell 100%</td><td><span class="badge ghost">pending</span></td><td class="num">rest</td></tr>
+                  <tr><td>Max hold</td><td class="num">—</td><td class="num">—</td><td>none while RIDING</td><td><span class="badge ghost">n/a</span></td><td class="num">—</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note mt-12">Levels are derived once at entry from ATR and the venue's executable fill curve, then frozen. Editing them creates a new plan version and a ledger reason — the table shown is the version the executor is running.</div>
+
+            <div class="tile-prov" style="border:1px solid var(--line);border-radius:var(--r-sm);margin-top:12px">
+              <span class="badge ok">mark live · 1s</span>
+              <span class="badge ok">exec ✓</span>
+              <span class="badge ok">gate ✓</span>
+              <span class="badge ghost">rule momentum_v1</span>
+              <span class="badge ghost">sell quote verified 4s</span>
+              <span class="net ok">net +0.257 SOL after fees</span>
+            </div>
+            <div class="row mt-12">
+              <button class="btn danger">Sell now · $81.40</button>
+              <button class="btn">Write off (paper only)</button>
+              <button class="btn">Add note</button>
+              <a class="btn" href="18-ledger.html">Export journal</a>
+              <span class="small muted">Sell now uses one click and the last exact full-size quote (4s old).</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="fills">
+          <div class="panel-head"><h2>Fills</h2><span class="sub">2 fills · venue receipts verified</span>
+            <div class="right"><span class="badge ghost">paper broadcaster</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Time</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Notional</th><th class="num">Fee</th><th>Tx</th><th>Venue</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">10:42:08</td><td><span class="badge ok">BUY</span></td><td class="num mono">3,728,333</td><td class="num mono">0.00002400</td><td class="num">$89.48</td><td class="num muted">$0.09</td><td class="mono small">5Kd2…9fQ1</td><td>Jupiter v6</td></tr>
+                <tr><td class="mono">10:53:44</td><td><span class="badge">SELL</span></td><td class="num mono">1,137,000</td><td class="num mono">0.00004070</td><td class="num">$46.28</td><td class="num muted">$0.08</td><td class="mono small">3Zx8…k2Lm</td><td>Jupiter v6</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between"><span>Remaining 2,591,333 BONK · avg cost $0.00002400</span><span>fees $0.17 · slippage 0.4bp entry / 0.9bp exit</span></div>
+        </section>
+
+        <section class="panel" id="journal">
+          <div class="panel-head"><h2>Journal</h2><span class="sub">cash leg for this position · net of venue fees</span>
+            <div class="right"><span class="mono small">running −$89.48 → +$37.95</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time</th><th>Reason</th><th>Account</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th><th class="mono">Ref</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">10:42:08</td><td class="mono small">ENTRY_FILL</td><td>position / cash</td><td class="num">$89.48</td><td class="num">—</td><td class="num">−$89.48</td><td class="mono small">e_4102</td></tr>
+                <tr><td class="mono">10:42:08</td><td class="mono small">VENUE_FEE</td><td>fees</td><td class="num">$0.09</td><td class="num">—</td><td class="num">−$89.57</td><td class="mono small">e_4103</td></tr>
+                <tr><td class="mono">10:53:44</td><td class="mono small">BANK_L1</td><td>cash</td><td class="num">—</td><td class="num">$46.28</td><td class="num">−$43.29</td><td class="mono small">e_4117</td></tr>
+                <tr><td class="mono">10:53:44</td><td class="mono small">VENUE_FEE</td><td>fees</td><td class="num">$0.08</td><td class="num">—</td><td class="num">−$43.37</td><td class="mono small">e_4118</td></tr>
+                <tr><td class="mono">10:53:44</td><td class="mono small">REALIZED_PNL</td><td>realized</td><td class="num">—</td><td class="num">$18.90</td><td class="num">−$24.47</td><td class="mono small">e_4119</td></tr>
+                <tr><td class="mono">11:01:02</td><td class="mono small">MARK_TO_MARKET</td><td>unrealized</td><td class="num">—</td><td class="num">$81.40</td><td class="num">$37.95</td><td class="mono small">e_4120</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Journal balance is net of $0.17 fees; the headline PnL (+$38.12) is gross. Both are projections of the same ledger, shown with their basis.</div>
+        </section>
+
+        <section class="panel" id="notes">
+          <div class="panel-head"><h2>Notes</h2><span class="sub">workspace-visible · not part of the ledger</span>
+            <div class="right"><button class="btn sm">Add note</button></div>
+          </div>
+          <div class="panel-body stack">
+            <div class="note"><strong>JW · 10:44</strong> — Entry confirmed against a full-size sell ($89.48 → $88.94, 0.6% impact). Size inside the 1.5% equity cap.</div>
+            <div class="note"><strong>JW · 10:54</strong> — Bank L1 filled at $0.00004070. Leaving the rest to the trail; not raising the stop by hand.</div>
+            <div class="panel dashed">
+              <div class="panel-body small muted">Add note — body, optional tag (thesis / review / incident), visibility (workspace / private). Notes never mutate the position.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="raw">
+          <div class="panel-head"><h2>Raw event</h2><span class="sub">last state transition · what the executor actually saw</span>
+            <div class="right"><a class="btn sm" href="24-developer.html">Event log</a></div>
+          </div>
+          <div class="panel-body">
+            <pre class="mono small" style="margin:0;overflow:auto;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:10px">{
+  "type": "position.state_changed",
+  "position_id": "pos_7f3a91",
+  "at": "2026-10-20T10:53:44.118Z",
+  "from": "PRE_BANK", "to": "RIDING",
+  "reason": "BANK_L1",
+  "fill": { "qty": 1137000, "price": 0.00004070, "notional_usd": 46.28, "fee_usd": 0.08 },
+  "bag_after": 0.6948, "plan_version": 3,
+  "mark": { "value": 0.00004058, "source": "jupiter", "age_ms": 900 }
+}</pre>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Position facts</h2></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <tbody>
+                <tr><td class="muted">Position</td><td class="mono right">pos_7f3a91</td></tr>
+                <tr><td class="muted">Token</td><td class="right">BONK · <a class="mono small" href="07-token.html">DezXAZ…W1u</a></td></tr>
+                <tr><td class="muted">Chain / venue</td><td class="right">Solana / Jupiter v6</td></tr>
+                <tr><td class="muted">Wallet</td><td class="right">Main (hot) · <a class="small" href="09-wallet-detail.html">open</a></td></tr>
+                <tr><td class="muted">Mode</td><td class="right"><span class="badge">PAPER</span></td></tr>
+                <tr><td class="muted">Strategy</td><td class="right"><a href="13-strategy-detail.html">Momentum v1.2</a></td></tr>
+                <tr><td class="muted">Opened / held</td><td class="right mono">10:42:08 · 19m</td></tr>
+                <tr><td class="muted">Qty</td><td class="right mono">3,728,333.4</td></tr>
+                <tr><td class="muted">Avg entry</td><td class="right mono">$0.00002400</td></tr>
+                <tr><td class="muted">Mark</td><td class="right mono">$0.00003142 <span class="dot-live"></span></td></tr>
+                <tr><td class="muted">Exit plan</td><td class="right"><span class="badge ghost">v3</span> <span class="badge ghost">immutable</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Risk contribution</h2><span class="sub">1.2% of equity at stop</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span class="muted">Mark value</span><span class="mono">$81.40</span></div>
+            <div class="between small"><span class="muted">Share of portfolio exposure</span><span class="mono">6.3% of $1,284.20</span></div>
+            <div class="between small"><span class="muted">Stop distance</span><span class="mono err">−50.3%</span></div>
+            <div class="between small"><span class="muted">Loss if stop fills</span><span class="mono">−$40.98</span></div>
+            <div class="between small"><span class="muted">Slippage buffer at stop</span><span class="mono warn">thin · 0.9% depth</span></div>
+            <div class="meter mt-8"><div class="fill" style="width:12%"></div></div>
+            <div class="small muted">1.2% of $3,482.16 equity · cap 2.0% per position</div>
+            <a class="small mt-8" href="17-risk.html">Open risk limits →</a>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Related signals</h2><div class="right"><a class="btn sm" href="14-signals.html">Feed</a></div></div>
+          <div class="panel-body list">
+            <div class="list-row"><span class="badge info">score 0.71</span><div class="grow"><div class="title">Volume breakout · BONK</div><div class="sub">1h vol 3.2× 24h median · 10:47</div></div></div>
+            <div class="list-row"><span class="badge ghost">0.44</span><div class="grow"><div class="title">Holder growth slowing</div><div class="sub">+1.8K/24h vs +6.4K prior · 09:12</div></div></div>
+            <div class="list-row"><span class="badge warn">0.28</span><div class="grow"><div class="title">Whale net sell · 4 wallets</div><div class="sub">−$1.2M in 30m · 10:58</div></div></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Same token elsewhere</h2><span class="sub">1 other position</span></div>
+          <div class="panel-body list">
+            <div class="list-row">
+              <span class="token" style="width:22px;height:22px;font-size:8px">BO</span>
+              <div class="grow"><div class="title">Ledger (hw) · watch</div><div class="sub">412,000 BONK · $12.94 · not tradeable</div></div>
+              <span class="badge ghost">read-only</span>
+            </div>
+            <div class="list-row"><span class="small muted">Directional exposure combined: $94.34 (2.7% of equity).</span></div>
+          </div>
+        </section>
+
+        <section class="panel dashed">
+          <div class="panel-body small muted">Actions require no confirmation except <strong>write off</strong>, which is paper-only, two-step, and writes <span class="mono">WRITE_OFF</span> with a reason. A sell with no route stays a failed intent, never a silent close.</div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

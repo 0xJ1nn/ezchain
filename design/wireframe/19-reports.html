@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reports · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="reports">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Trade / Reports</div>
+        <h1>Reports</h1>
+        <p class="sub">Statements derived from the ledger at a fixed watermark, so a report and the Activity page always agree. Cost basis is FIFO unless a report says otherwise.</p>
+      </div>
+      <div class="page-actions">
+        <span class="chip">Period <span class="mono">Oct 1 – Oct 20</span></span>
+        <a class="btn" href="18-ledger.html?format=csv">Open ledger</a>
+        <button class="btn primary">Generate report</button>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="table-toolbar">
+        <div class="seg" aria-label="Period">
+          <button>7D</button><button aria-pressed="true">MTD</button><button>QTD</button><button>YTD</button><button>Custom</button>
+        </div>
+        <span class="field" style="min-width:112px"><input class="input mono" value="2026-10-01" aria-label="From"></span>
+        <span class="small muted">→</span>
+        <span class="field" style="min-width:112px"><input class="input mono" value="2026-10-20" aria-label="To"></span>
+        <span class="field" style="min-width:168px"><select class="select" aria-label="Report type"><option>PnL statement</option><option>Tax lots</option><option>Fee summary</option><option>Exposure history</option></select></span>
+        <span class="field" style="min-width:112px"><select class="select" aria-label="Cost basis"><option>Basis: FIFO</option><option>Basis: LIFO</option><option>Basis: HIFO</option></select></span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="row"><span class="checkbox checked" role="checkbox" aria-checked="true" aria-label="Include internal transfers"></span><span class="small">Internal transfers</span></span>
+        <span class="tag">watermark #41,230</span>
+      </div>
+      <div class="panel-foot between"><span>Spot only · CEX read-only balances included · unrealized marks at 11:01:02</span><span>Not tax advice · see disclaimer</span></div>
+    </section>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Realized</div><div class="value sm ok">+$261.40</div><div class="meta">MTD · 41 disposals</div></div>
+      <div class="stat"><div class="label">Unrealized</div><div class="value sm ok">+$86.40</div><div class="meta">4 open positions + spot</div></div>
+      <div class="stat"><div class="label">Fees</div><div class="value sm">$58.24</div><div class="meta">venue, network, rent, CEX</div></div>
+      <div class="stat"><div class="label">Net after fees</div><div class="value sm ok">+$289.56</div><div class="meta">+8.3% on $3,482.16</div></div>
+      <div class="stat"><div class="label">Report basis</div><div class="value sm">FIFO</div><div class="meta">all short-term · 0 long-term</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>PnL statement · Oct 1 – Oct 20, 2026</h2>
+            <span class="sub">USD · per asset · after fees</span>
+            <div class="right">
+              <a class="btn sm" href="19-reports.html?format=csv">CSV</a>
+              <a class="btn sm" href="19-reports.html?format=parquet">Parquet</a>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Asset</th><th>Chain</th><th class="num">Realized</th><th class="num">Unrealized</th><th class="num">Net</th><th class="num">Trades</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">BONK</td><td>Solana</td><td class="num ok">+$118.42</td><td class="num ok">+$19.22</td><td class="num ok">+$137.64</td><td class="num">14</td></tr>
+                <tr><td class="strong">JUP</td><td>Solana</td><td class="num ok">+$96.18</td><td class="num muted">$0.00</td><td class="num ok">+$96.18</td><td class="num">9</td></tr>
+                <tr><td class="strong">AERO</td><td>Base</td><td class="num ok">+$52.60</td><td class="num err">−$6.12</td><td class="num ok">+$46.48</td><td class="num">6</td></tr>
+                <tr><td class="strong">DEGEN</td><td>Base</td><td class="num ok">+$26.12</td><td class="num muted">$0.00</td><td class="num ok">+$26.12</td><td class="num">3</td></tr>
+                <tr><td class="strong">TOSHI</td><td>Base</td><td class="num ok">+$18.44</td><td class="num muted">$0.00</td><td class="num ok">+$18.44</td><td class="num">2</td></tr>
+                <tr><td class="strong">WIF</td><td>Solana</td><td class="num err">−$38.20</td><td class="num muted">$0.00</td><td class="num err">−$38.20</td><td class="num">4</td></tr>
+                <tr><td class="strong">MOCHI</td><td>Solana</td><td class="num err">−$12.16</td><td class="num muted">$0.00</td><td class="num err">−$12.16</td><td class="num">2</td></tr>
+                <tr><td class="strong">SCAM</td><td>Solana</td><td class="num muted">$0.00</td><td class="num err">−$142.30</td><td class="num err">−$142.30</td><td class="num">1</td></tr>
+                <tr><td class="strong">SOL <span class="sub">spot</span></td><td>Solana</td><td class="num muted">$0.00</td><td class="num ok">+$215.60</td><td class="num ok">+$215.60</td><td class="num">—</td></tr>
+              </tbody>
+              <tfoot>
+                <tr><td class="strong">Total</td><td></td><td class="num strong">+$261.40</td><td class="num strong">+$86.40</td><td class="num strong">+$347.80</td><td class="num">41</td></tr>
+              </tfoot>
+            </table>
+          </div>
+          <div class="panel-body" style="border-top:1px solid var(--line)">
+            <div class="split-even">
+              <div>
+                <div class="micro mb-8">Fee breakdown</div>
+                <table class="table compact">
+                  <tbody>
+                    <tr><td>Venue / swap</td><td class="num">$31.42</td><td class="num muted">54.0%</td></tr>
+                    <tr><td>Network / gas</td><td class="num">$18.66</td><td class="num muted">32.0%</td></tr>
+                    <tr><td>Account rent (ATA)</td><td class="num">$6.04</td><td class="num muted">10.4%</td></tr>
+                    <tr><td>CEX / conversion</td><td class="num">$2.12</td><td class="num muted">3.6%</td></tr>
+                    <tr><td class="strong">Fees total</td><td class="num strong">$58.24</td><td class="num muted">100%</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="stack-sm small">
+                <div class="between"><span class="muted">Realized gross</span><span class="mono">+$261.40</span></div>
+                <div class="between"><span class="muted">Fees</span><span class="mono">−$58.24</span></div>
+                <div class="between"><span class="muted">Realized net</span><span class="mono ok">+$203.16</span></div>
+                <div class="between"><span class="muted">Unrealized</span><span class="mono ok">+$86.40</span></div>
+                <div class="hr" style="margin:8px 0"></div>
+                <div class="between"><span class="strong">Net change</span><span class="mono ok strong">+$289.56</span></div>
+                <div class="note mt-8">The $0.02 rent-dust adjustment is excluded from PnL and listed separately as a reconciliation item.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Tax lots · FIFO</h2>
+            <span class="sub">7 of 41 disposals in period · all short-term</span>
+            <div class="right"><span class="badge ghost">estimated</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Asset</th><th>Acquired</th><th>Disposed</th><th class="num">Qty</th><th class="num">Proceeds</th><th class="num">Basis</th><th class="num">Held</th><th class="num">Gain / loss</th><th>Term</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">BONK</td><td class="mono">2026-10-20</td><td class="mono">2026-10-20</td><td class="num mono">1,137,000</td><td class="num">$46.28</td><td class="num">$27.38</td><td class="num">0d</td><td class="num ok">+$18.90</td><td><span class="badge ghost">short</span></td></tr>
+                <tr><td class="strong">AERO</td><td class="mono">2026-09-02</td><td class="mono">2026-10-06</td><td class="num mono">1,240.00</td><td class="num">$1,842.60</td><td class="num">$1,790.00</td><td class="num">34d</td><td class="num ok">+$52.60</td><td><span class="badge ghost">short</span></td></tr>
+                <tr><td class="strong">JUP</td><td class="mono">2026-09-28</td><td class="mono">2026-10-12</td><td class="num mono">47.98</td><td class="num">$138.40</td><td class="num">$120.00</td><td class="num">14d</td><td class="num ok">+$18.40</td><td><span class="badge ghost">short</span></td></tr>
+                <tr><td class="strong">TOSHI</td><td class="mono">2026-10-01</td><td class="mono">2026-10-03</td><td class="num mono">271,439</td><td class="num">$68.44</td><td class="num">$50.00</td><td class="num">2d</td><td class="num ok">+$18.44</td><td><span class="badge ghost">short</span></td></tr>
+                <tr><td class="strong">DEGEN</td><td class="mono">2026-09-12</td><td class="mono">2026-09-12</td><td class="num mono">12,400</td><td class="num">$214.12</td><td class="num">$188.00</td><td class="num">0d</td><td class="num ok">+$26.12</td><td><span class="badge ghost">short</span></td></tr>
+                <tr><td class="strong">WIF</td><td class="mono">2026-10-20</td><td class="mono">2026-10-20</td><td class="num mono">38.65</td><td class="num">$71.20</td><td class="num">$80.00</td><td class="num">0d</td><td class="num err">−$8.80</td><td><span class="badge ghost">short</span></td></tr>
+                <tr><td class="strong">MOCHI</td><td class="mono">2026-10-12</td><td class="mono">2026-10-14</td><td class="num mono">4,220</td><td class="num">$41.84</td><td class="num">$54.00</td><td class="num">2d</td><td class="num err">−$12.16</td><td><span class="badge ghost">short</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot between">
+            <span>Shown lots: +$113.50 net · remaining 34 lots + 4 open positions in the export</span>
+            <span>Open lot (SCAM) excluded: no disposal, no executable price</span>
+          </div>
+        </section>
+
+        <section class="panel dashed">
+          <div class="panel-body">
+            <div class="row mb-8"><span class="badge warn">not tax advice</span><span class="badge ghost">self-reported data</span></div>
+            <div class="small muted">Reports are a derived view of the ezCHAIN ledger at watermark <span class="mono">#41,230</span>; they are not a tax return or professional advice. Cost basis follows the selected method applied across all wallets in the workspace. Transfers between your own wallets are excluded from gains; unreconciled dust is listed as an adjustment, not a disposal. Verify with a qualified adviser before filing — jurisdiction rules differ, and paper-mode fills are simulated, not executed.</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Generated reports</h2><span class="sub">last 24h</span>
+            <div class="right"><button class="btn sm">Refresh</button></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Report</th><th>Period</th><th>Status</th><th class="num">Size</th></tr></thead>
+              <tbody>
+                <tr><td><span class="strong">PnL statement</span><div class="sub">csv + parquet · FIFO</div></td><td class="mono small">Oct 1–20</td><td><span class="badge ok">ready</span></td><td class="num mono">32 KB</td></tr>
+                <tr><td><span class="strong">Tax lots</span><div class="sub">csv</div></td><td class="mono small">YTD 2026</td><td><span class="badge ok">ready</span></td><td class="num mono">18 KB</td></tr>
+                <tr><td><span class="strong">Fee summary</span><div class="sub">parquet</div></td><td class="mono small">Sep 2026</td><td><span class="badge ok">ready</span></td><td class="num mono">6 KB</td></tr>
+                <tr><td><span class="strong">Exposure history</span><div class="sub">hourly · 30d</div></td><td class="mono small">Sep 20–Oct 20</td><td><span class="badge info">running 62%</span></td><td class="num mono">—</td></tr>
+                <tr><td><span class="strong">PnL statement</span><div class="sub">csv</div></td><td class="mono small">Q3 2026</td><td><span class="badge err">failed</span><div class="sub">LEDGER_GAP 08-14</div></td><td class="num mono">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">A failed report names its blocking reason; it never renders a partial statement as complete.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Export history</h2><span class="sub">who took what, and from which watermark</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>At</th><th>By</th><th>Format</th><th class="num">Rows</th><th class="num">Watermark</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">10:58</td><td>JW</td><td><span class="tag">csv</span></td><td class="num">41,229</td><td class="num mono">41,229</td></tr>
+                <tr><td class="mono small">09:41</td><td>JW</td><td><span class="tag">parquet</span></td><td class="num">41,208</td><td class="num mono">41,208</td></tr>
+                <tr><td class="mono small">Yesterday 22:10</td><td>scheduler</td><td><span class="tag">csv</span></td><td class="num">41,102</td><td class="num mono">41,102</td></tr>
+                <tr><td class="mono small">Oct 18 18:04</td><td>JW</td><td><span class="tag">parquet</span></td><td class="num">40,884</td><td class="num mono">40,884</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between"><span>Exports are immutable snapshots</span><a class="small" href="23-security.html">Audit log →</a></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>What is inside</h2></div>
+          <div class="panel-body stack-sm small muted">
+            <div><span class="ink">PnL statement</span> — realized and unrealized per asset, fee breakdown, net change, period and watermark.</div>
+            <div><span class="ink">Tax lots</span> — acquisition date, disposal date, holding period, proceeds, basis, gain/loss, term.</div>
+            <div><span class="ink">Fee summary</span> — venue, network, rent and CEX fees by asset and chain.</div>
+            <div><span class="ink">Exposure history</span> — hourly exposure by chain, strategy and token.</div>
+            <div class="mt-8">CSV is human-readable; Parquet keeps typed columns and the sequence number for replay.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

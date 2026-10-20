@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Integrations · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="integrations">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Integrations</div>
+        <h1>Integrations</h1>
+        <p class="sub">Credentials are references, never values. Read-only is the default; trade scope is a separate grant. Revoking stops the next intent, not the one in flight.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="23-security.html">Audit log</a>
+        <a class="btn primary" href="#connect">Add integration</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Connected</div><div class="value sm">7</div><div class="meta">3 venues · 3 data · 1 webhook</div></div>
+      <div class="stat"><div class="label">Needs attention</div><div class="value sm warn">4</div><div class="meta">key · verify · expired · webhook</div></div>
+      <div class="stat"><div class="label">Read-only</div><div class="value sm">5</div><div class="meta">no order path</div></div>
+      <div class="stat"><div class="label">Trade scope</div><div class="value sm">0</div><div class="meta">none granted · paper mode</div></div>
+      <div class="stat"><div class="label">Webhook success</div><div class="value sm">99.1%</div><div class="meta">1,208 deliveries · 7d</div></div>
+      <div class="stat"><div class="label">Secrets due</div><div class="value sm">1</div><div class="meta">rotated 30d: 2</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>DEX &amp; aggregators</h2><span class="sub">quote + swap build</span><div class="right"><span class="badge ghost">4</span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Venue</th><th>Chains</th><th>Scopes</th><th>Last used</th><th>Status</th><th class="right">Credential</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="strong">Jupiter</span><span class="sub" style="display:block">key v3 · 600 rpm</span></td>
+                  <td class="small">Solana</td>
+                  <td class="small mono">quote, swap.build</td>
+                  <td class="small mono">12:41:02</td>
+                  <td><span class="badge ok">connected</span></td>
+                  <td class="right nowrap"><button class="btn sm">Rotate</button> <button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">Uniswap v3/v4</span><span class="sub" style="display:block">no key · wallet grant</span></td>
+                  <td class="small">Ethereum · Base · Arbitrum · Polygon</td>
+                  <td class="small mono">quote, swap.build</td>
+                  <td class="small mono">12:40:58</td>
+                  <td><span class="badge ok">connected</span></td>
+                  <td class="right nowrap"><button class="btn sm">Rotate</button> <button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">1inch</span><span class="sub" style="display:block">API key required</span></td>
+                  <td class="small">Ethereum · Arbitrum</td>
+                  <td class="small mono">quote</td>
+                  <td class="small muted">never</td>
+                  <td><span class="badge warn">needs key</span></td>
+                  <td class="right"><button class="btn sm primary">Add key</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">PancakeSwap</span><span class="sub" style="display:block">venue adapter available</span></td>
+                  <td class="small">BNB Chain</td>
+                  <td class="small muted">—</td>
+                  <td class="small muted">never</td>
+                  <td><span class="badge ghost">not enabled</span></td>
+                  <td class="right"><button class="btn sm">Enable</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">A DEX integration can quote without credentials. Swap building still needs a wallet policy and a sell-side quote, even for buys.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Centralised exchanges</h2><span class="sub">read-only by default</span><div class="right"><span class="badge ghost">3</span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Exchange</th><th>Scopes</th><th>Last used</th><th>Key</th><th>Status</th><th class="right">Action</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="strong">Binance</span><span class="sub" style="display:block">API key · IP 84.22.10.7</span></td>
+                  <td class="small mono">read:balances, read:orders</td>
+                  <td class="small mono">12:41</td>
+                  <td class="small">added 09-12<br>no expiry</td>
+                  <td><span class="badge warn">verify key</span></td>
+                  <td class="right nowrap"><button class="btn sm">Rotate</button> <button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">Coinbase</span><span class="sub" style="display:block">not connected</span></td>
+                  <td class="small muted">—</td>
+                  <td class="small muted">never</td>
+                  <td class="small muted">—</td>
+                  <td><span class="badge ghost">not connected</span></td>
+                  <td class="right"><button class="btn sm">Connect</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">Bybit</span><span class="sub" style="display:block">key ended 2026-10-02</span></td>
+                  <td class="small mono">read:balances</td>
+                  <td class="small mono">10-02 09:14</td>
+                  <td class="small err">expired</td>
+                  <td><span class="badge err">expired</span></td>
+                  <td class="right nowrap"><button class="btn sm">Rotate</button> <button class="btn sm danger">Revoke</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Keys with withdrawal permission are rejected at validation. Trade scope is granted separately and shows the policy it will obey.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Data providers &amp; webhooks</h2><span class="sub">all reads carry source + age</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Provider</th><th>Scopes</th><th>Usage</th><th>Last used</th><th>Status</th><th class="right"></th></tr></thead>
+              <tbody>
+                <tr><td class="strong">DexScreener</td><td class="small mono">read:markets</td><td class="small mono">public · 60 rpm</td><td class="small mono">12:41:00</td><td><span class="badge ok">connected</span></td><td class="right"><button class="btn sm">Rotate</button></td></tr>
+                <tr><td class="strong">Birdeye</td><td class="small mono">read:prices, holders</td><td class="small mono">742 / 1,200 credits</td><td class="small mono">12:40:51</td><td><span class="badge ok">connected</span></td><td class="right"><button class="btn sm">Rotate</button></td></tr>
+                <tr><td class="strong">Helius</td><td class="small mono">rpc, tx.parse</td><td class="small mono">12.4M / 25M credits</td><td class="small mono">12:41:02</td><td><span class="badge ok">connected</span></td><td class="right"><button class="btn sm">Rotate</button></td></tr>
+                <tr><td class="strong">custom webhook</td><td class="small mono">events: fill, position, alert</td><td class="small mono">2 endpoints · 1 failing</td><td class="small mono">12:42:19</td><td><span class="badge warn">degraded</span></td><td class="right"><a class="btn sm" href="#webhook">Inspect</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Provider prices never become execution prices. A stale source marks the value stale instead of carrying the last number forward.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel" id="connect">
+          <div class="panel-head"><h2>Connect flow</h2><span class="sub">nothing gets trade scope by accident</span></div>
+          <div class="panel-body">
+            <div class="steps mb-12">
+              <span class="step-item on"><span class="n">1</span>Choose</span><span class="step-line"></span>
+              <span class="step-item"><span class="n">2</span>Read-only</span><span class="step-line"></span>
+              <span class="step-item"><span class="n">3</span>Scopes</span><span class="step-line"></span>
+              <span class="step-item"><span class="n">4</span>Test</span>
+            </div>
+            <div class="stack-sm small">
+              <div class="row"><span class="badge info">read</span><span>balances, positions, orders — always safe, always first</span></div>
+              <div class="row"><span class="badge warn">trade</span><span>place and cancel inside wallet policy — separate checkbox, separate audit entry</span></div>
+              <div class="row"><span class="badge err">withdraw</span><span>not supported — a key with this permission is rejected</span></div>
+              <div class="hr"></div>
+              <div class="note">Step 4 calls the venue with the requested scopes and shows the raw response. Nothing is enabled until the test succeeds and you confirm.</div>
+              <div class="note warn"><strong>Credential storage.</strong> The API stores <span class="mono">vault:binance/api_key</span>, not the key. Rotating writes a new reference and keeps the old one until the next successful call.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="webhook">
+          <div class="panel-head"><h2>Webhook endpoint</h2><span class="sub">signed, at-least-once</span></div>
+          <div class="panel-body stack-sm">
+            <label class="field"><span>Endpoint URL</span><input class="input mono" value="https://hooks.example.dev/ezchain/fills"></label>
+            <div class="field"><span class="label">Events</span>
+              <div class="row small">
+                <span class="checkbox checked"></span><span>order.filled</span>
+                <span class="checkbox checked"></span><span>position.changed</span>
+                <span class="checkbox checked"></span><span>alert.raised</span>
+                <span class="checkbox"></span><span>risk.decided</span>
+              </div>
+            </div>
+            <div class="field"><span class="label">Signing secret</span>
+              <div class="input mono truncate" style="line-height:28px">whsec_8f3c1a7d9b2e4f60c5a1…</div>
+              <span class="hint">Shown once at creation. Stored as a SHA-256 hash; only the last 4 characters remain visible.</span>
+            </div>
+            <div class="row">
+              <span class="badge warn">copy now</span>
+              <button class="btn sm">Copy secret</button>
+              <button class="btn sm primary">I stored it</button>
+            </div>
+            <div class="note mono small">X-EZ-Signature: t=1760961662,v1=9a6d4b8f…<br>HMAC-SHA256 over <code>&lt;t&gt;.&lt;raw body&gt;</code> · 5 retries · 2xx required</div>
+          </div>
+          <div class="panel-foot">Delivery 12:42:19 returned 502; retry 3 of 5 at 12:47. Disable after 24h of failure, never silently.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>What a scope grants</h2></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Scope</th><th>Can</th><th>Cannot</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge info">read</span></td><td class="small">read balances, positions, orders</td><td class="small muted">place, cancel, transfer</td></tr>
+                <tr><td><span class="badge warn">trade</span></td><td class="small">place/cancel within policy</td><td class="small muted">withdraw, change policy</td></tr>
+                <tr><td><span class="badge">admin</span></td><td class="small">workspace and keys</td><td class="small muted">sign a transaction</td></tr>
+                <tr><td><span class="badge ghost">webhook</span></td><td class="small">receive signed events</td><td class="small muted">call back into the API</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Every use of a credential writes an audit entry: actor, integration, scope, intent id, result.</div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signals · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="signals">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Automate / Signals</div>
+        <h1>Signals</h1>
+        <p class="sub">Market observations from six sources. A signal is an input to a decision — it has a score, an evidence trail and an age. It is never an order.</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn">Pause feed</button>
+        <a class="btn" href="16-backtests.html">Backtest a rule</a>
+        <a class="btn primary" href="#routing">Routing rules</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Signals today</div><div class="value">147</div><div class="meta">6 sources · 4 chains</div></div>
+      <div class="stat"><div class="label">Routed</div><div class="value sm">18</div><div class="meta">12.2% of emitted</div></div>
+      <div class="stat"><div class="label">Suppressed</div><div class="value sm">96</div><div class="meta">noise · stale · low score</div></div>
+      <div class="stat"><div class="label">Median score</div><div class="value sm">64</div><div class="meta">route floor 75</div></div>
+      <div class="stat"><div class="label">Sources healthy</div><div class="value sm ok">5 / 6</div><div class="meta">wallet: 41m stale</div></div>
+      <div class="stat"><div class="label">Oldest unread</div><div class="value sm">8m</div><div class="meta">1 stale</div></div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="panel-body" style="padding:9px 12px">
+        <div class="note"><strong>Signals never place orders.</strong> A signal can only (a) create an intent for a strategy that is already installed and in paper, or (b) raise an alert. Every routed signal stores the score, the source payload hash and the rule that matched, so a later fill can be traced back to the input.</div>
+      </div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="table-toolbar">
+        <div class="seg" aria-label="Source">
+          <button aria-pressed="true">All (147)</button>
+          <button>Flow (41)</button>
+          <button>Price (36)</button>
+          <button>Wallet (22)</button>
+          <button>Social (18)</button>
+          <button>Onchain (19)</button>
+          <button>Model (11)</button>
+        </div>
+        <span class="spacer" style="flex:1"></span>
+        <span class="field" style="min-width:120px"><select class="select"><option>All chains</option><option>Solana</option><option>Base</option><option>Ethereum</option><option>Arbitrum</option></select></span>
+        <span class="field" style="min-width:110px"><select class="select"><option>Min score 0</option><option>Min score 40</option><option>Min score 65</option><option>Min score 75</option></select></span>
+        <span class="field" style="min-width:120px"><select class="select"><option>All states</option><option>Routed</option><option>Unrouted</option><option>Suppressed</option><option>Stale</option></select></span>
+        <span class="badge ghost">window 24h</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead>
+            <tr>
+              <th>Time</th><th>Source</th><th>Signal</th><th>Token · chain</th>
+              <th class="num">Score</th><th>Conf</th><th>Evidence</th><th>Route</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono nowrap">09:42:11</td>
+              <td><span class="badge ghost">flow</span></td>
+              <td>Buy pressure 3.1× 15m median</td>
+              <td><span class="strong">BONK</span><span class="sub" style="display:block">Solana · $0.00003142</span></td>
+              <td class="num">82</td>
+              <td><span class="badge ok">high</span></td>
+              <td class="small muted">$5.4M vol · 71% taker buy · 12 pools</td>
+              <td><a href="13-strategy-detail.html">Momentum v1.2</a><span class="sub" style="display:block">paper · 09:42:12</span></td>
+              <td class="right nowrap"><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">09:41:03</td>
+              <td><span class="badge ghost">wallet</span></td>
+              <td>Accumulation +$84.2k in 1h</td>
+              <td><span class="strong">AERO</span><span class="sub" style="display:block">Base · $1.42</span></td>
+              <td class="num">76</td>
+              <td><span class="badge">med</span></td>
+              <td class="small muted">λ 0x9f…c2 · 3 buys · 62% win 30d</td>
+              <td><a href="13-strategy-detail.html">Momentum v1.2</a><span class="sub" style="display:block">paper · 09:41:05</span></td>
+              <td class="right nowrap"><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">09:38:47</td>
+              <td><span class="badge ghost">price</span></td>
+              <td>Break 20d high $1.42</td>
+              <td><span class="strong">AERO</span><span class="sub" style="display:block">Base · $1.42</span></td>
+              <td class="num">71</td>
+              <td><span class="badge">med</span></td>
+              <td class="small muted">close &gt; 20d high · vol 1.8× avg</td>
+              <td><span class="muted">—</span><span class="sub" style="display:block">rule off · 71 &lt; 75</span></td>
+              <td class="right nowrap"><button class="btn ghost sm">Route</button><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">09:36:12</td>
+              <td><span class="badge ghost">onchain</span></td>
+              <td>New pool $412k MOCHI/SOL</td>
+              <td><span class="strong">MOCHI</span><span class="sub" style="display:block">Solana · $0.00412</span></td>
+              <td class="num">88</td>
+              <td><span class="badge ok">high</span></td>
+              <td class="small muted">pool age 4m · authorities renounced · top10 31%</td>
+              <td><a href="13-strategy-detail.html">Momentum v1.2</a><span class="sub" style="display:block">paper · entering</span></td>
+              <td class="right nowrap"><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+            <tr style="opacity:.7">
+              <td class="mono nowrap">09:31:55</td>
+              <td><span class="badge ghost">social</span></td>
+              <td>Mentions +340% 1h</td>
+              <td><span class="strong">WIF</span><span class="sub" style="display:block">Solana · $1.83</span></td>
+              <td class="num">44</td>
+              <td><span class="badge warn">low</span></td>
+              <td class="small muted">412 posts · 71% bot score · weight 0.2</td>
+              <td><span class="badge warn">suppressed</span><span class="sub" style="display:block">low_confidence &lt; 0.55</span></td>
+              <td class="right nowrap"><button class="btn ghost sm">Why?</button><button class="btn ghost sm">Mute</button></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">09:22:40</td>
+              <td><span class="badge ghost">flow</span></td>
+              <td>Net inflow $1.2M to Base</td>
+              <td><span class="strong">ETH</span><span class="sub" style="display:block">Base · $2,614.10</span></td>
+              <td class="num">66</td>
+              <td><span class="badge">med</span></td>
+              <td class="small muted">4 venues · 6h window · net +$1.2M</td>
+              <td><span class="muted">—</span><span class="sub" style="display:block">below route floor 75</span></td>
+              <td class="right nowrap"><button class="btn ghost sm">Route</button><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">09:14:08</td>
+              <td><span class="badge ghost">model</span></td>
+              <td>Regime: risk-on</td>
+              <td><span class="strong">PORTFOLIO</span><span class="sub" style="display:block">Solana + Base</span></td>
+              <td class="num">77</td>
+              <td><span class="badge">med</span></td>
+              <td class="small muted">vol 30d 21% · breadth 7/10 · model v1.2</td>
+              <td><a href="13-strategy-detail.html">Momentum v1.2</a><span class="sub" style="display:block">global · paper</span></td>
+              <td class="right nowrap"><button class="btn ghost sm">Mute</button></td>
+            </tr>
+            <tr style="opacity:.7">
+              <td class="mono nowrap">09:01:33</td>
+              <td><span class="badge ghost">wallet</span></td>
+              <td>Whale sold 100% of bag</td>
+              <td><span class="strong">MOCHI</span><span class="sub" style="display:block">Solana · $0.00412</span></td>
+              <td class="num">58</td>
+              <td><span class="badge">med</span></td>
+              <td class="small muted">0x3a…81 · $212k in 4 tx · payload 09:01</td>
+              <td><span class="badge warn">stale</span><span class="sub" style="display:block">source silent 41m · dropped</span></td>
+              <td class="right nowrap"><button class="btn ghost sm">Why?</button></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">08:47:19</td>
+              <td><span class="badge ghost">onchain</span></td>
+              <td>Mint authority re-enabled</td>
+              <td><span class="strong">SCAM</span><span class="sub" style="display:block">Solana · no route</span></td>
+              <td class="num">91</td>
+              <td><span class="badge ok">high</span></td>
+              <td class="small muted">authority 6xQ… · simulation reverts</td>
+              <td><a href="15-alerts.html">Alert · risk</a><span class="sub" style="display:block">never routable</span></td>
+              <td class="right nowrap"><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="mono nowrap">08:19:02</td>
+              <td><span class="badge ghost">flow</span></td>
+              <td>Perp funding flipped −0.004%</td>
+              <td><span class="strong">ARB</span><span class="sub" style="display:block">Arbitrum · $0.62</span></td>
+              <td class="num">69</td>
+              <td><span class="badge">med</span></td>
+              <td class="small muted">8h funding · OI +12% · 2 venues</td>
+              <td><a href="13-strategy-detail.html">Mean reversion v0.4</a><span class="sub" style="display:block">paper only · not eligible</span></td>
+              <td class="right nowrap"><a class="btn ghost sm" href="07-token.html">Open</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot">
+        <span>10 of 147 · sorted by time desc · dedupe window 10m</span>
+        <span>Score is source-weighted 0–100; confidence is the source's own calibration bucket</span>
+      </div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel" id="routing">
+          <div class="panel-head"><h2>Routing rules</h2><span class="sub">signal kind → target</span><div class="right"><button class="btn sm">+ Rule</button></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Signal kind</th><th>Target</th><th>Mode</th><th>Gate</th><th class="num">Matched 7d</th><th>State</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">flow.buy_pressure</td><td>Momentum v1.2</td><td><span class="badge">paper</span></td><td class="small">score ≥ 75 · conf ≥ med · age ≤ 5s</td><td class="num">31</td><td><span class="toggle on"></span></td></tr>
+                <tr><td class="mono">onchain.new_pool</td><td>Momentum v1.2</td><td><span class="badge">paper</span></td><td class="small">liq ≥ $250k · safety pass · age ≤ 10s</td><td class="num">12</td><td><span class="toggle on"></span></td></tr>
+                <tr><td class="mono">wallet.accumulation</td><td>Manual review</td><td><span class="badge ghost">inbox</span></td><td class="small">tracked wallet · not a copy trade</td><td class="num">27</td><td><span class="toggle on"></span></td></tr>
+                <tr><td class="mono">flow.funding_flip</td><td>Mean reversion v0.4</td><td><span class="badge">paper</span></td><td class="small">on, but target blocked: gate 6d/14d</td><td class="num">8</td><td><span class="toggle on"></span></td></tr>
+                <tr><td class="mono">onchain.safety_flag</td><td>Alerts · risk</td><td><span class="badge err">notify only</span></td><td class="small">never routable to execution</td><td class="num">3</td><td><span class="toggle on"></span></td></tr>
+                <tr><td class="mono">price.breakout</td><td>—</td><td><span class="badge ghost">off</span></td><td class="small">no target installed</td><td class="num">0</td><td><span class="toggle"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Every route writes an <span class="mono">intent</span> with the signal id. The strategy may still decline it.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Noise controls</h2><span class="sub">applied before scoring</span></div>
+          <div class="panel-body grid cols-2">
+            <label class="field"><span>Minimum score to store</span><input class="range" type="range" min="0" max="100" value="35"><span class="hint">35 — below this, signals are counted only</span></label>
+            <label class="field"><span>Dedupe window</span><select class="select"><option>10 minutes</option><option>30 minutes</option><option>2 hours</option></select></label>
+            <label class="field"><span>Max routes / hour</span><input class="input mono" value="6"></label>
+            <label class="field"><span>Max routes / strategy / day</span><input class="input mono" value="40"></label>
+            <div class="field" style="grid-column:1/-1">
+              <span>Source weights</span>
+              <div class="stack-sm">
+                <div class="row"><span class="mono" style="width:70px">flow</span><input class="range" type="range" value="90"><span class="small muted">0.90</span></div>
+                <div class="row"><span class="mono" style="width:70px">onchain</span><input class="range" type="range" value="85"><span class="small muted">0.85</span></div>
+                <div class="row"><span class="mono" style="width:70px">price</span><input class="range" type="range" value="60"><span class="small muted">0.60</span></div>
+                <div class="row"><span class="mono" style="width:70px">wallet</span><input class="range" type="range" value="55"><span class="small muted">0.55</span></div>
+                <div class="row"><span class="mono" style="width:70px">model</span><input class="range" type="range" value="50"><span class="small muted">0.50</span></div>
+                <div class="row"><span class="mono" style="width:70px">social</span><input class="range" type="range" value="20"><span class="small muted">0.20</span></div>
+              </div>
+            </div>
+            <div class="field" style="grid-column:1/-1">
+              <span>Muted tokens</span>
+              <div class="row"><span class="tag">WIF</span><span class="tag">SCAM</span><span class="tag">DOGE</span><button class="btn ghost sm">+ Mute token</button></div>
+            </div>
+          </div>
+          <div class="panel-foot">Muted tokens are still ingested and visible in History; they cannot route.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Source health</h2><div class="right"><a class="btn sm" href="20-chains.html">RPC health</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Source</th><th class="num">Latency</th><th>Coverage</th><th class="num">Last event</th><th>State</th></tr></thead>
+              <tbody>
+                <tr><td>flow · indexer</td><td class="num mono">240ms</td><td class="small">6 chains</td><td class="num mono">4s</td><td><span class="badge ok">ok</span></td></tr>
+                <tr><td>price · venue quotes</td><td class="num mono">1.1s</td><td class="small">14 venues</td><td class="num mono">1s</td><td><span class="badge ok">ok</span></td></tr>
+                <tr><td>onchain · adapter</td><td class="num mono">1.8s</td><td class="small">6 chains</td><td class="num mono">12s</td><td><span class="badge ok">ok</span></td></tr>
+                <tr><td>wallet · indexer</td><td class="num mono">3.2s</td><td class="small">4 wallets</td><td class="num mono warn">41m</td><td><span class="badge warn">stale</span></td></tr>
+                <tr><td>social · X/Reddit</td><td class="num mono">47s</td><td class="small">92 accounts</td><td class="num mono">18s</td><td><span class="badge ok">ok</span></td></tr>
+                <tr><td>model · regime</td><td class="num mono">5m</td><td class="small">2 chains</td><td class="num mono">9m</td><td><span class="badge ok">ok</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">A source silent for &gt; 3× its expected interval is marked stale and its signals are dropped, not backfilled.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Suppression reasons · 24h</h2></div>
+          <div class="panel-body stack-sm">
+            <div class="between"><span class="small">low_confidence</span><span class="mono small">41</span></div>
+            <div class="meter"><div class="fill" style="width:43%"></div></div>
+            <div class="between"><span class="small">duplicate_within_10m</span><span class="mono small">28</span></div>
+            <div class="meter"><div class="fill" style="width:29%"></div></div>
+            <div class="between"><span class="small">below_route_floor</span><span class="mono small">16</span></div>
+            <div class="meter"><div class="fill" style="width:17%"></div></div>
+            <div class="between"><span class="small">stale_source</span><span class="mono small">7</span></div>
+            <div class="meter"><div class="fill warn" style="width:7%"></div></div>
+            <div class="between"><span class="small">muted_token</span><span class="mono small">4</span></div>
+            <div class="meter"><div class="fill" style="width:4%"></div></div>
+            <div class="note mt-8">Suppression is logged with the reason code; nothing disappears silently.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Related</h2></div>
+          <div class="panel-body small stack-sm">
+            <a href="12-strategies.html">Strategies and gate evidence →</a>
+            <a href="15-alerts.html">Alert rules and channels →</a>
+            <a href="17-risk.html">What limits routed intents →</a>
+            <a href="21-integrations.html">Signal source credentials →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

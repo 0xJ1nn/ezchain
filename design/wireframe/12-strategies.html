@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strategies · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="strategies">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Automate / Strategies</div>
+        <h1>Strategies</h1>
+        <p class="sub">Installed plugins. A strategy proposes trade intents; the executor decides whether they become orders. Plugins never touch keys and never bypass policy.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="24-developer.html">Write a strategy</a>
+        <a class="btn" href="16-backtests.html">Backtests</a>
+        <a class="btn primary" href="#install">Install strategy</a>
+      </div>
+    </header>
+
+    <section class="panel mb-12" style="border-left:3px solid var(--info)">
+      <div class="panel-body between">
+        <div>
+          <div class="row"><span class="badge info">no bundled plugins</span><span class="strong">No strategies are bundled with ezCHAIN.</span></div>
+          <div class="small muted mt-8" style="max-width:96ch">Everything below was installed by you and runs with explicit grants. A fresh workspace shows an empty list and a primary “Install strategy” action — never a demo strategy issuing orders.</div>
+        </div>
+        <a class="btn sm" href="#install">Install one</a>
+      </div>
+    </section>
+
+    <div class="grid cols-2 mb-12">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Momentum</h2><span class="tag">v1.2.0</span>
+          <div class="right"><span class="badge ok">gate passed</span><span class="badge">paper</span></div>
+        </div>
+        <div class="panel-body stack-sm">
+          <div class="between small"><span>Allocation</span><span class="mono">$400.00 / $850.00 installed</span></div>
+          <div class="between small"><span>Positions</span><span class="mono">1 open · BONK +42.6%</span></div>
+          <div class="between small"><span>PnL · 7d</span><span class="mono ok">+$38.12 unrealized</span></div>
+          <div class="between small"><span>Paper gate</span><span class="mono">18d · 214 intents · 61 fills</span></div>
+          <div class="between small"><span>Permissions</span><span class="row"><span class="badge ghost">Solana</span><span class="badge ghost">enter/exit</span><span class="badge ghost">candles 1m</span></span></div>
+          <div class="between small"><span>Build</span><span class="mono">SDK 0.7.3 · sha256 4f9a…c21e</span></div>
+        </div>
+        <div class="panel-foot between">
+          <span>Last intent 12:41:08 · accepted</span>
+          <span class="row"><a class="btn sm" href="13-strategy-detail.html">Open</a><button class="btn sm">Pause</button></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Mean reversion</h2><span class="tag">v0.4.2</span>
+          <div class="right"><span class="badge warn">gate 6/14d</span><span class="badge">paper</span></div>
+        </div>
+        <div class="panel-body stack-sm">
+          <div class="between small"><span>Allocation</span><span class="mono">$250.00 / $850.00 installed</span></div>
+          <div class="between small"><span>Positions</span><span class="mono">0 open · flat since Oct 12</span></div>
+          <div class="between small"><span>PnL · 7d</span><span class="mono">$0.00</span></div>
+          <div class="between small"><span>Paper gate</span><span class="mono warn">6/14d · 38/100 intents · 3/20 fills</span></div>
+          <div class="between small"><span>Permissions</span><span class="row"><span class="badge ghost">Solana</span><span class="badge ghost">enter/exit</span><span class="badge ghost">candles 5m</span></span></div>
+          <div class="between small"><span>Build</span><span class="mono">SDK 0.7.3 · sha256 9f2c…a71b</span></div>
+        </div>
+        <div class="panel-foot between">
+          <span>Eligible for live on <span class="mono">2026-10-28</span> at current pace</span>
+          <span class="row"><a class="btn sm" href="13-strategy-detail.html">Open</a><button class="btn sm">Pause</button></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>DCA weekly</h2><span class="tag">v1.0.4</span>
+          <div class="right"><span class="badge info">automation-driven</span><span class="badge">paper</span></div>
+        </div>
+        <div class="panel-body stack-sm">
+          <div class="between small"><span>Allocation</span><span class="mono">$200.00 / $850.00 installed</span></div>
+          <div class="between small"><span>Positions</span><span class="mono">none · accumulates SOL</span></div>
+          <div class="between small"><span>PnL · 7d</span><span class="mono ok">+$12.80</span></div>
+          <div class="between small"><span>Paper gate</span><span class="mono">not gated · schedule only</span></div>
+          <div class="between small"><span>Permissions</span><span class="row"><span class="badge ghost">Solana</span><span class="badge ghost">buy only</span><span class="badge ghost">no exits</span></span></div>
+          <div class="between small"><span>Build</span><span class="mono">SDK 0.7.1 · sha256 7710…9dd4</span></div>
+        </div>
+        <div class="panel-foot between">
+          <span>Runs via <a href="10-automations.html">DCA weekly automation</a> · 1 fire today</span>
+          <span class="row"><a class="btn sm" href="13-strategy-detail.html">Open</a><button class="btn sm">Pause</button></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Grid experiment</h2><span class="tag">v0.1.0</span>
+          <div class="right"><span class="badge ghost">paused</span><span class="badge">paper</span></div>
+        </div>
+        <div class="panel-body stack-sm">
+          <div class="between small"><span>Allocation</span><span class="mono">$0.00 · released on pause</span></div>
+          <div class="between small"><span>Positions</span><span class="mono">0 open</span></div>
+          <div class="between small"><span>PnL · lifetime</span><span class="mono err">−$4.10</span></div>
+          <div class="between small"><span>Paper gate</span><span class="mono">abandoned at 3d · 9 intents</span></div>
+          <div class="between small"><span>Permissions</span><span class="row"><span class="badge ghost">revoked while paused</span></span></div>
+          <div class="between small"><span>Build</span><span class="mono">SDK 0.6.8 · sha256 2b41…0f37</span></div>
+        </div>
+        <div class="panel-foot between">
+          <span>Paused by you on Oct 09 · no grants active</span>
+          <span class="row"><a class="btn sm" href="13-strategy-detail.html">Open</a><button class="btn sm">Resume</button></span>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel mb-12" id="install">
+      <div class="panel-head"><h2>Install a strategy</h2><span class="sub">three sources · same verification path</span></div>
+      <div class="panel-body">
+        <div class="grid cols-3">
+          <div class="panel dashed" style="padding:10px">
+            <div class="micro">Local path</div>
+            <div class="stack-sm mt-8">
+              <input class="input mono" value="~/strategies/mean-rev/dist" aria-label="Local package path">
+              <div class="row"><span class="badge ghost">dir</span><span class="badge ghost">SDK ≥ 0.7</span></div>
+              <div class="small muted">Loads an unpacked plugin. Blocked in live mode; paper only until a signed build exists.</div>
+              <button class="btn sm block">Inspect package</button>
+            </div>
+          </div>
+          <div class="panel dashed" style="padding:10px;border-color:var(--err)">
+            <div class="micro">Signed package</div>
+            <div class="stack-sm mt-8">
+              <div class="row between"><span class="mono small">oracle-arb-0.3.1.ezsig</span><span class="badge err">unverified</span></div>
+              <div class="small muted">sha256 computed <span class="mono">3d18…77be</span> · manifest expects <span class="mono">3d18…77bf</span></div>
+              <div class="note err">Signature unverified: checksum mismatch and publisher key not in the trust store. Install is disabled.</div>
+              <button class="btn sm block" disabled>Install package</button>
+            </div>
+          </div>
+          <div class="panel dashed" style="padding:10px">
+            <div class="micro">Registry</div>
+            <div class="stack-sm mt-8">
+              <div class="between small"><span class="strong">Momentum</span><span class="mono">v1.2.0</span></div>
+              <div class="between small"><span class="muted">jinn-labs · verified</span><a class="btn sm" href="#install">Install</a></div>
+              <div class="hr" style="margin:6px 0"></div>
+              <div class="between small"><span class="strong">Mean reversion</span><span class="mono">v0.4.2</span></div>
+              <div class="between small"><span class="muted">jinn-labs · verified</span><a class="btn sm" href="#install">Install</a></div>
+              <div class="hr" style="margin:6px 0"></div>
+              <div class="between small"><span class="strong">Grid experiment</span><span class="mono">v0.1.0</span></div>
+              <div class="between small"><span class="muted">community · unverified</span><span class="badge warn">needs review</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="note warn mt-12" style="max-width:110ch"><strong>A plugin is not a sandboxed script.</strong> It receives market data and the permission scopes you grant. It cannot read private keys, sign transactions or move funds — but a strategy with <span class="mono">enter</span> permission can lose money inside its allocation. Read the manifest before granting.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Compare</h2><span class="sub">installed strategies · paper data</span><div class="right"><span class="badge ghost">7d window</span></div></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Strategy</th><th>Mode</th><th>Gate</th><th class="num">Allocation</th><th class="num">Open</th><th class="num">PnL 7d</th><th class="num">Max DD</th><th class="num">Fills</th><th>SDK</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="strong">Momentum <span class="sub">v1.2.0</span></td>
+              <td><span class="badge">paper</span></td>
+              <td><span class="badge ok">passed 18d</span></td>
+              <td class="num mono">$400.00</td>
+              <td class="num mono">1</td>
+              <td class="num mono ok">+$38.12</td>
+              <td class="num mono">−4.1%</td>
+              <td class="num mono">61</td>
+              <td class="mono small">0.7.3</td>
+              <td class="right"><a class="btn sm" href="13-strategy-detail.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="strong">Mean reversion <span class="sub">v0.4.2</span></td>
+              <td><span class="badge">paper</span></td>
+              <td><span class="badge warn">6/14d</span></td>
+              <td class="num mono">$250.00</td>
+              <td class="num mono">0</td>
+              <td class="num mono">$0.00</td>
+              <td class="num mono">−0.8%</td>
+              <td class="num mono">3</td>
+              <td class="mono small">0.7.3</td>
+              <td class="right"><a class="btn sm" href="13-strategy-detail.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="strong">DCA weekly <span class="sub">v1.0.4</span></td>
+              <td><span class="badge">paper</span></td>
+              <td><span class="badge ghost">n/a</span></td>
+              <td class="num mono">$200.00</td>
+              <td class="num mono">0</td>
+              <td class="num mono ok">+$12.80</td>
+              <td class="num mono">−1.2%</td>
+              <td class="num mono">4</td>
+              <td class="mono small">0.7.1</td>
+              <td class="right"><a class="btn sm" href="13-strategy-detail.html">Open</a></td>
+            </tr>
+            <tr>
+              <td class="strong">Grid experiment <span class="sub">v0.1.0</span></td>
+              <td><span class="badge ghost">paused</span></td>
+              <td><span class="badge ghost">abandoned</span></td>
+              <td class="num mono">$0.00</td>
+              <td class="num mono">0</td>
+              <td class="num mono err">−$4.10</td>
+              <td class="num mono">−6.7%</td>
+              <td class="num mono">9</td>
+              <td class="mono small">0.6.8</td>
+              <td class="right"><a class="btn sm" href="13-strategy-detail.html">Open</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot between">
+        <span>Allocation is a hard ceiling shared across a strategy's open positions. Pausing releases it.</span>
+        <span class="mono">$850.00 of $3,482.16 equity</span>
+      </div>
+    </section>
+
+    <section class="panel mt-16">
+      <div class="panel-head"><h2>Write your own</h2><span class="sub">TypeScript SDK · intents only</span></div>
+      <div class="panel-body grid cols-2 small">
+        <div class="stack-sm">
+          <div>A strategy exports a pure decision function: given a snapshot, return zero or more intents. The runtime handles sizing limits, routing, retries and reconciliation.</div>
+          <div class="note">Start from the reference plugin. Local plugins run in paper without a signature; live mode requires a signed build and a passed gate.</div>
+        </div>
+        <div class="stack-sm">
+          <div class="between"><span>SDK</span><span class="mono">@ezchain/sdk 0.7.3</span></div>
+          <div class="between"><span>Manifest</span><span class="mono">strategy.json · schema 3</span></div>
+          <div class="between"><span>Intent types</span><span class="mono">enter · exit · scale</span></div>
+          <div class="between"><span>Test harness</span><span class="mono">replay + fixtures</span></div>
+          <a class="btn" href="24-developer.html">SDK docs &amp; examples</a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

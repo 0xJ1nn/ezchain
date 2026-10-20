@@ -1,0 +1,27 @@
+money-path:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/core-py/ledger/**"
+          - "packages/core-py/risk/**"
+          - "services/executor/**"
+          - "packages/adapters/venue_*/**"
+
+chain:
+  - changed-files:
+      - any-glob-to-any-file: "packages/adapters/chain_*/**"
+
+design:
+  - changed-files:
+      - any-glob-to-any-file: ["design/**", "docs/WIREFRAME.md"]
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "README.md", "AGENTS.md"]
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file: ["infra/**", "tools/**", ".github/**"]
+
+strategy-sdk:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/sdk-py/**", "docs/STRATEGY-SDK.md"]

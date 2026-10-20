@@ -1,0 +1,75 @@
+name: Bug report
+description: Something is wrong in the app, docs, wireframe or infra.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web UI
+        - API
+        - Engine / strategies
+        - Executor / keys
+        - Ingest / market data
+        - Chain adapter
+        - Venue adapter
+        - Ledger / accounting
+        - Automations
+        - Backtests
+        - Infra / deploy
+        - Docs / wireframe
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: v0.1.0 or commit sha
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: [Paper, Live, Backtest, Read-only, Not applicable]
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: Include the reason code and a redacted log excerpt.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariant impact
+      description: Does this risk funds, keys or ledger integrity?
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: I have redacted keys, API tokens and personal data
+          required: true
+        - label: This is not a security vulnerability (those go to SECURITY.md)
+          required: true

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Onboarding · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="onboarding">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Getting started / First run</div>
+        <h1>Set up your workspace</h1>
+        <p class="sub">Four steps, about three minutes. Nothing is signed and no funds move during setup. Every choice here is editable later in Settings.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge ok">vault created</span>
+        <a class="btn ghost" href="03-dashboard.html">Exit setup</a>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="panel-body" style="padding:10px 12px">
+        <div class="steps">
+          <span class="step-item done"><span class="n">1</span>Vault</span><span class="step-line"></span>
+          <span class="step-item on"><span class="n">2</span>Wallet</span><span class="step-line"></span>
+          <span class="step-item"><span class="n">3</span>Chains</span><span class="step-line"></span>
+          <span class="step-item"><span class="n">4</span>Risk profile</span>
+        </div>
+      </div>
+      <div class="panel-foot between">
+        <span>Step 2 of 4 · add your first wallet</span>
+        <span class="mono">2 of 4 required fields complete</span>
+      </div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Add a wallet</h2><span class="sub">choose custody first; the address comes next</span>
+            <div class="right"><span class="badge info">recommended</span></div>
+          </div>
+          <div class="panel-body grid cols-2">
+            <label class="panel" style="padding:10px;box-shadow:none">
+              <span class="row"><span class="radio on"></span><span class="strong">Watch-only</span><span class="badge ok">recommended</span></span>
+              <span class="small muted" style="display:block;margin-top:6px">Public address or xpub only. Full balances, positions and alerts. Cannot sign or trade.</span>
+              <span class="small" style="display:block;margin-top:6px">Safe first step · revocable by deleting the address</span>
+            </label>
+            <label class="panel" style="padding:10px;box-shadow:none">
+              <span class="row"><span class="radio"></span><span class="strong">Local hot wallet</span><span class="badge ghost">signs</span></span>
+              <span class="small muted" style="display:block;margin-top:6px">Generated and encrypted in the local vault. Can trade within limits. Back up the recovery phrase.</span>
+              <span class="small" style="display:block;margin-top:6px">Trading enabled · approval not required</span>
+            </label>
+            <label class="panel" style="padding:10px;box-shadow:none">
+              <span class="row"><span class="radio"></span><span class="strong">Hardware wallet</span><span class="badge info">Ledger</span></span>
+              <span class="small muted" style="display:block;margin-top:6px">Connect a Ledger over USB or HID. Every signature is confirmed on the device screen.</span>
+              <span class="small" style="display:block;margin-top:6px">Device approval required · blind signing off</span>
+            </label>
+            <label class="panel dashed" style="padding:10px">
+              <span class="row"><span class="radio"></span><span class="strong">Exchange (read-only)</span><span class="badge warn">scoped</span></span>
+              <span class="small muted" style="display:block;margin-top:6px">Binance, Coinbase or Bybit API key with read scope only. No trade or withdraw permission accepted.</span>
+              <span class="small" style="display:block;margin-top:6px">Balances only · verify key after entry</span>
+            </label>
+          </div>
+          <div class="panel-foot">Watch-only is the default for a reason: it proves the pipeline before any key exists.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Address</h2><span class="sub">one wallet per step; add more later</span></div>
+          <div class="panel-body stack-sm">
+            <div class="grid cols-2">
+              <label class="field">
+                <span>Label</span>
+                <input class="input" value="Cold watch">
+              </label>
+              <label class="field">
+                <span>Chain</span>
+                <select class="select"><option>Base</option><option>Solana</option><option>Ethereum</option><option>Bitcoin</option><option>Arbitrum One</option></select>
+              </label>
+            </div>
+            <label class="field">
+              <span>Public address</span>
+              <input class="input mono" value="0x71c4F8b2a9D3e6C05b7A1f4E8d2C9b3A6f0E9f2a" aria-invalid="true">
+              <span class="hint">Never enter a seed phrase or private key here. ezCHAIN will not accept one.</span>
+            </label>
+            <hr class="hr" style="margin:4px 0">
+            <div class="micro">validation states</div>
+            <div class="list">
+              <div class="list-row">
+                <span class="badge ok">valid</span>
+                <span class="grow"><span class="title mono">0x71c…9f2a</span><span class="sub">ADDRESS_VALID · EIP-55 checksum ok · Base · 4 token balances found</span></span>
+                <button class="btn sm">Use</button>
+              </div>
+              <div class="list-row">
+                <span class="badge err">invalid</span>
+                <span class="grow"><span class="title mono">7xKXq9…Qm3</span><span class="sub">INVALID_ADDRESS · base58 decode failed at char 42 · expected 32–44 chars</span></span>
+                <button class="btn sm" disabled>Use</button>
+              </div>
+              <div class="list-row">
+                <span class="badge warn">unverified</span>
+                <span class="grow"><span class="title mono">UQAv…4t9</span><span class="sub">ADDRESS_UNVERIFIED · TON wallet v5 not indexed yet · will sync read-only in 2m</span></span>
+                <button class="btn sm">Add anyway</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Chains to watch</h2><span class="sub">tier = verification level, not ambition</span>
+            <div class="right"><span class="badge ghost">3 selected</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th></th><th>Chain</th><th>Tier</th><th>Capability</th><th>Note</th></tr></thead>
+              <tbody>
+                <tr><td><span class="checkbox checked"></span></td><td>Solana</td><td><span class="badge">T1</span></td><td class="small">swap · transfer · simulate</td><td class="small muted">rent/ATA accounting on</td></tr>
+                <tr><td><span class="checkbox checked"></span></td><td>Base</td><td><span class="badge">T1</span></td><td class="small">swap · transfer</td><td class="small muted">OP-stack finality</td></tr>
+                <tr><td><span class="checkbox checked"></span></td><td>Ethereum</td><td><span class="badge">T1</span></td><td class="small">swap · transfer</td><td class="small muted">L1 gas, EIP-1559</td></tr>
+                <tr><td><span class="checkbox"></span></td><td>Arbitrum One</td><td><span class="badge">T1</span></td><td class="small">swap · transfer</td><td class="small muted">sequencer feed</td></tr>
+                <tr><td><span class="checkbox"></span></td><td>Sui</td><td><span class="badge info">T2</span></td><td class="small">swap · beta</td><td class="small muted">object model</td></tr>
+                <tr><td><span class="checkbox"></span></td><td>Bitcoin</td><td><span class="badge info">T2</span></td><td class="small">read · transfer</td><td class="small muted">xpub watch, PSBT</td></tr>
+                <tr><td><span class="checkbox"></span></td><td>Cosmos Hub</td><td><span class="badge ghost">T3</span></td><td class="small muted">read only</td><td class="small muted">trade disabled: no execution</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">RPC providers are health-checked; a degraded provider moves traffic instead of failing the chain.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Risk profile</h2><span class="sub">sets hard caps; strategies cannot exceed them</span></div>
+          <div class="panel-body grid cols-3">
+            <div class="panel" style="padding:9px;box-shadow:none">
+              <span class="row"><span class="radio"></span><span class="strong">Conservative</span></span>
+              <div class="small muted mt-8">Daily loss cap <span class="mono">$100</span><br>Per trade <span class="mono">1.0%</span><br>Max open <span class="mono">5</span><br>Chain exposure <span class="mono">20%</span></div>
+            </div>
+            <div class="panel" style="padding:9px;box-shadow:none;border-color:var(--ink)">
+              <span class="row"><span class="radio on"></span><span class="strong">Balanced</span><span class="badge solid">default</span></span>
+              <div class="small muted mt-8">Daily loss cap <span class="mono">$250</span><br>Per trade <span class="mono">2.0%</span><br>Max open <span class="mono">10</span><br>Chain exposure <span class="mono">35%</span></div>
+            </div>
+            <div class="panel" style="padding:9px;box-shadow:none">
+              <span class="row"><span class="radio"></span><span class="strong">Aggressive</span></span>
+              <div class="small muted mt-8">Daily loss cap <span class="mono">$1,000</span><br>Per trade <span class="mono">5.0%</span><br>Max open <span class="mono">25</span><br>Chain exposure <span class="mono">50%</span></div>
+            </div>
+          </div>
+          <div class="panel-foot">Cap values are per workspace, denominated in USD, and enforced before a quote is requested.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Mode</h2><span class="sub">apply to the whole workspace</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between">
+              <div><div class="small strong">Start in paper mode</div><div class="small muted">Same venue adapters, simulated broadcaster.</div></div>
+              <span class="toggle on"></span>
+            </div>
+            <div class="note">Paper rejects a trade if the venue cannot quote it. There are no synthetic prices and no optimistic fills.</div>
+            <div class="between"><span class="small muted">Live mode</span><span class="badge ghost">requires approval after paper gate</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Finish</h2><span class="sub">step 2 of 4</span></div>
+          <div class="panel-body stack-sm">
+            <button class="btn primary lg block" disabled>Finish setup</button>
+            <div class="small err">Disabled: add at least one wallet with a valid address. 0 of 1 required.</div>
+            <div class="small muted">Remaining: chains (defaults pre-selected) and risk profile (Balanced pre-selected). Both can be accepted as-is.</div>
+            <hr class="hr" style="margin:4px 0">
+            <a class="small" href="03-dashboard.html">Skip setup — open dashboard in PAPER →</a>
+            <a class="small muted" href="20-chains.html">Advanced: import config.yaml / RPC overrides →</a>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>What gets written</h2><span class="sub">local Postgres only</span></div>
+          <div class="panel-body">
+            <ul class="list">
+              <li class="list-row"><span class="grow"><span class="title">Workspace + member</span><span class="sub">Personal · owner JW · 1 seat</span></span><span class="badge ok">done</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Vault</span><span class="sub">master key in OS keychain · auto-lock 15m</span></span><span class="badge ok">done</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Wallet</span><span class="sub">none yet</span></span><span class="badge warn">pending</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Chain subscriptions</span><span class="sub">Solana, Base, Ethereum defaults</span></span><span class="badge ghost">next</span></li>
+            </ul>
+          </div>
+          <div class="panel-foot">No funds move. No signature is requested during onboarding.</div>
+        </section>
+
+        <div class="annotation"><b>Flow note:</b> Back returns to the vault step without discarding the wallet draft. Leaving via “Exit setup” keeps the vault and resumes at step 2 on next sign-in.</div>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

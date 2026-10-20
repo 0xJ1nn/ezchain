@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>State gallery · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="states">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Meta / State gallery</div>
+        <h1>State gallery</h1>
+        <p class="sub">Every non-happy state with the copy that ships. Each panel is the real component, the reason code, and the one recovery action. Colour is never the only signal.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge err">7 error</span>
+        <span class="badge warn">6 warning</span>
+        <span class="badge info">5 informational</span>
+        <a class="btn" href="29-components.html">Components</a>
+      </div>
+    </header>
+
+    <div class="grid cols-2">
+
+      <section class="panel">
+        <div class="panel-head"><h2>01 · Loading skeleton</h2><div class="right"><span class="badge ghost">LOADING</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="placeholder" style="height:18px;width:52%">token / symbol</div>
+          <div class="placeholder" style="height:52px">chart area · 112px</div>
+          <div class="row"><div class="placeholder" style="height:14px;flex:1"></div><div class="placeholder" style="height:14px;width:64px"></div><div class="placeholder" style="height:14px;width:64px"></div></div>
+          <div class="small muted">Skeleton holds layout height. No spinner, no fake numbers.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">first paint · ≥ 180ms</span><span class="small muted">after 8s → timeout state</span></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>02 · Empty positions</h2><div class="right"><span class="badge ghost">EMPTY</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="placeholder" style="height:86px">No open positions</div>
+          <div class="small"><strong>Nothing is at risk right now.</strong> Positions appear here after a paper or live fill. Closed positions stay in Activity.</div>
+          <div class="small muted">Paper equity $3,482.16 · 0 open · 61 closed fills</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">no rows · filter: open</span><a class="btn sm" href="06-markets.html">Find a market</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>03 · Empty wallets</h2><div class="right"><span class="badge ghost">EMPTY</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="placeholder" style="height:70px">No wallets connected</div>
+          <div class="small"><strong>Add a wallet to see balances.</strong> Watch-only needs a public address and cannot sign. No seed phrase is ever requested.</div>
+          <div class="small muted">Sync chip shows “—” until a wallet exists.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">wallets: 0</span><a class="btn sm" href="02-onboarding.html">Add watch-only wallet</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>04 · Stale market data</h2><div class="right"><span class="badge warn">MARK_STALE</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="between"><span class="strong">BONK / SOL</span><span class="mono">$0.00002418</span></div>
+          <div class="row small"><span class="dot-live stale"></span><span class="warn">last mark 4m 12s old</span><span class="muted">· limit 30s · jupiter</span></div>
+          <div class="small">Prices are shown for reference and are <strong>not executable</strong>. Quotes are disabled until the mark refreshes.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">MARK_STALE · age 252s</span><a class="btn sm" href="20-chains.html">Reconnect RPC</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>05 · Unsellable position</h2><div class="right"><span class="badge err">UNSELLABLE</span></div></div>
+        <div class="panel-body flush">
+          <div class="tile error" style="border:0;border-radius:0">
+            <div class="tile-head">
+              <div class="tile-id"><span class="token">S</span><span><span class="tile-name">SCAM</span><span class="tile-sub">Solana · Momentum v1.2</span></span></div>
+              <div class="tile-pnl"><div class="pct err">−96.2%</div><div class="usd">−$402.16</div></div>
+            </div>
+            <div class="tile-price"><span class="px mut">$0.00000041</span><span class="small muted">entry $0.0000108</span><span class="tile-tags"><span class="badge err">no sell route</span></span></div>
+            <div class="tile-note">Last executable quote 2026-10-18 09:14. Kept visible; not marked to zero.</div>
+          </div>
+        </div>
+        <div class="panel-foot between"><span class="mono">SELL_UNAVAILABLE · 3 venues, 0 routes</span><span class="row"><a class="btn sm" href="05-position-detail.html">Open</a><button class="btn sm danger">Write off…</button></span></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>06 · No sell route</h2><div class="right"><span class="badge err">NO_SELL_ROUTE</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="small"><strong>No venue can sell the full size.</strong> Best partial route 12.4% of bag. An entry without an executable exit is not an entry.</div>
+          <table class="table compact">
+            <thead><tr><th>Venue</th><th>Quote</th><th>Reason</th></tr></thead>
+            <tbody>
+              <tr><td>Jupiter</td><td class="mono small">—</td><td class="small">no route</td></tr>
+              <tr><td>Raydium</td><td class="mono small">12.4%</td><td class="small">insufficient depth</td></tr>
+              <tr><td>PumpSwap</td><td class="mono small">—</td><td class="small">pool frozen</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot between"><span class="mono">NO_SELL_ROUTE · retry 30s</span><button class="btn sm" disabled>Retry quote</button></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>07 · Offline / executor down</h2><div class="right"><span class="badge err">EXECUTOR_DOWN</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="note err"><strong>Executor unreachable.</strong> Orders are rejected, not queued. Balances and marks are read-only and may be up to 40s old.</div>
+          <div class="row"><span class="tag">paper simulated</span><span class="tag">live blocked</span><span class="tag">last contact 00:42</span></div>
+          <div class="small muted">Retry is automatic with backoff; do not resubmit the same intent.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">heartbeat missed · 6/6</span><a class="btn sm" href="25-operations.html">Open Operations</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>08 · Chain degraded</h2><div class="right"><span class="badge warn">DEGRADED</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="between"><span class="strong">Solana · T1</span><span class="badge warn">beta path</span></div>
+          <table class="table compact">
+            <tbody>
+              <tr><td>Slot lag</td><td class="num mono">412</td><td class="right small warn">warn &gt; 150</td></tr>
+              <tr><td>RPC providers</td><td class="num mono">1 / 3</td><td class="right small err">2 failing</td></tr>
+              <tr><td>Pending tx</td><td class="num mono">2</td><td class="right small muted">not dropped</td></tr>
+            </tbody>
+          </table>
+          <div class="small">Traffic has moved to the healthy provider. Execution is allowed but quotes may expire early.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">CHAIN_DEGRADED · solana</span><a class="btn sm" href="17-risk.html">Pause chain</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>09 · Quote expired</h2><div class="right"><span class="badge warn">QUOTE_EXPIRED</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="between"><span class="small">AERO → USDC · sell 1,240 AERO</span><span class="mono small">age 11s</span></div>
+          <div class="small">Quote TTL is <span class="mono">8s</span>. The price moved <span class="mono warn">+0.7%</span> since the quote; the order was not sent.</div>
+          <div class="small muted">Nothing was signed. Re-quote to see the current minimum out.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">QUOTE_EXPIRED · TTL 8s</span><button class="btn sm">Re-quote</button></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>10 · Risk denied</h2><div class="right"><span class="badge err">RISK_DENIED</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="small"><strong>Order blocked before routing.</strong> Buy 1.8 SOL ($412.00) exceeds the remaining daily loss cap.</div>
+          <div class="meter"><div class="fill err" style="width:100%"></div></div>
+          <div class="between small"><span class="muted">daily cap $250.00</span><span class="mono">used $212.00 · remaining $38.00</span></div>
+          <div class="small muted">Rule <span class="mono">daily_loss_cap</span> · profile Balanced. Reduce size to ≤ $38.00 or raise the cap in Risk.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">RISK_DENIED · cap</span><span class="row"><a class="btn sm" href="17-risk.html">Review limits</a><button class="btn sm">Edit size</button></span></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>11 · Paper gate not met</h2><div class="right"><span class="badge warn">GATE_NOT_MET</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="between"><span class="strong">Momentum v1.2</span><span class="small muted">live promotion blocked</span></div>
+          <div class="meter"><div class="fill warn" style="width:43%"></div></div>
+          <div class="between small"><span class="mono">6d / 14d</span><span class="mono">38 / 100 intents</span><span class="mono">11 / 30 fills</span></div>
+          <div class="small muted">Needs 8 more days, 62 intents and 19 fills with no reconciliation drift. Paper continues automatically.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">GATE_NOT_MET · 3 criteria</span><a class="btn sm" href="13-strategy-detail.html">See evidence</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>12 · Strategy quarantined</h2><div class="right"><span class="badge err">QUARANTINED</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="small"><strong>Grid experiment stopped itself.</strong> 3 failed intents in 5 minutes; manifest hash does not match the installed grant.</div>
+          <div class="row"><span class="tag">v0.4.1</span><span class="tag">grant v2</span><span class="tag">hash 3f9c…a1</span><span class="tag err">expected 8b20…c4</span></div>
+          <div class="small muted">Positions were left untouched. No new intents are accepted until reviewed.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">STRATEGY_QUARANTINED</span><a class="btn sm" href="13-strategy-detail.html">Review &amp; reinstall</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>13 · Wallet unsynced</h2><div class="right"><span class="badge warn">UNSYNCED</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="between"><span class="strong">Main (hot)</span><span class="mono small">last sync 2h 14m</span></div>
+          <div class="small">Balances may be stale. New fills cannot be attributed until the wallet syncs; existing positions keep their last ledger value.</div>
+          <div class="row small"><span class="dot-live dead"></span><span class="muted">Solana RPC timeout · 3 attempts</span></div>
+        </div>
+        <div class="panel-foot between"><span class="mono">WALLET_UNSYNCED · solana</span><a class="btn sm" href="08-wallets.html">Sync now</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>14 · Sync mismatch</h2><div class="right"><span class="badge err">SYNC_MISMATCH</span></div></div>
+        <div class="panel-body flush">
+          <table class="table compact">
+            <thead><tr><th>Asset</th><th class="num">Chain</th><th class="num">Ledger</th><th class="num">Delta</th></tr></thead>
+            <tbody>
+              <tr><td>SOL</td><td class="num mono">12.402</td><td class="num mono">12.118</td><td class="num mono err">+0.284</td></tr>
+              <tr><td>USDC</td><td class="num mono">410.00</td><td class="num mono">410.00</td><td class="num mono muted">0.00</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot between"><span class="mono">SYNC_MISMATCH · unexplained +0.284 SOL</span><a class="btn sm" href="09-wallet-detail.html">Reconcile</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>15 · Rate limited</h2><div class="right"><span class="badge warn">RATE_LIMITED</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="note warn"><strong>Provider quota reached.</strong> 429 from Helius after 1,200 requests in 60s. Backing off; no data is discarded.</div>
+          <div class="between small"><span class="muted">retry in</span><span class="mono">12s · attempt 2/5</span></div>
+          <div class="small muted">Reads are served from cache for up to 30s. Writes are queued once, never duplicated.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">RATE_LIMITED · retry_after 12</span><a class="btn sm" href="20-chains.html">Switch provider</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>16 · 404</h2><div class="right"><span class="badge ghost">NOT_FOUND</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="center" style="padding:6px 0"><div class="mono" style="font-size:38px;line-height:1">404</div><div class="small muted">position 01J9K2… not found</div></div>
+          <div class="small">The position may have been closed, written off, or belongs to a deleted workspace. Nothing was lost locally.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">NOT_FOUND · 01J9K2</span><a class="btn sm" href="04-positions.html">Back to positions</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>17 · Permission denied</h2><div class="right"><span class="badge err">FORBIDDEN</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="small"><strong>Viewer role cannot place orders.</strong> Signed in as S. Ruiz. The request was rejected server-side; no order exists.</div>
+          <div class="row"><span class="tag">role viewer</span><span class="tag">needed trader</span><span class="tag">workspace Personal</span></div>
+          <div class="small muted">Ask an owner to change your role in Workspace → Members.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">FORBIDDEN · orders.create</span><a class="btn sm" href="26-workspace.html">Request access</a></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>18 · Kill switch armed</h2><div class="right"><span class="badge err">KILL_SWITCH</span></div></div>
+        <div class="panel-body stack-sm">
+          <div class="panel" style="padding:8px;background:var(--err-bg);border-color:var(--err);box-shadow:none">
+            <div class="row"><span class="badge solid">ARMED</span><span class="small"><strong>All new risk halted.</strong> Scope: entire workspace, since 20:44:02.</span></div>
+            <div class="small muted mt-8">4 open positions are unchanged. Existing stops and exits still run. No new entries, no size increases.</div>
+          </div>
+          <div class="small muted">Resume requires a reason (≥ 12 chars) recorded in the audit log.</div>
+        </div>
+        <div class="panel-foot between"><span class="mono">KILL_SWITCH_ARMED · scope all</span><a class="btn sm danger" href="17-risk.html">Review &amp; resume</a></div>
+      </section>
+
+    </div>
+
+    <div class="note mt-16">Non-happy states are designed per surface, not generated by a generic error component. Every panel keeps the last known truth visible and names the one action that recovers it.</div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

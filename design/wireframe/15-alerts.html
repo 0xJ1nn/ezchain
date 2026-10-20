@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alerts · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="alerts">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Protect / Alerts</div>
+        <h1>Alerts</h1>
+        <p class="sub">Rules decide <em>what</em> is worth telling you; channels decide <em>where</em>. Delivery is logged per attempt, including retries and dedupe — a failed notification is visible, never silent.</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn">Mute all for 1h</button>
+        <button class="btn primary">New rule</button>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Rules</div><div class="value">9</div><div class="meta">8 enabled · 1 paused</div></div>
+      <div class="stat"><div class="label">Delivered 24h</div><div class="value sm">38</div><div class="meta">5 channels · 51 attempts</div></div>
+      <div class="stat"><div class="label">Suppressed</div><div class="value sm">61%</div><div class="meta">dedupe + quiet hours</div></div>
+      <div class="stat"><div class="label">Failing</div><div class="value sm err">1</div><div class="meta">webhook · HTTP 500</div></div>
+      <div class="stat"><div class="label">Quiet hours</div><div class="value sm">22:00–07:00</div><div class="meta">UTC · errors bypass</div></div>
+      <div class="stat"><div class="label">Oldest unacked</div><div class="value sm">1h 12m</div><div class="meta">execution failure</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Rules</h2><span class="sub">evaluated server-side, one snapshot per event</span>
+            <div class="right"><span class="badge ghost">last eval 2s</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Rule</th><th>Condition</th><th>Severity</th><th>Channels</th><th>Last fired</th><th>On</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="strong">Price cross</td>
+                  <td class="small mono">BONK ≥ $0.000040</td>
+                  <td><span class="badge warn">warn</span></td>
+                  <td class="small">in-app · Telegram</td>
+                  <td class="small">2h ago</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><a class="btn ghost sm" href="#delivery">Log</a></td>
+                </tr>
+                <tr>
+                  <td class="strong">PnL threshold</td>
+                  <td class="small mono">any position ≥ +40% or ≤ −10%</td>
+                  <td><span class="badge info">info</span></td>
+                  <td class="small">in-app</td>
+                  <td class="small">19m ago</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><button class="btn ghost sm">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Drawdown</td>
+                  <td class="small mono">portfolio DD ≤ −10% from peak</td>
+                  <td><span class="badge err">error</span></td>
+                  <td class="small">all (bypass quiet)</td>
+                  <td class="small muted">never</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><button class="btn ghost sm">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Position opened</td>
+                  <td class="small mono">any fill that opens a position</td>
+                  <td><span class="badge info">info</span></td>
+                  <td class="small">in-app · email</td>
+                  <td class="small">19m ago</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><button class="btn ghost sm">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Position closed</td>
+                  <td class="small mono">any close, incl. write-off</td>
+                  <td><span class="badge info">info</span></td>
+                  <td class="small">in-app · Telegram</td>
+                  <td class="small">2h ago</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><button class="btn ghost sm">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="strong">Execution failure</td>
+                  <td class="small mono">intent rejected or tx reverted</td>
+                  <td><span class="badge err">error</span></td>
+                  <td class="small">all + webhook</td>
+                  <td class="small err">1h 12m ago</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><a class="btn ghost sm" href="18-ledger.html">Log</a></td>
+                </tr>
+                <tr>
+                  <td class="strong">Chain stale</td>
+                  <td class="small mono">any mark age &gt; 30s</td>
+                  <td><span class="badge warn">warn</span></td>
+                  <td class="small">in-app · email</td>
+                  <td class="small">18m ago</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><a class="btn ghost sm" href="20-chains.html">Chains</a></td>
+                </tr>
+                <tr>
+                  <td class="strong">Backup failed</td>
+                  <td class="small mono">nightly pg_dump exit ≠ 0</td>
+                  <td><span class="badge err">error</span></td>
+                  <td class="small">email · webhook</td>
+                  <td class="small muted">never · last ok 02:14</td>
+                  <td><span class="toggle on"></span></td>
+                  <td class="right"><a class="btn ghost sm" href="25-operations.html">Ops</a></td>
+                </tr>
+                <tr style="opacity:.7">
+                  <td class="strong">Paper gate passed</td>
+                  <td class="small mono">strategy meets 14d / 50-intent gate</td>
+                  <td><span class="badge info">info</span></td>
+                  <td class="small">email</td>
+                  <td class="small">Oct 02 14:08</td>
+                  <td><span class="toggle"></span></td>
+                  <td class="right"><a class="btn ghost sm" href="13-strategy-detail.html">Gate</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Rules fire at most once per dedupe window. Severity can only be lowered with an explicit edit, never by mute.</div>
+        </section>
+
+        <section class="panel" id="delivery">
+          <div class="panel-head">
+            <h2>Delivery log</h2><span class="sub">last 24h · all channels</span>
+            <div class="right">
+              <span class="field" style="min-width:120px"><select class="select"><option>All results</option><option>Failed</option><option>Retried</option><option>Suppressed</option></select></span>
+              <a class="btn sm" href="24-developer.html">Event log</a>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time (UTC)</th><th>Rule</th><th>Sev</th><th>Channel</th><th>Result</th><th class="num">Try</th><th>Detail</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">12:14:02</td><td>Execution failure</td><td><span class="badge err">err</span></td><td>webhook</td><td><span class="badge err">failed</span></td><td class="num">1/3</td><td class="small muted mono">HTTP 500 · 812ms</td></tr>
+                <tr><td class="mono">12:14:02</td><td>Execution failure</td><td><span class="badge err">err</span></td><td>in-app</td><td><span class="badge ok">delivered</span></td><td class="num">1</td><td class="small muted">acked 12:16</td></tr>
+                <tr><td class="mono">12:14:02</td><td>Execution failure</td><td><span class="badge err">err</span></td><td>Telegram</td><td><span class="badge ok">delivered</span></td><td class="num">1</td><td class="small muted">msg 4182</td></tr>
+                <tr><td class="mono">12:14:32</td><td>Execution failure</td><td><span class="badge err">err</span></td><td>webhook</td><td><span class="badge err">failed</span></td><td class="num">2/3</td><td class="small muted mono">HTTP 500 · 1.1s</td></tr>
+                <tr><td class="mono">12:15:32</td><td>Execution failure</td><td><span class="badge err">err</span></td><td>webhook</td><td><span class="badge err">dead-letter</span></td><td class="num">3/3</td><td class="small muted mono">HTTP 500 · 604ms</td></tr>
+                <tr><td class="mono">11:58:40</td><td>Chain stale</td><td><span class="badge warn">warn</span></td><td>email</td><td><span class="badge ok">delivered</span></td><td class="num">2</td><td class="small muted">retry after 30s · SMTP 451</td></tr>
+                <tr><td class="mono">11:58:10</td><td>Chain stale</td><td><span class="badge warn">warn</span></td><td>email</td><td><span class="badge warn">retrying</span></td><td class="num">1/3</td><td class="small muted mono">SMTP 451 · try again</td></tr>
+                <tr><td class="mono">11:57:55</td><td>Chain stale</td><td><span class="badge warn">warn</span></td><td>in-app</td><td><span class="badge ok">delivered</span></td><td class="num">1</td><td class="small muted">unread</td></tr>
+                <tr><td class="mono">10:02:18</td><td>Position closed</td><td><span class="badge info">info</span></td><td>Telegram</td><td><span class="badge ok">delivered</span></td><td class="num">1</td><td class="small muted">AERO 50% · +$4.20</td></tr>
+                <tr><td class="mono">08:19:05</td><td>Position opened</td><td><span class="badge info">info</span></td><td>in-app</td><td><span class="badge ok">delivered</span></td><td class="num">1</td><td class="small muted">MOCHI entering</td></tr>
+                <tr><td class="mono">07:41:00</td><td>PnL threshold</td><td><span class="badge info">info</span></td><td>in-app</td><td><span class="badge ghost">suppressed</span></td><td class="num">0</td><td class="small muted mono">dedupe · 4 in window</td></tr>
+                <tr><td class="mono">03:14:09</td><td>Execution failure</td><td><span class="badge err">err</span></td><td>Telegram</td><td><span class="badge ok">delivered</span></td><td class="num">1</td><td class="small muted">quiet hours bypassed</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Successful deliveries are kept 30 days; failed attempts and dead-letters are kept 1 year.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Channels</h2><span class="sub">delivery targets</span><div class="right"><button class="btn sm">Send test</button></div></div>
+          <div class="panel-body stack-sm">
+            <div class="list-row">
+              <span class="grow"><span class="title">In-app</span><span class="sub">bell + drawer · no config</span></span>
+              <span class="badge ok">ok</span><span class="toggle on"></span>
+            </div>
+            <div class="list-row">
+              <span class="grow"><span class="title">Email</span><span class="sub">j***@jinn.dev · digest for info 15m</span></span>
+              <span class="badge ok">ok</span><span class="toggle on"></span>
+            </div>
+            <div class="list-row">
+              <span class="grow"><span class="title">Telegram</span><span class="sub">@jinn_ops · chat 7741…</span></span>
+              <span class="badge ok">ok</span><span class="toggle on"></span>
+            </div>
+            <div class="list-row">
+              <span class="grow"><span class="title">Discord</span><span class="sub">#ezchain-alerts · webhook</span></span>
+              <span class="badge ghost">off</span><span class="toggle"></span>
+            </div>
+            <div class="list-row">
+              <span class="grow"><span class="title">Webhook · ops</span><span class="sub mono">ops.jinn.dev/hooks/ezchain</span></span>
+              <span class="badge err">500</span><span class="toggle on"></span>
+            </div>
+            <div class="row mt-8">
+              <a class="btn sm" href="21-integrations.html">Configure channels</a>
+              <a class="btn ghost sm" href="23-security.html">Secrets</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Severity mapping</h2><span class="sub">what each level means</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Level</th><th>Default channels</th><th>Sticky</th><th>Repeat</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge info">info</span></td><td class="small">in-app</td><td class="small">no · auto-dismiss 10s</td><td class="small">never</td></tr>
+                <tr><td><span class="badge warn">warn</span></td><td class="small">in-app + 1 chosen</td><td class="small">until read (max 24h)</td><td class="small">4h if unresolved</td></tr>
+                <tr><td><span class="badge err">error</span></td><td class="small">all enabled + webhook</td><td class="small">until acknowledged</td><td class="small">15m while active</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-body" style="padding-top:0">
+            <div class="note err">Errors ignore quiet hours. Acknowledging an error stops repeats but does not close the underlying condition.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Quiet hours</h2><span class="sub">default suppression window</span></div>
+          <div class="panel-body grid cols-2">
+            <label class="field"><span>From</span><input class="input mono" value="22:00"></label>
+            <label class="field"><span>To</span><input class="input mono" value="07:00"></label>
+            <label class="field" style="grid-column:1/-1"><span>Timezone</span><select class="select"><option>UTC</option><option>Europe/Berlin</option><option>America/New_York</option></select></label>
+            <div class="field" style="grid-column:1/-1">
+              <span>During quiet hours</span>
+              <div class="stack-sm">
+                <div class="row"><span class="checkbox checked"></span><span class="small">Suppress info and warn</span></div>
+                <div class="row"><span class="checkbox checked"></span><span class="small">Always deliver error</span></div>
+                <div class="row"><span class="checkbox"></span><span class="small">Batch suppressed at 07:00 as digest</span></div>
+              </div>
+            </div>
+            <div class="note" style="grid-column:1/-1">Per-channel override exists on email and Telegram; webhook has no quiet hours.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Dedupe key</h2><span class="sub">why you did not get 7 pings</span></div>
+          <div class="panel-body stack-sm">
+            <div class="mono small" style="overflow-wrap:anywhere">sha256(rule_id + subject_id + severity + floor(ts / 300s))</div>
+            <div class="small muted">The same rule on the same subject stays one notification per 5-minute bucket; the count increments instead. A severity escalation creates a new key and is delivered immediately.</div>
+            <div class="row"><span class="tag">warn</span><span class="tag">dedupe 300s</span><span class="tag">escalation bypass</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel mt-16">
+      <div class="panel-head">
+        <h2>Webhook failure · ops endpoint</h2>
+        <span class="sub">failing since 12:14 UTC · 3 consecutive failures</span>
+        <div class="right"><button class="btn sm">Retry now</button><button class="btn sm">Disable</button></div>
+      </div>
+      <div class="panel-body grid cols-3">
+        <div class="stack-sm">
+          <div class="micro">Last response</div>
+          <div class="row"><span class="badge err">HTTP 500</span><span class="mono small">812ms</span><span class="small muted">12:14:02</span></div>
+          <div class="small muted mono" style="overflow-wrap:anywhere">POST /hooks/ezchain · 1,284 B · sig ok</div>
+          <div class="small muted">Body returned: <span class="mono">upstream timeout</span>. The endpoint accepted the signature, so the payload is valid.</div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Retry policy</div>
+          <div class="small">Attempts 3 · backoff 30s / 60s / 120s · then <span class="mono">dead-letter</span>.</div>
+          <div class="small muted">Retries reuse the same dedupe key; they do not create duplicate user notifications.</div>
+          <div class="row"><span class="badge ghost">dead-letter: 1</span><span class="badge ghost">24h: 2</span></div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">History</div>
+          <table class="table compact">
+            <tbody>
+              <tr><td class="mono">12:15:32</td><td><span class="badge err">500</span></td><td class="num small">604ms</td></tr>
+              <tr><td class="mono">12:14:32</td><td><span class="badge err">500</span></td><td class="num small">1.1s</td></tr>
+              <tr><td class="mono">12:14:02</td><td><span class="badge err">500</span></td><td class="num small">812ms</td></tr>
+              <tr><td class="mono">10:20:11</td><td><span class="badge ok">200</span></td><td class="num small">118ms</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel-foot">A channel failing for &gt; 1h raises a meta-alert on in-app and email. Notification failures never block trades.</div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

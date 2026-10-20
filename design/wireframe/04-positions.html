@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Positions · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="positions">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Overview / Positions</div>
+        <h1>Positions</h1>
+        <p class="sub">Every open position as one tile. PnL, mark freshness, ladder state and executable value come from the server view model — the tile never recomputes money.</p>
+      </div>
+      <div class="page-actions">
+        <div class="seg" aria-label="Density">
+          <button aria-pressed="true">Comfortable</button>
+          <button>Compact</button>
+        </div>
+        <a class="btn" href="18-ledger.html">Closed trades</a>
+        <a class="btn primary" href="07-token.html">New order</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Open positions</div><div class="value">4</div><div class="meta">3 strategies · 2 chains</div></div>
+      <div class="stat"><div class="label">Executable value</div><div class="value">$1,284.20</div><div class="meta">at current marks · <span class="mono">8.7 SOL</span></div></div>
+      <div class="stat"><div class="label">Unrealized</div><div class="value ok">+$86.40</div><div class="meta"><span class="delta up">+7.2%</span> · after fees</div></div>
+      <div class="stat"><div class="label">Exposure</div><div class="value">38%</div><div class="meta">of $3,400 risk cap</div></div>
+      <div class="stat"><div class="label">Realized today</div><div class="value">+$12.10</div><div class="meta">6 closes · fees $2.84</div></div>
+      <div class="stat"><div class="label">Needs attention</div><div class="value err">1</div><div class="meta">no sell route</div></div>
+    </section>
+
+    <div class="tabs mb-12">
+      <a class="tab on" href="#open">Open <span class="count">4</span></a>
+      <a class="tab" href="#unsellable">Unsellable <span class="count">1</span></a>
+      <a class="tab" href="#closed">Closed <span class="count">28</span></a>
+      <a class="tab" href="#watch">Watchlist <span class="count">6</span></a>
+    </div>
+
+    <section class="panel mb-12">
+      <div class="table-toolbar">
+        <span class="field" style="min-width:120px"><select class="select"><option>All chains</option><option>Solana</option><option>Base</option><option>Ethereum</option></select></span>
+        <span class="field" style="min-width:150px"><select class="select"><option>All strategies</option><option>Momentum v1.2</option><option>DCA weekly</option><option>Manual</option></select></span>
+        <span class="field" style="min-width:130px"><select class="select"><option>All wallets</option><option>Main (hot)</option><option>Ledger (hw)</option></select></span>
+        <span class="field" style="min-width:130px"><select class="select"><option>Sort: PnL %</option><option>Sort: value</option><option>Sort: age</option><option>Sort: next level</option></select></span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="micro">Group by</span>
+        <div class="seg"><button aria-pressed="true">None</button><button>Strategy</button><button>Wallet</button><button>Chain</button></div>
+        <span class="badge ghost">auto-refresh 1s</span>
+      </div>
+      <div class="table-foot">
+        <span>4 open · 1 needs attention · last mark 1s ago</span>
+        <span>USD totals use the current SOL/USD mark <span class="mono">$147.62</span></span>
+      </div>
+    </section>
+
+    <section class="grid cols-2 tiles" id="open">
+      <!-- ============ TILE A — banked / riding winner ============ -->
+      <article class="tile win">
+        <div class="tile-head">
+          <div class="tile-id">
+            <div class="token" title="Bonk">BO</div>
+            <div>
+              <div class="tile-name">Bonk</div>
+              <div class="tile-sub">BONK // jupiter // Solana ↗</div>
+            </div>
+          </div>
+          <div class="tile-pnl">
+            <div class="pct ok">+42.6%</div>
+            <div class="usd">+$38.12 · <span class="ok">+0.258 SOL</span></div>
+          </div>
+        </div>
+
+        <div class="tile-price">
+          <span class="px">$0.00003142</span>
+          <span class="small muted"><span class="dot-live"></span>live jupiter · 1s</span>
+          <span class="tile-tags">
+            <span class="badge">PAPER</span>
+            <span class="badge ghost">solana</span>
+            <span class="badge ghost">2h old</span>
+            <span class="badge ghost">held 19m</span>
+          </span>
+        </div>
+
+        <div class="tile-chart">
+          <div class="chart" aria-label="BONK price with entry, trail, bank and ladder levels">
+            <svg viewBox="0 0 600 112" role="img">
+              <line class="gridline" x1="0" y1="4" x2="560" y2="4"/>
+              <line class="gridline" x1="0" y1="56" x2="560" y2="56"/>
+              <line class="gridline" x1="0" y1="100" x2="560" y2="100"/>
+              <line class="axis" x1="560" y1="0" x2="560" y2="112"/>
+              <text class="axis-text" x="566" y="7">$0.000046</text>
+              <text class="axis-text" x="566" y="59">$0.000033</text>
+              <text class="axis-text" x="566" y="103">$0.000020</text>
+              <line class="level level-entry" x1="0" y1="88" x2="560" y2="88"/>
+              <text class="level-label" x="4" y="85">ENTRY $0.000024</text>
+              <line class="level" x1="0" y1="22" x2="560" y2="22"/>
+              <text class="level-label" x="4" y="19">BANK +69.6% · sold 30.5%</text>
+              <line class="level level-arm" x1="0" y1="64" x2="560" y2="64"/>
+              <text class="level-label" x="4" y="61">ARM +25%</text>
+              <polyline class="series" points="0,90 40,86 80,88 120,80 160,76 200,68 240,72 280,62 320,58 360,46 400,52 440,36 480,30 520,26 560,58"/>
+              <circle class="dot" cx="560" cy="58" r="2.5"/>
+              <circle class="peak" cx="520" cy="16" r="5"/>
+              <text class="num-label" x="452" y="12">PEAK +75%</text>
+              <line class="level level-trail" x1="0" y1="40" x2="560" y2="40"/>
+              <text class="level-label" x="4" y="37">TRAIL</text>
+              <text class="axis-text" x="2" y="109">0m</text>
+              <text class="axis-text" x="270" y="109">10m</text>
+              <text class="axis-text" x="530" y="109">20m</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="tile-market" aria-label="Market data: live with entry fallback">
+          <div class="mcell"><div class="k">MCap</div><div class="v">$2.41B</div><div class="src"><span class="dot-live"></span>live</div></div>
+          <div class="mcell"><div class="k">Liq</div><div class="v">$4.20M</div><div class="src"><span class="dot-live"></span>live</div></div>
+          <div class="mcell"><div class="k">Holders</div><div class="v">812.4K</div><div class="src"><span class="dot-live"></span>3s</div></div>
+          <div class="mcell"><div class="k">1H</div><div class="v ok">+6.2%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">M5</div><div class="v ok">+1.8%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">BSR</div><div class="v">1.34</div><div class="src">1h buys/sells</div></div>
+        </div>
+
+        <div class="tile-money">
+          <div class="money-cell"><div class="k">In</div><div class="v">$89.48</div></div>
+          <div class="money-cell"><div class="k">Banked</div><div class="v ok">$46.20</div></div>
+          <div class="money-cell"><div class="k">Realized</div><div class="v ok">+$18.90</div></div>
+          <div class="money-cell"><div class="k">Unreal</div><div class="v ok">+$19.22</div></div>
+        </div>
+
+        <div class="tile-ladder">
+          <div class="ladder-top">
+            <span class="badge info">RIDING</span>
+            <span class="small muted">bag <span class="mono">69.5%</span> · next</span>
+            <span class="tag" style="margin-left:auto">NEXT +200% RUNG</span>
+          </div>
+          <div class="ladder">
+            <div class="step"><span class="tick on"></span><span class="lbl on">ARM +25</span><span class="bar"></span></div>
+            <div class="step"><span class="tick on"></span><span class="lbl on">BANK +70</span><span class="bar"></span></div>
+            <div class="step"><span class="tick next"></span><span class="lbl on">RUNG +200</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">FINAL +500</span></div>
+          </div>
+        </div>
+
+        <div class="tile-prov">
+          <span class="badge ghost">mark live · 1s</span>
+          <span class="badge ok">exec ✓</span>
+          <span class="badge ok">gate ✓</span>
+          <span class="badge ghost">rule momentum_v1</span>
+          <span class="net ok">net +0.258 SOL · fees 0.0009</span>
+        </div>
+
+        <div class="tile-actions">
+          <div class="budget">
+            <div class="cap">RIDING · NO MAX HOLD</div>
+          </div>
+          <button class="btn danger sm">Sell now</button>
+          <button class="btn sm">⋯</button>
+        </div>
+        <div class="tile-note">First bank at +69.6% (30.5% of bag); trailing the remainder at 8% giveback.</div>
+      </article>
+
+      <!-- ============ TILE B — open pre-bank loser ============ -->
+      <article class="tile loss">
+        <div class="tile-head">
+          <div class="tile-id">
+            <div class="token" title="Aerodrome">AE</div>
+            <div>
+              <div class="tile-name">Aerodrome</div>
+              <div class="tile-sub">AERO // uniswap v3 // Base ↗</div>
+            </div>
+          </div>
+          <div class="tile-pnl">
+            <div class="pct err">−8.3%</div>
+            <div class="usd">−$6.12 · <span class="err">−0.041 SOL</span></div>
+          </div>
+        </div>
+
+        <div class="tile-price">
+          <span class="px">$1.284</span>
+          <span class="small muted"><span class="dot-live"></span>live uniswap · 3s</span>
+          <span class="tile-tags">
+            <span class="badge">PAPER</span>
+            <span class="badge ghost">base</span>
+            <span class="badge ghost">41m old</span>
+            <span class="badge ghost">held 41m</span>
+          </span>
+        </div>
+
+        <div class="tile-chart">
+          <div class="chart" aria-label="AERO price with entry and stop levels">
+            <svg viewBox="0 0 600 112" role="img">
+              <line class="gridline" x1="0" y1="18" x2="560" y2="18"/>
+              <line class="gridline" x1="0" y1="52" x2="560" y2="52"/>
+              <line class="gridline" x1="0" y1="86" x2="560" y2="86"/>
+              <line class="axis" x1="560" y1="0" x2="560" y2="112"/>
+              <text class="axis-text" x="566" y="21">$1.36</text>
+              <text class="axis-text" x="566" y="55">$1.30</text>
+              <text class="axis-text" x="566" y="89">$1.24</text>
+              <line class="level level-entry" x1="0" y1="50" x2="560" y2="50"/>
+              <text class="level-label" x="4" y="47">ENTRY $1.400</text>
+              <line class="level level-stop" x1="0" y1="96" x2="560" y2="96"/>
+              <text class="level-label" x="4" y="93">HARD SL −12% $1.232</text>
+              <polyline class="series" points="0,52 30,56 60,54 90,61 120,58 150,64 180,62 210,68 240,72 270,70 300,75 330,73 360,78 390,76 420,80 450,77 480,82 510,79 540,84 560,83"/>
+              <circle class="dot" cx="560" cy="83" r="2.5"/>
+              <line class="level level-arm" x1="0" y1="30" x2="560" y2="30"/>
+              <text class="level-label" x="4" y="27">ARM +25% (not covered)</text>
+              <text class="axis-text" x="2" y="109">0m</text>
+              <text class="axis-text" x="270" y="109">20m</text>
+              <text class="axis-text" x="525" y="109">41m</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="tile-market">
+          <div class="mcell"><div class="k">MCap</div><div class="v">$1.18B</div><div class="src"><span class="dot-live"></span>live</div></div>
+          <div class="mcell"><div class="k">Liq</div><div class="v">$38.4M</div><div class="src"><span class="dot-live"></span>live</div></div>
+          <div class="mcell"><div class="k">Holders</div><div class="v">92.1K</div><div class="src"><span class="dot-live"></span>12s</div></div>
+          <div class="mcell"><div class="k">1H</div><div class="v err">−2.4%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">M5</div><div class="v err">−0.9%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">BSR</div><div class="v">0.86</div><div class="src">1h buys/sells</div></div>
+        </div>
+
+        <div class="tile-money">
+          <div class="money-cell"><div class="k">In</div><div class="v">$74.02</div></div>
+          <div class="money-cell"><div class="k">Banked</div><div class="v">—</div></div>
+          <div class="money-cell"><div class="k">Realized</div><div class="v">—</div></div>
+          <div class="money-cell"><div class="k">Unreal</div><div class="v err">−$6.12</div></div>
+        </div>
+
+        <div class="tile-ladder">
+          <div class="ladder-top">
+            <span class="badge">PRE-BANK</span>
+            <span class="small muted">bag <span class="mono">100%</span> · next</span>
+            <span class="tag" style="margin-left:auto">NEXT +25% ARM</span>
+          </div>
+          <div class="ladder">
+            <div class="step"><span class="tick next"></span><span class="lbl on">ARM +25</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">BANK +125</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">RUNG +200</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">FINAL +500</span></div>
+          </div>
+        </div>
+
+        <div class="tile-prov">
+          <span class="badge ghost">mark live · 3s</span>
+          <span class="badge ok">exec ✓</span>
+          <span class="badge ok">gate ✓</span>
+          <span class="badge ghost">rule manual</span>
+          <span class="net err">net −0.041 SOL · fees 0.0006</span>
+        </div>
+
+        <div class="tile-actions">
+          <div class="budget">
+            <div class="bar"><div class="fill" style="width:17%"></div></div>
+            <div class="cap">3h 19m LEFT / 4h 0m</div>
+          </div>
+          <button class="btn danger sm">Sell now</button>
+          <button class="btn sm">⋯</button>
+        </div>
+        <div class="tile-note">Manual entry · hard stop −12% · no automation attached.</div>
+      </article>
+
+      <!-- ============ TILE C — entering ============ -->
+      <article class="tile flat">
+        <div class="tile-head">
+          <div class="tile-id">
+            <div class="token" title="Mochi">MO</div>
+            <div>
+              <div class="tile-name">Mochi</div>
+              <div class="tile-sub">MOCHI // jupiter // Solana ↗</div>
+            </div>
+          </div>
+          <div class="tile-pnl">
+            <div class="pct muted">—</div>
+            <div class="usd">awaiting fill</div>
+          </div>
+        </div>
+
+        <div class="tile-price">
+          <span class="px mut">$0.004218</span>
+          <span class="small muted"><span class="dot-live stale"></span>entry fallback · 6s</span>
+          <span class="tile-tags">
+            <span class="badge">PAPER</span>
+            <span class="badge info">ENTERING</span>
+            <span class="badge ghost">solana</span>
+          </span>
+        </div>
+
+        <div class="tile-chart">
+          <div class="chart" aria-label="Entering position, no fills yet">
+            <svg viewBox="0 0 600 112" role="img">
+              <line class="gridline" x1="0" y1="24" x2="560" y2="24"/>
+              <line class="gridline" x1="0" y1="56" x2="560" y2="56"/>
+              <line class="gridline" x1="0" y1="88" x2="560" y2="88"/>
+              <line class="axis" x1="560" y1="0" x2="560" y2="112"/>
+              <line class="level level-entry" x1="0" y1="56" x2="560" y2="56"/>
+              <text class="level-label" x="4" y="53">LIMIT $0.004218</text>
+              <circle class="dot" cx="560" cy="56" r="3"/>
+              <text class="axis-text" x="2" y="109">0s</text>
+              <text class="axis-text" x="480" y="109">submitted 6s ago</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="tile-market">
+          <div class="mcell"><div class="k">MCap</div><div class="v">$4.1M</div><div class="src"><span class="dot-live"></span>live</div></div>
+          <div class="mcell"><div class="k">Liq</div><div class="v">$612K</div><div class="src"><span class="dot-live"></span>live</div></div>
+          <div class="mcell"><div class="k">Holders</div><div class="v">1.8K</div><div class="src">unknown age</div></div>
+          <div class="mcell"><div class="k">1H</div><div class="v ok">+3.1%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">M5</div><div class="v">—</div><div class="src">no sample</div></div>
+          <div class="mcell"><div class="k">BSR</div><div class="v">1.02</div><div class="src">1h buys/sells</div></div>
+        </div>
+
+        <div class="tile-money">
+          <div class="money-cell"><div class="k">In</div><div class="v">$25.00</div></div>
+          <div class="money-cell"><div class="k">Banked</div><div class="v">—</div></div>
+          <div class="money-cell"><div class="k">Realized</div><div class="v">—</div></div>
+          <div class="money-cell"><div class="k">Unreal</div><div class="v">—</div></div>
+        </div>
+
+        <div class="tile-ladder">
+          <div class="ladder-top"><span class="badge">PRE-BANK</span><span class="small muted">no fills yet</span></div>
+          <div class="ladder">
+            <div class="step"><span class="tick"></span><span class="lbl">ARM +25</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">BANK +125</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">RUNG +200</span><span class="bar"></span></div>
+            <div class="step"><span class="tick"></span><span class="lbl">FINAL +500</span></div>
+          </div>
+        </div>
+
+        <div class="tile-prov">
+          <span class="badge warn">mark entry fallback · 6s</span>
+          <span class="badge ghost">quote ttl 12s</span>
+          <span class="badge ghost">rule momentum_v1</span>
+          <span class="net">—</span>
+        </div>
+
+        <div class="tile-actions">
+          <div class="budget"><div class="cap">intent submitted · waiting for confirmation</div></div>
+          <button class="btn sm">Cancel intent</button>
+          <button class="btn sm">⋯</button>
+        </div>
+        <div class="tile-note">Entering is a state, not a spinner. Show the intent, its ttl and the last known quote.</div>
+      </article>
+
+      <!-- ============ TILE D — unsellable ============ -->
+      <article class="tile error">
+        <div class="tile-head">
+          <div class="tile-id">
+            <div class="token" title="Scamcoin">SC</div>
+            <div>
+              <div class="tile-name">Scamcoin</div>
+              <div class="tile-sub">SCAM // raydium // Solana ↗</div>
+            </div>
+          </div>
+          <div class="tile-pnl">
+            <div class="pct err">−96.2%</div>
+            <div class="usd">−$142.30 · <span class="err">−0.964 SOL</span></div>
+          </div>
+        </div>
+
+        <div class="tile-price">
+          <span class="px mut">$0.00000041</span>
+          <span class="small muted err"><span class="dot-live dead"></span>NO SELL ROUTE · last exact quote 2m</span>
+          <span class="tile-tags">
+            <span class="badge">PAPER</span>
+            <span class="badge err">UNSELLABLE</span>
+            <span class="badge ghost">solana</span>
+          </span>
+        </div>
+
+        <div class="tile-chart">
+          <div class="chart" aria-label="Scamcoin collapsed chart with no sell route">
+            <svg viewBox="0 0 600 112" role="img">
+              <line class="gridline" x1="0" y1="20" x2="560" y2="20"/>
+              <line class="gridline" x1="0" y1="56" x2="560" y2="56"/>
+              <line class="gridline" x1="0" y1="92" x2="560" y2="92"/>
+              <line class="axis" x1="560" y1="0" x2="560" y2="112"/>
+              <line class="level level-entry" x1="0" y1="22" x2="560" y2="22"/>
+              <text class="level-label" x="4" y="19">ENTRY $0.0000108</text>
+              <polyline class="series" points="0,24 20,24 40,26 60,30 80,32 100,28 120,34 140,40 160,44 180,50 200,54 220,58 240,64 260,70 280,72 300,78 320,80 340,84 360,88 380,90 400,92 420,94 440,95 460,96 480,97 500,98 520,99 540,99 560,100"/>
+              <line class="level level-stop" x1="0" y1="100" x2="560" y2="100"/>
+              <text class="level-label err" x="4" y="97">STOP COULD NOT EXECUTE</text>
+              <circle class="dot" cx="560" cy="100" r="2.5"/>
+              <text class="axis-text" x="2" y="109">0m</text>
+              <text class="axis-text" x="270" y="109">42m</text>
+              <text class="axis-text" x="505" y="109">84m</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="tile-market">
+          <div class="mcell"><div class="k">MCap</div><div class="v">$41.2K</div><div class="src"><span class="dot-live stale"></span>stale 2m</div></div>
+          <div class="mcell"><div class="k">Liq</div><div class="v">$212</div><div class="src"><span class="dot-live stale"></span>stale 2m</div></div>
+          <div class="mcell"><div class="k">Holders</div><div class="v">—</div><div class="src">unknown</div></div>
+          <div class="mcell"><div class="k">1H</div><div class="v err">−78.4%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">M5</div><div class="v err">−31.0%</div><div class="src">dexscreener</div></div>
+          <div class="mcell"><div class="k">BSR</div><div class="v err">0.04</div><div class="src">1h buys/sells</div></div>
+        </div>
+
+        <div class="tile-money">
+          <div class="money-cell"><div class="k">In</div><div class="v">$148.00</div></div>
+          <div class="money-cell"><div class="k">Banked</div><div class="v">—</div></div>
+          <div class="money-cell"><div class="k">Realized</div><div class="v">—</div></div>
+          <div class="money-cell"><div class="k">Unreal</div><div class="v err">−$142.30</div></div>
+        </div>
+
+        <div class="tile-ladder">
+          <div class="ladder-top"><span class="badge err">NO SELL ROUTE</span><span class="small muted">last executable value <span class="mono">$0.0041</span></span></div>
+          <div class="note err mt-8"><strong>Sell is unavailable.</strong> No route returned a full-size quote. Nothing was sent. Last exact quote: 2m ago. The position is not flat.</div>
+        </div>
+
+        <div class="tile-prov">
+          <span class="badge err">mark no_sell_route · 2m</span>
+          <span class="badge ghost">exec ✗</span>
+          <span class="badge ghost">rule manual</span>
+          <span class="net err">unrealized −0.964 SOL</span>
+        </div>
+
+        <div class="tile-actions">
+          <div class="budget"><div class="cap">max hold exceeded · exit blocked</div></div>
+          <button class="btn danger sm">Retry sell</button>
+          <button class="btn armed sm">SURE? WRITE OFF</button>
+        </div>
+        <div class="tile-note">Write-off is paper-only, two-step, and writes an explicit ledger reason. It is not a sell.</div>
+      </article>
+    </section>
+
+    <section class="panel mt-16" id="closed">
+      <div class="panel-head">
+        <h2>Recently closed</h2>
+        <span class="sub">28 in the last 7 days</span>
+        <div class="right"><a class="btn sm" href="18-ledger.html">Open ledger</a></div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Closed</th><th>Token</th><th>Chain</th><th>Strategy</th>
+              <th class="num">In</th><th class="num">Out</th><th class="num">PnL</th>
+              <th class="num">Hold</th><th>Exit reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="rowlink">
+              <td class="mono">12:04</td>
+              <td><span class="row"><span class="token" style="width:18px;height:18px;font-size:7px">JUP</span> Jupiter</span></td>
+              <td>Solana</td><td>Momentum v1.2</td>
+              <td class="num">$120.00</td><td class="num">$138.40</td>
+              <td class="num ok">+$18.40 <span class="sub">+15.3%</span></td>
+              <td class="num">38m</td><td><span class="badge ok">TRAIL</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td class="mono">11:41</td>
+              <td><span class="row"><span class="token" style="width:18px;height:18px;font-size:7px">WIF</span> dogwifhat</span></td>
+              <td>Solana</td><td>Momentum v1.2</td>
+              <td class="num">$80.00</td><td class="num">$71.20</td>
+              <td class="num err">−$8.80 <span class="sub">−11.0%</span></td>
+              <td class="num">12m</td><td><span class="badge err">STOP</span></td>
+            </tr>
+            <tr class="rowlink">
+              <td class="mono">10:58</td>
+              <td><span class="row"><span class="token" style="width:18px;height:18px;font-size:7px">TOS</span> Toshi</span></td>
+              <td>Base</td><td>DCA weekly</td>
+              <td class="num">$50.00</td><td class="num">$50.00</td>
+              <td class="num">— <span class="sub">0.0%</span></td>
+              <td class="num">4d</td><td><span class="badge ghost">MANUAL</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot between">
+        <span>Exit reasons are machine codes; hover for the rule that fired.</span>
+        <span class="row"><span class="badge ghost">PAPER</span><span class="badge ghost">fees included</span></span>
+      </div>
+    </section>
+
+    <section class="grid cols-3 mt-16">
+      <div class="panel">
+        <div class="panel-head"><h2>What the tile must never do</h2></div>
+        <div class="panel-body stack-sm small muted">
+          <div>• Show <span class="mono">0</span> for an unknown value. Unknown is <span class="mono">—</span>.</div>
+          <div>• Present an expired quote as a live mark.</div>
+          <div>• Recompute PnL on the client.</div>
+          <div>• Hide an unsellable position behind an unrealized number.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Tile states</h2></div>
+        <div class="panel-body row small">
+          <span class="badge">entering</span><span class="badge">pre-bank</span><span class="badge">trail-armed</span>
+          <span class="badge info">banked</span><span class="badge info">riding</span><span class="badge">laddered</span>
+          <span class="badge err">unsellable</span><span class="badge warn">dust</span><span class="badge ghost">closed</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Reference</h2></div>
+        <div class="panel-body stack-sm small">
+          <a href="29-components.html">Component anatomy →</a>
+          <a href="27-states.html">All states →</a>
+          <a href="05-position-detail.html">Position detail →</a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

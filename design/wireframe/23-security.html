@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="security">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Security</div>
+        <h1>Security</h1>
+        <p class="sub">Who can sign, from where, and what changed. The vault, sessions, key custody and audit trail are one page because they fail together.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge ok"><span class="dot-live"></span>vault unlocked · 12m</span>
+        <a class="btn" href="#audit">Audit log</a>
+        <button class="btn danger">Lock vault now</button>
+      </div>
+    </header>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Two-factor &amp; passkeys</h2><span class="sub">phishing-resistant primary</span><div class="right"><button class="btn sm">+ Add passkey</button></div></div>
+          <div class="panel-body">
+            <ul class="list">
+              <li class="list-row">
+                <span class="badge ok">primary</span>
+                <span class="grow"><span class="title">MacBook Pro · Touch ID</span><span class="sub">Passkey · platform authenticator · added 2026-09-14 · last used 12m ago</span></span>
+                <span class="badge ghost">this device</span>
+              </li>
+              <li class="list-row">
+                <span class="badge">passkey</span>
+                <span class="grow"><span class="title">Pixel 8 · screen lock</span><span class="sub">Passkey · synced via Google Password Manager · added 2026-09-15 · last used 2h ago</span></span>
+                <button class="btn sm">Remove</button>
+              </li>
+              <li class="list-row">
+                <span class="badge info">fallback</span>
+                <span class="grow"><span class="title">Aegis TOTP</span><span class="sub">RFC 6238 · 30s period · time drift +1.2s · used at 20:41:07 on sign-in</span></span>
+                <span class="badge warn">last attempt failed</span>
+              </li>
+              <li class="list-row">
+                <span class="badge ghost">password</span>
+                <span class="grow"><span class="title">Password fallback</span><span class="sub">Argon2id hash · 6 failed attempts in 10m · lockout 4m active</span></span>
+                <button class="btn sm">Change</button>
+              </li>
+            </ul>
+          </div>
+          <div class="panel-foot">Removing the last passkey requires the vault passphrase and one recovery code.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Active sessions</h2><span class="sub">5 sessions · 1 outside your network</span><div class="right"><button class="btn sm">Sign out all others</button></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Device</th><th>IP</th><th>Method</th><th>Last seen</th><th></th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="strong">MacBook Pro · Chrome 129</span><span class="sub" style="display:block">macOS 14.6 · this device</span></td>
+                  <td class="mono small">192.168.1.24</td>
+                  <td><span class="badge ok">passkey</span></td>
+                  <td class="small">now</td>
+                  <td><span class="badge">current</span></td>
+                  <td></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">iPhone 15 · Safari 18</span><span class="sub" style="display:block">iOS 18.0</span></td>
+                  <td class="mono small">192.168.1.31</td>
+                  <td><span class="badge">passkey</span></td>
+                  <td class="small">2h ago</td>
+                  <td></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">iPad · Safari 17</span><span class="sub" style="display:block">iPadOS 17.6</span></td>
+                  <td class="mono small">73.241.18.90</td>
+                  <td><span class="badge ghost">TOTP</span></td>
+                  <td class="small">4d ago</td>
+                  <td><span class="badge warn">new network</span></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">ezchain-cli 0.0.0</span><span class="sub" style="display:block">loopback · read scope</span></td>
+                  <td class="mono small">127.0.0.1</td>
+                  <td><span class="badge info">API key</span></td>
+                  <td class="small">9d ago</td>
+                  <td></td>
+                  <td class="right"><button class="btn sm">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">Unknown · Firefox 131</span><span class="sub" style="display:block">Windows 11 · failed sign-in</span></td>
+                  <td class="mono small">185.17.44.6</td>
+                  <td><span class="badge err">password</span></td>
+                  <td class="small">11d ago</td>
+                  <td><span class="badge err">blocked</span></td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Revoking a session invalidates its token immediately; in-flight orders are rejected, not queued.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Key custody</h2><span class="sub">no key material leaves the host</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Wallet</th><th>Key location</th><th>Signing</th><th>Exportable</th><th>Last signature</th></tr></thead>
+              <tbody>
+                <tr><td>Main (hot)</td><td class="small">local vault · encrypted file</td><td class="small">in-process, unlocked</td><td><span class="badge err">yes, with passphrase</span></td><td class="small mono">20:14:32</td></tr>
+                <tr><td>Ledger (hardware)</td><td class="small">Ledger device · never imported</td><td class="small">device confirm + HID</td><td><span class="badge ok">no</span></td><td class="small mono">18:02:11</td></tr>
+                <tr><td>Cold watch</td><td class="small">no key · xpub only</td><td class="small muted">—</td><td><span class="badge ok">n/a</span></td><td class="small muted">—</td></tr>
+                <tr><td>Binance</td><td class="small">exchange API key · sealed</td><td class="small muted">— (read scope)</td><td><span class="badge warn">revoke + reissue</span></td><td class="small muted">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Signing never happens in an adapter. The executor signs an opaque envelope; the adapter verifies it.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Vault</h2><span class="sub">state and derivation</span><div class="right"><button class="btn sm">Lock now</button></div></div>
+          <div class="panel-body grid cols-4">
+            <div class="stat" style="padding:8px 0"><div class="label">Status</div><div class="strong">Unlocked</div><div class="meta ok">12m of 15m idle</div></div>
+            <div class="stat" style="padding:8px 0"><div class="label">Auto-lock</div><div class="strong mono">15m</div><div class="meta">idle timer, no override</div></div>
+            <div class="stat" style="padding:8px 0"><div class="label">Master key</div><div class="strong">OS keychain</div><div class="meta">+ passphrase on cold start</div></div>
+            <div class="stat" style="padding:8px 0"><div class="label">KDF</div><div class="strong mono">Argon2id</div><div class="meta">64 MiB · t=3 · p=4</div></div>
+          </div>
+          <div class="panel-foot">Vault file <span class="mono">vault.age</span> · 1.4 MB · last verified 2026-10-19 03:00 · cipher XChaCha20-Poly1305</div>
+        </section>
+
+        <section class="panel" id="recovery">
+          <div class="panel-head"><h2>Recovery phrase</h2><span class="sub">shown once, not stored</span><div class="right"><span class="badge warn">verify backup</span></div></div>
+          <div class="panel-body stack-sm">
+            <div class="between">
+              <div><div class="small strong">24-word phrase</div><div class="small muted">Displayed once at vault creation on 2026-09-14. Not written to disk, not in the database, not recoverable by support.</div></div>
+              <button class="btn" disabled>Reveal phrase</button>
+            </div>
+            <div class="note warn"><strong>Last verified:</strong> 2026-09-14 (vault creation). No restore drill recorded. Run one from <a href="25-operations.html">Operations → Recovery drill</a>.</div>
+            <div class="between">
+              <div><div class="small strong">Recovery codes</div><div class="small muted">8 of 10 remaining · 2 used (2026-09-22, 2026-10-02)</div></div>
+              <button class="btn sm">Regenerate</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="audit">
+          <div class="panel-head"><h2>Audit log</h2><span class="sub">last 8 of 9,412 entries</span><div class="right"><a class="btn sm" href="18-ledger.html">Export</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Target</th><th>Result</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">20:41:07</td><td class="small">JW</td><td class="small mono">AUTH_FAILED</td><td class="small">password · 192.168.1.24</td><td><span class="badge err">denied</span></td></tr>
+                <tr><td class="mono small">20:38:04</td><td class="small">JW</td><td class="small mono">CONFIG_CHANGE</td><td class="small">settings.quote_ttl 12s → 8s</td><td><span class="badge ok">applied</span></td></tr>
+                <tr><td class="mono small">20:33:51</td><td class="small">JW</td><td class="small mono">LIVE_MODE_DENIED</td><td class="small">strategy Momentum v1.2</td><td><span class="badge err">gate not met</span></td></tr>
+                <tr><td class="mono small">19:58:12</td><td class="small">JW</td><td class="small mono">WALLET_ADDED</td><td class="small">Cold watch · bc1q…7k4m</td><td><span class="badge ok">watch-only</span></td></tr>
+                <tr><td class="mono small">18:02:11</td><td class="small">JW</td><td class="small mono">KEY_REVOKED</td><td class="small">Binance API key #2</td><td><span class="badge ok">revoked</span></td></tr>
+                <tr><td class="mono small">17:44:30</td><td class="small">system</td><td class="small mono">SESSION_REVOKED</td><td class="small">iPad · 73.241.18.90</td><td><span class="badge ok">done</span></td></tr>
+                <tr><td class="mono small">16:20:09</td><td class="small">JW</td><td class="small mono">KILL_SWITCH_ARMED</td><td class="small">scope: Solana</td><td><span class="badge warn">armed</span></td></tr>
+                <tr><td class="mono small">15:12:44</td><td class="small">JW</td><td class="small mono">EXPORT_CREATED</td><td class="small">ledger 2026-09-20…2026-10-20</td><td><span class="badge ok">CSV · 4.2 MB</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Append-only · hash-chained · retained with the workspace. Filter by event, actor or result.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Hardware approval policy</h2><span class="sub">Ledger (hardware)</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between"><span class="small">Device confirmation above</span><span class="tag">$100</span></div>
+            <div class="between"><span class="small">Blind signing</span><span class="badge ok">off</span></div>
+            <div class="between"><span class="small">Allowlist-only destinations</span><span class="toggle on"></span></div>
+            <div class="between"><span class="small">Confirm on device every signature</span><span class="toggle on"></span></div>
+            <div class="between"><span class="small">PSBT review on device</span><span class="badge ok">required</span></div>
+            <div class="note">Lowering this policy requires the owner passkey and is recorded as <span class="mono">POLICY_CHANGE</span>. Blind signing cannot be enabled from the UI.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>API keys</h2><span class="sub">3 keys</span></div>
+          <div class="panel-body">
+            <ul class="list">
+              <li class="list-row"><span class="grow"><span class="title mono">ek_live_…9f2a</span><span class="sub">trade · expires in 21d · last used 9d ago</span></span><span class="badge warn">expiring</span></li>
+              <li class="list-row"><span class="grow"><span class="title mono">ek_read_…41c0</span><span class="sub">read · no expiry · CLI</span></span><span class="badge ok">active</span></li>
+              <li class="list-row"><span class="grow"><span class="title mono">ek_live_…7b13</span><span class="sub">trade · revoked 18:02</span></span><span class="badge ghost">revoked</span></li>
+            </ul>
+            <a class="btn sm mt-8" href="24-developer.html">Manage API keys →</a>
+          </div>
+        </section>
+
+        <div class="note err"><strong>1 session outside your network.</strong> iPad from 73.241.18.90, last seen 4d ago. If you do not recognise it, revoke it and rotate the recovery codes.</div>
+        <div class="annotation"><b>Policy:</b> destructive actions (revoke last passkey, export vault, delete workspace) require typing a confirmation and a passkey assertion. Nothing in this page is a one-click irreversible action.</div>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

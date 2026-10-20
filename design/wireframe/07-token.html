@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Token · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="token">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs"><a href="06-markets.html">Markets</a> / Solana / BONK</div>
+        <div class="row">
+          <span class="avatar-lg" style="font-size:11px">BO</span>
+          <div>
+            <h1>Bonk <span class="muted" style="font-weight:400">BONK</span></h1>
+            <p class="sub">DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263 · Solana T1 · Jupiter, Raydium, PumpSwap</p>
+          </div>
+        </div>
+      </div>
+      <div class="page-actions">
+        <div style="text-align:right">
+          <div class="mono" style="font-size:20px;font-weight:600">$0.00003142</div>
+          <div class="small"><span class="delta up">+6.2% 1h</span> · <span class="delta down">−3.4% 24h</span></div>
+        </div>
+        <span class="badge">PAPER</span>
+        <button class="btn" aria-pressed="true">★ Watchlist</button>
+        <a class="btn" href="15-alerts.html">Alert</a>
+      </div>
+    </header>
+
+    <div class="row mb-12">
+      <span class="badge ok">safety pass</span>
+      <span class="badge ok">mint revoked</span>
+      <span class="badge ok">freeze revoked</span>
+      <span class="badge">top10 18.0%</span>
+      <span class="badge ok">honeypot pass</span>
+      <span class="badge">rugcheck 12/100</span>
+      <span class="badge ghost">liq $4.20M</span>
+      <span class="badge ghost">holders 812.4K</span>
+      <span class="spacer" style="flex:1"></span>
+      <a class="small muted" href="20-chains.html">solscan.io/token/DezX…W1u ↗</a>
+    </div>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>BONK / USD</h2>
+            <span class="sub">executable mid · venue quotes, not indexer candles</span>
+            <div class="right">
+              <div class="seg"><button>5m</button><button>15m</button><button aria-pressed="true">1h</button><button>4h</button><button>1d</button></div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="chart" aria-label="BONK intraday price with entry, stop, trail and bank levels">
+              <svg viewBox="0 0 900 300" role="img">
+                <line class="gridline" x1="0" y1="56" x2="840" y2="56"/>
+                <line class="gridline" x1="0" y1="142" x2="840" y2="142"/>
+                <line class="gridline" x1="0" y1="228" x2="840" y2="228"/>
+                <line class="axis" x1="840" y1="10" x2="840" y2="280"/>
+                <text class="axis-text" x="848" y="59">0.000040</text>
+                <text class="axis-text" x="848" y="145">0.000030</text>
+                <text class="axis-text" x="848" y="231">0.000020</text>
+
+                <line class="level level-entry" x1="0" y1="194" x2="840" y2="194"/>
+                <text class="level-label" x="6" y="190">ENTRY $0.00002400 · pos_7f3a91</text>
+                <line class="level level-stop" x1="0" y1="266" x2="840" y2="266"/>
+                <text class="level-label err" x="6" y="262">STOP $0.00001560</text>
+                <line class="level level-trail" x1="0" y1="134" x2="840" y2="134"/>
+                <text class="level-label" x="360" y="130">TRAIL $0.00003096</text>
+                <line class="level" x1="0" y1="50" x2="840" y2="50"/>
+                <text class="level-label" x="6" y="46">BANK L1 $0.00004070 · filled 10:53:44</text>
+
+                <polyline class="series" points="0,200 40,195 80,203 120,198 160,206 200,196 240,200 280,190 320,194 360,186 400,190 440,182 480,188 520,180 540,178 560,186 567,194 580,186 600,176 620,166 640,152 660,140 680,126 700,104 715,72 729,45 745,62 760,80 780,100 800,116 820,126 840,130"/>
+
+                <circle class="dot" cx="729" cy="45" r="3"/>
+                <text class="num-label" x="640" y="36">PEAK +72.0%</text>
+                <circle class="dot" cx="567" cy="194" r="2.5"/>
+                <text class="level-label" x="470" y="212">ENTRY 10:42</text>
+                <line class="crosshair" x1="840" y1="10" x2="840" y2="280"/>
+                <circle class="dot" cx="840" cy="130" r="3.5"/>
+                <text class="num-label" x="748" y="152">$0.00003142</text>
+
+                <text class="axis-text" x="2" y="294">10:00</text>
+                <text class="axis-text" x="270" y="294">10:20</text>
+                <text class="axis-text" x="540" y="294">10:40</text>
+                <text class="axis-text" x="790" y="294">11:01</text>
+              </svg>
+            </div>
+            <div class="between mt-8">
+              <div class="chart-legend">
+                <span class="l-entry"><i></i>Entry</span><span class="l-stop"><i></i>Stop</span>
+                <span class="l-trail"><i></i>Trail</span><span><i style="border-color:var(--line-2)"></i>Bank L1</span>
+              </div>
+              <span class="small muted">last trade $0.00003138 · 11:01:02 · spread 0.4bp</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="tabs">
+          <a class="tab on" href="#chart">Chart</a>
+          <a class="tab" href="#safety">Safety <span class="count">6</span></a>
+          <a class="tab" href="#holders">Holders <span class="count">10</span></a>
+          <a class="tab" href="#liquidity">Liquidity <span class="count">3</span></a>
+          <a class="tab" href="#mine">My position</a>
+        </div>
+
+        <section class="panel" id="safety">
+          <div class="panel-head"><h2>Safety</h2><span class="sub">checked 11:00:12 · sources named per row</span>
+            <div class="right"><span class="badge ok">pass</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Check</th><th>Result</th><th>Detail</th><th>Source · age</th></tr></thead>
+              <tbody>
+                <tr><td>Mint authority</td><td><span class="badge ok">revoked</span></td><td class="mono small">—</td><td class="small muted">RPC · 4s</td></tr>
+                <tr><td>Freeze authority</td><td><span class="badge ok">revoked</span></td><td class="mono small">—</td><td class="small muted">RPC · 4s</td></tr>
+                <tr><td>Top-10 concentration</td><td><span class="badge ok">18.0%</span></td><td class="small">threshold 25% · excl. pools</td><td class="small muted">Helius · 2m</td></tr>
+                <tr><td>Honeypot simulation</td><td><span class="badge ok">pass</span></td><td class="small">sell 1 SOL simulated, 0 errors</td><td class="small muted">sim · 11:00</td></tr>
+                <tr><td>Transfer tax</td><td><span class="badge ok">0.0%</span></td><td class="small">buy and sell</td><td class="small muted">sim · 11:00</td></tr>
+                <tr><td>LP custody</td><td><span class="badge ok">burned / locked</span></td><td class="small">3 pools · 100%</td><td class="small muted">indexer · 6m</td></tr>
+                <tr><td>RugCheck score</td><td><span class="badge ok">12 / 100</span></td><td class="small">low risk · no flags</td><td class="small muted">rugcheck · 3m</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Safety is evidence, not a guarantee. A pass still requires an executable sell quote at the intended size.</div>
+        </section>
+
+        <section class="panel" id="holders">
+          <div class="panel-head"><h2>Holders</h2><span class="sub">top 10 = 18.0% of supply</span>
+            <div class="right"><span class="badge ghost">snapshot 2m</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th class="num">#</th><th>Address</th><th>Label</th><th class="num">% supply</th><th class="num">Balance</th><th>Type</th></tr></thead>
+              <tbody>
+                <tr><td class="num mono">1</td><td class="mono small">9WzDXw…2fLp</td><td>Raydium AMM</td><td class="num">6.42%</td><td class="num mono">4.92T</td><td><span class="badge ghost">pool</span></td></tr>
+                <tr><td class="num mono">2</td><td class="mono small">JUP6Lk…3vQa</td><td>Jupiter vault</td><td class="num">2.18%</td><td class="num mono">1.67T</td><td><span class="badge ghost">router</span></td></tr>
+                <tr><td class="num mono">3</td><td class="mono small">5Q544f…9mTz</td><td>Binance hot</td><td class="num">1.94%</td><td class="num mono">1.49T</td><td><span class="badge ghost">exchange</span></td></tr>
+                <tr><td class="num mono">4</td><td class="mono small">whirLb…4Kd2</td><td>Orca whirlpool</td><td class="num">1.42%</td><td class="num mono">1.09T</td><td><span class="badge ghost">pool</span></td></tr>
+                <tr><td class="num mono">5</td><td class="mono small">FWznbc…8pYe</td><td>Kraken</td><td class="num">1.21%</td><td class="num mono">0.93T</td><td><span class="badge ghost">exchange</span></td></tr>
+                <tr><td class="num mono">6</td><td class="mono small">H8sMJn…1cVr</td><td>Coinbase</td><td class="num">1.08%</td><td class="num mono">0.83T</td><td><span class="badge ghost">exchange</span></td></tr>
+                <tr><td class="num mono">7</td><td class="mono small">pAMMBa…7tKq</td><td>PumpSwap pool</td><td class="num">0.91%</td><td class="num mono">0.70T</td><td><span class="badge ghost">pool</span></td></tr>
+                <tr><td class="num mono">8</td><td class="mono small">2xT9vd…5nWm</td><td>Wintermute</td><td class="num">0.72%</td><td class="num mono">0.55T</td><td><span class="badge warn">market maker</span></td></tr>
+                <tr><td class="num mono">9</td><td class="mono small">Bybit1…7hQz</td><td>Bybit</td><td class="num">0.61%</td><td class="num mono">0.47T</td><td><span class="badge ghost">exchange</span></td></tr>
+                <tr><td class="num mono">10</td><td class="mono small">8LmT3k…4xQd</td><td>Treasury (locked)</td><td class="num">1.51%</td><td class="num mono">1.16T</td><td><span class="badge info">locked 2028</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between"><span>Your wallets: 2,591,333 BONK · 0.0034% · Main (hot)</span><span>Unknown labels stay unlabelled; no heuristics are presented as facts.</span></div>
+        </section>
+
+        <section class="panel" id="liquidity">
+          <div class="panel-head"><h2>Liquidity</h2><span class="sub">$4.20M across 3 pools · depth measured with real quotes</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Pool</th><th>Venue</th><th class="num">TVL</th><th class="num">24h vol</th><th class="num">Fee tier</th><th class="num">Sell 1 SOL</th><th class="num">Sell 10 SOL</th></tr></thead>
+              <tbody>
+                <tr><td>BONK / SOL</td><td>Raydium AMM</td><td class="num">$2.41M</td><td class="num">$268.4M</td><td class="num">0.25%</td><td class="num">−0.3%</td><td class="num">−2.9%</td></tr>
+                <tr><td>BONK / USDC</td><td>Orca Whirlpool</td><td class="num">$1.18M</td><td class="num">$102.2M</td><td class="num">0.30%</td><td class="num">−0.4%</td><td class="num">−3.6%</td></tr>
+                <tr><td>BONK / SOL</td><td>Meteora DLMM</td><td class="num">$0.61M</td><td class="num">$42.2M</td><td class="num">0.20%</td><td class="num">−0.6%</td><td class="num">−6.1%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Impact is real quote output at size, not a constant-product estimate. A 50 SOL sell currently returns −14.8%.</div>
+        </section>
+
+        <section class="panel" id="mine">
+          <div class="panel-head"><h2>My position</h2><span class="sub">pos_7f3a91 · Momentum v1.2</span>
+            <div class="right"><a class="btn sm" href="05-position-detail.html">Open detail</a></div>
+          </div>
+          <div class="panel-body">
+            <div class="grid cols-4">
+              <div><span class="micro">PnL</span><div class="mono ok" style="font-size:16px">+42.6%</div><div class="small muted">+$38.12</div></div>
+              <div><span class="micro">Equity</span><div class="mono" style="font-size:16px">$127.60</div><div class="small muted">banked $46.20</div></div>
+              <div><span class="micro">Qty</span><div class="mono" style="font-size:16px">2,591,333</div><div class="small muted">of 3,728,333</div></div>
+              <div><span class="micro">State</span><div><span class="badge info">RIDING</span></div><div class="small muted">next: RUNG +125%</div></div>
+            </div>
+            <div class="note mt-12"><strong>Note:</strong> the quote panel below proposes a <em>new</em> position in the same token. Adding here would raise combined BONK exposure to $125.69 (3.6% of equity).</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Recent trades</h2><span class="sub">venue tape · 10 min</span>
+            <div class="right"><span class="badge ghost">your fills marked</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time</th><th>Side</th><th class="num">Price</th><th class="num">Size</th><th>Venue</th><th>Wallet</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">11:01:02</td><td><span class="badge ok">buy</span></td><td class="num mono">0.00003138</td><td class="num">$1,842</td><td>Raydium</td><td class="small muted">3xQ…8f</td></tr>
+                <tr><td class="mono">10:59:48</td><td><span class="badge">sell</span></td><td class="num mono">0.00003122</td><td class="num">$612</td><td>Jupiter</td><td class="small muted">9kL…2m</td></tr>
+                <tr><td class="mono">10:58:31</td><td><span class="badge">sell</span></td><td class="num mono">0.00003104</td><td class="num">$3,280</td><td>Orca</td><td class="small muted">7pR…4c</td></tr>
+                <tr><td class="mono">10:56:12</td><td><span class="badge ok">buy</span></td><td class="num mono">0.00003128</td><td class="num">$884</td><td>Raydium</td><td class="small muted">2mT…9v</td></tr>
+                <tr><td class="mono">10:53:44</td><td><span class="badge">sell</span></td><td class="num mono">0.00004070</td><td class="num">$46.28</td><td>Jupiter</td><td><span class="badge info">you · Main</span></td></tr>
+                <tr><td class="mono">10:42:08</td><td><span class="badge ok">buy</span></td><td class="num mono">0.00002400</td><td class="num">$89.48</td><td>Jupiter</td><td><span class="badge info">you · Main</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Quote</h2>
+            <div class="right"><span class="badge ghost" id="ttl">ttl 12s</span></div>
+          </div>
+          <div class="panel-body">
+            <div class="seg mb-12" style="display:flex">
+              <button aria-pressed="true" style="flex:1">Buy</button>
+              <button style="flex:1">Sell</button>
+            </div>
+            <label class="field mb-12">
+              <span>Pay with</span>
+              <div class="row">
+                <input class="input mono" value="0.30" style="flex:1" aria-label="Amount in SOL">
+                <span class="tag">SOL</span>
+                <button class="btn sm">MAX</button>
+              </div>
+              <span class="hint">≈ $44.29 at SOL/USD $147.62 · wallet Main (hot)</span>
+            </label>
+
+            <table class="table compact mb-12">
+              <tbody>
+                <tr><td class="muted">Route</td><td class="right small">Jupiter v6 → Raydium CLMM</td></tr>
+                <tr><td class="muted">Expected out</td><td class="right mono">1,403,571 BONK</td></tr>
+                <tr><td class="muted">Minimum out</td><td class="right mono">1,389,535 <span class="sub">1.00% slip</span></td></tr>
+                <tr><td class="muted">Price impact</td><td class="right mono">0.42%</td></tr>
+                <tr><td class="muted">Venue fee</td><td class="right mono">0.0009 SOL <span class="sub">$0.13</span></td></tr>
+                <tr><td class="muted">Account rent</td><td class="right mono">0.00204 SOL <span class="sub">$0.30 · refundable</span></td></tr>
+                <tr><td class="muted">Quote source · age</td><td class="right small"><span class="dot-live"></span>jupiter · 1s</td></tr>
+              </tbody>
+            </table>
+
+            <div class="row mb-8"><span class="micro">Risk preview</span><span class="spacer" style="flex:1"></span><span class="badge warn">cap reduces size</span></div>
+            <div class="table-wrap" style="border:1px solid var(--line);border-radius:var(--r-sm)">
+              <table class="table compact">
+                <tbody>
+                  <tr><td class="muted">Size after caps</td><td class="right mono">$36.60 <span class="sub">from $44.29</span></td></tr>
+                  <tr><td class="muted">Daily used after</td><td class="right mono">$250.00 / $250.00 <span class="badge warn">at cap</span></td></tr>
+                  <tr><td class="muted">Position after fill</td><td class="right mono">$118.00 · 3.4% equity</td></tr>
+                  <tr><td class="muted">Worst case (stop −35%)</td><td class="right mono err">−$12.81</td></tr>
+                  <tr><td class="muted">Full-size sell check</td><td class="right mono">OK · 0.42% impact</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note warn mt-12">Daily cap remaining is <span class="mono">$36.60</span> of <span class="mono">$250.00</span>. Confirm clips this order to the cap ($36.60) and re-quotes at that size; the quote above is for the requested 0.30 SOL. Override requires approval on <a href="17-risk.html">Risk</a>.</div>
+
+            <div class="row mt-12">
+              <button class="btn primary lg" style="flex:1">Review &amp; confirm</button>
+              <a class="btn lg" href="17-risk.html">Limits</a>
+            </div>
+            <div class="small muted mt-8">Nothing is signed on this screen. Confirm shows the same quote, its TTL and the worst case; an expired quote is re-quoted, never reused.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Market facts</h2></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <tbody>
+                <tr><td class="muted">Market cap</td><td class="right mono">$2.41B</td></tr>
+                <tr><td class="muted">FDV</td><td class="right mono">$3.14B</td></tr>
+                <tr><td class="muted">Liquidity</td><td class="right mono">$4.20M</td></tr>
+                <tr><td class="muted">24h volume</td><td class="right mono">$412.8M</td></tr>
+                <tr><td class="muted">Holders</td><td class="right mono">812.4K</td></tr>
+                <tr><td class="muted">Decimals</td><td class="right mono">5</td></tr>
+                <tr><td class="muted">Chain tier</td><td class="right">Solana · T1</td></tr>
+                <tr><td class="muted">Executable</td><td class="right"><span class="badge ok">buy + sell</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Prices from venue quotes; supply and holders from the chain. Age shown per cell on hover.</div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wallets · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="wallets">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Trade / Wallets</div>
+        <h1>Wallets</h1>
+        <p class="sub">Multiple wallets, four custody tiers, one portfolio. Balances are ledger projections; chain sync writes an explicit adjustment instead of overwriting.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="09-wallet-detail.html">Sweep</a>
+        <a class="btn primary" href="#add">Add wallet</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Total</div><div class="value">$3,482.16</div><div class="meta">4 wallets · 3 chains</div></div>
+      <div class="stat"><div class="label">Hot (local vault)</div><div class="value sm">$1,842.20</div><div class="meta">trade-enabled</div></div>
+      <div class="stat"><div class="label">Hardware</div><div class="value sm">$1,402.10</div><div class="meta">approval required</div></div>
+      <div class="stat"><div class="label">Watch-only</div><div class="value sm">$237.86</div><div class="meta">read + alerts</div></div>
+      <div class="stat"><div class="label">Unsynced</div><div class="value sm">0</div><div class="meta">all chains ≤ 31s</div></div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="table-toolbar">
+        <div class="seg"><button aria-pressed="true">All (4)</button><button>Hot</button><button>Hardware</button><button>Watch</button><button>Exchange</button></div>
+        <span class="spacer" style="flex:1"></span>
+        <span class="input mono" style="width:180px">Search label / address</span>
+        <a class="btn sm" href="#policies">Policies</a>
+        <a class="btn sm" href="23-security.html">Vault</a>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>Wallet</th><th>Custody</th><th>Chains</th><th class="num">Value</th><th>Policy</th><th>Sync</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr class="rowlink">
+              <td><span class="row"><span class="avatar-lg">M</span><span><span class="strong">Main (hot)</span><span class="sub" style="display:block">0x71c…9f2a · 7xKX…q9</span></span></span></td>
+              <td><span class="badge">local vault</span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span> <span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num">$1,842.20<span class="sub">8.7 SOL · 0.41 ETH</span></td>
+              <td class="small">$250/day · 3 venues</td>
+              <td><span class="small"><span class="dot-live"></span>4s</span></td>
+              <td><span class="badge ok">active</span></td>
+              <td class="right"><a class="btn sm" href="09-wallet-detail.html">Open</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="avatar-lg">L</span><span><span class="strong">Ledger (hardware)</span><span class="sub" style="display:block">0xA18…04de</span></span></span></td>
+              <td><span class="badge info">hardware</span></td>
+              <td><span class="chain"><span class="sq">E</span>Ethereum</span> <span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num">$1,402.10<span class="sub">0.52 ETH · 120 USDC</span></td>
+              <td class="small">approval &gt; $100</td>
+              <td><span class="small"><span class="dot-live"></span>31s</span></td>
+              <td><span class="badge ok">active</span></td>
+              <td class="right"><a class="btn sm" href="09-wallet-detail.html">Open</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="avatar-lg">W</span><span><span class="strong">Cold watch</span><span class="sub" style="display:block">bc1q…7k4m</span></span></span></td>
+              <td><span class="badge ghost">watch</span></td>
+              <td><span class="chain"><span class="sq">₿</span>Bitcoin</span></td>
+              <td class="num">$237.86<span class="sub">0.0034 BTC</span></td>
+              <td class="small">read-only</td>
+              <td><span class="small"><span class="dot-live stale"></span>12m</span></td>
+              <td><span class="badge">active</span></td>
+              <td class="right"><a class="btn sm" href="09-wallet-detail.html">Open</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="avatar-lg">B</span><span><span class="strong">Binance</span><span class="sub" style="display:block">read-only API key</span></span></span></td>
+              <td><span class="badge ghost">exchange</span></td>
+              <td><span class="chain"><span class="sq">◈</span>CEX</span></td>
+              <td class="num">$0.00<span class="sub">no balances returned</span></td>
+              <td class="small">read · no trade scope</td>
+              <td><span class="small"><span class="dot-live"></span>1m</span></td>
+              <td><span class="badge warn">verify key</span></td>
+              <td class="right"><a class="btn sm" href="21-integrations.html">Fix</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="avatar-lg">D</span><span><span class="strong">Dust / retired</span><span class="sub" style="display:block">0x9c2…11ab</span></span></span></td>
+              <td><span class="badge">local vault</span></td>
+              <td><span class="chain"><span class="sq">P</span>Polygon</span></td>
+              <td class="num">$0.42<span class="sub">below sweep threshold</span></td>
+              <td class="small">paused</td>
+              <td><span class="small"><span class="dot-live stale"></span>2h</span></td>
+              <td><span class="badge">paused</span></td>
+              <td class="right"><a class="btn sm" href="09-wallet-detail.html">Open</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot between">
+        <span>Balances reconcile against chain state on every sync. A mismatch is an adjustment entry, never an overwrite.</span>
+        <span class="row"><span class="badge ghost">4 wallets</span><span class="badge ghost">3 chains</span></span>
+      </div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel" id="add">
+          <div class="panel-head"><h2>Add wallet</h2><span class="sub">choose custody first</span></div>
+          <div class="panel-body grid cols-2">
+            <a class="panel dashed" style="padding:12px" href="23-security.html">
+              <div class="micro">hot</div><div class="strong mt-8">Create a local wallet</div>
+              <div class="small muted mt-8">Generated in the vault. Key never leaves the executor. Shows recovery phrase once.</div>
+            </a>
+            <a class="panel dashed" style="padding:12px" href="09-wallet-detail.html">
+              <div class="micro">hardware</div><div class="strong mt-8">Connect Ledger</div>
+              <div class="small muted mt-8">Addresses via USB/WebHID. Every order requires device approval.</div>
+            </a>
+            <a class="panel dashed" style="padding:12px" href="#add">
+              <div class="micro">watch</div><div class="strong mt-8">Watch an address</div>
+              <div class="small muted mt-8">Read-only. xpub supported for Bitcoin. No signing, alerts enabled.</div>
+            </a>
+            <a class="panel dashed" style="padding:12px" href="21-integrations.html">
+              <div class="micro">exchange</div><div class="strong mt-8">Connect an exchange</div>
+              <div class="small muted mt-8">Read-only by default; trade scope is a separate, explicit grant.</div>
+            </a>
+          </div>
+          <div class="panel-foot">Importing an existing key is an advanced action behind Security → Vault. It is never the default.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Allocation</h2><span class="sub">by chain · by custody</span></div>
+          <div class="panel-body grid cols-2">
+            <div class="stack-sm">
+              <div class="micro">By chain</div>
+              <div class="between small"><span>Solana</span><span class="mono">$1,048.20</span></div>
+              <div class="meter"><div class="fill" style="width:30%"></div></div>
+              <div class="between small"><span>Base</span><span class="mono">$1,190.10</span></div>
+              <div class="meter"><div class="fill" style="width:34%"></div></div>
+              <div class="between small"><span>Ethereum</span><span class="mono">$1,006.00</span></div>
+              <div class="meter"><div class="fill" style="width:29%"></div></div>
+              <div class="between small"><span>Bitcoin</span><span class="mono">$237.86</span></div>
+              <div class="meter"><div class="fill" style="width:7%"></div></div>
+            </div>
+            <div class="stack-sm">
+              <div class="micro">By custody</div>
+              <div class="between small"><span>Hot</span><span class="mono">53%</span></div>
+              <div class="meter"><div class="fill" style="width:53%"></div></div>
+              <div class="between small"><span>Hardware</span><span class="mono">40%</span></div>
+              <div class="meter"><div class="fill" style="width:40%"></div></div>
+              <div class="between small"><span>Watch</span><span class="mono">7%</span></div>
+              <div class="meter"><div class="fill" style="width:7%"></div></div>
+              <div class="note mt-8">Hot-wallet share above the 50% policy triggers a dashboard warning, not a block.</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel" id="policies">
+          <div class="panel-head"><h2>Policy summary</h2><span class="sub">enforced by the executor</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Daily spend cap</span><span class="mono">$250</span></div>
+            <div class="between small"><span>Per-order cap</span><span class="mono">$75</span></div>
+            <div class="between small"><span>Allowed venues</span><span class="mono">jupiter, uniswap, 1inch</span></div>
+            <div class="between small"><span>Token allowlist</span><span class="mono">off (all, with safety)</span></div>
+            <div class="between small"><span>Approval threshold</span><span class="mono">$100</span></div>
+            <div class="between small"><span>Cooldown</span><span class="mono">30s / token</span></div>
+            <div class="hr"></div>
+            <div class="note">Policies are per wallet. A strategy can only spend inside the intersection of its allocation and the wallet policy.</div>
+            <a class="btn block" href="17-risk.html">Edit limits</a>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Multi-wallet rules</h2></div>
+          <div class="panel-body stack-sm small muted">
+            <div>• A position belongs to exactly one wallet; it cannot be split across wallets.</div>
+            <div>• Sweeps move assets, not positions. A sweep is a transfer intent with its own ledger entries.</div>
+            <div>• Hardware wallets can hold positions; execution pauses for device approval.</div>
+            <div>• Watch-only wallets can be selected for signals and backtests, never for execution.</div>
+            <div>• Exchange balances are read-only until a trade-scope key is explicitly granted.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel mt-16">
+      <div class="panel-head"><h2>Sync &amp; reconciliation</h2><span class="sub">last 24h</span></div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>Time</th><th>Wallet</th><th>Chain</th><th>Result</th><th class="num">Ledger delta</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">12:41:02</td><td>Main (hot)</td><td>Solana</td><td><span class="badge ok">matched</span></td><td class="num">—</td><td>none</td></tr>
+            <tr><td class="mono">12:40:58</td><td>Main (hot)</td><td>Base</td><td><span class="badge warn">dust delta</span></td><td class="num">+$0.004</td><td>adjustment written, reviewed</td></tr>
+            <tr><td class="mono">12:39:11</td><td>Ledger (hardware)</td><td>Ethereum</td><td><span class="badge ok">matched</span></td><td class="num">—</td><td>none</td></tr>
+            <tr><td class="mono">10:02:44</td><td>Dust / retired</td><td>Polygon</td><td><span class="badge err">mismatch</span></td><td class="num">−$0.42</td><td>wallet paused, review required</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

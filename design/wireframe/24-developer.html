@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Developer · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="developer">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Developer</div>
+        <h1>Developer</h1>
+        <p class="sub">The same API the web app uses. Scope keys narrowly, call paper first, and treat a webhook as a hint to fetch — never as the ledger.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="https://github.com/0xJ1nn/ezchain/blob/main/docs/CONTRACT.md" rel="noopener">API contract ↗</a>
+        <a class="btn primary" href="#create-key">Create key</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Active keys</div><div class="value sm">4</div><div class="meta"><span class="warn">1 expires in 10d</span></div></div>
+      <div class="stat"><div class="label">Requests (24h)</div><div class="value sm">18,420</div><div class="meta">p95 182 ms · 0.42% errors</div></div>
+      <div class="stat"><div class="label">Rate limited</div><div class="value sm">6</div><div class="meta">429s · all on /quote</div></div>
+      <div class="stat"><div class="label">Webhook delivery</div><div class="value sm">99.1%</div><div class="meta">1,208 · 11 failures</div></div>
+      <div class="stat"><div class="label">Sandbox calls</div><div class="value sm">312</div><div class="meta">24h · no chain writes</div></div>
+      <div class="stat"><div class="label">IP allowlist</div><div class="value sm">4 / 4</div><div class="meta">0 keys open to any IP</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>API keys</h2><span class="sub">scopes are additive · a key never inherits</span>
+            <div class="right"><span class="badge ghost">4 active</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Name</th><th>Scopes</th><th>Created</th><th>Last used</th><th>Expiry</th><th>IP allowlist</th><th class="right"></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="strong">cli-local</span><span class="sub" style="display:block mono">ez_live_9f2c…a41b</span></td>
+                  <td><span class="badge info">read</span> <span class="badge warn">trade</span></td>
+                  <td class="small mono">2026-08-02</td><td class="small mono">12:41:02</td>
+                  <td class="small mono">2026-11-02</td><td class="small mono">127.0.0.1</td>
+                  <td class="right"><button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">grafana-read</span><span class="sub" style="display:block mono">ez_live_31bd…77e0</span></td>
+                  <td><span class="badge info">read</span></td>
+                  <td class="small mono">2026-06-18</td><td class="small mono">12:39:44</td>
+                  <td class="small mono">2027-06-18</td><td class="small mono">10.0.0.0/24</td>
+                  <td class="right"><button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">backtest-runner</span><span class="sub" style="display:block mono">ez_live_c80a…19f2</span></td>
+                  <td><span class="badge info">read</span></td>
+                  <td class="small mono">2026-09-30</td><td class="small mono">10-19 22:14</td>
+                  <td class="small mono warn">2026-10-30 · 10d</td><td class="small mono">10.0.0.12</td>
+                  <td class="right"><button class="btn sm danger">Revoke</button></td>
+                </tr>
+                <tr>
+                  <td><span class="strong">ops-agent</span><span class="sub" style="display:block mono">ez_live_5e11…c3d8</span></td>
+                  <td><span class="badge info">read</span> <span class="badge solid">admin</span></td>
+                  <td class="small mono">2026-07-11</td><td class="small mono">12:41:20</td>
+                  <td class="small mono">2026-12-31</td><td class="small mono">10.0.0.0/24</td>
+                  <td class="right"><button class="btn sm danger">Revoke</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Revoking is immediate for new requests; in-flight requests finish. The last 4 characters stay visible for identification.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Webhooks</h2><span class="sub">at-least-once · verify every signature</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Endpoint</th><th>Events</th><th>Secret</th><th>Last delivery</th><th>24h</th><th class="right"></th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">hooks.example.dev/ezchain/fills</td><td class="small">order.filled, position.changed</td><td class="small mono">v3</td><td class="small mono err">12:42 · 502</td><td class="small">11 failures</td><td class="right"><button class="btn sm">Rotate</button></td></tr>
+                <tr><td class="mono small">ops.example.dev/ezchain/alerts</td><td class="small">alert.raised, risk.decided</td><td class="small mono">v1</td><td class="small mono ok">11:58 · 200</td><td class="small">0 failures</td><td class="right"><button class="btn sm">Rotate</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-head" style="border-top:1px solid var(--line)"><h3>Delivery log</h3><span class="sub">last 20 minutes</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Event</th><th>Type</th><th>Result</th><th class="num">Latency</th><th>Signature</th><th class="right"></th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">evt_01J9F2KQ</td><td class="small">order.filled</td><td><span class="badge err">502</span> <span class="small muted">retry 3/5</span></td><td class="num mono">—</td><td class="mono small">t=1760961739,v1=4c8a…</td><td class="right"><button class="btn sm">Replay</button></td></tr>
+                <tr><td class="mono small">evt_01J9F2HB</td><td class="small">position.changed</td><td><span class="badge ok">200</span></td><td class="num mono">142 ms</td><td class="mono small">t=1760961662,v1=9a6d…</td><td class="right"><button class="btn sm">View</button></td></tr>
+                <tr><td class="mono small">evt_01J9F2G1</td><td class="small">alert.raised</td><td><span class="badge ok">200</span></td><td class="num mono">88 ms</td><td class="mono small">t=1760961604,v1=b17e…</td><td class="right"><button class="btn sm">View</button></td></tr>
+                <tr><td class="mono small">evt_01J9F2DF</td><td class="small">order.filled</td><td><span class="badge err">502</span> <span class="small muted">retry 2/5</span></td><td class="num mono">—</td><td class="mono small">t=1760961541,v1=4c8a…</td><td class="right"><button class="btn sm">Replay</button></td></tr>
+                <tr><td class="mono small">evt_01J9F2C7</td><td class="small">position.changed</td><td><span class="badge ok">200</span></td><td class="num mono">201 ms</td><td class="mono small">t=1760961488,v1=6d02…</td><td class="right"><button class="btn sm">View</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot between"><span class="mono">X-EZ-Signature: t=…,v1=HMAC-SHA256(secret, "t.body")</span><span class="small">Reject if |now − t| &gt; 300s</span></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Rate limits</h2><span class="sub">per key + IP · burst separately</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Endpoint</th><th>Scope</th><th class="num">Sustained</th><th class="num">Burst</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">GET /quote</td><td class="small">read</td><td class="num mono">600/min</td><td class="num mono">60</td></tr>
+                <tr><td class="mono small">GET /positions</td><td class="small">read</td><td class="num mono">120/min</td><td class="num mono">20</td></tr>
+                <tr><td class="mono small">POST /intents</td><td class="small">trade</td><td class="num mono">60/min</td><td class="num mono">10</td></tr>
+                <tr><td class="mono small">POST /orders</td><td class="small">trade</td><td class="num mono">30/min</td><td class="num mono">5</td></tr>
+                <tr><td class="mono small">POST /exports</td><td class="small">read</td><td class="num mono">6/hour</td><td class="num mono">1</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">429 carries <span class="mono">Retry-After</span>, <span class="mono">X-RateLimit-Remaining</span> and <span class="mono">X-RateLimit-Reset</span>. Retries must be jittered.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel" id="create-key">
+          <div class="panel-head"><h2>Create key</h2><span class="sub">least scope that works</span></div>
+          <div class="panel-body stack-sm">
+            <label class="field"><span>Name</span><input class="input" value="report-export"></label>
+            <div class="field"><span class="label">Scopes</span>
+              <label class="row small"><span class="checkbox checked"></span>read <span class="muted">balances, positions, ledger</span></label>
+              <label class="row small"><span class="checkbox"></span>trade <span class="muted">intents inside wallet policy</span></label>
+              <label class="row small"><span class="checkbox"></span>admin <span class="muted">workspace, keys, breakers</span></label>
+            </div>
+            <div class="grid cols-2">
+              <label class="field"><span>Expiry</span><select class="select"><option>30 days</option><option>90 days</option><option>1 year</option><option>Never</option></select></label>
+              <label class="field"><span>IP allowlist</span><input class="input mono" value="10.0.0.0/24"></label>
+            </div>
+            <div class="note warn"><strong>Admin cannot sign or withdraw.</strong> It can change configuration and must be paired with 2FA to be used at all.</div>
+            <button class="btn primary block">Create key</button>
+            <div class="panel dashed" style="padding:9px" aria-label="One-time secret reveal example">
+              <div class="between"><span class="micro">Secret · shown once</span><span class="badge warn">copy now</span></div>
+              <div class="mono small mt-8 truncate">ez_live_7b41d8e0c2f9a635…e1d4</div>
+              <div class="row mt-8"><button class="btn sm">Copy</button><button class="btn sm primary">I stored it</button></div>
+              <div class="hint mt-8">Stored as a hash. Close this and it is unrecoverable — revoke and create a new key instead.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>SDK</h2><span class="sub">Python · 0.4.2</span><div class="right"><span class="badge ghost">typed</span></div></div>
+          <div class="panel-body stack-sm">
+            <pre class="mono small" style="margin:0;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:3px;padding:8px">pip install ezchain==0.4.2</pre>
+            <pre class="mono small" style="margin:0;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:3px;padding:8px">from ezchain import Client
+
+client = Client(
+    base_url="https://paper.ezchain.local/api/v1",
+    api_key="ez_paper_9f2c...",
+)
+
+for p in client.positions.list(state="open", chain="solana"):
+    print(p.symbol, p.pnl_pct, p.state)</pre>
+            <div class="stack-sm small">
+              <div class="between"><span class="muted">Paper / sandbox</span><span class="mono">paper.ezchain.local/api/v1</span></div>
+              <div class="between"><span class="muted">Production</span><span class="mono">api.ezchain.local/api/v1</span></div>
+            </div>
+            <div class="note">Paper fills at the quoted effective price through the same venue adapter. It writes no chain state and cannot be pointed at mainnet.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Events &amp; audit</h2></div>
+          <div class="panel-body stack-sm small">
+            <div class="between"><span>Envelope version</span><span class="mono">v1 · additive</span></div>
+            <div class="between"><span>Idempotency</span><span class="mono">event_id + ledger_seq</span></div>
+            <div class="between"><span>Ordering</span><span class="mono">per stream, not global</span></div>
+            <div class="note">Consumers ignore unknown fields. A breaking change ships on a new <span class="mono">vN</span> topic with a migration window.</div>
+            <a class="btn block" href="https://github.com/0xJ1nn/ezchain/tree/main/packages/contracts/events" rel="noopener">Event schemas ↗</a>
+            <a class="btn block" href="23-security.html">Audit log</a>
+            <div class="note">Key create, scope change, secret reveal, IP change, rotation and revocation are audited with actor, key id and request id. Secrets never appear in the log.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

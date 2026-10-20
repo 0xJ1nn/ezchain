@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workspace · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="workspace">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Workspace</div>
+        <h1>Personal workspace</h1>
+        <p class="sub">Three humans, one owner. Roles are coarse on purpose: owner, trader, viewer. Every change here is audited and takes effect on the next request, not the next login.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge ghost">self-hosted · 3 seats</span>
+        <a class="btn" href="#invite">Invite member</a>
+        <a class="btn primary" href="22-settings.html">Workspace settings</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Members</div><div class="value sm">3</div><div class="meta">1 owner · 1 trader · 1 viewer</div></div>
+      <div class="stat"><div class="label">Pending invites</div><div class="value sm">1</div><div class="meta">expires in 5d</div></div>
+      <div class="stat"><div class="label">2FA coverage</div><div class="value sm">100%</div><div class="meta">3 of 3 members</div></div>
+      <div class="stat"><div class="label">Live approval</div><div class="value sm">&gt; $250</div><div class="meta">owner sign-off required</div></div>
+      <div class="stat"><div class="label">Audit entries</div><div class="value sm">9,412</div><div class="meta">append-only · hash-chained</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Members</h2><span class="sub">active and pending</span><div class="right"><span class="badge ok">3 active</span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Member</th><th>Role</th><th>2FA</th><th>Last active</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="row"><span class="avatar-lg">JW</span><span><span class="strong">J. Whitaker</span><span class="sub" style="display:block">jin@ezchain.local</span></span></span></td>
+                  <td><span class="badge solid">owner</span><span class="sub" style="display:block">all permissions</span></td>
+                  <td><span class="badge ok">passkey</span></td>
+                  <td class="small">now · 192.168.1.24</td>
+                  <td class="right"><span class="badge ghost">you</span></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="avatar-lg">MO</span><span><span class="strong">M. Okafor</span><span class="sub" style="display:block">m.okafor@proton.me</span></span></span></td>
+                  <td><span class="badge">trader</span><span class="sub" style="display:block">trade within limits</span></td>
+                  <td><span class="badge ok">passkey</span></td>
+                  <td class="small">2h ago · 192.168.1.31</td>
+                  <td class="right"><button class="btn sm">Manage</button></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="avatar-lg">SR</span><span><span class="strong">S. Ruiz</span><span class="sub" style="display:block">s.ruiz@fastmail.com</span></span></span></td>
+                  <td><span class="badge ghost">viewer</span><span class="sub" style="display:block">read + export</span></td>
+                  <td><span class="badge warn">TOTP</span></td>
+                  <td class="small">4d ago · 73.241.18.90</td>
+                  <td class="right"><button class="btn sm">Manage</button></td>
+                </tr>
+                <tr>
+                  <td><span class="row"><span class="avatar-lg">A</span><span><span class="strong">a.nguyen@ezchain.local</span><span class="sub" style="display:block">invited by JW · 2d ago</span></span></span></td>
+                  <td><span class="badge info">trader</span></td>
+                  <td><span class="badge ghost">not set</span></td>
+                  <td class="small muted">never</td>
+                  <td class="right"><span class="badge warn">pending</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Seats are unlimited on a self-hosted node; the limit is your hardware. Removing a member revokes their sessions immediately.</div>
+        </section>
+
+        <section class="panel" id="invite">
+          <div class="panel-head"><h2>Invite</h2><span class="sub">email or one-time link</span><div class="right"><span class="badge ghost">expires 7d</span></div></div>
+          <div class="panel-body stack-sm">
+            <div class="grid cols-2">
+              <label class="field">
+                <span>Email</span>
+                <input class="input" value="a.nguyen@ezchain.local">
+                <span class="hint">Must match the address used at sign-in; there is no domain restriction.</span>
+              </label>
+              <label class="field">
+                <span>Role</span>
+                <select class="select"><option>Viewer — read + export</option><option selected>Trader — trade within limits</option><option>Owner — full control</option></select>
+              </label>
+              <label class="field">
+                <span>Expiry</span>
+                <select class="select"><option>7 days</option><option>48 hours</option><option>24 hours</option></select>
+              </label>
+              <label class="field">
+                <span>Note (optional)</span>
+                <input class="input" value="Paper only until the gate clears.">
+              </label>
+            </div>
+            <div class="row">
+              <button class="btn primary">Send invite</button>
+              <button class="btn">Copy one-time link</button>
+              <span class="small muted">Invite links are single-use and bound to the invited email.</span>
+            </div>
+            <div class="note">A new member starts with an empty view of the same portfolio — no personal API keys, no vault access. Vault access belongs to the host, not the account.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Approval policy</h2><span class="sub">what needs a second human</span><div class="right"><span class="badge ok">active</span></div></div>
+          <div class="panel-body stack-sm">
+            <div class="between">
+              <div><div class="small strong">Live orders above <span class="mono">$250.00</span></div><div class="small muted">Resolved value at quote time, not notional at entry. Paper orders are exempt.</div></div>
+              <span class="toggle on"></span>
+            </div>
+            <div class="between">
+              <div><div class="small strong">Owner sign-off for new API keys</div><div class="small muted">Any key with trade scope, including read-only keys upgraded later.</div></div>
+              <span class="toggle on"></span>
+            </div>
+            <div class="between">
+              <div><div class="small strong">Dual approval for withdrawals</div><div class="small muted">Cold-watch transfers excluded; they are watch-only by definition.</div></div>
+              <span class="toggle"></span>
+            </div>
+            <div class="between">
+              <div><div class="small strong">Trader may install strategies</div><div class="small muted">Install requires owner review of manifest permissions.</div></div>
+              <span class="toggle on"></span>
+            </div>
+            <div class="grid cols-3 mt-8">
+              <label class="field"><span>Approval threshold</span><input class="input mono" value="250.00"><span class="hint">USD</span></label>
+              <label class="field"><span>Approvers required</span><select class="select"><option>1 owner</option><option>1 owner + 1 trader</option></select></label>
+              <label class="field"><span>Request TTL</span><select class="select"><option>15 minutes</option><option>1 hour</option><option>24 hours</option></select></label>
+            </div>
+            <div class="note">A denied approval is final for that intent. Changing the policy does not retroactively approve queued orders.</div>
+          </div>
+          <div class="panel-foot">Live mode itself is enabled in <a href="17-risk.html">Risk</a>; this policy only gates individual orders.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Permissions</h2><span class="sub">role matrix</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Capability</th><th class="center">Owner</th><th class="center">Trader</th><th class="center">Viewer</th></tr></thead>
+              <tbody>
+                <tr><td>View portfolio, positions, ledger</td><td class="center ok">✓</td><td class="center ok">✓</td><td class="center ok">✓</td></tr>
+                <tr><td>Export CSV / Parquet</td><td class="center ok">✓</td><td class="center ok">✓</td><td class="center ok">✓</td></tr>
+                <tr><td>Place paper orders</td><td class="center ok">✓</td><td class="center ok">✓</td><td class="center muted">—</td></tr>
+                <tr><td>Place live orders ≤ $250</td><td class="center ok">✓</td><td class="center ok">✓</td><td class="center muted">—</td></tr>
+                <tr><td>Place live orders &gt; $250</td><td class="center ok">✓</td><td class="center warn">approval</td><td class="center muted">—</td></tr>
+                <tr><td>Add / remove wallets, keys</td><td class="center ok">✓</td><td class="center muted">—</td><td class="center muted">—</td></tr>
+                <tr><td>Install strategies</td><td class="center ok">✓</td><td class="center ok">✓</td><td class="center muted">—</td></tr>
+                <tr><td>Edit risk limits · arm kill switch</td><td class="center ok">✓</td><td class="center warn">arm only</td><td class="center muted">—</td></tr>
+                <tr><td>Manage members · transfer ownership</td><td class="center ok">✓</td><td class="center muted">—</td><td class="center muted">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Permissions are checked server-side per request. Hiding a button is presentation, never enforcement.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Plan</h2><span class="sub">self-hosted</span></div>
+          <div class="panel-body">
+            <ul class="list">
+              <li class="list-row"><span class="grow"><span class="title">Community, self-hosted</span><span class="sub">No billing, no seat metering, no vendor dependency.</span></span><span class="badge ok">active</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Node</span><span class="sub mono">ezchain.local · 4 vCPU · 8 GB · compose</span></span><span class="badge">v0.0.0</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Updates</span><span class="sub">Manual · last check 2026-10-18 · no auto-update</span></span><a class="btn sm" href="25-operations.html">Check</a></li>
+              <li class="list-row"><span class="grow"><span class="title">Backups</span><span class="sub">Nightly 03:00 · keep 14 · local volume</span></span><span class="badge ok">on</span></li>
+            </ul>
+          </div>
+          <div class="panel-foot">Self-hosting means the owner also operates the node. <a href="25-operations.html">Operations →</a></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Audit</h2><span class="sub">member events</span></div>
+          <div class="panel-body">
+            <ul class="list">
+              <li class="list-row"><span class="grow"><span class="title">Invite sent</span><span class="sub">a.nguyen@… · trader · JW · 2d ago</span></span><span class="badge info">pending</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Role changed</span><span class="sub">S. Ruiz viewer ← trader · JW · 2026-10-02</span></span><span class="badge ghost">logged</span></li>
+              <li class="list-row"><span class="grow"><span class="title">Approval policy</span><span class="sub">threshold $500 → $250 · JW · 2026-09-28</span></span><span class="badge ghost">logged</span></li>
+            </ul>
+          </div>
+          <div class="panel-foot"><a href="23-security.html#audit">Full audit log →</a> · hash-chained, exportable.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Danger zone</h2><span class="sub">ownership changes</span><div class="right"><span class="badge err">2 actions</span></div></div>
+          <div class="panel-body stack-sm">
+            <div class="between align-start">
+              <div style="max-width:30ch"><div class="strong">Transfer ownership</div><div class="small muted">The new owner must accept within 48h. You become a trader.</div></div>
+              <button class="btn">Transfer…</button>
+            </div>
+            <div class="row">
+              <select class="select" style="max-width:210px"><option>M. Okafor — trader</option><option>S. Ruiz — viewer</option></select>
+              <input class="input mono" placeholder="passkey required" readonly style="max-width:170px">
+            </div>
+            <hr class="hr" style="margin:2px 0">
+            <div class="between align-start">
+              <div style="max-width:30ch"><div class="strong">Leave workspace</div><div class="small muted">Disabled while you are the only owner.</div></div>
+              <button class="btn" disabled>Leave</button>
+            </div>
+            <div class="small muted">Transfer ownership first, or delete the workspace from <a href="22-settings.html#danger">Settings → Danger zone</a>.</div>
+          </div>
+          <div class="panel-foot">Deleting the workspace requires typing its name and an owner passkey assertion.</div>
+        </section>
+
+        <div class="annotation"><b>Audit note:</b> role grants, invites, revokes and approval-policy edits are written to the same append-only log as trades. A member cannot edit or delete their own audit rows.</div>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

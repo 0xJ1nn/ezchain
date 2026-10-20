@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="settings">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Settings</div>
+        <h1>Settings</h1>
+        <p class="sub">Workspace behavior, display defaults and trading guards. Settings are versioned; every change is written to the audit log with the previous value.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge warn"><span class="dot-live stale"></span>2 unsaved changes</span>
+        <button class="btn">Discard</button>
+        <button class="btn primary">Save changes</button>
+      </div>
+    </header>
+
+    <div class="tabs mb-12">
+      <a class="tab on" href="#workspace">Workspace</a>
+      <a class="tab" href="#appearance">Appearance</a>
+      <a class="tab" href="#trading">Trading defaults</a>
+      <a class="tab" href="#data">Data</a>
+      <a class="tab" href="#danger">Danger zone</a>
+      <span class="tab" style="margin-left:auto;color:var(--muted)">saved 20:38:04 · JW</span>
+    </div>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel" id="workspace">
+          <div class="panel-head"><h2>Workspace</h2><span class="sub">identity and locale</span><div class="right"><span class="badge warn">1 unsaved</span></div></div>
+          <div class="panel-body stack">
+            <div class="grid cols-2">
+              <label class="field">
+                <span>Workspace name</span>
+                <input class="input" value="Personal">
+                <span class="hint">Shown in the topbar and on exported reports.</span>
+              </label>
+              <label class="field">
+                <span>Slug / API namespace</span>
+                <input class="input mono" value="personal" style="border-color:var(--warn)">
+                <span class="error">Unsaved · changes API base to /api/v1/ws/personal-2 on save.</span>
+              </label>
+              <label class="field">
+                <span>Base currency</span>
+                <select class="select"><option>USD — US dollar</option><option>EUR — euro</option><option>GBP — pound sterling</option><option>JPY — yen</option></select>
+                <span class="hint">Ledger keeps native units; this only converts display.</span>
+              </label>
+              <label class="field">
+                <span>Timezone</span>
+                <select class="select"><option>America/Chicago (UTC−05:00)</option><option>UTC</option><option>Europe/Berlin (UTC+01:00)</option><option>Asia/Singapore (UTC+08:00)</option></select>
+                <span class="hint">Candle boundaries, reports and quiet hours use this zone.</span>
+              </label>
+              <label class="field">
+                <span>Language</span>
+                <select class="select"><option>English (US)</option><option>English (UK)</option><option>Deutsch</option></select>
+              </label>
+              <label class="field">
+                <span>Number format</span>
+                <div class="row">
+                  <select class="select"><option>1,234.56</option><option>1.234,56</option><option>1 234,56</option></select>
+                  <span class="badge ghost">tabular figures always on</span>
+                </div>
+              </label>
+            </div>
+            <hr class="hr" style="margin:2px 0">
+            <div class="grid cols-3">
+              <label class="field"><span>Price decimals</span><input class="input mono" value="2 – 8 (auto)"></label>
+              <label class="field"><span>Token amount decimals</span><input class="input mono" value="4"></label>
+              <label class="field"><span>Fiat rounding</span><select class="select"><option>Nearest cent</option><option>Whole unit</option></select></label>
+            </div>
+            <div class="note">Units are declared at the adapter boundary. A token with unknown decimals is not tradeable and is shown as <span class="mono">—</span>, never zero.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="appearance">
+          <div class="panel-head"><h2>Appearance</h2><span class="sub">display only; no effect on execution</span><div class="right"><span class="badge ok">saved</span></div></div>
+          <div class="panel-body grid cols-2">
+            <div class="field">
+              <span class="label">Theme</span>
+              <div class="seg"><button>Light</button><button>Dark</button><button aria-pressed="true">System</button></div>
+              <span class="hint">System follows the OS; charts keep the same scale in both.</span>
+            </div>
+            <div class="field">
+              <span class="label">Density</span>
+              <div class="seg"><button aria-pressed="true">Comfortable</button><button>Compact</button></div>
+              <span class="hint">Compact reduces row height to 28px; tables keep all columns.</span>
+            </div>
+            <div class="field">
+              <span class="label">Chart style</span>
+              <div class="seg"><button aria-pressed="true">Candles</button><button>Line</button><button>Area</button></div>
+              <span class="hint">Entry, stop, trail and arm levels are drawn in every style.</span>
+            </div>
+            <div class="field">
+              <span class="label">Motion</span>
+              <div class="between" style="height:30px"><span class="small">Reduced motion</span><span class="toggle"></span></div>
+              <span class="hint">Disables chart transitions and toast slide-in.</span>
+            </div>
+            <div class="field">
+              <span class="label">Sparklines in tables</span>
+              <div class="between" style="height:30px"><span class="small">Show 24h sparkline column</span><span class="toggle on"></span></div>
+            </div>
+            <div class="field">
+              <span class="label">Colour</span>
+              <div class="between" style="height:30px"><span class="small">Use colour for PnL only</span><span class="toggle on"></span></div>
+              <span class="hint">Status always keeps a text label, never colour alone.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="trading">
+          <div class="panel-head"><h2>Trading defaults</h2><span class="sub">applied to new orders and automations</span><div class="right"><span class="badge warn">1 unsaved</span></div></div>
+          <div class="panel-body stack">
+            <div class="grid cols-2">
+              <div class="field">
+                <span class="label">Execution mode</span>
+                <div class="seg"><button aria-pressed="true">PAPER</button><button disabled>LIVE</button></div>
+                <span class="hint">Live is enabled from <a href="17-risk.html">Risk → Live approval</a> after the paper gate, not here.</span>
+              </div>
+              <label class="field">
+                <span>Default chain</span>
+                <select class="select"><option>Solana · T1</option><option>Base · T1</option><option>Ethereum · T1</option><option>Arbitrum One · T1</option></select>
+              </label>
+              <label class="field">
+                <span>Slippage cap</span>
+                <div class="row"><input class="input mono" value="1.00" style="width:86px"><span class="small">%</span><span class="badge ghost">per order</span></div>
+                <span class="hint">Overrides: Solana 1.50%, Base 0.75%, Ethereum 0.50%. Above cap → quote rejected.</span>
+              </label>
+              <label class="field">
+                <span>Max price impact</span>
+                <div class="row"><input class="input mono" value="3.0" style="width:86px"><span class="small">%</span><span class="badge warn">warn at 2%</span></div>
+              </label>
+              <label class="field">
+                <span>Quote TTL</span>
+                <div class="row"><input class="input mono" value="8" style="width:86px;border-color:var(--warn)"><span class="small">seconds</span></div>
+                <span class="error">Unsaved · was 12s. Shorter TTL increases re-quote frequency.</span>
+              </label>
+              <label class="field">
+                <span>Confirmations before “filled”</span>
+                <div class="row">
+                  <span class="tag">Solana 1</span><span class="tag">EVM 3</span><span class="tag">Bitcoin 2</span>
+                  <button class="btn sm">Edit</button>
+                </div>
+                <span class="hint">Paper uses the venue’s simulated receipt, not block depth.</span>
+              </label>
+            </div>
+            <div class="note warn"><strong>Paper default is on.</strong> Disabling paper requires a live-mode approval and an owner signature; it is intentionally not a setting toggle.</div>
+          </div>
+          <div class="panel-foot">Daily loss cap, per-trade cap and kill switch live in <a href="17-risk.html">Risk</a>, not here.</div>
+        </section>
+
+        <section class="panel" id="data">
+          <div class="panel-head"><h2>Data</h2><span class="sub">retention, export, telemetry</span><div class="right"><span class="badge ok">saved</span></div></div>
+          <div class="panel-body stack">
+            <div class="grid cols-2">
+              <label class="field"><span>Ledger retention</span><select class="select"><option>24 months</option><option>12 months</option><option>Forever (not recommended)</option></select><span class="hint">Ledger rows are append-only until retention prunes them.</span></label>
+              <label class="field"><span>Raw tick retention</span><select class="select"><option>30 days</option><option>90 days</option><option>7 days</option></select><span class="hint">Backtests use stored snapshots; pruning invalidates old runs.</span></label>
+              <label class="field"><span>Backups</span><input class="input mono" value="nightly 03:00 · keep 14 · local volume"></label>
+              <label class="field"><span>Postgres</span><input class="input mono" value="postgres:16 · ezchain.local:5432" readonly></label>
+            </div>
+            <div class="between">
+              <div><div class="small strong">Export workspace</div><div class="small muted">Ledger, positions, fills, journal and settings. CSV + Parquet.</div></div>
+              <div class="row"><button class="btn">CSV</button><button class="btn">Parquet</button><a class="btn" href="19-reports.html">Reports</a></div>
+            </div>
+            <hr class="hr" style="margin:2px 0">
+            <div class="between">
+              <div><div class="small strong">Anonymous telemetry</div><div class="small muted">Off by default. No addresses, balances, keys or strategy parameters are ever included.</div></div>
+              <span class="toggle"></span>
+            </div>
+            <div class="between">
+              <div><div class="small strong">Crash reports</div><div class="small muted">Local file only; nothing uploaded.</div></div>
+              <span class="toggle"></span>
+            </div>
+            <div class="note">Self-hosted instance: data stays on this host. Deleting the workspace does not delete exported files you already downloaded.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="danger">
+          <div class="panel-head"><h2>Danger zone</h2><span class="sub">armed confirms; no undo without a backup</span><div class="right"><span class="badge err">destructive</span></div></div>
+          <div class="panel-body stack">
+            <div class="panel dashed" style="padding:10px">
+              <div class="between align-start">
+                <div style="max-width:62ch"><div class="strong">Reset paper ledger</div><div class="small muted">Deletes all paper fills, paper positions and paper PnL. Live ledger and wallets are untouched. Strategies stay installed and re-enter paper at $0.00.</div></div>
+                <button class="btn">Reset…</button>
+              </div>
+              <div class="row mt-12">
+                <span class="small muted">Type <span class="mono">RESET</span> to arm</span>
+                <input class="input mono" value="RESE" style="width:120px;border-color:var(--err)">
+                <button class="btn danger armed sm">Reset paper ledger</button>
+                <button class="btn sm">Cancel</button>
+              </div>
+              <div class="small err mt-8">Armed for 30s. 61 paper fills and 18 intents will be removed. Export first if you need the history.</div>
+            </div>
+
+            <div class="panel dashed" style="padding:10px;border-color:var(--err)">
+              <div class="between align-start">
+                <div style="max-width:62ch"><div class="strong">Delete workspace</div><div class="small muted">Soft-deletes “Personal” for 30 days, then removes Postgres rows, vault keys and local backups. Open positions are not closed for you.</div></div>
+                <button class="btn danger solid">Delete workspace</button>
+              </div>
+              <div class="grid cols-2 mt-12">
+                <label class="field"><span>Confirm workspace name</span><input class="input mono" value="Personal" style="border-color:var(--err)"></label>
+                <label class="field"><span>Owner passkey</span><input class="input" placeholder="required before delete" readonly></label>
+              </div>
+              <div class="row mt-8">
+                <span class="badge err">2 open positions · $2,014.90</span>
+                <span class="badge warn">Ledger export recommended</span>
+              </div>
+            </div>
+          </div>
+          <div class="panel-foot">Every action in this section writes an audit entry with actor, scope and typed confirmation.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Change summary</h2><span class="sub">pending save</span></div>
+          <div class="panel-body">
+            <ul class="list">
+              <li class="list-row"><span class="badge warn">edit</span><span class="grow"><span class="title">Slug</span><span class="sub">personal → personal-2</span></span></li>
+              <li class="list-row"><span class="badge warn">edit</span><span class="grow"><span class="title">Quote TTL</span><span class="sub">12s → 8s</span></span></li>
+              <li class="list-row"><span class="badge ghost">no change</span><span class="grow"><span class="title">Other fields</span><span class="sub">24 fields unchanged</span></span></li>
+            </ul>
+          </div>
+          <div class="panel-foot">Saving is atomic; a failed save leaves all fields unchanged.</div>
+        </section>
+        <div class="note"><strong>Config file.</strong> These settings map to <span class="mono">config/workspace.yaml</span>. Editing the file directly requires a restart and is audited as <span class="mono">CONFIG_FILE_EDIT</span>.</div>
+        <div class="note">Members and roles are managed in <a href="26-workspace.html">Workspace</a>. Sessions and keys in <a href="23-security.html">Security</a>.</div>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

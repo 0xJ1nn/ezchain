@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="sign-in">
+  <main id="main">
+    <div style="max-width:1060px;margin:0 auto">
+      <header class="page-head">
+        <div class="titles">
+          <div class="crumbs">ezCHAIN / Sign in</div>
+          <h1>Sign in to ezchain.home.lan</h1>
+          <p class="sub">A self-hosted instance. Authentication is local: passkey first, authenticator code as fallback, password last. Nothing is sent to a vendor.</p>
+        </div>
+        <div class="page-actions">
+          <span class="badge ghost">instance 1 of 1</span>
+          <span class="badge info">TLS · self-signed</span>
+        </div>
+      </header>
+
+      <div class="split-even" style="align-items:start">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Authentication</h2>
+            <span class="sub">Personal workspace</span>
+            <div class="right"><span class="badge ghost">PAPER</span></div>
+          </div>
+          <div class="panel-body stack">
+            <div class="between">
+              <div>
+                <div class="small strong">Personal workspace</div>
+                <div class="small muted mono">ezchain.home.lan · 192.168.1.24:8080</div>
+              </div>
+              <span class="avatar-lg">JW</span>
+            </div>
+
+            <div class="stack-sm">
+              <button class="btn primary lg block">Continue with passkey</button>
+              <div class="small muted center">Touch ID / Windows Hello · hardware-bound · no password leaves the device</div>
+            </div>
+
+            <div class="row" style="gap:10px">
+              <span class="hr" style="flex:1;margin:0"></span>
+              <span class="micro">or use a fallback</span>
+              <span class="hr" style="flex:1;margin:0"></span>
+            </div>
+
+            <div class="seg">
+              <button aria-pressed="true">Authenticator code</button>
+              <button>Password</button>
+              <button>Recovery code</button>
+            </div>
+
+            <label class="field">
+              <span>6-digit code from your authenticator</span>
+              <input class="input mono" value="482 913" inputmode="numeric" aria-invalid="true" style="letter-spacing:.22em">
+              <span class="error">INVALID_CODE · rejected at 20:41:07 local · 5th failed attempt. Lockout triggered.</span>
+            </label>
+
+            <div class="row">
+              <button class="btn lg" disabled>Verify code</button>
+              <span class="small muted">Locked for <span class="mono">4:00</span> · next attempt 20:45:07</span>
+            </div>
+
+            <div class="note err">
+              <strong>Too many attempts.</strong> Sign-in is locked for this browser and IP for 4 minutes.
+              Lockout is enforced locally by the instance, not by a remote identity provider.
+              Clearance is automatic; there is no unlock link.
+            </div>
+
+            <div class="note">
+              <strong>Session.</strong> A successful sign-in binds a session to this browser for 12 hours.
+              The vault stays locked after sign-in and unlocks separately with the master passphrase.
+              Closing the tab does not end the session — revoke it from <a href="23-security.html">Security → Sessions</a>.
+            </div>
+
+            <div class="between">
+              <a class="small" href="23-security.html#recovery">Lost your device? Use a recovery code →</a>
+              <a class="small muted" href="02-onboarding.html">First run? Start setup →</a>
+            </div>
+          </div>
+          <div class="panel-foot mono" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <span>ezCHAIN 0.0.0-wireframe</span>
+            <span>commit 7c3f1a2 · 2026-10-20</span>
+            <span>sha256 9f2c4e…b71d</span>
+          </div>
+        </section>
+
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-head"><h2>Security facts</h2><span class="sub">before you type anything</span></div>
+            <div class="panel-body">
+              <ul class="list">
+                <li class="list-row">
+                  <span class="badge ok">local</span>
+                  <span class="grow"><span class="title">Keys never leave this machine</span><span class="sub">Signing happens in the local vault process. No key material, seed or signature request is transmitted to ezCHAIN or any third party.</span></span>
+                </li>
+                <li class="list-row">
+                  <span class="badge info">vault</span>
+                  <span class="grow"><span class="title">Encrypted at rest</span><span class="sub">Argon2id + XChaCha20-Poly1305. Auto-lock after 15 minutes idle; 12m elapsed on the current unlock.</span></span>
+                </li>
+                <li class="list-row">
+                  <span class="badge">passkey</span>
+                  <span class="grow"><span class="title">Phishing-resistant by default</span><span class="sub">Passkeys are scoped to this origin. An authenticator code is accepted only as fallback.</span></span>
+                </li>
+                <li class="list-row">
+                  <span class="badge ghost">audit</span>
+                  <span class="grow"><span class="title">Every sign-in is recorded</span><span class="sub">Device, IP, method and result are appended to the local audit log; 9,412 entries retained.</span></span>
+                </li>
+              </ul>
+            </div>
+            <div class="panel-foot">No cloud account. No telemetry. No recovery by the maintainers.</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><h2>Reference</h2><span class="sub">visual target, not final</span></div>
+            <div class="panel-body stack-sm">
+              <div class="placeholder" style="height:168px">screenshot placeholder · sign-in · 1440×900</div>
+              <div class="annotation"><b>Layout note:</b> form column 1 (max 440px), security column 2. Error and lockout stack replaces the submit row; the passkey button stays visible but disabled during lockout.</div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

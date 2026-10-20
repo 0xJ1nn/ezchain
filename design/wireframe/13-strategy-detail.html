@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strategy detail · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="strategy-detail">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs"><a href="12-strategies.html">Strategies</a> / Mean reversion</div>
+        <h1>Mean reversion <span class="tag">v0.4.2</span></h1>
+        <p class="sub">jinn-labs · installed 2026-10-14 · paper only. Plugin code is isolated from the vault and may only emit intents inside its grants and allocation.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge warn">GATE INCOMPLETE</span>
+        <a class="btn" href="16-backtests.html">Backtest snapshot</a>
+        <a class="btn" href="12-strategies.html">All strategies</a>
+        <button class="btn primary" disabled>Save params</button>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Paper gate</div><div class="value sm">6 / 14d</div><div class="meta">2 of 5 checks passing</div></div>
+      <div class="stat"><div class="label">Intents</div><div class="value sm">38 / 100</div><div class="meta">28 denied · 10 accepted · 3 filled</div></div>
+      <div class="stat"><div class="label">Fills</div><div class="value sm">3 / 20</div><div class="meta">avg slippage 0.21%</div></div>
+      <div class="stat"><div class="label">Allocation</div><div class="value sm">$250.00</div><div class="meta">of $850.00 installed · per order $50</div></div>
+      <div class="stat"><div class="label">Open positions</div><div class="value sm">0</div><div class="meta">flat since Oct 12 · PnL $0.00</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Manifest</h2><span class="sub">read from strategy.json at install</span><div class="right"><a class="btn sm" href="#">View source</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <tbody>
+                <tr><td class="small muted" style="width:150px">id</td><td class="mono">mean-reversion</td><td class="small muted" style="width:110px">version</td><td class="mono">0.4.2</td></tr>
+                <tr><td class="small muted">sdk</td><td class="mono">@ezchain/sdk 0.7.3</td><td class="small muted">schema</td><td class="mono">3</td></tr>
+                <tr><td class="small muted">author</td><td class="mono">jinn-labs</td><td class="small muted">license</td><td class="mono">Apache-2.0</td></tr>
+                <tr><td class="small muted">installed</td><td class="mono">2026-10-14 14:02 UTC</td><td class="small muted">entry</td><td class="mono">dist/index.js</td></tr>
+                <tr><td class="small muted">checksum</td><td class="mono">sha256:9f2c4b18e0d7…a71b</td><td class="small muted">signature</td><td><span class="badge ok">verified · jinn-labs</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Manifest fields are immutable while installed. Updating the version requires a re-install and keeps the old grant history.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Parameters</h2><span class="sub">applied on next evaluation</span><div class="right"><span class="badge err">1 invalid</span></div></div>
+          <div class="panel-body grid cols-2">
+            <label class="field">
+              <span>Lookback (candles)</span>
+              <input class="input mono" value="20">
+              <span class="hint">5m candles · range 10–120</span>
+            </label>
+            <label class="field">
+              <span>Risk per trade</span>
+              <input class="input mono" value="1.0%">
+              <span class="hint">of allocation · cap 1.0% in paper</span>
+            </label>
+            <label class="field">
+              <span>Max positions</span>
+              <input class="input mono" value="3" aria-invalid="true">
+              <span class="error">Max 2 concurrent positions: wallet policy per-order cap $50.00 and gate limit. Change to 2 to save.</span>
+            </label>
+            <label class="field">
+              <span>Entry z-score</span>
+              <input class="input mono" value="2.0">
+              <span class="hint">σ from 20-candle mean</span>
+            </label>
+            <label class="field">
+              <span>Exit z-score</span>
+              <input class="input mono" value="0.5">
+            </label>
+            <label class="field">
+              <span>Cooldown</span>
+              <input class="input mono" value="300s / token">
+            </label>
+            <div class="field" style="grid-column:1/-1">
+              <span>Universe</span>
+              <input class="input mono" value="top 40 by 24h volume · Solana · exclude stablecoins">
+            </div>
+            <div class="note" style="grid-column:1/-1">Invalid params never silently clamp. The strategy keeps its last valid set and records <span class="mono">params:rejected</span> on the next intent.</div>
+            <div class="row" style="grid-column:1/-1">
+              <button class="btn" disabled>Reset to manifest defaults</button>
+              <span class="spacer" style="flex:1"></span>
+              <button class="btn">Validate</button>
+              <button class="btn primary" disabled>Save params</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Intent log</h2><span class="sub">last 8 of 38 · paper</span><div class="right"><a class="btn sm" href="#logs">Logs</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Time</th><th>Intent</th><th>Token</th><th class="num">Size</th><th>Decision</th><th>Reason</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">12:31:44</td><td><span class="badge ghost">ENTER</span></td><td class="mono">JUP</td><td class="num mono">$48.12</td><td><span class="badge ok">accepted</span></td><td class="mono small">risk:allow · unfilled</td></tr>
+                <tr><td class="mono">12:18:02</td><td><span class="badge ghost">ENTER</span></td><td class="mono">WIF</td><td class="num mono">$62.00</td><td><span class="badge err">denied</span></td><td class="mono small">policy:per_order_cap</td></tr>
+                <tr><td class="mono">11:54:37</td><td><span class="badge ghost">ENTER</span></td><td class="mono">BONK</td><td class="num mono">$40.00</td><td><span class="badge err">denied</span></td><td class="mono small">cooldown:token 26s left</td></tr>
+                <tr><td class="mono">11:20:10</td><td><span class="badge ghost">EXIT</span></td><td class="mono">JUP</td><td class="num mono">$49.20</td><td><span class="badge ok">accepted</span></td><td class="mono small">risk:allow · closed +2.1%</td></tr>
+                <tr><td class="mono">10:44:55</td><td><span class="badge ghost">ENTER</span></td><td class="mono">MOCHI</td><td class="num mono">$35.00</td><td><span class="badge err">denied</span></td><td class="mono small">token:freeze_authority</td></tr>
+                <tr><td class="mono">09:58:12</td><td><span class="badge ghost">ENTER</span></td><td class="mono">PYTH</td><td class="num mono">$44.00</td><td><span class="badge err">denied</span></td><td class="mono small">risk:cluster_exposure</td></tr>
+                <tr><td class="mono">09:31:20</td><td><span class="badge ghost">SCALE</span></td><td class="mono">JUP</td><td class="num mono">$12.00</td><td><span class="badge err">denied</span></td><td class="mono small">position_not_open</td></tr>
+                <tr><td class="mono">08:12:05</td><td><span class="badge ghost">ENTER</span></td><td class="mono">JUP</td><td class="num mono">$50.00</td><td><span class="badge ok">accepted</span></td><td class="mono small">risk:allow · filled</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Denied intents are logged with the rule that denied them. Acceptance is not a fill; the fill appears in the ledger.</div>
+        </section>
+
+        <section class="panel" id="logs">
+          <div class="panel-head"><h2>Logs</h2><span class="sub">runtime · debug level</span><div class="right"><select class="select" style="width:100px"><option>debug</option><option>info</option><option>warn</option></select><a class="btn sm" href="#">Download</a></div></div>
+          <div class="panel-body" style="background:var(--surface-2)">
+            <pre class="mono small" style="margin:0;white-space:pre-wrap;line-height:1.7">12:31:44.812  info   snapshot 5m close · universe 40 · ready
+12:31:44.830  info   signal JUP z=-2.14 · size $48.12
+12:31:44.842  info   intent enter JUP accepted · risk allow
+12:18:02.114  warn   intent enter WIF denied policy:per_order_cap ($62.00 &gt; $50.00)
+11:54:37.408  warn   intent enter BONK denied cooldown:token (26s remaining)
+10:44:55.006  error  token MOCHI freeze_authority present · skip
+09:58:12.771  warn   cluster exposure 78% (sol-beta) · PYTH denied</pre>
+          </div>
+          <div class="panel-foot">Logs are local to this strategy. Secrets and full wallet addresses are redacted before write.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Permissions granted</h2><span class="sub">reviewed 2026-10-14</span><div class="right"><a class="btn sm" href="#">Edit grants</a></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Scope</th><th>Grant</th><th>Constraint</th></tr></thead>
+              <tbody>
+                <tr><td>Chains</td><td class="mono small">Solana</td><td class="small">only</td></tr>
+                <tr><td>Venues</td><td class="mono small">jupiter, orca</td><td class="small">read + swap</td></tr>
+                <tr><td>Data</td><td class="mono small">candles 5m, marks</td><td class="small">public</td></tr>
+                <tr><td>Data</td><td class="mono small">positions, balances</td><td class="small">read · own scope</td></tr>
+                <tr><td>Intents</td><td class="mono small">enter, exit, scale</td><td class="small">≤ $50 / order</td></tr>
+                <tr><td>Denied</td><td class="mono small muted">transfer, withdraw, approve</td><td class="small">never grantable</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Grants are additive per install. Revoking a scope stops new intents immediately; open positions remain under manual control.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Paper gate</h2><span class="sub">2 of 5 checks</span><div class="right"><span class="badge warn">incomplete</span></div></div>
+          <div class="panel-body stack-sm">
+            <div class="list">
+              <div class="list-row"><span class="grow"><span class="title">14 days of paper</span><div class="sub">6d 4h elapsed</div></span><span class="badge err">FAIL</span></div>
+              <div class="list-row"><span class="grow"><span class="title">100 intents</span><div class="sub">38 recorded · 28 denied</div></span><span class="badge err">FAIL</span></div>
+              <div class="list-row"><span class="grow"><span class="title">20 fills</span><div class="sub">3 filled · avg slip 0.21%</div></span><span class="badge err">FAIL</span></div>
+              <div class="list-row"><span class="grow"><span class="title">No invariant breach</span><div class="sub">0 breaches · 38 evaluations</div></span><span class="badge ok">PASS</span></div>
+              <div class="list-row"><span class="grow"><span class="title">Backtest snapshot ≤ 30d</span><div class="sub">2026-10-04 · 16 days old</div></span><span class="badge ok">PASS</span></div>
+            </div>
+            <div class="meter mt-8"><div class="fill warn" style="width:40%"></div></div>
+            <div class="between small"><span class="muted">Gate progress</span><span class="mono">40%</span></div>
+            <div class="note">Gate criteria are fixed for v0.4.2. The clock restarted at the v0.4.2 install on 2026-10-14 because the risk model changed; editing parameters does not restart it.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Allocation</h2><span class="sub">paper · hard ceiling</span></div>
+          <div class="panel-body stack-sm">
+            <label class="field"><span>Strategy allocation</span><div class="row"><input class="input mono" value="250.00" style="flex:1"><span class="small muted">USD</span></div></label>
+            <input class="range" type="range" min="0" max="850" value="250" aria-label="Allocation">
+            <div class="between small"><span>Per-order cap</span><span class="mono">$50.00</span></div>
+            <div class="between small"><span>Daily loss stop</span><span class="mono">$40.00</span></div>
+            <div class="between small"><span>Max concurrent</span><span class="mono">2</span></div>
+            <div class="meter"><div class="fill" style="width:29%"></div></div>
+            <div class="between small"><span class="muted">Share of installed $850.00</span><span class="mono">29%</span></div>
+            <button class="btn block">Update allocation</button>
+            <div class="note">Lowering allocation below open exposure blocks new entries until exposure fits.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Mode</h2><span class="sub">promotion requires a complete gate</span></div>
+          <div class="panel-body stack-sm">
+            <div class="seg"><button aria-pressed="true">Paper</button><button disabled>Live</button></div>
+            <div class="between small"><span>Live trading</span><span class="badge ghost">unavailable</span></div>
+            <label class="row"><span class="checkbox"></span><span class="small">I understand this plugin will trade my funds.</span></label>
+            <button class="btn block" disabled>Request live review</button>
+            <div class="note warn"><strong>Disabled: gate incomplete.</strong> Failing checks: days (6/14), intents (38/100), fills (3/20). Earliest eligible date at current pace: 2026-10-28.</div>
+            <a class="small" href="17-risk.html">Read live promotion policy</a>
+          </div>
+        </section>
+
+        <section class="panel" style="border-color:var(--err)">
+          <div class="panel-head"><h2 class="err">Danger zone</h2></div>
+          <div class="panel-body stack-sm">
+            <div class="list-row">
+              <div class="grow"><div class="title">Revoke all grants</div><div class="sub">Plugin can still load, but every intent is denied until re-granted. No positions to close.</div></div>
+              <button class="btn danger sm">Revoke</button>
+            </div>
+            <div class="list-row">
+              <div class="grow"><div class="title">Uninstall</div><div class="sub">Deletes code, params and gate evidence. Intent history stays in the ledger. Blocked if positions are open.</div></div>
+              <button class="btn danger sm">Uninstall</button>
+            </div>
+            <div class="list-row">
+              <div class="grow"><div class="title">Delete configuration</div><div class="sub">Removes saved params only. A re-install starts from manifest defaults.</div></div>
+              <button class="btn sm" disabled>Delete</button>
+            </div>
+          </div>
+          <div class="panel-foot">Type <span class="mono">mean-reversion</span> to confirm. Gate evidence is kept for audit for 12 months.</div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

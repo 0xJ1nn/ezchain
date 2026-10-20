@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automation builder · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="automation-builder">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs"><a href="10-automations.html">Automations</a> / Builder</div>
+        <h1>Trailing exit · all positions</h1>
+        <p class="sub">A rule is a trigger, a set of conditions and a bounded action. It runs in paper until promoted, and every run stores its inputs.</p>
+      </div>
+      <div class="page-actions">
+        <span class="badge warn">DRAFT · v3</span>
+        <a class="btn" href="10-automations.html">Discard</a>
+        <button class="btn">Save draft</button>
+        <button class="btn primary">Enable in paper</button>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="panel-body" style="padding:10px 12px">
+        <div class="steps">
+          <span class="step-item done"><span class="n">1</span>Trigger</span><span class="step-line"></span>
+          <span class="step-item on"><span class="n">2</span>Conditions</span><span class="step-line"></span>
+          <span class="step-item"><span class="n">3</span>Actions</span><span class="step-line"></span>
+          <span class="step-item"><span class="n">4</span>Scope</span><span class="step-line"></span>
+          <span class="step-item"><span class="n">5</span>Safety</span><span class="step-line"></span>
+          <span class="step-item"><span class="n">6</span>Review</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Trigger</h2><span class="sub">when should this run?</span></div>
+          <div class="panel-body grid cols-2">
+            <label class="field">
+              <span>Type</span>
+              <select class="select"><option>Price level</option><option>PnL threshold</option><option>Schedule</option><option>Signal match</option><option>Wallet activity</option><option>Chain event</option><option>Webhook</option></select>
+            </label>
+            <label class="field">
+              <span>Evaluate</span>
+              <select class="select"><option>Every mark tick (1s)</option><option>Every 10s</option><option>Every minute</option><option>On candle close</option></select>
+            </label>
+            <label class="field" style="grid-column:1/-1">
+              <span>Condition</span>
+              <div class="row">
+                <select class="select" style="max-width:170px"><option>Position PnL %</option><option>Price vs entry</option><option>Trail giveback %</option></select>
+                <select class="select" style="max-width:110px"><option>≥</option><option>≤</option><option>crosses above</option><option>crosses below</option></select>
+                <input class="input mono" value="25" style="max-width:90px">
+                <span class="small muted">%</span>
+                <span class="badge ghost">per position</span>
+              </div>
+            </label>
+            <label class="field" style="grid-column:1/-1">
+              <span>Applies to</span>
+              <select class="select"><option>All open positions</option><option>Positions of a strategy</option><option>A specific token</option><option>A specific wallet</option></select>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Conditions</h2><span class="sub">all must be true</span>
+            <div class="right"><button class="btn sm">+ Add condition</button></div>
+          </div>
+          <div class="panel-body stack-sm">
+            <div class="panel dashed" style="padding:8px">
+              <div class="row">
+                <select class="select" style="max-width:170px"><option>Mark freshness</option><option>Liquidity</option><option>Token safety</option><option>Chain health</option></select>
+                <select class="select" style="max-width:110px"><option>≤</option><option>≥</option></select>
+                <input class="input mono" value="5" style="max-width:70px"><span class="small muted">s old</span>
+                <span class="badge ok">executable</span>
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn ghost sm">Remove</button>
+              </div>
+            </div>
+            <div class="panel dashed" style="padding:8px">
+              <div class="row">
+                <select class="select" style="max-width:170px"><option>Full-size sell quote</option><option>Buy quote</option><option>Route identity</option></select>
+                <select class="select" style="max-width:130px"><option>exists</option><option>impact ≤</option></select>
+                <input class="input mono" value="1.5" style="max-width:70px"><span class="small muted">% impact</span>
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn ghost sm">Remove</button>
+              </div>
+            </div>
+            <div class="panel dashed" style="padding:8px">
+              <div class="row">
+                <select class="select" style="max-width:170px"><option>Risk decision</option><option>Daily loss</option><option>Kill switch</option></select>
+                <select class="select" style="max-width:130px"><option>is</option></select>
+                <input class="input" value="ALLOW" style="max-width:110px">
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn ghost sm">Remove</button>
+              </div>
+            </div>
+            <div class="note">Missing data fails the condition. An automation never treats “unknown” as “safe”.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Actions</h2><span class="sub">ordered, bounded, idempotent</span><div class="right"><button class="btn sm">+ Add action</button></div></div>
+          <div class="panel-body stack-sm">
+            <div class="panel dashed" style="padding:9px">
+              <div class="row">
+                <span class="badge solid">1</span>
+                <select class="select" style="max-width:180px"><option>Close position</option><option>Scale out</option><option>Move stop</option><option>Notify</option><option>Pause strategy</option></select>
+                <select class="select" style="max-width:130px"><option>50% of bag</option><option>100%</option><option>fixed amount</option></select>
+                <span class="small muted">then re-evaluate</span>
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn ghost sm">Remove</button>
+              </div>
+            </div>
+            <div class="panel dashed" style="padding:9px">
+              <div class="row">
+                <span class="badge solid">2</span>
+                <select class="select" style="max-width:180px"><option>Set trailing stop</option><option>Notify</option><option>Write to webhook</option></select>
+                <input class="input mono" value="8" style="max-width:70px"><span class="small muted">% giveback</span>
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn ghost sm">Remove</button>
+              </div>
+            </div>
+            <div class="panel dashed" style="padding:9px">
+              <div class="row">
+                <span class="badge solid">3</span>
+                <select class="select" style="max-width:180px"><option>Notify</option></select>
+                <select class="select" style="max-width:150px"><option>Telegram · @jinn</option><option>Discord · #trades</option><option>Email</option><option>Webhook</option></select>
+                <input class="input" value="Trailed 50% of {{token}} at +{{pnl}}%" style="flex:1;min-width:180px">
+                <button class="btn ghost sm">Remove</button>
+              </div>
+            </div>
+            <div class="note">Actions run in order. If one fails, the run stops and the position is left untouched; partial execution is recorded.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Scope &amp; safety</h2><span class="sub">what it may touch</span></div>
+          <div class="panel-body grid cols-2">
+            <label class="field"><span>Chains</span><select class="select"><option>Solana, Base</option><option>All enabled</option></select></label>
+            <label class="field"><span>Wallets</span><select class="select"><option>Main (hot)</option><option>All trade-enabled</option></select></label>
+            <label class="field"><span>Cooldown</span><input class="input mono" value="30 s per token"></label>
+            <label class="field"><span>Max fires / day</span><input class="input mono" value="50"></label>
+            <label class="field"><span>Stop if daily loss ≥</span><input class="input mono" value="$150"></label>
+            <label class="field"><span>Run mode</span><select class="select"><option>Paper</option><option>Live (requires approval)</option></select></label>
+            <div class="field" style="grid-column:1/-1">
+              <span>Start / end</span>
+              <div class="row"><input class="input mono" value="2026-10-20 00:00" style="max-width:200px"><span class="muted">→</span><input class="input mono" value="no end" style="max-width:200px"><span class="badge ghost">UTC</span></div>
+            </div>
+            <div class="note" style="grid-column:1/-1"><strong>Kill switch overrides everything.</strong> When armed, the trigger can still fire but the action is recorded as <span class="mono">skipped:kill_switch</span>.</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Dry run</h2><span class="sub">last 30 days · paper data</span><div class="right"><button class="btn sm">Run again</button></div></div>
+          <div class="panel-body stack-sm">
+            <div class="grid cols-3" style="gap:8px">
+              <div class="stat" style="padding:8px;border:1px solid var(--line)"><div class="label">Fires</div><div class="value sm">14</div></div>
+              <div class="stat" style="padding:8px;border:1px solid var(--line)"><div class="label">Acted</div><div class="value sm">9</div></div>
+              <div class="stat" style="padding:8px;border:1px solid var(--line)"><div class="label">Skipped</div><div class="value sm">5</div></div>
+            </div>
+            <div class="table-wrap">
+              <table class="table compact">
+                <thead><tr><th>When</th><th>Token</th><th>Result</th><th class="num">PnL then</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">Oct 19</td><td>BONK</td><td><span class="badge ok">50% closed</span></td><td class="num ok">+128%</td></tr>
+                  <tr><td class="mono">Oct 19</td><td>WIF</td><td><span class="badge warn">skipped: stale mark</span></td><td class="num">+26%</td></tr>
+                  <tr><td class="mono">Oct 18</td><td>JUP</td><td><span class="badge ok">50% closed</span></td><td class="num ok">+131%</td></tr>
+                  <tr><td class="mono">Oct 17</td><td>AERO</td><td><span class="badge warn">skipped: no sell route</span></td><td class="num err">+41%</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note warn">Dry run uses stored marks, not live quotes. A “would act” is not a fill.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Summary</h2></div>
+          <div class="panel-body">
+            <div class="annotation">
+              <b>When</b> any open position reaches +25% PnL and the mark is ≤ 5s old and a full-size sell quote exists and risk allows,
+              <b>then</b> close 50% of the bag, set an 8% trailing stop on the rest, and notify Telegram.
+              <br><br>
+              Scope: Solana + Base · Main (hot) · paper · max 50 fires/day · cooldown 30s/token.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Latest runs</h2><div class="right"><a class="btn sm" href="10-automations.html">Log</a></div></div>
+          <div class="panel-body flush">
+            <div class="list-row" style="padding:8px 12px"><span class="badge ok">OK</span><span class="grow"><span class="title">2m ago · BONK</span><span class="sub">closed 50% · +$23.10 · trail set 8%</span></span></div>
+            <div class="list-row" style="padding:8px 12px"><span class="badge warn">SKIP</span><span class="grow"><span class="title">19m ago · WIF</span><span class="sub">stale mark (7.2s) · no action</span></span></div>
+            <div class="list-row" style="padding:8px 12px"><span class="badge err">ERR</span><span class="grow"><span class="title">1h ago · AERO</span><span class="sub">quote expired before signing · nothing sent</span></span></div>
+          </div>
+          <div class="panel-foot">Retries are explicit; a failed action is never silently retried.</div>
+        </section>
+      </div>
+    </div>
+
+    <section class="grid cols-3 mt-16">
+      <div class="panel"><div class="panel-head"><h2>Rule semantics</h2></div><div class="panel-body small muted stack-sm">
+        <div>• Trigger keys are idempotent: <span class="mono">(automation, position, level, day)</span>.</div>
+        <div>• Conditions are evaluated on one snapshot; actions see that snapshot, not a newer one.</div>
+        <div>• An action that would breach a policy is rejected, not clamped, unless the field is marked clampable.</div>
+      </div></div>
+      <div class="panel"><div class="panel-head"><h2>What this cannot do</h2></div><div class="panel-body small muted stack-sm">
+        <div>• Hold keys or sign transactions.</div>
+        <div>• Exceed wallet or strategy limits.</div>
+        <div>• Bypass the paper gate for live mode.</div>
+        <div>• Retry indefinitely or “keep trying until it fills”.</div>
+      </div></div>
+      <div class="panel"><div class="panel-head"><h2>Related</h2></div><div class="panel-body small stack-sm">
+        <a href="10-automations.html">Automations list →</a>
+        <a href="17-risk.html">Risk limits →</a>
+        <a href="15-alerts.html">Notification channels →</a>
+      </div></div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

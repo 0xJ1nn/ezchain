@@ -1,0 +1,46 @@
+name: Strategy plugin
+description: Propose or register an external strategy plugin.
+title: "[Strategy]: "
+labels: ["strategy-sdk", "needs-triage"]
+body:
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin id
+      placeholder: com.example.momentum
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Source repository
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What it does
+      description: Horizon, universe, signal, sizing, exits. No performance claims without a harness.
+    validations:
+      required: true
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Requested permissions
+      placeholder: chains, venues, data scopes, intents
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Backtest snapshot id, fee/slippage model, paper period. Absolute returns are not evidence.
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Rules
+      options:
+        - label: The plugin uses only the SDK and returns intents (no orders, no keys)
+          required: true
+        - label: No strategy code is proposed for this repository
+          required: true

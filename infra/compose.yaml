@@ -1,0 +1,199 @@
+# ezCHAIN — single-node deployment contract.
+# Status: blueprint (M0). Images are published from `main` starting at v0.1.0.
+# Nothing here is decorative: every service is referenced by docs/ARCHITECTURE.md.
+name: ezchain
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+x-health: &health
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ezchain}
+      POSTGRES_USER: ${POSTGRES_USER:-ezchain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      <<: *health
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
+    logging: *logging
+    networks: [data]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      <<: *health
+      test: ["CMD", "redis-cli", "ping"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 384m } } }
+    logging: *logging
+    networks: [data]
+
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js", "-m", "8222", "--max_mem_store", "256MB", "--max_file_store", "2GB"]
+    volumes: [natsdata:/data]
+    healthcheck:
+      <<: *health
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q ok"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 384m } } }
+    logging: *logging
+    networks: [data]
+
+  migrate:
+    image: ghcr.io/ezchain/api:${EZCHAIN_VERSION:-0.1.0}
+    command: ["ezchain-api", "migrate"]
+    env_file: [.env]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [data]
+
+  api:
+    image: ghcr.io/ezchain/api:${EZCHAIN_VERSION:-0.1.0}
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+    deploy: { resources: { limits: { cpus: "2", memory: 1g } } }
+    logging: *logging
+    networks: [data, app]
+
+  engine:
+    image: ghcr.io/ezchain/engine:${EZCHAIN_VERSION:-0.1.0}
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/healthz')"]
+    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
+    logging: *logging
+    networks: [data]
+
+  executor:
+    image: ghcr.io/ezchain/executor:${EZCHAIN_VERSION:-0.1.0}
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/healthz')"]
+    deploy: { resources: { limits: { cpus: "1", memory: 768m } } }
+    logging: *logging
+    networks: [data]
+
+  ingest:
+    image: ghcr.io/ezchain/ingest:${EZCHAIN_VERSION:-0.1.0}
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      nats: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8002/healthz')"]
+    deploy: { resources: { limits: { cpus: "2", memory: 1g } } }
+    logging: *logging
+    networks: [data, app]
+
+  web:
+    image: ghcr.io/ezchain/web:${EZCHAIN_VERSION:-0.1.0}
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null"]
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+    logging: *logging
+    networks: [app]
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "${EZCHAIN_BIND:-127.0.0.1}:${EZCHAIN_PORT:-8080}:8080"
+    environment:
+      EZCHAIN_DOMAIN: ${EZCHAIN_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+    logging: *logging
+    networks: [app]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel/collector.yaml:/etc/otel/config.yaml:ro
+    logging: *logging
+    networks: [data, app]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: [observability]
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    logging: *logging
+    networks: [app]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: [observability]
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:3001"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["127.0.0.1:3001:3000"]
+    logging: *logging
+    networks: [app]
+
+volumes:
+  pgdata:
+  natsdata:
+  caddydata:
+  caddyconfig:
+  promdata:
+  grafanadata:
+
+networks:
+  # `data` is internal: only api/engine/executor/ingest reach the stores.
+  data:
+    internal: true
+  # `app` is the browser-facing edge.
+  app:

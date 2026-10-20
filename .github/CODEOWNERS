@@ -1,0 +1,19 @@
+# Default owner for everything.
+*                                             @0xJ1nn
+
+# Money paths need the owner explicitly.
+/docs/CONTRACT.md                             @0xJ1nn
+/docs/DOMAIN-MODEL.md                         @0xJ1nn
+/packages/core-py/ledger/                     @0xJ1nn
+/services/executor/                           @0xJ1nn
+/packages/adapters/venue_*/                   @0xJ1nn
+
+# Design source of truth.
+/design/                                      @0xJ1nn
+/docs/WIREFRAME.md                            @0xJ1nn
+
+# CI, licensing and release plumbing.
+/.github/                                     @0xJ1nn
+/infra/                                       @0xJ1nn
+/LICENSE                                      @0xJ1nn
+/CONTRIBUTING.md                              @0xJ1nn

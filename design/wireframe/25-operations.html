@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operations · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="operations">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Operations</div>
+        <h1>Operations</h1>
+        <p class="sub">One node, one ledger. This page answers: is anything broken, what is the blast radius, and what is the last known-good state?</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="https://github.com/0xJ1nn/ezchain/blob/main/docs/INFRA.md" rel="noopener">INFRA.md ↗</a>
+        <button class="btn">Refresh</button>
+      </div>
+    </header>
+
+    <section class="panel mb-12" style="border-color:var(--warn);background:var(--warn-bg)">
+      <div class="panel-body between" style="align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <div class="row"><span class="badge warn">incident · INC-041</span><span class="strong">Executor restarted 2h ago (11:02 UTC)</span><span class="badge ghost">degraded</span></div>
+          <p class="small mt-8">Exit 137 — memory limit exceeded while decoding a Jupiter route. 3 open orders were reconciled; ledger drift 0; no fills lost. New intents resumed at 11:04.</p>
+        </div>
+        <div class="row">
+          <a class="btn sm" href="#timeline">Timeline</a>
+          <button class="btn sm">Acknowledge</button>
+          <button class="btn sm primary">Open runbook</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Services</div><div class="value sm">7 <span class="small muted">/ 8 healthy</span></div><div class="meta"><span class="warn">1 degraded</span> · executor</div></div>
+      <div class="stat"><div class="label">Uptime (30d)</div><div class="value sm">99.95%</div><div class="meta">22m downtime · 1 incident</div></div>
+      <div class="stat"><div class="label">Ledger drift</div><div class="value sm ok">0</div><div class="meta">reconciled 12:40:58</div></div>
+      <div class="stat"><div class="label">Queue depth</div><div class="value sm">1,338</div><div class="meta">ingest lag 2.1s</div></div>
+      <div class="stat"><div class="label">Last backup</div><div class="value sm">03:04</div><div class="meta">2.4 GB · verify ok</div></div>
+      <div class="stat"><div class="label">Disk</div><div class="value sm">71%</div><div class="meta">142 / 200 GB · alert 80%</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Service health</h2><span class="sub">compose · single node</span><div class="right"><span class="badge warn">degraded</span></div></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Service</th><th class="num">Uptime 30d</th><th>Version</th><th class="num">CPU</th><th class="num">Memory</th><th>Health</th><th>Note</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">api</td><td class="num mono">99.99%</td><td class="mono small">0.4.2</td><td class="num mono">4%</td><td class="num mono">182 MB</td><td><span class="badge ok">healthy</span></td><td class="small muted">/healthz 200 · 14ms</td></tr>
+                <tr><td class="strong">engine</td><td class="num mono">99.98%</td><td class="mono small">0.4.2</td><td class="num mono warn">72%</td><td class="num mono">890 MB</td><td><span class="badge ok">healthy</span></td><td class="small muted">intent loop p95 42ms</td></tr>
+                <tr><td class="strong">executor</td><td class="num mono">99.95%</td><td class="mono small">0.4.1</td><td class="num mono">6%</td><td class="num mono">144 MB</td><td><span class="badge warn">degraded</span></td><td class="small warn">restart 11:02 · verify due 13:02</td></tr>
+                <tr><td class="strong">ingest</td><td class="num mono">99.95%</td><td class="mono small">0.4.2</td><td class="num mono">38%</td><td class="num mono">604 MB</td><td><span class="badge ok">healthy</span></td><td class="small muted">2 chains catching up</td></tr>
+                <tr><td class="strong">postgres</td><td class="num mono">100%</td><td class="mono small">2.17-pg16</td><td class="num mono">22%</td><td class="num mono">1.6 GB</td><td><span class="badge ok">healthy</span></td><td class="small muted">18.4 GB db · 71% disk</td></tr>
+                <tr><td class="strong">nats</td><td class="num mono">100%</td><td class="mono small">2.10</td><td class="num mono">3%</td><td class="num mono">96 MB</td><td><span class="badge ok">healthy</span></td><td class="small muted">JetStream 3 streams</td></tr>
+                <tr><td class="strong">redis</td><td class="num mono">100%</td><td class="mono small">7.7</td><td class="num mono">2%</td><td class="num mono">48 MB</td><td><span class="badge ok">healthy</span></td><td class="small muted">cache only · not backed up</td></tr>
+                <tr><td class="strong">web</td><td class="num mono">100%</td><td class="mono small">0.4.2</td><td class="num mono">1%</td><td class="num mono">64 MB</td><td><span class="badge ok">healthy</span></td><td class="small muted">static bundle · caddy in front</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Gateway (caddy) and observability (otel, prometheus, loki) are infrastructure; their failures page separately and never block execution.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Queues</h2><span class="sub">bounded · drop with a counter, never block the reader</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Queue</th><th class="num">Depth</th><th class="num">Lag</th><th>Consumer</th><th>State</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">intents</td><td class="num mono">12</td><td class="num mono">0.4s</td><td class="small">engine</td><td><span class="badge ok">flowing</span></td></tr>
+                <tr><td class="mono small">fills</td><td class="num mono">4</td><td class="num mono">0.1s</td><td class="small">ledger</td><td><span class="badge ok">flowing</span></td></tr>
+                <tr><td class="mono small">ingest.events</td><td class="num mono">1,284</td><td class="num mono warn">2.1s</td><td class="small">projection</td><td><span class="badge warn">catching up</span></td></tr>
+                <tr><td class="mono small">webhooks.out</td><td class="num mono">38</td><td class="num mono">6.4s</td><td class="small">delivery</td><td><span class="badge warn">retrying</span></td></tr>
+                <tr><td class="mono small">dead-letter</td><td class="num mono">3</td><td class="num mono">—</td><td class="small">manual review</td><td><span class="badge err">needs review</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Dead letters are replayed from the ops page only after the cause is named. They are never auto-drained.</div>
+        </section>
+
+        <section class="panel" id="timeline">
+          <div class="panel-head"><h2>Incident timeline</h2><span class="sub">INC-041 · 2026-10-20</span></div>
+          <div class="panel-body">
+            <div class="list">
+              <div class="list-row"><span class="mono small muted nowrap">11:02:14</span><div class="grow"><div class="title">executor exited 137</div><div class="sub">memory limit 512 MB exceeded while decoding a Jupiter route</div></div><span class="badge err">trigger</span></div>
+              <div class="list-row"><span class="mono small muted nowrap">11:02:31</span><div class="grow"><div class="title">restart policy started executor</div><div class="sub">image ghcr.io/ezchain/executor@sha256:7c1f… · same digest</div></div><span class="badge">auto</span></div>
+              <div class="list-row"><span class="mono small muted nowrap">11:02:44</span><div class="grow"><div class="title">reconciliation began</div><div class="sub">3 open orders, 2 venues, 0 unconfirmed tx</div></div><span class="badge info">state from DB</span></div>
+              <div class="list-row"><span class="mono small muted nowrap">11:03:10</span><div class="grow"><div class="title">reconciliation complete · drift 0</div><div class="sub">no fills lost; no duplicate intents</div></div><span class="badge ok">recovered</span></div>
+              <div class="list-row"><span class="mono small muted nowrap">11:04:02</span><div class="grow"><div class="title">alert delivered to operator</div><div class="sub">channel: webhook + email · dedupe key inc-041</div></div><span class="badge">notified</span></div>
+              <div class="list-row"><span class="mono small muted nowrap">13:02:00</span><div class="grow"><div class="title">degraded → healthy check</div><div class="sub">2h clean uptime + memory headroom, then close incident</div></div><span class="badge warn">pending</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Breakers</h2><span class="sub">fail closed</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Breaker</th><th>State</th><th>Since</th><th class="num">Threshold</th></tr></thead>
+              <tbody>
+                <tr><td><span class="strong">order.submit</span><span class="sub" style="display:block">global</span></td><td><span class="badge ok">closed</span></td><td class="small mono">10-13</td><td class="num mono">5 fail / 60s</td></tr>
+                <tr><td><span class="strong">chain.rpc.tron</span><span class="sub" style="display:block">chain</span></td><td><span class="badge err">open</span></td><td class="small mono">12:18</td><td class="num mono">20% / 60s</td></tr>
+                <tr><td><span class="strong">venue.pancakeswap</span><span class="sub" style="display:block">venue</span></td><td><span class="badge ok">closed</span></td><td class="small mono">10-16</td><td class="num mono">5 quote timeouts</td></tr>
+                <tr><td><span class="strong">strategy.momentum</span><span class="sub" style="display:block">strategy</span></td><td><span class="badge ok">closed</span></td><td class="small mono">09-30</td><td class="num mono">3 losses / 1h</td></tr>
+                <tr><td><span class="strong">webhook.fills</span><span class="sub" style="display:block">delivery</span></td><td><span class="badge warn">half-open</span></td><td class="small mono">12:42</td><td class="num mono">10 fail / 15m</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">A breaker pauses new risk only. Existing positions keep their stops; exit quotes are still attempted.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Backup</h2><span class="sub">nightly · verified</span><div class="right"><span class="badge ok">ok</span></div></div>
+          <div class="panel-body stack-sm small">
+            <div class="between"><span class="muted">Last success</span><span class="mono">2026-10-20 03:04 UTC</span></div>
+            <div class="between"><span class="muted">Size</span><span class="mono">2.4 GB · pg_dump -Fc</span></div>
+            <div class="between"><span class="muted">Verify</span><span class="mono ok">checksum + table count</span></div>
+            <div class="between"><span class="muted">Restore drill</span><span class="mono">10-13 · 11m 42s · drift 0</span></div>
+            <div class="between"><span class="muted">Next drill</span><span class="mono">2026-10-27 04:00</span></div>
+            <div class="between"><span class="muted">Retention</span><span class="mono">30 daily · 12 monthly</span></div>
+            <div class="hr"></div>
+            <div class="note">RTO for DB corruption is 1h. Vault keys are not in the dump; losing the recovery phrase has no recovery by design.</div>
+            <button class="btn block sm">Run backup now</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Scheduled jobs</h2></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Job</th><th>Schedule</th><th>Last</th><th>Result</th></tr></thead>
+              <tbody>
+                <tr><td class="small">backup</td><td class="mono small">03:00 daily</td><td class="mono small">03:04</td><td><span class="badge ok">ok 4m12s</span></td></tr>
+                <tr><td class="small">reconcile</td><td class="mono small">:00/:15/:30/:45</td><td class="mono small">12:40</td><td><span class="badge ok">ok 8s</span></td></tr>
+                <tr><td class="small">adapter fixtures</td><td class="mono small">04:30 daily</td><td class="mono small">04:32</td><td><span class="badge ok">ok 2m08s</span></td></tr>
+                <tr><td class="small">restore drill</td><td class="mono small">Sun 04:00</td><td class="mono small">10-13</td><td><span class="badge ok">ok 11m42s</span></td></tr>
+                <tr><td class="small">retention</td><td class="mono small">02:15 daily</td><td class="mono small">02:15</td><td><span class="badge ok">ok 41s</span></td></tr>
+                <tr><td class="small">export cleanup</td><td class="mono small">hourly</td><td class="mono small">12:00</td><td><span class="badge ok">ok 3s</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="split mt-16">
+      <section class="panel">
+        <div class="panel-head"><h2>Storage</h2><span class="sub">grow slowly, alert early</span></div>
+        <div class="panel-body stack-sm">
+          <div class="between small"><span>Disk <span class="muted mono">142 / 200 GB</span></span><span class="mono">71%</span></div>
+          <div class="meter"><div class="fill" style="width:71%"></div></div>
+          <div class="between small"><span>Postgres <span class="muted mono">18.4 GB · +0.6 GB / 7d</span></span><span class="mono">9%</span></div>
+          <div class="meter"><div class="fill" style="width:9%"></div></div>
+          <div class="between small"><span>WAL <span class="muted mono">3.1 GB · cap 20 GB</span></span><span class="mono">16%</span></div>
+          <div class="meter"><div class="fill" style="width:16%"></div></div>
+          <div class="between small"><span>Artifacts <span class="muted mono">41.2 GB · cap 66 GB</span></span><span class="mono">62%</span></div>
+          <div class="meter"><div class="fill warn" style="width:62%"></div></div>
+          <div class="note mt-8">Page at 80% disk, ticket at 85%. Ticks raw retention is 30 days; a backtest outside the window refuses to run instead of silently using less data.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Logs</h2><span class="sub">JSON · redacted · request id</span></div>
+        <div class="panel-body">
+          <pre class="mono small" style="margin:0;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:3px;padding:8px">12:41:02 INFO  api     req=9f2c intent=…a41 decision=allow drift=0
+12:41:02 WARN  executor venue=jupiter quote_age=6.4s retry=1
+12:42:19 ERROR web     hook=fills status=502 attempt=3/5 evt=evt_01J9F2KQ
+12:44:00 INFO  backup  dump=pgdata size=2.4GB verify=ok dur=4m12s</pre>
+          <div class="note mt-8">No secrets, no signed transactions, no raw keys. A log line that would contain one is replaced with a hash and a field name.</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel mt-16">
+      <div class="panel-head"><h2>Upgrade</h2><span class="sub">immutable tags · forward-only migrations</span><div class="right"><span class="badge warn">update available</span></div></div>
+      <div class="panel-body grid cols-2">
+        <div class="stack-sm small">
+          <div class="between"><span class="muted">Current</span><span class="mono">v0.4.1</span></div>
+          <div class="between"><span class="muted">Image digest</span><span class="mono truncate">executor@sha256:7c1f9a0e…d24b</span></div>
+          <div class="between"><span class="muted">Available</span><span class="mono">v0.4.2 · 2026-10-19</span></div>
+          <div class="between"><span class="muted">Migration</span><span class="mono">1 pending · additive</span></div>
+          <div class="note warn">Upgrading the executor while degraded is allowed, but only after the 13:02 verification or an explicit operator override with a reason.</div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Migrate then restart</div>
+          <div class="small"><span class="checkbox checked"></span> Pre-migration backup complete (03:04)</div>
+          <div class="small"><span class="checkbox checked"></span> Pull pinned digest, never <span class="mono">latest</span></div>
+          <div class="small"><span class="checkbox"></span> Run <span class="mono">migrate</span> (idempotent, forward-only)</div>
+          <div class="small"><span class="checkbox"></span> Start api + engine, then executor</div>
+          <div class="small"><span class="checkbox"></span> <span class="mono">ezchain-admin verify</span> + reconcile</div>
+          <div class="small"><span class="checkbox"></span> Unpause and record the reason</div>
+          <div class="row mt-8"><button class="btn sm">Pre-migration backup</button><button class="btn sm primary">Upgrade (migrate then restart)</button></div>
+        </div>
+      </div>
+      <div class="panel-foot">A failed migration stops the rollout; the previous image remains on disk. Rollback means restore + previous digest, not a down-migration.</div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

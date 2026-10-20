@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Risk · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="risk">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Protect / Risk</div>
+        <h1>Risk</h1>
+        <p class="sub">One page for how much can be lost: the kill switch, exposure against hard limits, drawdown and the breakers that stop execution when a dependency lies.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="19-reports.html">Risk report</a>
+        <a class="btn" href="25-operations.html">Incidents</a>
+        <button class="btn danger solid">Arm kill switch</button>
+      </div>
+    </header>
+
+    <section class="panel mb-12">
+      <div class="panel-head">
+        <h2>Kill switch</h2><span class="sub">halts new risk everywhere it is scoped to</span>
+        <div class="right"><span class="badge ghost">DISARMED</span><span class="small muted">last armed Oct 12 · 6m</span></div>
+      </div>
+      <div class="panel-body grid cols-4">
+        <div class="stack-sm">
+          <div class="micro">Scope</div>
+          <div class="seg" aria-label="Kill switch scope">
+            <button aria-pressed="true">All</button><button>Chain</button><button>Wallet</button><button>Strategy</button>
+          </div>
+          <label class="field mt-8"><span>Target</span><select class="select"><option>Entire workspace (all chains, wallets, strategies)</option><option>Solana</option><option>Base</option><option>Main (hot)</option><option>Momentum v1.2</option></select></label>
+          <div class="small muted">Scope is recorded with the arming event. Widening later requires a second confirmation.</div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">State</div>
+          <div class="row"><span class="badge ok">not armed</span><span class="small muted">since Oct 12 03:47 UTC</span></div>
+          <div class="small">Armed by JW for <span class="mono">SOL RPC outage</span>, released after 6m with the reason <span class="mono">rpc_recovered</span>.</div>
+          <div class="field mt-8"><span>Confirm by typing <span class="mono">ARM</span></span><input class="input mono" placeholder="type ARM"></div>
+          <div class="row"><button class="btn danger">Arm scope</button><button class="btn ghost">History</button></div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">When armed</div>
+          <div class="small">• cancels queued intents not yet signed<br>• rejects every new entry<br>• exits, stops and reduce-only sells still work<br>• strategies keep computing; intents are logged <span class="mono">skipped:kill_switch</span></div>
+        </div>
+        <div class="stack-sm">
+          <div class="micro">Does not</div>
+          <div class="small">• close open positions<br>• cancel a transaction already broadcast<br>• revoke token approvals<br>• stop a chain-level event you do not control</div>
+          <div class="note err">On-chain state can still change while the switch is armed.</div>
+        </div>
+      </div>
+      <div class="panel-foot">Reachable from every page (<kbd>k</kbd>). Arming is idempotent; releasing requires a reason code.</div>
+    </section>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Equity</div><div class="value">$3,482.16</div><div class="meta">4 wallets · 3 chains</div></div>
+      <div class="stat"><div class="label">Gross exposure</div><div class="value sm">$1,284.20</div><div class="meta">36.9% of equity · limit 60%</div></div>
+      <div class="stat"><div class="label">Day PnL</div><div class="value sm ok">+$12.10</div><div class="meta">limit −$250 · used 0%</div></div>
+      <div class="stat"><div class="label">Drawdown</div><div class="value sm err">−6.4%</div><div class="meta">peak $3,720.90 · limit −20%</div></div>
+      <div class="stat"><div class="label">Largest order 24h</div><div class="value sm">$75.00</div><div class="meta">per-order limit $75 · at cap</div></div>
+      <div class="stat"><div class="label">Breakers</div><div class="value sm warn">4</div><div class="meta">3 open · 1 half-open</div></div>
+    </section>
+
+    <div class="split mb-12">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Exposure</h2><span class="sub">gross notional at executable marks · $1,284.20</span><div class="right"><span class="badge ghost">as of 12:16 UTC</span></div></div>
+          <div class="panel-body grid cols-2" style="gap:12px">
+            <div>
+              <div class="micro mb-8">By chain</div>
+              <table class="table compact">
+                <thead><tr><th>Chain</th><th class="num">Notional</th><th class="num">% eq.</th><th>Share</th></tr></thead>
+                <tbody>
+                  <tr><td>Solana <span class="badge ghost">T1</span></td><td class="num mono">$965.60</td><td class="num">27.7%</td><td><div class="meter" style="width:70px"><div class="fill" style="width:75%"></div></div></td></tr>
+                  <tr><td>Base <span class="badge ghost">T1</span></td><td class="num mono">$318.60</td><td class="num">9.1%</td><td><div class="meter" style="width:70px"><div class="fill" style="width:25%"></div></div></td></tr>
+                  <tr><td>Ethereum</td><td class="num mono">$0.00</td><td class="num">0%</td><td><div class="meter" style="width:70px"><div class="fill" style="width:0"></div></div></td></tr>
+                  <tr><td>Bitcoin <span class="badge ghost">watch</span></td><td class="num mono">$0.00</td><td class="num">0%</td><td class="small muted">not tradeable</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div class="micro mb-8">By token</div>
+              <table class="table compact">
+                <thead><tr><th>Token</th><th class="num">Notional</th><th class="num">% eq.</th><th>vs 10%</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="strong">BONK</span> <span class="badge err">breach</span></td><td class="num mono">$742.10</td><td class="num err">21.3%</td><td><div class="meter" style="width:70px"><div class="fill err" style="width:100%"></div></div></td></tr>
+                  <tr><td><span class="strong">AERO</span></td><td class="num mono">$318.60</td><td class="num">9.1%</td><td><div class="meter" style="width:70px"><div class="fill" style="width:91%"></div></div></td></tr>
+                  <tr><td><span class="strong">MOCHI</span></td><td class="num mono">$223.50</td><td class="num">6.4%</td><td><div class="meter" style="width:70px"><div class="fill" style="width:64%"></div></div></td></tr>
+                  <tr><td><span class="strong">SCAM</span> <span class="badge ghost">unsellable</span></td><td class="num mono">$0.00</td><td class="num muted">—</td><td class="small muted">excluded · no route</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div class="micro mb-8">By strategy</div>
+              <table class="table compact">
+                <thead><tr><th>Strategy</th><th class="num">Notional</th><th class="num">% eq.</th><th>Cap</th></tr></thead>
+                <tbody>
+                  <tr><td>Momentum v1.2 <span class="badge">paper</span></td><td class="num mono">$965.60</td><td class="num">27.7%</td><td class="small">40%</td></tr>
+                  <tr><td>Manual</td><td class="num mono">$318.60</td><td class="num">9.1%</td><td class="small">40%</td></tr>
+                  <tr><td>DCA weekly</td><td class="num mono">$0.00</td><td class="num">0%</td><td class="small">25%</td></tr>
+                  <tr><td>Mean reversion v0.4 <span class="badge ghost">gate 6/14d</span></td><td class="num mono">$0.00</td><td class="num">0%</td><td class="small">0% · not eligible</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div class="micro mb-8">By wallet</div>
+              <table class="table compact">
+                <thead><tr><th>Wallet</th><th class="num">Notional</th><th class="num">% eq.</th><th>Policy</th></tr></thead>
+                <tbody>
+                  <tr><td>Main (hot)</td><td class="num mono">$965.60</td><td class="num">27.7%</td><td class="small">$250/day</td></tr>
+                  <tr><td>Ledger (hardware)</td><td class="num mono">$318.60</td><td class="num">9.1%</td><td class="small">approval &gt; $100</td></tr>
+                  <tr><td>Cold watch</td><td class="num mono">$0.00</td><td class="num">0%</td><td class="small">read-only</td></tr>
+                  <tr><td>Binance</td><td class="num mono">$0.00</td><td class="num">—</td><td class="small">key unverified</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">Exposure uses executable marks; unsellable tokens are excluded and listed separately.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Drawdown</h2><span class="sub">equity vs running peak · 90d</span><div class="right"><span class="badge warn">−6.4%</span></div></div>
+          <div class="panel-body">
+            <div class="chart-legend mb-8"><span class="l-entry"><i></i>Equity</span><span><i></i>Peak 2026-09-24</span></div>
+            <div class="chart" style="height:150px">
+              <svg viewBox="0 0 420 150" style="height:150px" role="img" aria-label="Equity over 90 days: peak 3,720.90 on 24 September, current 3,482.16, 6.4 percent below peak">
+                <line class="gridline" x1="0" y1="26" x2="380" y2="26"/>
+                <line class="gridline" x1="0" y1="61" x2="380" y2="61"/>
+                <line class="gridline" x1="0" y1="95" x2="380" y2="95"/>
+                <line class="axis" x1="380" y1="8" x2="380" y2="130"/>
+                <text class="axis-text" x="386" y="29">$3,750</text>
+                <text class="axis-text" x="386" y="64">$3,600</text>
+                <text class="axis-text" x="386" y="98">$3,450</text>
+                <polygon class="area" points="0,102 30,91 60,70 90,58 110,79 130,118 160,107 190,88 220,75 250,61 280,47 310,38 330,33 355,61 380,88 380,130 0,130"/>
+                <polyline class="series" points="0,102 30,91 60,70 90,58 110,79 130,118 160,107 190,88 220,75 250,61 280,47 310,38 330,33 355,61 380,88"/>
+                <circle class="dot" cx="330" cy="33" r="2.5"/>
+                <text class="num-label" x="286" y="28">$3,720.90</text>
+                <circle class="dot" cx="380" cy="88" r="2.5"/>
+                <text class="num-label" x="322" y="104">$3,482.16</text>
+              </svg>
+            </div>
+            <div class="table-wrap mt-12">
+              <table class="table compact">
+                <tbody>
+                  <tr><td>Peak equity</td><td class="num mono">$3,720.90</td><td class="small muted">2026-09-24</td></tr>
+                  <tr><td>Current drawdown</td><td class="num mono err">−$238.74 · −6.4%</td><td class="small muted">now</td></tr>
+                  <tr><td>Max drawdown 90d</td><td class="num mono">−7.1%</td><td class="small muted">2026-08-11</td></tr>
+                  <tr><td>Limit</td><td class="num mono">−20% · $2,976.72</td><td class="small muted">hard</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>What the kill switch does not do</h2></div>
+          <div class="panel-body stack-sm small muted">
+            <div>• It does not sell your positions. Exits stay available, entries do not.</div>
+            <div>• It does not reverse or cancel an already-signed on-chain transaction.</div>
+            <div>• It does not revoke ERC-20 / SPL approvals; a compromised key can still move approved funds.</div>
+            <div>• It does not pause the chain, the venue or a strategy's own timers.</div>
+            <div>• It does not reduce drawdown that already happened; it caps the next decision.</div>
+          </div>
+          <div class="panel-foot">Use <a href="23-security.html">Security</a> for approvals and key custody, not this switch.</div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Limits</h2><span class="sub">enforced server-side on every intent</span><div class="right"><button class="btn sm">Reset to defaults</button><button class="btn primary sm">Save limits</button></div></div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>Limit</th><th>Scope</th><th class="num">Current</th><th class="num">Limit</th><th class="num">Used</th><th>State</th><th>On breach</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="strong">Daily loss</td><td class="small">workspace</td>
+              <td class="num mono ok">+$12.10</td><td class="num"><input class="input mono" value="250" style="width:80px;text-align:right"> USD</td>
+              <td class="num">0%</td><td><span class="badge ok">ok</span></td><td class="small">block new entries until 00:00 UTC</td>
+            </tr>
+            <tr>
+              <td class="strong">Drawdown</td><td class="small">workspace</td>
+              <td class="num mono">−6.4%</td><td class="num"><input class="input mono" value="20" style="width:64px;text-align:right"> %</td>
+              <td class="num">32%</td><td><span class="badge ok">ok</span></td><td class="small">kill switch (all), exits only</td>
+            </tr>
+            <tr>
+              <td class="strong">Gross exposure</td><td class="small">workspace</td>
+              <td class="num mono">36.9%</td><td class="num"><input class="input mono" value="60" style="width:64px;text-align:right"> %</td>
+              <td class="num">62%</td><td><span class="badge ok">ok</span></td><td class="small">deny entries that would exceed</td>
+            </tr>
+            <tr style="background:var(--err-bg)">
+              <td class="strong">Per token</td><td class="small">workspace</td>
+              <td class="num mono err">BONK 21.3%</td><td class="num"><input class="input mono" value="10" style="width:64px;text-align:right"> %</td>
+              <td class="num err">213%</td><td><span class="badge err">breached</span></td><td class="small err">reduce-only · no adds</td>
+            </tr>
+            <tr>
+              <td class="strong">Per order</td><td class="small">workspace</td>
+              <td class="num mono">$75.00</td><td class="num"><input class="input mono" value="75" style="width:64px;text-align:right"> USD</td>
+              <td class="num">100%</td><td><span class="badge warn">at cap</span></td><td class="small">clamp to limit, then re-quote</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot">
+        BONK is grandfathered: the position grew past the 10% token cap with price. It is reduce-only until it is back under the cap; no forced liquidation.
+      </div>
+    </section>
+
+    <section class="panel mb-12">
+      <div class="panel-head"><h2>Circuit breakers</h2><span class="sub">dependency states that gate execution</span><div class="right"><a class="btn sm" href="20-chains.html">Chain health</a><a class="btn sm" href="25-operations.html">Ops</a></div></div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>Source</th><th>Kind</th><th>State</th><th>Since</th><th>Half-open probes</th><th>Effect</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">base-indexer</td><td class="small">data · events</td>
+              <td><span class="badge err">open</span></td><td class="mono">08:17</td>
+              <td class="small">2 / 3 failed</td>
+              <td class="small">Base signals dropped · Base entries denied <span class="mono">source_stale</span></td>
+              <td class="right"><button class="btn ghost sm">Details</button></td>
+            </tr>
+            <tr>
+              <td class="mono">jupiter-quote</td><td class="small">venue · quotes</td>
+              <td><span class="badge warn">half-open</span></td><td class="mono">11:52</td>
+              <td class="small">1 / 1 ok · next 12:22</td>
+              <td class="small">Solana entries denied until 3 consecutive ok</td>
+              <td class="right"><button class="btn ghost sm">Details</button></td>
+            </tr>
+            <tr>
+              <td class="mono">solana-rpc (helius)</td><td class="small">chain · reads</td>
+              <td><span class="badge ok">closed</span></td><td class="small muted">—</td>
+              <td class="small muted">—</td>
+              <td class="small">normal · failover to triton at 2 errors</td>
+              <td class="right"><button class="btn ghost sm">Details</button></td>
+            </tr>
+            <tr>
+              <td class="mono">wallet-indexer</td><td class="small">data · wallet flow</td>
+              <td><span class="badge warn">open</span></td><td class="mono">11:35</td>
+              <td class="small">0 / 3 · probing</td>
+              <td class="small">wallet signals stale · trading unaffected</td>
+              <td class="right"><button class="btn ghost sm">Details</button></td>
+            </tr>
+            <tr>
+              <td class="mono">webhook-ops</td><td class="small">notify</td>
+              <td><span class="badge err">open</span></td><td class="mono">11:42</td>
+              <td class="small">0 / 3 · HTTP 500</td>
+              <td class="small">alerts dead-lettered · trading unaffected</td>
+              <td class="right"><a class="btn ghost sm" href="15-alerts.html">Alerts</a></td>
+            </tr>
+            <tr>
+              <td class="mono">binance-read</td><td class="small">exchange · read</td>
+              <td><span class="badge ok">closed</span></td><td class="small muted">—</td>
+              <td class="small muted">—</td>
+              <td class="small">no balances · key unverified</td>
+              <td class="right"><a class="btn ghost sm" href="21-integrations.html">Fix key</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot">A breaker opens after 3 consecutive failures; it closes after 3 consecutive successes. Half-open admits one probe at a time.</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Recent risk decisions</h2><span class="sub">last 24h · every intent gets a verdict</span>
+        <div class="right"><span class="field" style="min-width:120px"><select class="select"><option>All decisions</option><option>Denied only</option><option>Allowed only</option></select></span><a class="btn sm" href="18-ledger.html">Full audit</a></div>
+      </div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>Time</th><th>Origin</th><th>Intent</th><th class="num">Size</th><th>Decision</th><th>Reason code</th><th>Rule</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">12:04:11</td><td>Momentum v1.2</td><td>BUY BONK</td><td class="num mono">$120.00</td><td><span class="badge err">DENY</span></td><td class="mono small">per_token_limit</td><td class="small">BONK 21.3% &gt; 10% → reduce-only</td></tr>
+            <tr><td class="mono">11:58:02</td><td>Momentum v1.2</td><td>SELL MOCHI 50%</td><td class="num mono">$111.75</td><td><span class="badge ok">ALLOW</span></td><td class="mono small">exit_reduces_risk</td><td class="small">exits always allowed</td></tr>
+            <tr><td class="mono">11:41:37</td><td>Manual · JW</td><td>BUY AERO</td><td class="num mono">$88.00 → $29.62</td><td><span class="badge ok">ALLOW</span></td><td class="mono small">size_clamped</td><td class="small">clamped to remaining 10% token cap</td></tr>
+            <tr><td class="mono">10:22:19</td><td>DCA weekly</td><td>BUY ETH</td><td class="num mono">$50.00</td><td><span class="badge ok">ALLOW</span></td><td class="mono small">within_limits</td><td class="small">week 42 · 4th of 4 allowed</td></tr>
+            <tr><td class="mono">09:36:15</td><td>Momentum v1.2</td><td>BUY MOCHI</td><td class="num mono">$180.00 → $75.00</td><td><span class="badge ok">ALLOW</span></td><td class="mono small">size_clamped</td><td class="small">clamped to per-order limit $75</td></tr>
+            <tr><td class="mono">08:53:44</td><td>Manual · JW</td><td>SELL SCAM</td><td class="num mono">100%</td><td><span class="badge err">DENY</span></td><td class="mono small">no_sell_route</td><td class="small">no executable quote from 3 venues</td></tr>
+            <tr><td class="mono">08:41:07</td><td>Grid experiment</td><td>BUY ARB</td><td class="num mono">$75.00</td><td><span class="badge err">DENY</span></td><td class="mono small">strategy_paused</td><td class="small">installed but paused Oct 06</td></tr>
+            <tr><td class="mono">07:59:31</td><td>Mean reversion v0.4</td><td>BUY AERO</td><td class="num mono">$60.00</td><td><span class="badge err">DENY</span></td><td class="mono small">paper_gate_incomplete</td><td class="small">6d / 38 intents · needs 14d / 50</td></tr>
+            <tr><td class="mono">Oct 19 22:10</td><td>Executor retry</td><td>BUY MOCHI</td><td class="num mono">$96.30</td><td><span class="badge err">DENY</span></td><td class="mono small">breaker_open</td><td class="small">base-indexer open · Base entry</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot">
+        Reason codes: <span class="mono">within_limits</span> · <span class="mono">per_token_limit</span> · <span class="mono">per_order_limit</span> ·
+        <span class="mono">daily_loss</span> · <span class="mono">drawdown</span> · <span class="mono">exposure_cap</span> ·
+        <span class="mono">no_sell_route</span> · <span class="mono">source_stale</span> · <span class="mono">breaker_open</span> ·
+        <span class="mono">kill_switch</span> · <span class="mono">paper_gate_incomplete</span>
+      </div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

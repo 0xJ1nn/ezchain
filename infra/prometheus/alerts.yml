@@ -1,0 +1,45 @@
+groups:
+  - name: money-path
+    rules:
+      - alert: LedgerDrift
+        expr: ezchain_ledger_drift_entries > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Ledger drift detected ({{ $value }} entries)"
+          runbook: "docs/RUNBOOK.md#ledger-drift"
+
+      - alert: ExecutorUnreachable
+        expr: up{job="executor"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Executor is down; no orders can be signed"
+
+      - alert: QueueDepthHigh
+        expr: ezchain_queue_depth > 10000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Queue depth {{ $value }}; ingest is outpacing consumers"
+
+      - alert: SourceStale
+        expr: ezchain_source_freshness_seconds > 60
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Market source {{ $labels.source }} is stale"
+
+      - alert: CircuitBreakerOpen
+        expr: ezchain_breaker_state > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Breaker open for {{ $labels.target }}"
+
+      - alert: BackupFailed
+        expr: ezchain_backup_last_success_timestamp_seconds < time() - 90000
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "No successful backup in 25h"

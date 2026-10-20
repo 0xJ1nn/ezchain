@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chains &amp; RPC · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="chains">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">System / Chains &amp; RPC</div>
+        <h1>Chains &amp; RPC</h1>
+        <p class="sub">The registry is the only source for what the UI may offer. Tier is a verification level, not ambition. A degraded provider moves traffic; it does not fail the chain.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="25-operations.html">Provider health</a>
+        <a class="btn primary" href="#add-chain">Add chain</a>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Chains</div><div class="value sm">16</div><div class="meta">6 T1 · 7 T2 · 3 T3</div></div>
+      <div class="stat"><div class="label">RPC providers</div><div class="value sm">9</div><div class="meta"><span class="err">1 open</span> · 1 half-open</div></div>
+      <div class="stat"><div class="label">Intents (24h)</div><div class="value sm">1,284</div><div class="meta">37 rejected · 2.9%</div></div>
+      <div class="stat"><div class="label">Quote latency</div><div class="value sm">412 <span class="small muted">ms p95</span></div><div class="meta">p50 96 ms · 6 venues</div></div>
+      <div class="stat"><div class="label">Gas (7d)</div><div class="value sm">$41.86</div><div class="meta">68% Ethereum · 147 tx</div></div>
+      <div class="stat"><div class="label">Registry</div><div class="value sm">v12</div><div class="meta mono">2026-10-19 18:22Z</div></div>
+    </section>
+
+    <div class="split">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Chain registry</h2><span class="sub">served by <span class="mono">/api/v1/chains</span></span>
+          <div class="right"><span class="badge ghost">16 rows</span></div>
+        </div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <thead><tr><th>Chain</th><th>Family</th><th>Tier</th><th>Execution</th><th class="num">Finality</th><th class="num">Gas now</th><th>Adapter</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">S</span>Solana</span></td><td class="mono small">svm</td><td><span class="badge solid">T1</span></td><td class="small">Jupiter · Raydium · PumpSwap</td><td class="num mono">12.8s</td><td class="num mono">5k lam</td><td class="mono small">solana@2.4.1</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">E</span>Ethereum</span></td><td class="mono small">evm</td><td><span class="badge solid">T1</span></td><td class="small">Uniswap v3/v4 · 1inch</td><td class="num mono">12.8s</td><td class="num mono">8.4 gwei</td><td class="mono small">evm@3.1.0</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">B</span>Base</span></td><td class="mono small">evm</td><td><span class="badge solid">T1</span></td><td class="small">Uniswap · Aerodrome</td><td class="num mono">2.0s</td><td class="num mono">0.006 gwei</td><td class="mono small">evm@3.1.0</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">A</span>Arbitrum One</span></td><td class="mono small">evm</td><td><span class="badge solid">T1</span></td><td class="small">Uniswap · Camelot</td><td class="num mono">1.8s</td><td class="num mono">0.01 gwei</td><td class="mono small">evm@3.1.0</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">P</span>Polygon PoS</span></td><td class="mono small">evm</td><td><span class="badge solid">T1</span></td><td class="small">Uniswap · QuickSwap</td><td class="num mono">5.2s</td><td class="num mono">32 gwei</td><td class="mono small">evm@3.1.0</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">N</span>BNB Chain</span></td><td class="mono small">evm</td><td><span class="badge solid">T1</span></td><td class="small">PancakeSwap</td><td class="num mono">3.0s</td><td class="num mono">1 gwei</td><td class="mono small">evm@3.1.0</td><td><span class="badge warn">degraded</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">O</span>Optimism</span></td><td class="mono small">evm</td><td><span class="badge">T2</span></td><td class="small">Uniswap · Velodrome <span class="badge warn">beta</span></td><td class="num mono">2.0s</td><td class="num mono">0.005 gwei</td><td class="mono small">evm@3.1.0</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">V</span>Avalanche C</span></td><td class="mono small">evm</td><td><span class="badge">T2</span></td><td class="small">Trader Joe <span class="badge warn">beta</span></td><td class="num mono">1.9s</td><td class="num mono">25 nAVAX</td><td class="mono small">evm@3.1.0</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">U</span>Sui</span></td><td class="mono small">move</td><td><span class="badge">T2</span></td><td class="small">Cetus · Bluefin <span class="badge warn">beta</span></td><td class="num mono">0.5s</td><td class="num mono">0.0021 SUI</td><td class="mono small">sui@0.9.2</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">T</span>Aptos</span></td><td class="mono small">move</td><td><span class="badge">T2</span></td><td class="small">Pancake Aptos <span class="badge warn">beta</span></td><td class="num mono">0.9s</td><td class="num mono">0.0001 APT</td><td class="mono small">aptos@0.7.4</td><td><span class="badge warn">indexer stale</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">◈</span>TON</span></td><td class="mono small">tvm</td><td><span class="badge">T2</span></td><td class="small">STON.fi · DeDust <span class="badge warn">beta</span></td><td class="num mono">5.0s</td><td class="num mono">0.005 TON</td><td class="mono small">ton@0.5.1</td><td><span class="badge ok">healthy</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">R</span>Tron</span></td><td class="mono small">tvm</td><td><span class="badge">T2</span></td><td class="small">SunSwap <span class="badge warn">beta</span></td><td class="num mono">3.0s</td><td class="num mono">≈13 TRX</td><td class="mono small">tron@0.8.0</td><td><span class="badge err">rpc open</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">₿</span>Bitcoin</span></td><td class="mono small">utxo</td><td><span class="badge">T2</span></td><td class="small">read + transfer · no swap</td><td class="num mono">10m</td><td class="num mono">3.2 sat/vB</td><td class="mono small">btc@0.6.0</td><td><span class="badge">watch-only</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">C</span>Cosmos Hub</span></td><td class="mono small">cosmos</td><td><span class="badge ghost">T3</span></td><td class="small muted">read-only · trading disabled</td><td class="num mono">6.0s</td><td class="num mono">0.025 ATOM</td><td class="mono small">cosmos@0.3.0</td><td><span class="badge">read-only</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">N</span>NEAR</span></td><td class="mono small">near</td><td><span class="badge ghost">T3</span></td><td class="small muted">Ref Finance planned</td><td class="num mono">1.2s</td><td class="num mono">0.0001 NEAR</td><td class="mono small">near@0.2.1</td><td><span class="badge">read-only</span></td></tr>
+              <tr class="rowlink"><td><span class="chain"><span class="sq">K</span>Starknet</span></td><td class="mono small">cairo</td><td><span class="badge ghost">T3</span></td><td class="small muted">JediSwap planned</td><td class="num mono">2.0s</td><td class="num mono">0.02 STRK</td><td class="mono small">starknet@0.1.4</td><td><span class="badge">read-only</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot between"><span>Registry changes are audited; the UI picks them up without a deploy.</span><span class="mono">16 chains · 9 providers</span></div>
+      </section>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Tier legend</h2><span class="sub">verification, not ambition</span></div>
+          <div class="panel-body stack-sm">
+            <div class="row"><span class="badge solid">T1</span><span class="small">contract tests vs live mainnet</span></div>
+            <div class="small muted">Swaps, balances, transfers, receipts, reorg handling. Used in paper and live.</div>
+            <div class="row"><span class="badge">T2</span><span class="small">read + transfer verified</span></div>
+            <div class="small muted">Swaps via one aggregator, labelled <span class="badge warn">beta</span>, capped at $75/order.</div>
+            <div class="row"><span class="badge ghost">T3</span><span class="small">read-only</span></div>
+            <div class="small muted">Balances and positions only. Trade is disabled with <span class="mono">CHAIN_READ_ONLY</span>, not hidden.</div>
+            <div class="hr"></div>
+            <div class="note warn"><strong>Honesty rule.</strong> The UI reads this matrix. T2 says “beta” next to execution; T3 disables trading and shows the reason. No chain silently looks equal to another.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Gas now</h2><span class="sub">estimated before signing</span></div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>Chain</th><th class="num">Native</th><th class="num">USD/swap</th><th class="num">7d spend</th></tr></thead>
+              <tbody>
+                <tr><td>Ethereum</td><td class="num mono">8.4 gwei</td><td class="num mono">$1.84</td><td class="num mono">$28.14</td></tr>
+                <tr><td>Base</td><td class="num mono">0.006 gwei</td><td class="num mono">$0.002</td><td class="num mono">$1.02</td></tr>
+                <tr><td>Arbitrum</td><td class="num mono">0.01 gwei</td><td class="num mono">$0.004</td><td class="num mono">$0.86</td></tr>
+                <tr><td>Polygon</td><td class="num mono">32 gwei</td><td class="num mono">$0.02</td><td class="num mono">$2.40</td></tr>
+                <tr><td>BNB Chain</td><td class="num mono">1 gwei</td><td class="num mono">$0.03</td><td class="num mono">$3.18</td></tr>
+                <tr><td>Solana</td><td class="num mono">5k lam + prio</td><td class="num mono">$0.002</td><td class="num mono">$4.92</td></tr>
+                <tr><td>Sui</td><td class="num mono">0.0021 SUI</td><td class="num mono">$0.008</td><td class="num mono">$0.21</td></tr>
+                <tr><td>Bitcoin</td><td class="num mono">3.2 sat/vB</td><td class="num mono">$0.38</td><td class="num mono">$1.13</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Solana rent and ATA creation are separate quote lines. Bitcoin is transfer-only.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Finality &amp; reorgs</h2><span class="sub">last 30 days</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Solana · finalized</span><span class="mono">0 reorgs</span></div>
+            <div class="between small"><span>Ethereum · 2 epochs</span><span class="mono warn">1 · depth 1 · 4d ago</span></div>
+            <div class="between small"><span>Base · 1 L2 block</span><span class="mono">0 reorgs</span></div>
+            <div class="between small"><span>Arbitrum · 1 block</span><span class="mono">0 reorgs</span></div>
+            <div class="between small"><span>Polygon · 128 conf</span><span class="mono warn">1 · depth 3 · 6d ago</span></div>
+            <div class="between small"><span>BNB · 15 conf</span><span class="mono">0 reorgs</span></div>
+            <div class="between small"><span>Bitcoin · 3 conf watch</span><span class="mono warn">1 · depth 1 · 1d ago</span></div>
+            <div class="hr"></div>
+            <div class="note">Late events are quarantined; the projection rewinds to the last ledger sequence and replays. A reorg never edits balances in place.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel mt-16">
+      <div class="panel-head">
+        <h2>Chain detail</h2><span class="sub">expandable rows · capabilities read from the registry</span>
+        <div class="right"><span class="badge ghost">8 of 16</span></div>
+      </div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th></th><th>Chain</th><th>Capabilities</th><th>Finality / reorg</th><th>Venues</th><th>Providers</th><th>Contract tests</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td class="muted small">▾</td><td><span class="strong">Solana</span><span class="sub" style="display:block">solana@2.4.1</span></td><td class="mono small">swap · sim · rent · reorg 0</td><td class="small">0.4s processed<br>12.8s final</td><td class="small">jupiter, raydium, pumpswap</td><td class="small">helius · triton · public</td><td class="small"><span class="ok">214/214</span> · 10-18</td><td class="small muted">rent and ATA in quote</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">Ethereum</span><span class="sub" style="display:block">evm@3.1.0</span></td><td class="mono small">swap · sim · mempool</td><td class="small">12.8s · 2 epochs<br>reorg depth 2</td><td class="small">uniswap v3/v4, 1inch</td><td class="small">alchemy · quicknode · infura</td><td class="small"><span class="ok">188/188</span> · 10-18</td><td class="small muted">EIP-1559 estimate</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">Base</span><span class="sub" style="display:block">evm@3.1.0</span></td><td class="mono small">swap · sim · OP feed</td><td class="small">2.0s L2 / 13m L1<br>reorg depth 1</td><td class="small">uniswap, aerodrome</td><td class="small">alchemy · quicknode</td><td class="small"><span class="ok">176/176</span> · 10-17</td><td class="small muted">L2 and L1 final split</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">Arbitrum One</span><span class="sub" style="display:block">evm@3.1.0</span></td><td class="mono small">swap · sim · sequencer</td><td class="small">1.8s soft / 13m L1<br>reorg depth 1</td><td class="small">uniswap, camelot</td><td class="small">alchemy · quicknode</td><td class="small"><span class="ok">176/176</span> · 10-17</td><td class="small muted">feed stall &gt; 30s holds</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">Polygon PoS</span><span class="sub" style="display:block">evm@3.1.0</span></td><td class="mono small">swap · sim · reorg 128</td><td class="small">5.2s block / 30m ckpt</td><td class="small">uniswap, quickswap</td><td class="small">alchemy · quicknode</td><td class="small"><span class="ok">172/172</span> · 10-16</td><td class="small muted">credit at 128 conf</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">BNB Chain</span><span class="sub" style="display:block">evm@3.1.0</span></td><td class="mono small">swap · sim · reorg 15</td><td class="small">3.0s block / 45s final</td><td class="small">pancakeswap</td><td class="small"><span class="err">chainstack open</span> · quicknode</td><td class="small"><span class="ok">168/168</span> · 10-15</td><td class="small warn">failover to quicknode</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">Sui</span><span class="sub" style="display:block">sui@0.9.2</span></td><td class="mono small">swap · sim · sponsored tx</td><td class="small">0.5s checkpoint</td><td class="small">cetus, bluefin</td><td class="small">ankr</td><td class="small"><span class="ok">96/96</span> · 10-14</td><td class="small muted">object model · T2 caps</td></tr>
+            <tr><td class="muted small">▾</td><td><span class="strong">Bitcoin</span><span class="sub" style="display:block">btc@0.6.0</span></td><td class="mono small">xpub watch · PSBT transfer</td><td class="small">10m block / 60m 6 conf</td><td class="small muted">none · no native swap</td><td class="small">self-hosted node</td><td class="small"><span class="ok">74/74</span> · 10-13</td><td class="small">PSBT signed on device</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-foot">Rows expand in place; the collapsed row keeps tier, status and adapter version so the table alone is usable.</div>
+    </section>
+
+    <div class="split mt-16">
+      <section class="panel">
+        <div class="panel-head"><h2>RPC providers</h2><span class="sub">health-checked every 5s · failover moves weight</span></div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <thead><tr><th>Provider</th><th>Role</th><th class="num">p50 / p95</th><th class="num">Errors</th><th>Circuit</th><th class="num">Weight</th></tr></thead>
+            <tbody>
+              <tr><td>Helius</td><td class="small">primary · Solana</td><td class="num mono">38 / 112 ms</td><td class="num mono">0.12%</td><td><span class="badge ok">closed</span></td><td class="num mono">70</td></tr>
+              <tr><td>Triton</td><td class="small">secondary · Solana</td><td class="num mono">44 / 128 ms</td><td class="num mono">0.31%</td><td><span class="badge ok">closed</span></td><td class="num mono">30</td></tr>
+              <tr><td>Public Solana RPC</td><td class="small">fallback</td><td class="num mono">180 / 640 ms</td><td class="num mono">2.80%</td><td><span class="badge ok">closed</span></td><td class="num mono">0</td></tr>
+              <tr><td>Alchemy</td><td class="small">primary · EVM</td><td class="num mono">42 / 98 ms</td><td class="num mono">0.08%</td><td><span class="badge ok">closed</span></td><td class="num mono">60</td></tr>
+              <tr><td>QuickNode</td><td class="small">secondary · EVM</td><td class="num mono">55 / 140 ms</td><td class="num mono">0.19%</td><td><span class="badge ok">closed</span></td><td class="num mono">40</td></tr>
+              <tr><td>Infura</td><td class="small">fallback · Ethereum</td><td class="num mono">88 / 210 ms</td><td class="num mono">1.10%</td><td><span class="badge warn">half-open</span></td><td class="num mono">5</td></tr>
+              <tr><td>Chainstack</td><td class="small">BNB · Tron</td><td class="num mono">71 / 260 ms</td><td class="num mono err">3.40%</td><td><span class="badge err">open</span></td><td class="num mono">0</td></tr>
+              <tr><td>Ankr</td><td class="small">Sui · Aptos · TON</td><td class="num mono">64 / 190 ms</td><td class="num mono">0.42%</td><td><span class="badge ok">closed</span></td><td class="num mono">100</td></tr>
+              <tr><td>Self-hosted node</td><td class="small">Bitcoin</td><td class="num mono">120 / 300 ms</td><td class="num mono">0.00%</td><td><span class="badge ok">closed</span></td><td class="num mono">100</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot">A circuit opens after 5 consecutive failures or 20% errors for 60s. Half-open probes every 30s. Provider failure is not chain failure while a healthy provider remains.</div>
+      </section>
+
+      <section class="panel" id="add-chain">
+        <div class="panel-head"><h2>Add a chain</h2><span class="sub">adapter issue template</span></div>
+        <div class="panel-body stack-sm small">
+          <p class="muted">Chains enter through the adapter checklist, not a config toggle. The template asks for exactly what the registry needs.</p>
+          <div class="panel dashed" style="padding:9px">
+            <div class="micro mb-8">Template fields</div>
+            <div class="stack-sm">
+              <div class="between"><span>Chain</span><span class="mono muted">e.g. Sui mainnet</span></div>
+              <div class="between"><span>Target tier</span><span class="mono muted">T1 / T2 / T3</span></div>
+              <div class="between"><span>Capability matrix</span><span class="mono muted">required</span></div>
+              <div class="between"><span>Venue(s)</span><span class="mono muted">optional</span></div>
+              <div class="between"><span>Data sources</span><span class="mono muted">required</span></div>
+              <div class="between"><span>Contract checklist</span><span class="mono muted">3 boxes</span></div>
+            </div>
+          </div>
+          <div class="note">Also required before merge: adapter package, registry entry, mainnet fixtures, one venue adapter, 100-intent paper soak.</div>
+          <a class="btn primary block" href="https://github.com/0xJ1nn/ezchain/issues/new?template=chain_adapter.yml" rel="noopener">Open adapter issue template ↗</a>
+          <a class="btn block" href="https://github.com/0xJ1nn/ezchain/blob/main/docs/CHAINS.md" rel="noopener">Read the adapter contract ↗</a>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>
