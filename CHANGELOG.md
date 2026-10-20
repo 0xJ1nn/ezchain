@@ -9,7 +9,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 - Project scaffold: product, architecture, domain model, chain adapter contract,
   strategy SDK, security, infra and PR workflow docs.
-- 30-page low-fidelity wireframe in `design/wireframe/` with a manifest and gates.
+- 31-page low-fidelity wireframe in `design/wireframe/` with a manifest and gates.
+- Performance screen: attribution, R-multiple distribution, benchmark and cost drag.
 - Deployment blueprint: compose services, Caddy edge, Prometheus alerts, OTel collector.
 - CI gates: agent stubs, wireframe integrity, markdown links, secret scan, compose config.
 
