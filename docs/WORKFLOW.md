@@ -45,7 +45,13 @@ two reviewers or one reviewer + the maintainer's explicit approval in the thread
 
 ## 4. Gates
 
-`tools/ci.sh` is the single entrypoint and CI mirrors it:
+**GitHub Actions is not available on this account** (billing lock, 2026-10-20). The gate
+is local and mandatory: `bash tools/ci.sh` before every main push. Install the tracked
+hook once per clone (`bash tools/install-hooks.sh`); it runs the gate for `main` only,
+matching the sibling repos' policy. When Actions is restored, the same commands become the
+workflow — do not add a workflow that cannot run.
+
+`tools/ci.sh` is the single entrypoint:
 
 | # | Gate | Command |
 |---|---|---|
@@ -58,10 +64,10 @@ two reviewers or one reviewer + the maintainer's explicit approval in the thread
 | 7 | Invariants | ledger/risk/adapter contract suites |
 | 8 | OpenAPI diff | generated client vs committed schema |
 | 9 | Security | `gitleaks`, dependency audit, no-key-material scan |
-| 10 | Compose | `docker compose config -q` (CI only) |
+| 10 | Compose | `docker compose config -q` (when Docker is available) |
 
-Until runtime code exists, gates 1–3, 9 (docs/wireframe subset) run. A workflow that is not
-runnable must not be committed.
+Until runtime code exists, gates 1–3 and 9 (docs/wireframe subset) run. Every gate that is
+committed must be runnable on this machine.
 
 ## 5. Merge
 
