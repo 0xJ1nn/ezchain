@@ -2,4 +2,4 @@
 
 | Date | PR | Scope | Gates |
 |---|---|---|---|
-| 2026-10-20 | (bootstrap) | initial design, wireframe, infra | local gates green |
+| 2026-10-20 | #1 | runbook + design state close; local gate replaces unavailable Actions | `tools/ci.sh` green |
