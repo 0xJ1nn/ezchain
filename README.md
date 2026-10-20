@@ -29,7 +29,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
 | `design/BRIEF.md` | Design brief for the visual pass (Claude Design input) |
 | `infra/` | Docker Compose + Caddy + Prometheus blueprint (deployment contract, not runnable yet) |
-| `.github/` | PR/issue templates, CODEOWNERS, CI gates |
+| `.github/` | PR/issue templates, CODEOWNERS, release notes template |
 | `tools/` | Local gates (`tools/ci.*`) |
 
 ## Principles
@@ -49,7 +49,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 
 ```bash
 cp infra/.env.example infra/.env
-docker compose -f infra/compose.yaml --profile core up -d
+docker compose -f infra/compose.yaml up -d
 open http://localhost:8080
 ```
 
