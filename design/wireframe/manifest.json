@@ -3,35 +3,191 @@
   "version": "0.0.0-wireframe",
   "note": "Structural source of truth. Visual design is downstream (design/BRIEF.md).",
   "pages": [
-    { "id": "index", "file": "index.html", "group": "Meta", "title": "Screen map & flows" },
-    { "id": "sign-in", "file": "01-sign-in.html", "group": "Getting started", "title": "Sign in" },
-    { "id": "onboarding", "file": "02-onboarding.html", "group": "Getting started", "title": "Onboarding" },
-    { "id": "dashboard", "file": "03-dashboard.html", "group": "Overview", "title": "Dashboard" },
-    { "id": "positions", "file": "04-positions.html", "group": "Overview", "title": "Positions" },
-    { "id": "position-detail", "file": "05-position-detail.html", "group": "Overview", "title": "Position detail" },
-    { "id": "markets", "file": "06-markets.html", "group": "Overview", "title": "Markets" },
-    { "id": "token", "file": "07-token.html", "group": "Overview", "title": "Token" },
-    { "id": "wallets", "file": "08-wallets.html", "group": "Trade", "title": "Wallets" },
-    { "id": "wallet-detail", "file": "09-wallet-detail.html", "group": "Trade", "title": "Wallet detail" },
-    { "id": "automations", "file": "10-automations.html", "group": "Automate", "title": "Automations" },
-    { "id": "automation-builder", "file": "11-automation-builder.html", "group": "Automate", "title": "Automation builder" },
-    { "id": "strategies", "file": "12-strategies.html", "group": "Automate", "title": "Strategies" },
-    { "id": "strategy-detail", "file": "13-strategy-detail.html", "group": "Automate", "title": "Strategy detail" },
-    { "id": "signals", "file": "14-signals.html", "group": "Automate", "title": "Signals" },
-    { "id": "alerts", "file": "15-alerts.html", "group": "Protect", "title": "Alerts" },
-    { "id": "backtests", "file": "16-backtests.html", "group": "Automate", "title": "Backtests" },
-    { "id": "risk", "file": "17-risk.html", "group": "Protect", "title": "Risk" },
-    { "id": "ledger", "file": "18-ledger.html", "group": "Trade", "title": "Activity / ledger" },
-    { "id": "reports", "file": "19-reports.html", "group": "Trade", "title": "Reports" },
-    { "id": "chains", "file": "20-chains.html", "group": "System", "title": "Chains & RPC" },
-    { "id": "integrations", "file": "21-integrations.html", "group": "System", "title": "Integrations" },
-    { "id": "settings", "file": "22-settings.html", "group": "System", "title": "Settings" },
-    { "id": "security", "file": "23-security.html", "group": "System", "title": "Security" },
-    { "id": "developer", "file": "24-developer.html", "group": "System", "title": "Developer" },
-    { "id": "operations", "file": "25-operations.html", "group": "System", "title": "Operations" },
-    { "id": "workspace", "file": "26-workspace.html", "group": "System", "title": "Workspace" },
-    { "id": "states", "file": "27-states.html", "group": "Meta", "title": "State gallery" },
-    { "id": "mobile", "file": "28-mobile.html", "group": "Meta", "title": "Mobile" },
-    { "id": "components", "file": "29-components.html", "group": "Meta", "title": "Components" }
+    {
+      "id": "index",
+      "file": "index.html",
+      "group": "Meta",
+      "title": "Screen map & flows"
+    },
+    {
+      "id": "sign-in",
+      "file": "01-sign-in.html",
+      "group": "Getting started",
+      "title": "Sign in"
+    },
+    {
+      "id": "onboarding",
+      "file": "02-onboarding.html",
+      "group": "Getting started",
+      "title": "Onboarding"
+    },
+    {
+      "id": "dashboard",
+      "file": "03-dashboard.html",
+      "group": "Overview",
+      "title": "Dashboard"
+    },
+    {
+      "id": "positions",
+      "file": "04-positions.html",
+      "group": "Overview",
+      "title": "Positions"
+    },
+    {
+      "id": "position-detail",
+      "file": "05-position-detail.html",
+      "group": "Overview",
+      "title": "Position detail"
+    },
+    {
+      "id": "markets",
+      "file": "06-markets.html",
+      "group": "Overview",
+      "title": "Markets"
+    },
+    {
+      "id": "token",
+      "file": "07-token.html",
+      "group": "Overview",
+      "title": "Token"
+    },
+    {
+      "id": "wallets",
+      "file": "08-wallets.html",
+      "group": "Trade",
+      "title": "Wallets"
+    },
+    {
+      "id": "wallet-detail",
+      "file": "09-wallet-detail.html",
+      "group": "Trade",
+      "title": "Wallet detail"
+    },
+    {
+      "id": "automations",
+      "file": "10-automations.html",
+      "group": "Automate",
+      "title": "Automations"
+    },
+    {
+      "id": "automation-builder",
+      "file": "11-automation-builder.html",
+      "group": "Automate",
+      "title": "Automation builder"
+    },
+    {
+      "id": "strategies",
+      "file": "12-strategies.html",
+      "group": "Automate",
+      "title": "Strategies"
+    },
+    {
+      "id": "strategy-detail",
+      "file": "13-strategy-detail.html",
+      "group": "Automate",
+      "title": "Strategy detail"
+    },
+    {
+      "id": "signals",
+      "file": "14-signals.html",
+      "group": "Automate",
+      "title": "Signals"
+    },
+    {
+      "id": "alerts",
+      "file": "15-alerts.html",
+      "group": "Protect",
+      "title": "Alerts"
+    },
+    {
+      "id": "backtests",
+      "file": "16-backtests.html",
+      "group": "Automate",
+      "title": "Backtests"
+    },
+    {
+      "id": "risk",
+      "file": "17-risk.html",
+      "group": "Protect",
+      "title": "Risk"
+    },
+    {
+      "id": "ledger",
+      "file": "18-ledger.html",
+      "group": "Trade",
+      "title": "Activity / ledger"
+    },
+    {
+      "id": "reports",
+      "file": "19-reports.html",
+      "group": "Trade",
+      "title": "Reports"
+    },
+    {
+      "id": "performance",
+      "file": "19a-performance.html",
+      "group": "Overview",
+      "title": "Performance"
+    },
+    {
+      "id": "chains",
+      "file": "20-chains.html",
+      "group": "System",
+      "title": "Chains & RPC"
+    },
+    {
+      "id": "integrations",
+      "file": "21-integrations.html",
+      "group": "System",
+      "title": "Integrations"
+    },
+    {
+      "id": "settings",
+      "file": "22-settings.html",
+      "group": "System",
+      "title": "Settings"
+    },
+    {
+      "id": "security",
+      "file": "23-security.html",
+      "group": "System",
+      "title": "Security"
+    },
+    {
+      "id": "developer",
+      "file": "24-developer.html",
+      "group": "System",
+      "title": "Developer"
+    },
+    {
+      "id": "operations",
+      "file": "25-operations.html",
+      "group": "System",
+      "title": "Operations"
+    },
+    {
+      "id": "workspace",
+      "file": "26-workspace.html",
+      "group": "System",
+      "title": "Workspace"
+    },
+    {
+      "id": "states",
+      "file": "27-states.html",
+      "group": "Meta",
+      "title": "State gallery"
+    },
+    {
+      "id": "mobile",
+      "file": "28-mobile.html",
+      "group": "Meta",
+      "title": "Mobile"
+    },
+    {
+      "id": "components",
+      "file": "29-components.html",
+      "group": "Meta",
+      "title": "Components"
+    }
   ]
 }

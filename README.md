@@ -26,7 +26,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 | Path | What |
 |---|---|
 | `docs/` | Product, architecture, domain model, chains, SDK, infra, security, workflow |
-| `design/wireframe/` | 30-page clickable low-fi wireframe (open `index.html`) |
+| `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
 | `design/BRIEF.md` | Design brief for the visual pass (Claude Design input) |
 | `infra/` | Docker Compose + Caddy + Prometheus blueprint (deployment contract, not runnable yet) |
 | `.github/` | PR/issue templates, CODEOWNERS, CI gates |

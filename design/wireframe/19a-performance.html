@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Performance · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="performance">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Overview / Performance</div>
+        <h1>Performance</h1>
+        <p class="sub">The same ledger, cut by strategy, chain, venue and regime. Paper results are labelled; nothing here is a forecast.</p>
+      </div>
+      <div class="page-actions">
+        <div class="seg" aria-label="Mode"><button aria-pressed="true">Paper</button><button>Live</button><button>All</button></div>
+        <select class="select" style="width:130px"><option>Last 7 days</option><option>Last 30 days</option><option>All time</option><option>Custom…</option></select>
+        <button class="btn">Export CSV</button>
+      </div>
+    </header>
+
+    <section class="kpi-band mb-12">
+      <div class="stat"><div class="label">Net PnL</div><div class="value ok">+$126.40</div><div class="meta">after $18.22 fees · <span class="badge">PAPER</span></div></div>
+      <div class="stat"><div class="label">Win rate</div><div class="value sm">44.4%</div><div class="meta">28 closes · 12 wins</div></div>
+      <div class="stat"><div class="label">Profit factor</div><div class="value sm">1.62</div><div class="meta">gross win / gross loss</div></div>
+      <div class="stat"><div class="label">Expectancy</div><div class="value sm">+$4.51</div><div class="meta">per closed trade</div></div>
+      <div class="stat"><div class="label">Avg hold</div><div class="value sm">31m 12s</div><div class="meta">median 18m 40s</div></div>
+      <div class="stat"><div class="label">Max drawdown</div><div class="value sm err">−6.2%</div><div class="meta">peak $3,712.40</div></div>
+    </section>
+
+    <div class="split">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Equity &amp; drawdown</h2><span class="sub">USD · after fees · paper</span>
+            <div class="right"><div class="seg"><button>1D</button><button aria-pressed="true">1W</button><button>1M</button><button>ALL</button></div></div>
+          </div>
+          <div class="panel-body">
+            <div class="chart" aria-label="Equity curve and drawdown for the selected period">
+              <svg viewBox="0 0 900 260" role="img">
+                <line class="gridline" x1="0" y1="30" x2="850" y2="30"/>
+                <line class="gridline" x1="0" y1="80" x2="850" y2="80"/>
+                <line class="gridline" x1="0" y1="130" x2="850" y2="130"/>
+                <line class="gridline" x1="0" y1="180" x2="850" y2="180"/>
+                <line class="axis" x1="850" y1="0" x2="850" y2="200"/>
+                <text class="axis-text" x="856" y="33">$3,700</text>
+                <text class="axis-text" x="856" y="83">$3,500</text>
+                <text class="axis-text" x="856" y="133">$3,300</text>
+                <text class="axis-text" x="856" y="183">$3,100</text>
+                <polyline class="series-2" points="0,150 70,146 140,152 210,140 280,144 350,132 420,136 490,124 560,128 630,118 700,120 770,116 850,112"/>
+                <polyline class="series" points="0,168 35,160 70,166 105,150 140,158 175,144 210,150 245,138 280,146 315,128 350,136 385,122 420,130 455,112 490,120 525,104 560,116 595,96 630,108 665,92 700,100 735,88 770,96 805,84 850,92"/>
+                <circle class="dot" cx="850" cy="92" r="3"/>
+                <line class="crosshair" x1="595" y1="0" x2="595" y2="200"/>
+                <circle class="dot" cx="595" cy="96" r="3"/>
+                <rect x="605" y="58" width="140" height="52" fill="var(--surface)" stroke="var(--line-2)"/>
+                <text class="axis-text" x="613" y="74">Sat 14:00</text>
+                <text class="num-label" x="613" y="90">$3,486.10</text>
+                <text class="axis-text" x="613" y="104">DD −0.6%</text>
+                <text class="axis-text" x="2" y="212">Oct 13</text>
+                <text class="axis-text" x="390" y="212">Oct 17</text>
+                <text class="axis-text" x="790" y="212">Oct 20</text>
+                <text class="micro" x="2" y="232">DRAWDOWN</text>
+                <polyline points="0,240 70,236 140,244 210,238 280,246 350,242 420,248 490,240 560,244 630,238 700,242 770,236 850,234" fill="none" stroke="var(--err)" stroke-width="1.2"/>
+                <line class="gridline" x1="0" y1="250" x2="850" y2="250"/>
+                <text class="axis-text" x="856" y="253">0%</text>
+                <text class="axis-text" x="2" y="260">−10%</text>
+              </svg>
+            </div>
+            <div class="between mt-8">
+              <div class="chart-legend">
+                <span><i style="border-color:var(--ink)"></i>Equity</span>
+                <span><i style="border-color:var(--line-2)"></i>Cost basis</span>
+                <span><i style="border-color:var(--err)"></i>Drawdown</span>
+              </div>
+              <span class="small muted">60 closes excluded: missing exit quote</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>PnL attribution</h2><span class="sub">realized cash · after fees</span><div class="right"><a class="btn sm" href="18-ledger.html">Open ledger</a></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Strategy</th><th class="num">Trades</th><th class="num">Win rate</th><th class="num">Avg win</th><th class="num">Avg loss</th><th class="num">Fees</th><th class="num">Net</th><th class="num">Share</th></tr></thead>
+              <tbody>
+                <tr><td>Momentum v1.2 <span class="badge">PAPER</span></td><td class="num">18</td><td class="num">44.4%</td><td class="num ok">+$21.40</td><td class="num err">−$9.80</td><td class="num">$11.40</td><td class="num ok">+$142.10</td><td class="num">74%</td></tr>
+                <tr><td>DCA weekly <span class="badge">PAPER</span></td><td class="num">6</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">$3.12</td><td class="num ok">+$12.80</td><td class="num">7%</td></tr>
+                <tr><td>Mean reversion v0.4 <span class="badge">PAPER</span></td><td class="num">9</td><td class="num">22.2%</td><td class="num ok">+$6.10</td><td class="num err">−$5.20</td><td class="num">$3.70</td><td class="num err">−$28.50</td><td class="num">−15%</td></tr>
+                <tr><td>Manual</td><td class="num">3</td><td class="num">33.3%</td><td class="num ok">+$0.00</td><td class="num err">−$0.00</td><td class="num">$0.00</td><td class="num">+$0.00</td><td class="num">0%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel-foot">Attribution is realized only. Unrealized (+$86.40) is shown on the dashboard and never mixed into this table.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>By chain and venue</h2><span class="sub">where the edge comes from</span></div>
+          <div class="panel-body grid cols-2">
+            <div class="table-wrap">
+              <table class="table compact">
+                <thead><tr><th>Chain</th><th class="num">Trades</th><th class="num">Fees</th><th class="num">Net</th></tr></thead>
+                <tbody>
+                  <tr><td>Solana</td><td class="num">21</td><td class="num">$14.10</td><td class="num ok">+$131.80</td></tr>
+                  <tr><td>Base</td><td class="num">7</td><td class="num">$3.90</td><td class="num err">−$5.40</td></tr>
+                  <tr><td>Ethereum</td><td class="num">0</td><td class="num">$0.22</td><td class="num">$0.00</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table class="table compact">
+                <thead><tr><th>Venue</th><th class="num">Trades</th><th class="num">Slippage</th><th class="num">Net</th></tr></thead>
+                <tbody>
+                  <tr><td>Jupiter</td><td class="num">18</td><td class="num">0.41%</td><td class="num ok">+$118.30</td></tr>
+                  <tr><td>Uniswap v3</td><td class="num">7</td><td class="num">0.28%</td><td class="num err">−$3.40</td></tr>
+                  <tr><td>Raydium</td><td class="num">3</td><td class="num">0.66%</td><td class="num ok">+$11.50</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">Slippage = realised effective price vs quoted price at submission.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Trade distribution</h2><span class="sub">28 closes · R-multiple</span></div>
+          <div class="panel-body">
+            <div class="chart" aria-label="Histogram of R-multiples">
+              <svg viewBox="0 0 420 150" role="img">
+                <line class="axis" x1="0" y1="120" x2="420" y2="120"/>
+                <line class="gridline" x1="0" y1="40" x2="420" y2="40"/>
+                <line class="gridline" x1="0" y1="80" x2="420" y2="80"/>
+                <rect x="8" y="96" width="30" height="24" fill="var(--err)" opacity=".55"/>
+                <rect x="46" y="84" width="30" height="36" fill="var(--err)" opacity=".55"/>
+                <rect x="84" y="104" width="30" height="16" fill="var(--err)" opacity=".55"/>
+                <rect x="122" y="92" width="30" height="28" fill="var(--err)" opacity=".55"/>
+                <rect x="160" y="72" width="30" height="48" fill="var(--surface-3)" stroke="var(--line-2)"/>
+                <rect x="198" y="108" width="30" height="12" fill="var(--err)" opacity=".55"/>
+                <rect x="236" y="48" width="30" height="72" fill="var(--ok)" opacity=".55"/>
+                <rect x="274" y="64" width="30" height="56" fill="var(--ok)" opacity=".55"/>
+                <rect x="312" y="32" width="30" height="88" fill="var(--ok)" opacity=".55"/>
+                <rect x="350" y="56" width="30" height="64" fill="var(--ok)" opacity=".55"/>
+                <rect x="388" y="88" width="24" height="32" fill="var(--ok)" opacity=".55"/>
+                <text class="axis-text" x="2" y="134">−2R</text>
+                <text class="axis-text" x="120" y="134">−1R</text>
+                <text class="axis-text" x="196" y="134">0</text>
+                <text class="axis-text" x="266" y="134">+1R</text>
+                <text class="axis-text" x="350" y="134">+2R</text>
+                <text class="axis-text" x="392" y="134">+3R</text>
+              </svg>
+            </div>
+            <div class="grid cols-3 mt-8">
+              <div class="stat" style="padding:6px;border:1px solid var(--line)"><div class="label">Wins</div><div class="value sm ok">12</div></div>
+              <div class="stat" style="padding:6px;border:1px solid var(--line)"><div class="label">Losses</div><div class="value sm err">16</div></div>
+              <div class="stat" style="padding:6px;border:1px solid var(--line)"><div class="label">Largest</div><div class="value sm ok">+2.8R</div></div>
+            </div>
+            <div class="note mt-8">The payoff shape, not the win rate, decides this book. Median win +1.4R, median loss −0.9R.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Benchmark</h2><span class="sub">same period · buy-and-hold</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>ezCHAIN paper book</span><span class="mono ok">+3.8%</span></div>
+            <div class="meter"><div class="fill ok" style="width:38%"></div></div>
+            <div class="between small"><span>SOL hold</span><span class="mono">+3.1%</span></div>
+            <div class="meter"><div class="fill" style="width:31%"></div></div>
+            <div class="between small"><span>BTC hold</span><span class="mono err">−1.4%</span></div>
+            <div class="meter"><div class="fill err" style="width:14%"></div></div>
+            <div class="between small"><span>USDC</span><span class="mono">0.0%</span></div>
+            <div class="meter"><div class="fill" style="width:1%"></div></div>
+            <div class="note">Benchmarks use the same marks and fees, not a rebalance. No risk-adjusted claim is made beyond the table.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Cost drag</h2><span class="sub">7 days</span></div>
+          <div class="panel-body stack-sm">
+            <div class="between small"><span>Fees</span><span class="mono">$18.22</span></div>
+            <div class="between small"><span>Slippage vs quote</span><span class="mono">$6.40</span></div>
+            <div class="between small"><span>Failed quotes (no cost)</span><span class="mono">14 attempts</span></div>
+            <div class="between small"><span>Total drag</span><span class="mono err">$24.62</span></div>
+            <div class="meter"><div class="fill warn" style="width:62%"></div></div>
+            <div class="note">Drag is subtracted from gross PnL. Paper uses real quotes, so this is not a zero-cost simulation.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Best &amp; worst</h2><div class="right"><a class="btn sm" href="18-ledger.html">All trades</a></div></div>
+          <div class="panel-body flush">
+            <div class="list-row" style="padding:9px 12px"><span class="badge ok">+2.8R</span><span class="grow"><span class="title">BONK · Momentum</span><span class="sub">+$38.12 net · held 19m</span></span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge ok">+1.9R</span><span class="grow"><span class="title">JUP · Momentum</span><span class="sub">+$18.40 net · held 38m</span></span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge err">−1.0R</span><span class="grow"><span class="title">WIF · Momentum</span><span class="sub">−$8.80 net · stop</span></span></div>
+            <div class="list-row" style="padding:9px 12px"><span class="badge err">−0.4R</span><span class="grow"><span class="title">SCAM · Manual</span><span class="sub">−$142.30 unrealized · unsellable, excluded from realized</span></span></div>
+          </div>
+          <div class="panel-foot">R is risk at entry (intended loss at the stop), not position size.</div>
+        </section>
+      </div>
+    </div>
+
+    <section class="grid cols-3 mt-16">
+      <div class="panel"><div class="panel-head"><h2>Definitions</h2></div><div class="panel-body small muted stack-sm">
+        <div>• Net PnL = realized cash − fees, in USD at fill time.</div>
+        <div>• Win rate counts closed positions only; DCA entries without an exit are excluded.</div>
+        <div>• Profit factor = gross wins / gross losses, before unrealized.</div>
+        <div>• R uses the stop recorded in the position's exit plan v1.</div>
+      </div></div>
+      <div class="panel"><div class="panel-head"><h2>Exclusions</h2></div><div class="panel-body small muted stack-sm">
+        <div>• 60 imported paper trades with no exit quote are not in any metric.</div>
+        <div>• Write-offs are shown as realized losses with reason <span class="mono">WRITE_OFF</span>.</div>
+        <div>• Unsellable positions stay unrealized, never marked to zero.</div>
+      </div></div>
+      <div class="panel"><div class="panel-head"><h2>Related</h2></div><div class="panel-body small stack-sm">
+        <a href="19-reports.html">Reports &amp; statements →</a>
+        <a href="16-backtests.html">Backtests →</a>
+        <a href="18-ledger.html">Activity &amp; ledger →</a>
+        <a href="17-risk.html">Risk &amp; drawdown limits →</a>
+      </div></div>
+    </section>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@
       ["dashboard", "03-dashboard.html", "Dashboard", "▤"],
       ["positions", "04-positions.html", "Positions", "▥"],
       ["markets", "06-markets.html", "Markets", "◫"],
+      ["performance", "19a-performance.html", "Performance", "◔"],
     ]],
     ["Trade", [
       ["wallets", "08-wallets.html", "Wallets", "▣"],
