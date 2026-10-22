@@ -19,20 +19,25 @@ test("markets renders the screener from fixtures with chain counts and position 
 	await expect(page.getByText("Last sweep")).toHaveCount(0);
 
 	// Chain tabs derive their counts from the 12 fixture rows. Only the active tab is
-	// interactive; the rest are disabled previews.
-	await expect(page.locator(".tabs .tab.on")).toHaveText(/All chains\s+12/);
+	// interactive; the rest are disabled previews. The strip is a named group, not a tablist,
+	// because none of the tabs switch panels in M1.
+	const chainTabGroup = page.getByRole("group", { name: "Market chains" });
+	await expect(chainTabGroup).toBeVisible();
+	await expect(chainTabGroup.locator(".tab.on")).toHaveText(/All chains\s+12/);
 	for (const [chain, count] of [
 		["Solana", "5"],
 		["Base", "4"],
 		["Ethereum", "2"],
 		["BNB", "1"],
 	] as const) {
-		const tab = page.getByRole("button", { name: new RegExp(`${chain}\\s+${count}`) });
+		const tab = chainTabGroup.getByRole("button", {
+			name: new RegExp(`${chain}\\s+${count}`),
+		});
 		await expect(tab).toBeVisible();
 		await expect(tab).toBeDisabled();
 		await expect(tab).toHaveAttribute("title", "Filter not wired in M1");
 	}
-	await expect(page.getByRole("link", { name: /Tiers & RPC/ })).toHaveAttribute(
+	await expect(chainTabGroup.getByRole("link", { name: /Tiers & RPC/ })).toHaveAttribute(
 		"href",
 		"/chains",
 	);
@@ -40,14 +45,24 @@ test("markets renders the screener from fixtures with chain counts and position 
 	const marketTable = page.locator("table").first();
 	await expect(marketTable.locator("tbody tr")).toHaveCount(12);
 
-	// Only BONK and SCAM have a token route; every other token cell is plain text.
+	// Every header cell is a column header for assistive tech.
+	await expect(marketTable.locator('thead th[scope="col"]')).toHaveCount(12);
+
+	// The table is uncapped so the footer's 12-row claim is true on the page.
+	await expect(page.locator(".table-wrap").first()).toHaveCSS("max-height", "none");
+
+	// Only BONK and SCAM have a token route; every other token cell is plain text. The
+	// decorative avatar is hidden, so the link name starts with the symbol.
 	const tokenLinks = marketTable.locator("tbody tr td:first-child a");
 	await expect(tokenLinks).toHaveCount(2);
-	await expect(marketTable.getByRole("link", { name: /BONK/ })).toHaveAttribute(
+	await expect(
+		marketTable.locator("tbody tr td:first-child .token").first(),
+	).toHaveAttribute("aria-hidden", "true");
+	await expect(marketTable.getByRole("link", { name: /^BONK DezXAZ/ })).toHaveAttribute(
 		"href",
 		"/tokens/solana/bonk",
 	);
-	await expect(marketTable.getByRole("link", { name: /SCAM/ })).toHaveAttribute(
+	await expect(marketTable.getByRole("link", { name: /^SCAM Scam/ })).toHaveAttribute(
 		"href",
 		"/tokens/solana/scam",
 	);
@@ -55,19 +70,19 @@ test("markets renders the screener from fixtures with chain counts and position 
 	await expect(wifRow.locator("td").first().locator("a")).toHaveCount(0);
 
 	// Open positions link to their position; closed ones stay plain text.
-	await expect(marketTable.getByRole("link", { name: /RIDING/ })).toHaveAttribute(
+	await expect(marketTable.getByRole("link", { name: "BONK position" })).toHaveAttribute(
 		"href",
 		"/positions/bonk",
 	);
-	await expect(marketTable.getByRole("link", { name: /ENTERING/ })).toHaveAttribute(
+	await expect(marketTable.getByRole("link", { name: "MOCHI position" })).toHaveAttribute(
 		"href",
 		"/positions/mochi",
 	);
-	await expect(marketTable.getByRole("link", { name: /PRE-BANK/ })).toHaveAttribute(
+	await expect(marketTable.getByRole("link", { name: "AERO position" })).toHaveAttribute(
 		"href",
 		"/positions/aerodrome",
 	);
-	await expect(marketTable.getByRole("link", { name: /UNSELLABLE/ })).toHaveAttribute(
+	await expect(marketTable.getByRole("link", { name: "SCAM position" })).toHaveAttribute(
 		"href",
 		"/positions/scamcoin",
 	);
@@ -77,6 +92,22 @@ test("markets renders the screener from fixtures with chain counts and position 
 	await expect(
 		marketTable.locator("a", { hasText: "closed · −11.0%" }),
 	).toHaveCount(0);
+
+	// The unsellable position keeps the badge and still names the known loss.
+	const scamPosition = marketTable.getByRole("link", { name: "SCAM position" });
+	await expect(scamPosition).toContainText("UNSELLABLE");
+	const scamPositionValue = scamPosition.locator("span.mono");
+	await expect(scamPositionValue).toHaveText("−96.2%");
+	await expect(scamPositionValue).toHaveClass(/\berr\b/);
+
+	// MOCHI is mid-entry: the $25.00 is cost basis, not an executable position value.
+	const mochiPosition = marketTable.getByRole("link", { name: "MOCHI position" });
+	await expect(mochiPosition).toContainText("ENTERING");
+	await expect(mochiPosition).toContainText("$25.00 in");
+	await expect(mochiPosition.locator("span.mono")).toHaveAttribute(
+		"title",
+		"cost basis · awaiting fill",
+	);
 
 	// A row with no position prints an em dash, never a fabricated zero.
 	const degenRow = marketTable.locator("tbody tr").filter({ hasText: "DEGEN" });
@@ -147,15 +178,20 @@ test("markets new pairs show unknown values and honest gate badges", async ({ pa
 	});
 
 	await expect(newPairsPanel.locator("tbody tr")).toHaveCount(5);
+	await expect(newPairsPanel.locator('thead th[scope="col"]')).toHaveCount(7);
 	await expect(newPairsPanel.getByText("mint auth active")).toBeVisible();
 	await expect(newPairsPanel.getByText("LP unlocked")).toBeVisible();
 	await expect(newPairsPanel.getByText("thin liq")).toBeVisible();
 	await expect(newPairsPanel.getByText("blocked by rule")).toBeVisible();
 	await expect(newPairsPanel.getByText("watch only")).toBeVisible();
 
-	const quoteButtons = newPairsPanel.getByRole("button", { name: "Quote" });
-	await expect(quoteButtons).toHaveCount(3);
-	await expect(quoteButtons.first()).toBeDisabled();
+	// Each quote control names the token it would quote.
+	for (const symbol of ["GRIZ", "MOCHI", "BASED"]) {
+		const quote = newPairsPanel.getByRole("button", { name: `Quote ${symbol}` });
+		await expect(quote).toBeVisible();
+		await expect(quote).toBeDisabled();
+	}
+	await expect(newPairsPanel.getByRole("button", { name: /^Quote / })).toHaveCount(3);
 
 	const basedRow = newPairsPanel.locator("tbody tr").filter({ hasText: "BASED" });
 	await expect(basedRow.locator("td").nth(4)).toHaveText("—");
@@ -183,9 +219,15 @@ test("markets screenshot at desktop and mobile widths", async ({ page }) => {
 	await page.goto("/markets");
 	await page.screenshot({ path: ".shots/markets-1440.png", fullPage: true });
 
+	// The whole table fits at desktop width, so the swipe hint stays hidden.
+	await expect(page.getByText("Swipe to see more columns")).toBeHidden();
+
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/markets");
 	await expect(page.getByRole("navigation", { name: "Primary mobile navigation" })).toBeVisible();
+
+	// Chain tabs wrap their labels instead of clipping them.
+	await expect(page.locator(".tabs")).toHaveCSS("white-space", "normal");
 
 	// The mobile rule hides secondary columns instead of forcing a horizontal min-width.
 	const marketTable = page.locator("table").first();
@@ -199,5 +241,14 @@ test("markets screenshot at desktop and mobile widths", async ({ page }) => {
 	await expect(
 		marketTable.locator("thead th").filter({ hasText: "Token" }).first(),
 	).toBeVisible();
+
+	// The remaining columns still overflow at 390px; the hint says so.
+	const overflow = await page
+		.locator(".table-wrap")
+		.first()
+		.evaluate((el) => el.scrollWidth - el.clientWidth);
+	expect(overflow).toBeGreaterThan(0);
+	await expect(page.getByText("Swipe to see more columns")).toBeVisible();
+
 	await page.screenshot({ path: ".shots/markets-390.png", fullPage: true });
 });

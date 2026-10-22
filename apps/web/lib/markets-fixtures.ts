@@ -20,6 +20,7 @@ export type MarketPosition =
 			badge: string;
 			badgeTone: Tone;
 			value?: string;
+			valueTitle?: string;
 			valueTone?: "ok" | "err" | "muted";
 	  }
 	| { kind: "closed"; value: string }
@@ -161,7 +162,8 @@ const seeds: MarketSeed[] = [
 			href: "/positions/mochi",
 			badge: "ENTERING",
 			badgeTone: "info",
-			value: usd(25),
+			value: `${usd(25)} in`,
+			valueTitle: "cost basis · awaiting fill",
 			valueTone: "muted",
 		},
 	},
@@ -192,6 +194,8 @@ const seeds: MarketSeed[] = [
 			href: "/positions/scamcoin",
 			badge: "UNSELLABLE",
 			badgeTone: "err",
+			value: pct(-96.2),
+			valueTone: "err",
 		},
 	},
 	{

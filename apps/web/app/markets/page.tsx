@@ -8,7 +8,11 @@ import styles from "./markets.module.css";
 function TokenCell({ row }: { row: MarketRow }) {
 	const content = (
 		<>
-			<span className="token" style={{ width: 22, height: 22, fontSize: 8 }}>
+			<span
+				className="token"
+				style={{ width: 22, height: 22, fontSize: 8 }}
+				aria-hidden="true"
+			>
 				{row.avatar}
 			</span>
 			<span>
@@ -57,7 +61,7 @@ export default function MarketsPage() {
 				</div>
 			</header>
 
-			<div className="tabs mb-12" aria-label="Market chains" style={{ whiteSpace: "nowrap" }}>
+			<div className="tabs mb-12" role="group" aria-label="Market chains">
 				{chainTabs.map((tab) =>
 					tab.active ? (
 						<span
@@ -204,22 +208,23 @@ export default function MarketsPage() {
 						Trade BONK
 					</Link>
 				</div>
-				<div className="table-wrap" style={{ maxHeight: 560 }}>
+				<div className={`small muted ${styles.swipeHint}`}>Swipe to see more columns</div>
+				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Token</th>
-								<th>Chain</th>
-								<th className="num">Price</th>
-								<th className="num">1h</th>
-								<th className="num">24h</th>
-								<th className="num">MCap</th>
-								<th className="num">Liq</th>
-								<th className="num col-hide-sm">Vol 24h</th>
-								<th className="num col-hide-sm">Holders</th>
-								<th>Safety</th>
-								<th className="col-hide-sm">7d</th>
-								<th className="col-hide-sm">Your position</th>
+								<th scope="col">Token</th>
+								<th scope="col">Chain</th>
+								<th scope="col" className="num">Price</th>
+								<th scope="col" className="num">1h</th>
+								<th scope="col" className="num">24h</th>
+								<th scope="col" className="num">MCap</th>
+								<th scope="col" className="num">Liq</th>
+								<th scope="col" className="num col-hide-sm">Vol 24h</th>
+								<th scope="col" className="num col-hide-sm">Holders</th>
+								<th scope="col">Safety</th>
+								<th scope="col" className="col-hide-sm">7d</th>
+								<th scope="col" className="col-hide-sm">Your position</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -257,13 +262,18 @@ export default function MarketsPage() {
 									</td>
 									<td className="col-hide-sm">
 										{row.position.kind === "open" && (
-											<Link className="row" href={row.position.href}>
+											<Link
+												className="row"
+												href={row.position.href}
+												aria-label={`${row.symbol} position`}
+											>
 												<Badge tone={row.position.badgeTone}>
 													{row.position.badge}
 												</Badge>
 												{row.position.value && (
 													<span
 														className={`mono small${row.position.valueTone ? ` ${row.position.valueTone}` : ""}`}
+														title={row.position.valueTitle}
 													>
 														{row.position.value}
 													</span>
@@ -307,13 +317,13 @@ export default function MarketsPage() {
 						<table className="table compact">
 							<thead>
 								<tr>
-									<th>Age</th>
-									<th>Token</th>
-									<th>Chain</th>
-									<th className="num col-hide-sm">Liq</th>
-									<th className="num col-hide-sm">MCap</th>
-									<th>Gate</th>
-									<th>Your call</th>
+									<th scope="col">Age</th>
+									<th scope="col">Token</th>
+									<th scope="col">Chain</th>
+									<th scope="col" className="num col-hide-sm">Liq</th>
+									<th scope="col" className="num col-hide-sm">MCap</th>
+									<th scope="col">Gate</th>
+									<th scope="col">Your call</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -337,6 +347,7 @@ export default function MarketsPage() {
 													className="btn sm"
 													type="button"
 													disabled
+													aria-label={`Quote ${pair.symbol}`}
 													title="Quote ticket not wired in M1"
 												>
 													Quote
