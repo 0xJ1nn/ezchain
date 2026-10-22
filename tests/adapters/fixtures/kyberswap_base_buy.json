@@ -1,0 +1,77 @@
+{
+ "code": 0,
+ "data": {
+  "routeSummary": {
+   "amountIn": "100000000",
+   "amountInUsd": "99.9902897791054",
+   "amountOut": "41783066683609720",
+   "amountOutUsd": "100.11585308332612",
+   "checksum": "9984374270245935282",
+   "extraFee": {
+    "chargeFeeBy": "",
+    "feeAmount": "",
+    "feeReceiver": "",
+    "isInBps": false
+   },
+   "gas": "593998",
+   "gasPrice": "6000000",
+   "gasUsd": "0.008539624477556698",
+   "l1FeeUsd": "0.00017586302130402854",
+   "route": [
+    [
+     {
+      "amountOut": "41783066683609720",
+      "exchange": "prism-prop",
+      "extra": {
+       "_ce": {
+        "ces": [
+         {
+          "amountOut": "41777717397651523",
+          "exchange": "pancake-v3",
+          "extra": {
+           "nSqrtRx96": "3876022313687827760738479",
+           "nT": -198516,
+           "rAI": "0"
+          },
+          "pool": "0x72ab388e2e2f6facef59e3c3fa2c4e29011c2d38",
+          "poolExtra": {
+           "blockNumber": 52948351,
+           "priceLimit": "1461446703485210103287273052203988822378723970341",
+           "swapFee": 100
+          },
+          "poolType": "pancake-v3",
+          "swapAmount": "100000000",
+          "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "tokenOut": "0x4200000000000000000000000000000000000006"
+         }
+        ],
+        "prCnt": 1,
+        "tgtAmtOut": "41783066683609720"
+       },
+       "_cs": "9984374270245935282",
+       "_ts": "1792686052",
+       "ri": "cb457e6aI_NO3I6Z"
+      },
+      "pool": "prismprop_0x4200000000000000000000000000000000000006_0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "poolExtra": {
+       "approvalAddress": "0x290e41f7b52dbd2dc1e3009fe19e6a824f296a42",
+       "blockNumber": 52948351
+      },
+      "poolType": "prism-prop",
+      "swapAmount": "100000000",
+      "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "tokenOut": "0x4200000000000000000000000000000000000006"
+     }
+    ]
+   ],
+   "routeID": "cb457e6aI_NO3I6Z",
+   "routerAddress": "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+   "timestamp": 1792686052,
+   "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+   "tokenOut": "0x4200000000000000000000000000000000000006"
+  },
+  "routerAddress": "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5"
+ },
+ "message": "successfully",
+ "requestId": "cb457e6a-23f3-4edc-8e99-67ca741bb943"
+}

@@ -1,0 +1,39 @@
+{
+ "code": 200,
+ "data": {
+  "amount_in": 1000000,
+  "amount_out": 1021254006,
+  "deviation_ratio": "-0.00099204",
+  "gas": 35000,
+  "packages": {},
+  "request_id": "0fdbc7b5-c7d1-4099-8ff2-f92b8933c16b",
+  "routes": [
+   {
+    "amount_in": 1000000,
+    "amount_out": 1021254006,
+    "initial_price": "1.023850599720488786",
+    "path": [
+     {
+      "amount_in": 1000000,
+      "amount_out": 1021254006,
+      "direction": false,
+      "extended_details": {
+       "aftermath_lp_supply_type": "0xd1a3eab6e9659407cb2a5a529d13b4102e498619466fc2d01cb0a6547bbdb376::af_lp::AF_LP",
+       "aftermath_pool_flatness": 0,
+       "aux_shared_versions": {
+        "0xb0cc4ce941a6c6ac0ca6d8e6875ae5d86edbec392c3333d008ca88f377e5e181": 411515092
+       }
+      },
+      "fee_rate": "0",
+      "from": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+      "id": "0xb0cc4ce941a6c6ac0ca6d8e6875ae5d86edbec392c3333d008ca88f377e5e181",
+      "lot_size": 1,
+      "provider": "AFTERMATH",
+      "target": "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI"
+     }
+    ]
+   }
+  ]
+ },
+ "msg": "Success"
+}

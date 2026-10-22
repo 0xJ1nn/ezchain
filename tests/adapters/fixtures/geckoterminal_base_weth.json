@@ -1,0 +1,41 @@
+{
+ "data": {
+  "attributes": {
+   "address": "0x4200000000000000000000000000000000000006",
+   "coingecko_coin_id": "l2-standard-bridged-weth-base",
+   "decimals": 18,
+   "fdv_usd": "688016243.955261",
+   "image_url": "https://coin-images.coingecko.com/coins/images/39810/large/weth.png?1724139790",
+   "market_cap_usd": "684830147.527681",
+   "name": "Wrapped Ether",
+   "normalized_total_supply": "287267.258032088",
+   "price_usd": "2395.1",
+   "symbol": "WETH",
+   "total_reserve_in_usd": "324802852.82127155329469000114729279610905740685281471929933160628854127324623998556078866976287286661445830154567340658840423188339231363233349708668987943412959855507040548920851997937663037191656718770585834579091087234485520736930186246070127797108954047881409466115545016797903075072",
+   "total_supply": "287267258032087716817033.0",
+   "volume_usd": {
+    "h24": "444717368.916718"
+   }
+  },
+  "id": "base_0x4200000000000000000000000000000000000006",
+  "relationships": {
+   "top_pools": {
+    "data": [
+     {
+      "id": "base_0x6c561b446416e1a00e8e93e221854d6ea4171372",
+      "type": "pool"
+     },
+     {
+      "id": "base_0x1069622e21475ffe8fbeb11b8d62b7e4744939dbc1083748e2644c01081d1c95",
+      "type": "pool"
+     },
+     {
+      "id": "base_0xb5ba82cdd0ad07571d3f811a69fde6513d253b02cfa5af203484b674ae155bbf",
+      "type": "pool"
+     }
+    ]
+   }
+  },
+  "type": "token"
+ }
+}

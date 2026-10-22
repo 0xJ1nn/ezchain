@@ -27,6 +27,7 @@ def make_quote(
     kind: str = "paper_mark",
     observed_at=None,
     amount_in: str = "100",
+    impact: str | None = None,
 ) -> Quote:
     return Quote(
         chain=CHAIN,
@@ -36,9 +37,9 @@ def make_quote(
         amount_in=Decimal(amount_in),
         amount_out=Decimal(amount_out),
         price=Decimal("2000"),
-        price_impact_pct=None,
+        price_impact_pct=None if impact is None else Decimal(impact),
         fee_usd=Decimal(0),
-        kind="jupiter" if kind == "jupiter" else "paper_mark",
+        kind=kind,  # type: ignore[arg-type]
         route=None,
         source=SourceRef("dexscreener", None, observed_at or utcnow()),
     )
@@ -204,6 +205,64 @@ def test_order_size_denies() -> None:
     allowed, reasons = evaluate(req=request(amount="1000.01"))
     assert allowed is False
     assert "ORDER_LIMIT" in reasons
+
+
+def test_paper_mark_cap_applies_to_marks_only() -> None:
+    # 300 USD is over the 250 mark cap but well under the 1000 order limit.
+    allowed_mark, mark_reasons = evaluate(req=request(amount="300"), quote=make_quote())
+    assert allowed_mark is False
+    assert mark_reasons == ("PAPER_MARK_LIMIT",)
+
+    allowed_quote, quote_reasons = evaluate(
+        req=request(amount="300"), quote=make_quote(kind="kyberswap", impact="0.001")
+    )
+    assert allowed_quote is True
+    assert quote_reasons == ()
+
+
+def test_impact_above_the_cap_denies_a_buy() -> None:
+    allowed, reasons = evaluate(quote=make_quote(kind="kyberswap", impact="0.06"))
+    assert allowed is False
+    assert reasons == ("PRICE_IMPACT_TOO_HIGH",)
+
+
+def test_impact_at_the_cap_is_allowed() -> None:
+    allowed, reasons = evaluate(quote=make_quote(kind="kyberswap", impact="0.05"))
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_a_favourable_fill_is_not_a_breach() -> None:
+    # A negative ratio means the fill beat the USD legs; the gate is on the absolute size.
+    allowed, reasons = evaluate(quote=make_quote(kind="kyberswap", impact="-0.08"))
+    assert allowed is False
+    assert reasons == ("PRICE_IMPACT_TOO_HIGH",)
+
+
+def test_high_impact_never_blocks_a_sell() -> None:
+    quote = make_quote(
+        side="sell", amount_out="100", amount_in="100", kind="kyberswap", impact="0.4"
+    )
+    allowed, reasons = evaluate(req=request(side="sell"), quote=quote)
+    assert allowed is True
+    assert reasons == ()
+    # the impact is still on the quote that gets persisted with the order
+    assert quote.price_impact_pct == Decimal("0.4")
+
+
+def test_mark_without_an_impact_is_not_gated() -> None:
+    allowed, reasons = evaluate(quote=make_quote(kind="paper_mark", impact=None))
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_impact_cap_is_configurable() -> None:
+    allowed, reasons = evaluate(
+        quote=make_quote(kind="kyberswap", impact="0.02"),
+        limits=RiskLimits(max_price_impact_pct=Decimal("0.01")),
+    )
+    assert allowed is False
+    assert reasons == ("PRICE_IMPACT_TOO_HIGH",)
 
 
 def test_paper_mark_size_cap_denies() -> None:
