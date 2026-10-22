@@ -6,7 +6,7 @@ const num = (value: string) => Number(value.replace("\u2212", "-").replace(/[$,%
 test("dashboard fixtures reconcile before they reach the UI", () => {
 	// The four open-position PnLs must sum to the KPI. The wireframe sample numbers did not;
 	// this is the regression guard for CONTRACT I10.
-	expect(totals.unrealizedUsd).toBeCloseTo(-110.3, 2);
+	expect(totals.unrealizedUsd).toBeCloseTo(-129.2, 2);
 
 	// Attribution net PnL must equal realized PnL, and shares must sum to 100%.
 	const net = attribution.reduce((sum, row) => sum + num(row.netPnl), 0);

@@ -39,6 +39,7 @@ export interface PositionFixture {
 	stateTone: Tone;
 	valueUsd: number;
 	pnlUsd: number | null;
+	unrealizedUsd: number | null;
 	pnlPct: number | null;
 	next: string;
 	markAge: string;
@@ -58,6 +59,7 @@ const positionFixtures: PositionFixture[] = [
 		stateTone: "info",
 		valueUsd: 127.6,
 		pnlUsd: 38.12,
+		unrealizedUsd: 19.22,
 		pnlPct: 42.6,
 		next: "+200% rung",
 		markAge: "1s",
@@ -73,6 +75,7 @@ const positionFixtures: PositionFixture[] = [
 		stateTone: "default",
 		valueUsd: 67.9,
 		pnlUsd: -6.12,
+		unrealizedUsd: -6.12,
 		pnlPct: -8.3,
 		next: "stop −12%",
 		markAge: "3s",
@@ -88,6 +91,7 @@ const positionFixtures: PositionFixture[] = [
 		stateTone: "info",
 		valueUsd: 25.0,
 		pnlUsd: null,
+		unrealizedUsd: null,
 		pnlPct: null,
 		next: "fill pending",
 		markAge: "6s",
@@ -103,6 +107,7 @@ const positionFixtures: PositionFixture[] = [
 		stateTone: "err",
 		valueUsd: 0.0041,
 		pnlUsd: -142.3,
+		unrealizedUsd: -142.3,
 		pnlPct: -96.2,
 		next: "no route",
 		markAge: "2m",
@@ -151,7 +156,7 @@ export const totals = {
 	equityUsd: 3482.16,
 	realizedUsd: 126.4,
 	feesUsd: 18.22,
-	unrealizedUsd: positionFixtures.reduce((sum, p) => sum + (p.pnlUsd ?? 0), 0),
+	unrealizedUsd: positionFixtures.reduce((sum, p) => sum + (p.unrealizedUsd ?? 0), 0),
 	openPositionValueUsd: positionFixtures.reduce((sum, p) => sum + p.valueUsd, 0),
 	// Exposure includes wallet balances, not only open positions. The cap is a risk limit.
 	exposureUsd: 1284,
