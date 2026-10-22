@@ -8,7 +8,7 @@ Each invariant names its enforcement point and the incident/learning behind it.
 ## I1 — The ledger is the only accountant
 
 Cash, position size, realized PnL and fees exist **only** as append-only
-`ledger_entries` (signed minor units, per account). Balances are `SUM(amount)` inside a
+`ledger_entries` (signed decimal USD values, per account). Balances are `SUM(amount)` inside a
 transaction. No cached scalar is authoritative. Position state and its ledger journal
 commit atomically.
 

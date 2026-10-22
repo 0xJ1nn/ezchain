@@ -112,8 +112,8 @@ Discovery responses carry per-chain `coverage` and `ordered_by`
 Rows still carry `source`, `observed_at` and decimal-string money; unknown liquidity or
 volume is `null`, never zero.
 
-Money fields are integer USD cents in the API and decimal strings at the boundary where
-token quantities need precision.
+Money fields are decimal USD strings in the API; the ledger stores exact `NUMERIC(38,8)`
+values and token quantities use `NUMERIC(38,18)`. No floats cross a money path.
 
 ## Paper accounting
 

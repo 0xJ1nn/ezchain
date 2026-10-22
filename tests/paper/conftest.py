@@ -35,7 +35,6 @@ def make_settings(**overrides: Any) -> Settings:
         "database_url": "sqlite+pysqlite://",
         "paper_starting_cash_usd": Decimal("10000"),
         "paper_fee_bps": 30,
-        "paper_mark_fee_bps": 30,
         "max_order_usd": Decimal("1000"),
         "max_position_usd": Decimal("2500"),
         "max_open_positions": 10,

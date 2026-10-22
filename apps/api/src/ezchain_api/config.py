@@ -43,7 +43,6 @@ class Settings(BaseSettings):
 
     paper_starting_cash_usd: Decimal = Field(default=Decimal("10000"))
     paper_fee_bps: int = 30
-    paper_mark_fee_bps: int = 30
     max_order_usd: Decimal = Field(default=Decimal("1000"))
     max_position_usd: Decimal = Field(default=Decimal("2500"))
     max_open_positions: int = 10
