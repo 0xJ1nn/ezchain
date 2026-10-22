@@ -2,105 +2,126 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
+from collections import OrderedDict
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
 
 from ezchain_core import Quote, SourceRef
 
-from .errors import NotFound, RateLimited, UpstreamError
+from .cache import BoundedTTLCache
+from .errors import NotFound, UpstreamError
+from .http import DEFAULT_TIMEOUT_SECONDS, Clock, JsonApiClient, Sleeper
+from .ratelimit import TokenBucket, default_sleep
 
 LITE_BASE = "https://lite-api.jup.ag"
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 SOL_MINT = "So11111111111111111111111111111111111111112"
 CACHE_TTL_SECONDS = 5.0
+DECIMALS_CACHE_MAX_ENTRIES = 512
+MAX_TOKEN_DECIMALS = 18
+
+USDC_DECIMALS = 6
+SOL_DECIMALS = 9
 
 
-class _RateLimiter:
-    def __init__(self, rate_per_second: float = 2.0, burst: int = 4) -> None:
-        self.rate = rate_per_second
-        self.burst = burst
-        self._times: list[float] = []
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self._lock:
-            now = time.monotonic()
-            self._times = [t for t in self._times if now - t <= 1.0]
-            if len(self._times) >= self.burst:
-                wait = 1.0 - (now - self._times[0])
-                if wait > 0:
-                    await asyncio.sleep(wait)
-            self._times.append(time.monotonic())
-
-
-def _dec(value: Any) -> Decimal | None:
-    if value is None or value == "":
+def _dec(value: object) -> Decimal | None:
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
-        return Decimal(str(value))
-    except (ValueError, ArithmeticError):
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
         return None
+    return parsed if parsed.is_finite() else None
 
 
-class JupiterClient:
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
-        self._client = client
-        self._owns_client = client is None
-        self._limiter = _RateLimiter()
-        self._cache: dict[str, tuple[float, Any]] = {}
-        self._decimals: dict[str, int] = {USDC_MINT: 6, SOL_MINT: 9}
+def _int_field(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        raise UpstreamError("Jupiter returned a malformed quote payload")
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError):
+        raise UpstreamError("Jupiter returned a malformed quote payload") from None
+    if parsed < 0:
+        raise UpstreamError("Jupiter returned a malformed quote payload")
+    return parsed
 
-    async def __aenter__(self) -> JupiterClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=LITE_BASE,
-                timeout=httpx.Timeout(15.0),
-                headers={"User-Agent": "ezCHAIN/0.1 (+https://github.com/0xJ1nn/ezchain)"},
-            )
-        return self
 
-    async def __aexit__(self, *args: object) -> None:
-        if self._owns_client and self._client is not None:
-            await self._client.aclose()
+def _route_labels(payload: dict[str, Any]) -> list[str]:
+    plan = payload.get("routePlan")
+    if not isinstance(plan, list):
+        return []
+    labels: list[str] = []
+    for step in plan:
+        if not isinstance(step, dict):
+            continue
+        info = step.get("swapInfo")
+        if not isinstance(info, dict):
+            continue
+        label = info.get("label")
+        if isinstance(label, str) and label and label not in labels:
+            labels.append(label)
+    return labels
 
-    async def _get(self, path: str, params: dict[str, Any]) -> Any:
-        key = f"{path}?{sorted(params.items())}"
-        now = time.monotonic()
-        hit = self._cache.get(key)
-        if hit and hit[0] > now:
-            return hit[1]
-        await self._limiter.acquire()
-        assert self._client is not None
-        try:
-            response = await self._client.get(path, params=params)
-        except httpx.HTTPError as exc:
-            raise UpstreamError(f"Jupiter request failed: {exc}") from exc
-        if response.status_code == 429:
-            raise RateLimited("Jupiter rate limit")
-        if response.status_code == 400:
-            raise NotFound("Jupiter has no route")
-        if response.status_code >= 400:
-            raise UpstreamError(f"Jupiter returned {response.status_code}")
-        data = response.json()
-        self._cache[key] = (time.monotonic() + CACHE_TTL_SECONDS, data)
-        return data
+
+class JupiterClient(JsonApiClient):
+    label = "Jupiter"
+    base_url = LITE_BASE
+    cache_ttl_seconds = CACHE_TTL_SECONDS
+    rate_per_second = 2.0
+    burst = 4
+    not_found_statuses = frozenset({400})
+
+    def __init__(
+        self,
+        client: httpx.AsyncClient | None = None,
+        *,
+        limiter: TokenBucket | None = None,
+        cache: BoundedTTLCache | None = None,
+        clock: Clock = time.monotonic,
+        sleep: Sleeper = default_sleep,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        super().__init__(
+            client, limiter=limiter, cache=cache, clock=clock, sleep=sleep, timeout=timeout
+        )
+        self._decimals: OrderedDict[str, int] = OrderedDict(
+            {USDC_MINT: USDC_DECIMALS, SOL_MINT: SOL_DECIMALS}
+        )
 
     async def token_decimals(self, mint: str) -> int:
-        if mint in self._decimals:
-            return self._decimals[mint]
+        cached = self._decimals.get(mint)
+        if cached is not None:
+            self._decimals.move_to_end(mint)
+            return cached
         data = await self._get("/tokens/v2/search", {"query": mint})
-        if isinstance(data, list):
-            for item in data:
-                if item.get("id") == mint and item.get("decimals") is not None:
-                    decimals = int(item["decimals"])
-                    self._decimals[mint] = decimals
-                    return decimals
+        if not isinstance(data, list):
+            raise UpstreamError("Jupiter returned an unexpected token search payload")
+        for item in data:
+            if not isinstance(item, dict) or item.get("id") != mint:
+                continue
+            raw = item.get("decimals")
+            if isinstance(raw, bool):
+                raise UpstreamError("Jupiter returned malformed token decimals")
+            try:
+                decimals = int(str(raw))
+            except (TypeError, ValueError):
+                raise UpstreamError("Jupiter returned malformed token decimals") from None
+            if not 0 <= decimals <= MAX_TOKEN_DECIMALS:
+                raise UpstreamError("Jupiter returned malformed token decimals")
+            self._remember_decimals(mint, decimals)
+            return decimals
         raise NotFound(f"unknown token decimals for {mint}")
+
+    def _remember_decimals(self, mint: str, decimals: int) -> None:
+        self._decimals[mint] = decimals
+        self._decimals.move_to_end(mint)
+        while len(self._decimals) > DECIMALS_CACHE_MAX_ENTRIES:
+            self._decimals.popitem(last=False)
 
     async def quote_exact_in(
         self,
@@ -136,38 +157,44 @@ class JupiterClient:
         """Return (quote, input_decimals, output_decimals).
 
         Buy: USDC -> token, sized by amount_usd. Sell: token -> USDC, sized by quantity.
+
+        ``price_impact_pct`` carries Jupiter's ``priceImpactPct`` unchanged: it is a
+        ratio (``0.01`` means 1%), and formatting belongs to the UI layer.
         """
+        if side not in ("buy", "sell"):
+            raise ValueError("side must be 'buy' or 'sell'")
+        if side == "sell" and (quantity is None or quantity <= 0):
+            raise NotFound("sell requires a positive token quantity")
+        if side == "buy" and amount_usd <= 0:
+            raise NotFound("quote amount is zero")
+
         token_decimals = await self.token_decimals(token_address)
         if side == "buy":
             input_mint, output_mint = USDC_MINT, token_address
-            amount_raw = int(amount_usd * Decimal(10**6))
-            in_decimals, out_decimals = 6, token_decimals
+            amount_raw = int(amount_usd * Decimal(10**USDC_DECIMALS))
+            in_decimals, out_decimals = USDC_DECIMALS, token_decimals
         else:
-            if quantity is None or quantity <= 0:
-                raise NotFound("sell requires a positive token quantity")
+            assert quantity is not None  # narrowed by the guard above
             input_mint, output_mint = token_address, USDC_MINT
             amount_raw = int(quantity * Decimal(10**token_decimals))
-            in_decimals, out_decimals = token_decimals, 6
+            in_decimals, out_decimals = token_decimals, USDC_DECIMALS
         if amount_raw <= 0:
             raise NotFound("quote amount is zero")
+
         raw = await self.quote_exact_in(
             input_mint=input_mint,
             output_mint=output_mint,
             amount_raw=amount_raw,
             slippage_bps=slippage_bps,
         )
-        out_raw = int(raw.get("outAmount", "0"))
-        if out_raw <= 0:
+        out_raw = _int_field(raw, "outAmount")
+        if out_raw == 0:
             raise NotFound("no route")
+
         amount_in = Decimal(amount_raw) / Decimal(10**in_decimals)
         amount_out = Decimal(out_raw) / Decimal(10**out_decimals)
         price = (amount_in / amount_out) if side == "buy" else (amount_out / amount_in)
-        labels = []
-        for step in raw.get("routePlan") or []:
-            info = step.get("swapInfo") or {}
-            label = info.get("label")
-            if label and label not in labels:
-                labels.append(str(label))
+        labels = _route_labels(raw)
         return (
             Quote(
                 chain="solana",
