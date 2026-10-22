@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import DexScreenerClient, GeckoTerminalClient, JupiterClient
 
 from .db import session_factory
 from .services.market_monitor import MarketMonitor
@@ -20,6 +20,10 @@ def get_session() -> Iterator[Session]:
 
 def get_dexscreener(request: Request) -> DexScreenerClient:
     return request.app.state.dexscreener  # type: ignore[no-any-return]
+
+
+def get_geckoterminal(request: Request) -> GeckoTerminalClient:
+    return request.app.state.geckoterminal  # type: ignore[no-any-return]
 
 
 def get_jupiter(request: Request) -> JupiterClient:

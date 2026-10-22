@@ -130,7 +130,31 @@ so the overview survives a restart; attempt times and error text are process-loc
 with no rows is `no_data`, and an old row is `stale` after
 `max(60s, scan interval + last scan duration + 15s)` — never zero.
 
-### 4.2 Order
+### 4.2 Candle history
+
+Graph strategies need indicator inputs (EMA/RSI/ATR) and a backtest needs bars, so OHLCV
+history is served from `market_candles` rather than recomputed per request:
+
+- `GET /api/v1/tokens/{chain}/{address}/candles?timeframe=5m&limit=300` (read-only, no auth)
+  returns closed bars oldest first, prices and volumes as decimal strings, unknown volume as
+  `null`, plus `source`, `stale`, `pool_address` and a `reason` code when empty.
+- The pool is the highest-liquidity pair of the token snapshot the markets router already
+  uses; the provider call passes our token address as `token`, so the price belongs to our
+  token even when it is the quote side.
+- **The forming bar is dropped** (`open_time + timeframe > now`) before it is stored or
+  served, so an indicator never sees a bar that keeps changing under the same timestamp.
+- The table is consulted first. A request reaches GeckoTerminal only when the newest stored
+  bar is not the latest closed bar for `now`, or when the stored series is shorter than
+  `limit` (one bounded page backwards with `before_timestamp`). Re-fetching a bar updates it
+  in place: the unique key is `(chain, token_address, timeframe, open_time)`.
+- Chains are capabilities, not branches: `ChainMeta.geckoterminal_id` (adapter-owned) is the
+  only place a provider network id appears, and `to_dict()` exposes `capabilities.candles`.
+  A registered chain with no provider (Osmosis, Cosmos Hub) returns
+  `CANDLES_UNSUPPORTED_CHAIN` — never a fabricated series.
+- `EZCHAIN_DATA_MODE=fixture` synthesizes a deterministic series labelled `fixture` and does
+  not write to the table, so a demo cannot be mistaken for market data.
+
+### 4.3 Order
 
 ```mermaid
 sequenceDiagram
@@ -161,7 +185,7 @@ Idempotency: `intent_id` is unique; executor dedupes by it; a retry after a time
 queries the chain before re-signing. Every state change is an event, every event is
 persisted before side effects (outbox).
 
-### 4.3 Valuation
+### 4.4 Valuation
 
 `PositionView` is assembled by one projector from ledger + market events. It carries
 `mark_status`, `mark_age`, `source`, and `paper|live`. The UI formats, never computes.
@@ -170,6 +194,10 @@ Stale mark → label, not a stale number presented as live.
 ## 5. Persistence
 
 - **Postgres 16** is the only source of truth.
+- **`market_candles`** holds closed OHLCV bars now (`chain, token_address, pool_address,
+  timeframe, open_time, ohlcv, source, fetched_at`, unique on
+  `(chain, token_address, timeframe, open_time)`). It is a plain table for the PAPER slice;
+  moving it to the Timescale hypertable above is a later, forward-only migration.
 - **TimescaleDB** hypertables for ticks/candles with retention (raw 7–30 d, 1m 1 y).
 - **Outbox** table written in the same tx as domain state; a relay publishes to NATS.
 - **NATS JetStream** for fan-out, durable consumers, dead-letter queue; not a database.

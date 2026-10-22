@@ -153,6 +153,30 @@ class TokenOut(BaseModel):
     stale: bool
 
 
+class CandleOut(BaseModel):
+    """One closed OHLCV bar. Prices are decimal strings; unknown volume is null."""
+
+    open_time: str
+    close_time: str
+    timeframe_seconds: int
+    open: str
+    high: str
+    low: str
+    close: str
+    volume: str | None = None
+
+
+class CandlesOut(BaseModel):
+    chain: str
+    token_address: str
+    timeframe: Literal["1m", "5m", "15m", "1h", "4h", "1d"]
+    pool_address: str | None = None
+    candles: list[CandleOut]
+    source: SourceOut
+    stale: bool
+    reason: str | None = None
+
+
 class QuoteOut(BaseModel):
     chain: str
     token_in: str
