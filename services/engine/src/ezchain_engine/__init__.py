@@ -2,7 +2,9 @@
 
 from .engine import should_run, strategy_interval_minutes, validate_strategy_params
 from .scheduler import (
+    ExecutionBlocked,
     ExecutorUnavailable,
+    KillSwitchExecutor,
     OrderExecutor,
     RunResult,
     StrategyScheduler,
@@ -14,7 +16,9 @@ from .scheduler import (
 )
 
 __all__ = [
+    "ExecutionBlocked",
     "ExecutorUnavailable",
+    "KillSwitchExecutor",
     "OrderExecutor",
     "RunResult",
     "StrategyScheduler",

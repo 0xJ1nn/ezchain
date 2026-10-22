@@ -16,6 +16,7 @@ from decimal import Decimal
 from typing import Any, Protocol, cast, runtime_checkable
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ezchain_api.models import LedgerEntryRow, StrategyRow, StrategyRunRow
@@ -39,6 +40,16 @@ class ExecutorUnavailable(RuntimeError):
     """Raised by composition when no paper order service has been wired yet."""
 
 
+class ExecutionBlocked(RuntimeError):
+    """Raised when an operator switch stops strategy-originated execution.
+
+    The evaluation layer turns this into a logged ``hold`` without consuming the
+    strategy's decision window, so releasing the switch does not wait one interval.
+    """
+
+    code = "KILL_SWITCH_ACTIVE"
+
+
 @runtime_checkable
 class TokenSource(Protocol):
     """The only market-data call the engine needs."""
@@ -55,6 +66,30 @@ class OrderExecutor(Protocol):
     """
 
     async def place_order(self, request: OrderRequest) -> str: ...
+
+
+class KillSwitchExecutor:
+    """Decorate an order executor with the persisted operator kill switch.
+
+    The check runs per order, so arming takes effect immediately and survives a
+    restart without restarting the process. Manual paper orders (``strategy_id``
+    is ``None``) stay allowed: the switch scope is strategy-originated execution.
+    The guard holds no locks, so it is safe across processes.
+    """
+
+    def __init__(self, inner: OrderExecutor, is_active: Callable[[], bool]) -> None:
+        self._inner = inner
+        self._is_active = is_active
+
+    @property
+    def active(self) -> bool:
+        """True while the operator switch is armed; read fresh from persistence."""
+        return self._is_active()
+
+    async def place_order(self, request: OrderRequest) -> str:
+        if request.strategy_id is not None and self._is_active():
+            raise ExecutionBlocked("strategy execution is blocked by the operator kill switch")
+        return await self._inner.place_order(request)
 
 
 @dataclass(frozen=True)
@@ -137,7 +172,7 @@ def _record(
     now: datetime,
     touch_last_run: bool,
     order_id: str | None = None,
-) -> StrategyRunRow:
+) -> StrategyRunRow | None:
     row = StrategyRunRow(
         strategy_id=strategy.id,
         action=decision.action,
@@ -148,7 +183,14 @@ def _record(
     session.add(row)
     if touch_last_run:
         strategy.last_run_at = now
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # The strategy was deleted between load and insert. The decision cannot be
+        # attributed any more, so drop it instead of breaking the scheduler pass.
+        session.rollback()
+        logger.warning("strategy %s disappeared before its run was recorded", strategy.id)
+        return None
     session.refresh(row)
     return row
 
@@ -266,6 +308,21 @@ async def evaluate_strategy(
         )
         try:
             order_id = await order_executor.place_order(request)
+        except ExecutionBlocked as exc:
+            logger.warning("strategy %s execution blocked: %s", strategy.id, exc)
+            blocked = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "KILL_SWITCH_ACTIVE",
+                {
+                    **decision.inputs,
+                    "attempted_action": decision.action,
+                    "attempted_amount_usd": str(decision.amount_usd),
+                    "error_code": exc.code,
+                },
+            )
+            row = _record(session, strategy, blocked, now=now, touch_last_run=False)
+            return _result(strategy, blocked, row)
         except ExecutorUnavailable as exc:
             logger.warning("strategy %s cannot execute: %s", strategy.id, exc)
             failed = StrategyDecision(
@@ -341,7 +398,12 @@ class StrategyScheduler:
 
         One failing strategy never stops the rest, and a strategy whose interval has not
         elapsed is not even opened: the run log records decisions, not scheduler ticks.
+        While the operator kill switch is armed the pass is skipped before any market
+        read, so an idle outage does not write a hold row per strategy per tick.
         """
+        if getattr(self._order_executor, "active", False):
+            logger.warning("strategy scheduler idle: operator kill switch is active")
+            return []
         now = self._now()
         with self._session_factory() as session:
             ids = list(
@@ -391,6 +453,9 @@ class StrategyScheduler:
 
 
 __all__ = [
+    "ExecutionBlocked",
+    "ExecutorUnavailable",
+    "KillSwitchExecutor",
     "OrderExecutor",
     "RunResult",
     "StrategyScheduler",

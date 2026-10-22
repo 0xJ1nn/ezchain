@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ErrorBody(BaseModel):
@@ -109,12 +109,18 @@ class QuoteOut(BaseModel):
 
 
 class PaperOrderIn(BaseModel):
+    """A manual paper order.
+
+    Deliberately has no ``strategy_id``: strategy attribution is internal to the engine,
+    which reaches the order service through ``KillSwitchExecutor``. An unknown field is
+    ignored by Pydantic, so a hand-written request cannot claim strategy attribution.
+    """
+
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
     side: Literal["buy", "sell"]
     amount_usd: Decimal = Field(gt=0)
     idempotency_key: str = Field(min_length=8, max_length=120)
-    strategy_id: str | None = None
 
     @field_validator("amount_usd")
     @classmethod
@@ -172,6 +178,52 @@ class PaperAccountOut(BaseModel):
     unrealized_usd: str
     positions: list[PositionOut]
     mode: str = "paper"
+
+
+class ReconciliationCheckOut(BaseModel):
+    id: str
+    ok: bool
+    detail: str
+
+
+class ReconciliationTotalsOut(BaseModel):
+    genesis_usd: str
+    cash_usd: str
+    fills_cash_usd: str
+    open_positions: int
+    fills: int
+    filled_orders: int
+    orphan_fills: int
+    filled_orders_without_single_fill: int
+    negative_cash: int
+    negative_positions: int
+    quote_kinds: dict[str, int]
+
+
+class ReconciliationOut(BaseModel):
+    ok: bool
+    checks: list[ReconciliationCheckOut]
+    as_of: str
+    totals: ReconciliationTotalsOut
+
+
+class KillSwitchOut(BaseModel):
+    active: bool
+    reason: str | None = None
+    updated_at: str | None = None
+    scope: Literal["strategy"] = "strategy"
+
+
+class KillSwitchIn(BaseModel):
+    active: bool
+    reason: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def release_needs_reason(self) -> KillSwitchIn:
+        """Disarming is a deliberate act: it needs a recorded reason (RUNBOOK §10)."""
+        if not self.active and not (self.reason or "").strip():
+            raise ValueError("releasing the kill switch requires a reason")
+        return self
 
 
 class StrategyIn(BaseModel):

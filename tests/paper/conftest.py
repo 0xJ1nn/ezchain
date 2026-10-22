@@ -160,6 +160,7 @@ def make_request(
     key: str = "key-00000001",
     chain: str = CHAIN,
     token: str = TOKEN,
+    strategy_id: str | None = None,
 ) -> OrderRequest:
     return OrderRequest(
         chain=chain,
@@ -167,6 +168,7 @@ def make_request(
         side=side,  # type: ignore[arg-type]
         amount_usd=Decimal(amount_usd),
         idempotency_key=key,
+        strategy_id=strategy_id,
     )
 
 

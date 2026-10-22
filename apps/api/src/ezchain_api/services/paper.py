@@ -42,6 +42,7 @@ from ezchain_core.ledger import (
 from ..config import Settings
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow, new_id
 from .quotes import get_quote
+from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
 POSITION_PREFIX = "position:"
@@ -402,6 +403,11 @@ async def place_order(
     existing = _find_order(session, payload.idempotency_key)
     if existing is not None:
         return existing
+
+    # Defence in depth for callers that bypass KillSwitchExecutor: an order that claims
+    # strategy attribution is refused before any quote while the operator switch is armed.
+    if payload.strategy_id is not None and read_kill_switch(session, settings).active:
+        return _reject_new(session, payload, "KILL_SWITCH_ACTIVE")
 
     replay = _replay(_ledger_rows(session), day_start=_day_start())
     account = position_account(payload.chain, payload.token_address)
