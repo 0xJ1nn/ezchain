@@ -61,7 +61,7 @@ function sparkLabel(symbol: string, values: number[]) {
 	const first = values[0];
 	const last = values[values.length - 1];
 	const direction = last > first ? "up" : last < first ? "down" : "flat";
-	return `${symbol} 7-day sparkline, ${direction}; last sample ${last}`;
+	return `${symbol} 7-day trend, ${direction}`;
 }
 
 interface MarketSeed extends Omit<MarketRow, "change1h" | "change24h" | "sparkLabel"> {

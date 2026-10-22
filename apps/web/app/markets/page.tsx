@@ -303,7 +303,7 @@ export default function MarketsPage() {
 			<div className="split mt-16">
 				<Panel
 					title="New pairs"
-					sub="last 60m · safety gate runs before a row is listed"
+					sub="last 60m · gate result shown per row"
 					action={<Badge tone="ghost">fixture snapshot</Badge>}
 					flush
 					footer={
