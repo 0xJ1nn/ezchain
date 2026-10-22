@@ -192,16 +192,23 @@ export function MobileNav({ active }: { active: string }) {
 }
 
 export function AppShell({ active, children }: { active: string; children: ReactNode }) {
+	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
 	return (
 		<>
 			<a className="skip" href="#main">
 				Skip to content
 			</a>
-			<div className="fixture-banner">
-				<strong>Fixture preview</strong>
-				<span>sample data · no API · no chain calls</span>
+			<div className={fixture ? "fixture-banner" : "live-banner"}>
+				<strong>{fixture ? "Fixture preview" : "Live paper slice"}</strong>
+				<span>
+					{fixture
+						? "sample data · no API · no chain calls"
+						: "live markets · paper execution · no keys"}
+				</span>
 				<span className="spacer" />
-				<span className="meta">M1 · shell + dashboard</span>
+				<span className="meta">
+					{fixture ? "P0 · fixture mode" : "P0 · DexScreener + Jupiter"}
+				</span>
 			</div>
 			<Topbar />
 			<Sidebar active={active} />

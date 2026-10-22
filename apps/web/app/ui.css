@@ -64,6 +64,21 @@ body {
 }
 .fixture-banner strong { color: #fff; }
 .fixture-banner .spacer { flex: 1; }
+.live-banner {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 3px 12px;
+  background: repeating-linear-gradient(135deg, #0f2419, #0f2419 8px, #143322 8px, #143322 16px);
+  color: #d7f5e2;
+  font: 10px var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.live-banner strong { color: #8effb8; }
+.live-banner .spacer { flex: 1; }
 .topbar {
   grid-row: 2;
   grid-column: 1 / -1;
@@ -545,6 +560,9 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .fixture-banner { font-size: 9px; gap: 8px; padding: 3px 8px; white-space: nowrap; }
   .fixture-banner .spacer,
   .fixture-banner .meta { display: none; }
+  .live-banner { font-size: 9px; gap: 8px; padding: 3px 8px; white-space: nowrap; }
+  .live-banner .spacer,
+  .live-banner .meta { display: none; }
   .topbar .brand { width: auto; }
   .topbar .spacer { flex: 0; }
   .topbar .kill { margin-left: auto; min-height: 44px; }

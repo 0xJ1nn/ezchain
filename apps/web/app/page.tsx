@@ -13,8 +13,24 @@ import {
 	signals,
 	wallets,
 } from "@/lib/dashboard-fixtures";
+import { formatUsd } from "@/lib/live-format";
+import { getPaperSnapshot } from "@/lib/paper-api";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+	const snapshot = await getPaperSnapshot();
+	const account = snapshot.account.ok ? snapshot.account.data : null;
+	const live = snapshot.mode === "live";
+	const liveKpi = live && account !== null;
+	const equityValue = liveKpi ? formatUsd(account.equity_usd) : equity.value;
+	const realizedValue = liveKpi ? formatUsd(account.realized_usd) : equity.realized;
+	const unrealizedValue = liveKpi ? formatUsd(account.unrealized_usd) : equity.unrealized;
+	const exposureValue = liveKpi
+		? formatUsd(String(Number(account.equity_usd) - Number(account.cash_usd)))
+		: equity.exposure;
+	const liveMeta = liveKpi
+		? `${account.positions.length} paper position${account.positions.length === 1 ? "" : "s"}`
+		: null;
+
 	return (
 		<AppShell active="dashboard">
 			<header className="page-head">
@@ -27,9 +43,7 @@ export default function DashboardPage() {
 					</p>
 				</div>
 				<div className="page-actions">
-					<span className="chip">
-						Fixture snapshot
-					</span>
+					<span className="chip">{live ? "Live paper account" : "Fixture snapshot"}</span>
 					<Link className="btn" href="/ledger">
 						Export
 					</Link>
@@ -43,37 +57,41 @@ export default function DashboardPage() {
 				<Stat
 					hero
 					label="Equity"
-					value={equity.value}
-					meta={
+					value={equityValue}
+					meta={liveKpi ? liveMeta : (
 						<>
 							<span className="delta up">{equity.delta}</span> 24h ·{" "}
 							<span className="mono">{equity.sol}</span>
 						</>
-					}
+					)}
 				/>
 				<Stat
-					label="Realized (7d)"
-					value={equity.realized}
-					tone="ok"
-					meta={equity.realizedMeta}
+					label="Realized"
+					value={realizedValue}
+					tone={liveKpi && Number(account.realized_usd) < 0 ? "err" : "ok"}
+					meta={liveKpi ? "paper · fees included" : equity.realizedMeta}
 				/>
 				<Stat
 					label="Unrealized"
-					value={equity.unrealized}
-					tone={equity.unrealizedTone}
-					meta={equity.unrealizedMeta}
+					value={unrealizedValue}
+					tone={liveKpi && Number(account.unrealized_usd) < 0 ? "err" : equity.unrealizedTone}
+					meta={liveKpi ? "paper · known marks" : equity.unrealizedMeta}
 				/>
-				<Stat label="Drawdown" value={equity.drawdown} meta={equity.drawdownMeta} />
+				<Stat
+					label="Drawdown"
+					value={liveKpi ? "—" : equity.drawdown}
+					meta={liveKpi ? "not computed in P0" : equity.drawdownMeta}
+				/>
 				<Stat
 					label="Exposure"
-					value={equity.exposure}
-					meta={equity.exposureMeta}
+					value={exposureValue}
+					meta={liveKpi ? "cash + known marks" : equity.exposureMeta}
 					title="Includes wallet balances, not only the four open positions"
 				/>
 				<Stat
 					label="Mode"
-					value={equity.mode}
-					meta={<Badge>{equity.modeMeta}</Badge>}
+					value={liveKpi ? "PAPER" : equity.mode}
+					meta={<Badge>{liveKpi ? "paper only" : equity.modeMeta}</Badge>}
 				/>
 			</section>
 
@@ -81,7 +99,7 @@ export default function DashboardPage() {
 				<div className="stack">
 					<Panel
 						title="Equity"
-						sub="USD · after fees · paper"
+						sub={live ? "fixture history · live account KPI above" : "USD · after fees · paper"}
 						action={
 							<div className="seg">
 								<button type="button">1D</button>
@@ -117,7 +135,7 @@ export default function DashboardPage() {
 
 					<Panel
 						title="Open positions"
-						sub="4 · sorted by next action"
+						sub={live ? "fixture preview · see /positions for live" : "4 · sorted by next action"}
 						action={<ButtonLink href="/positions" size="sm">All positions</ButtonLink>}
 						flush
 						footer={
