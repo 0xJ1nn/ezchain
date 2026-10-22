@@ -6,8 +6,8 @@ ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledg
 positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
-> Status: **M1 — web UI scaffold**. The shell and dashboard are implemented from the
-> wireframe. The API, engine, executor and ingest services are not built yet; routes
+> Status: **M1 — web UI scaffold**. The shell, dashboard and positions page are
+> implemented from the wireframe. The API, engine, executor and ingest services are not built yet; routes
 > without an implementation say so instead of pretending. The product spec, architecture,
 > infra contract and 31-page wireframe remain the source of truth.
 
@@ -27,7 +27,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 | Path | What |
 |---|---|
 | `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
-| `apps/web/` | Next.js UI: shell + dashboard (M1), fixture-driven |
+| `apps/web/` | Next.js UI: shell, dashboard, positions (M1), fixture-driven |
 | `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain model, chains, SDK, infra, security, workflow |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |

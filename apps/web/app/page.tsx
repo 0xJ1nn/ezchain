@@ -133,7 +133,7 @@ export default function DashboardPage() {
 									<tr>
 										<th>Token</th>
 										<th>State</th>
-										<th className="num">PnL</th>
+										<th className="num" title="Realized + unrealized for this position">PnL</th>
 										<th className="num">Value</th>
 										<th className="col-hide-sm">Next</th>
 										<th className="col-hide-sm">Mark</th>
