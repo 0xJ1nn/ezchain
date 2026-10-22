@@ -16,6 +16,10 @@ import {
 import { formatUsd } from "@/lib/live-format";
 import { getPaperSnapshot } from "@/lib/paper-api";
 
+function FixtureBadge() {
+	return <Badge tone="ghost">FIXTURE</Badge>;
+}
+
 export default async function DashboardPage() {
 	const snapshot = await getPaperSnapshot();
 	const account = snapshot.account.ok ? snapshot.account.data : null;
@@ -101,14 +105,17 @@ export default async function DashboardPage() {
 						title="Equity"
 						sub={live ? "fixture history · live account KPI above" : "USD · after fees · paper"}
 						action={
-							<div className="seg">
-								<button type="button">1D</button>
-								<button type="button" aria-pressed="true">
-									1W
-								</button>
-								<button type="button">1M</button>
-								<button type="button">ALL</button>
-							</div>
+							<>
+								<FixtureBadge />
+								<div className="seg">
+									<button type="button">1D</button>
+									<button type="button" aria-pressed="true">
+										1W
+									</button>
+									<button type="button">1M</button>
+									<button type="button">ALL</button>
+								</div>
+							</>
 						}
 					>
 						<div className="chart-scroll">
@@ -136,7 +143,7 @@ export default async function DashboardPage() {
 					<Panel
 						title="Open positions"
 						sub={live ? "fixture preview · see /positions for live" : "4 · sorted by next action"}
-						action={<ButtonLink href="/positions" size="sm">All positions</ButtonLink>}
+						action={<><FixtureBadge /><ButtonLink href="/positions" size="sm">All positions</ButtonLink></>}
 						flush
 						footer={
 							<div className="between">
@@ -214,7 +221,7 @@ export default async function DashboardPage() {
 					<Panel
 						title="PnL attribution"
 						sub="7 days · after fees · paper"
-						action={<ButtonLink href="/ledger" size="sm">Ledger</ButtonLink>}
+						action={<><FixtureBadge /><ButtonLink href="/ledger" size="sm">Ledger</ButtonLink></>}
 						flush
 						footer="Attribution uses realized cash PnL; unrealized is excluded. Share is net PnL ÷ total net PnL and can exceed 100% when another strategy loses."
 					>
@@ -256,8 +263,8 @@ export default async function DashboardPage() {
 				<div className="stack">
 					<Panel
 						title="Risk"
-						sub="live checks"
-						action={<ButtonLink href="/risk" size="sm">Limits</ButtonLink>}
+						sub="fixture preview"
+						action={<><FixtureBadge /><ButtonLink href="/risk" size="sm">Limits</ButtonLink></>}
 					>
 						<div className="stack-sm">
 							<div className="between small">
@@ -306,7 +313,7 @@ export default async function DashboardPage() {
 					<Panel
 						title="Automations"
 						sub="3 active"
-						action={<ButtonLink href="/automations" size="sm">All</ButtonLink>}
+						action={<><FixtureBadge /><ButtonLink href="/automations" size="sm">All</ButtonLink></>}
 						flush
 					>
 						{automations.map((a) => (
@@ -324,7 +331,7 @@ export default async function DashboardPage() {
 					<Panel
 						title="Signals"
 						sub="routed"
-						action={<ButtonLink href="/signals" size="sm">Feed</ButtonLink>}
+						action={<><FixtureBadge /><ButtonLink href="/signals" size="sm">Feed</ButtonLink></>}
 						flush
 					>
 						{signals.map((s) => (
@@ -341,7 +348,7 @@ export default async function DashboardPage() {
 					<Panel
 						title="Chains"
 						sub="3 connected"
-						action={<ButtonLink href="/chains" size="sm">Health</ButtonLink>}
+						action={<><FixtureBadge /><ButtonLink href="/chains" size="sm">Health</ButtonLink></>}
 						flush
 					>
 						{chains.map((c) => (
@@ -362,7 +369,7 @@ export default async function DashboardPage() {
 				<Panel
 					title="Wallets"
 					sub="4 wallets · 2 custody tiers"
-					action={<ButtonLink href="/wallets" size="sm">Manage</ButtonLink>}
+					action={<><FixtureBadge /><ButtonLink href="/wallets" size="sm">Manage</ButtonLink></>}
 					flush
 				>
 					{wallets.map((w) => (
@@ -384,7 +391,7 @@ export default async function DashboardPage() {
 				<Panel
 					title="Recent activity"
 					sub="ledger view"
-					action={<ButtonLink href="/ledger" size="sm">All</ButtonLink>}
+					action={<><FixtureBadge /><ButtonLink href="/ledger" size="sm">All</ButtonLink></>}
 					flush
 				>
 					{activity.map((a) => (

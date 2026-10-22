@@ -20,6 +20,16 @@ test("dashboard renders from fixtures with no external requests", async ({ page 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
+test("every fixture dashboard panel carries an explicit FIXTURE badge", async ({ page }) => {
+	await page.goto("/");
+	const panelCount = await page.locator("section.panel").count();
+	await expect(page.locator("section.panel .badge", { hasText: "FIXTURE" })).toHaveCount(
+		panelCount,
+	);
+	await expect(page.getByText("fixture preview", { exact: true })).toBeVisible();
+	await expect(page.getByText("live checks")).toHaveCount(0);
+});
+
 test("unknown routes return 404 with the shell", async ({ page }) => {
 	const response = await page.goto("/not-a-route");
 	expect(response?.status()).toBe(404);
