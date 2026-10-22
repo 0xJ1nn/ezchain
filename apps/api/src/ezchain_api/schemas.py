@@ -174,6 +174,44 @@ class PaperAccountOut(BaseModel):
     mode: str = "paper"
 
 
+class ReconciliationCheckOut(BaseModel):
+    id: str
+    ok: bool
+    detail: str
+
+
+class ReconciliationTotalsOut(BaseModel):
+    cash_usd: str
+    replay_cash_usd: str
+    open_positions: int
+    fills: int
+    filled_orders: int
+    orphan_fills: int
+    filled_orders_without_single_fill: int
+    negative_cash: int
+    negative_positions: int
+    quote_kinds: dict[str, int]
+
+
+class ReconciliationOut(BaseModel):
+    ok: bool
+    checks: list[ReconciliationCheckOut]
+    as_of: str
+    totals: ReconciliationTotalsOut
+
+
+class KillSwitchOut(BaseModel):
+    active: bool
+    reason: str | None = None
+    updated_at: str | None = None
+    scope: Literal["strategy"] = "strategy"
+
+
+class KillSwitchIn(BaseModel):
+    active: bool
+    reason: str | None = Field(default=None, max_length=200)
+
+
 class StrategyIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     chain: str = Field(min_length=2, max_length=40)

@@ -16,6 +16,7 @@ from ezchain_engine import OrderExecutor
 from ..deps import get_dexscreener, get_session
 from ..models import StrategyRow, StrategyRunRow
 from ..schemas import StrategyIn, StrategyOut, StrategyPatch, StrategyRunOut
+from ..services import strategies as strategy_service
 from ..services.strategies import (
     MissingOrderExecutor,
     run_strategy_once,
@@ -125,9 +126,11 @@ def patch_strategy(
 
 @router.delete("/{strategy_id}", status_code=204)
 def delete_strategy(strategy_id: str, session: Session = Depends(get_session)) -> None:
-    row = get_or_404(session, strategy_id)
-    session.delete(row)
-    session.commit()
+    if not strategy_service.delete_strategy(session, strategy_id):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STRATEGY_NOT_FOUND", "message": "strategy not found"},
+        )
 
 
 @router.post("/{strategy_id}/run", response_model=StrategyRunOut)

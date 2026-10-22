@@ -108,3 +108,28 @@ A restore that cannot reproduce the ledger to the last entry is a failed drill.
 | Strategy | new intents from that strategy | closing existing positions |
 
 Arming is immediate and audited. Disarming requires a reason and, in live mode, 2FA.
+
+### 10.1 Paper strategy switch (implemented, P0)
+
+The paper slice implements only the **strategy** scope. The state is a row in
+`system_flags` keyed `engine_kill_switch`, seeded from `EZCHAIN_ENGINE_KILL_SWITCH` on
+first boot, so it survives a restart and is read by every process.
+
+```bash
+curl -s localhost:8000/api/v1/system/kill-switch
+
+curl -s -X POST localhost:8000/api/v1/system/kill-switch \
+  -H 'content-type: application/json' \
+  -d '{"active": true, "reason": "venue incident"}'
+```
+
+- `POST` returns `{active, reason, updated_at, scope: "strategy"}`. `updated_at` is the
+  audit timestamp; there is **no authentication yet**, so the actor is not recorded.
+  Keep the endpoint on a trusted network until ops adds auth.
+- The engine checks the flag on every strategy-originated order. When armed, the run log
+  records `hold` / `KILL_SWITCH_ACTIVE` with the attempted action and amount, and the
+  strategy's interval window is **not** consumed — releasing the switch retries on the
+  next tick.
+- Manual paper orders have no `strategy_id` and remain allowed. Existing positions are
+  not sold by the switch; close them deliberately.
+- Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.

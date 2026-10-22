@@ -150,6 +150,16 @@ class StrategyRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
+class SystemFlagRow(Base):
+    """Small persisted operator switches. Values are JSON so a flag can grow fields."""
+
+    __tablename__ = "system_flags"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class MarketSnapshotRow(Base):
     __tablename__ = "market_snapshots"
     __table_args__ = (

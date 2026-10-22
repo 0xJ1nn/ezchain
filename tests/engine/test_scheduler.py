@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import pytest
 from helpers import CHAIN, TOKEN, make_snapshot
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,7 +15,14 @@ from ezchain_api.models import LedgerEntryRow, StrategyRow, StrategyRunRow
 from ezchain_api.services.strategies import MissingOrderExecutor
 from ezchain_core.ledger import position_account
 from ezchain_core.types import OrderRequest, TokenSnapshot
-from ezchain_engine import StrategyScheduler, evaluate_strategy, idempotency_key, position_state
+from ezchain_engine import (
+    ExecutionBlocked,
+    KillSwitchExecutor,
+    StrategyScheduler,
+    evaluate_strategy,
+    idempotency_key,
+    position_state,
+)
 from ezchain_engine.engine import should_run
 
 
@@ -300,6 +308,90 @@ async def test_missing_executor_is_explicit(
     assert result.reason == "ORDER_EXECUTOR_UNAVAILABLE"
     assert result.order_id is None
     assert get_strategy(session_factory, strategy_id).last_run_at is None
+
+
+async def test_kill_switch_blocks_strategy_order_and_logs_a_hold(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    strategy_id = add_strategy()
+    inner = FakeExecutor()
+    guard = KillSwitchExecutor(inner, lambda: True)
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+
+    result = await run_once(session_factory, strategy_id, FakeSource(), guard, now=now)
+
+    assert result.action == "hold"
+    assert result.reason == "KILL_SWITCH_ACTIVE"
+    assert result.order_id is None
+    assert result.run_id is not None
+    assert result.inputs["attempted_action"] == "buy"
+    assert Decimal(str(result.inputs["attempted_amount_usd"])) == Decimal("100")
+    assert inner.requests == []
+    # The window is not consumed: releasing the switch retries immediately.
+    assert get_strategy(session_factory, strategy_id).last_run_at is None
+    rows = runs_for(session_factory, strategy_id)
+    assert len(rows) == 1
+    assert rows[0].action == "hold"
+    assert rows[0].reason == "KILL_SWITCH_ACTIVE"
+
+
+async def test_releasing_the_kill_switch_restores_execution(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    strategy_id = add_strategy()
+    inner = FakeExecutor(order_id="ord-after-release")
+    active = {"on": True}
+    guard = KillSwitchExecutor(inner, lambda: active["on"])
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+
+    blocked = await run_once(session_factory, strategy_id, FakeSource(), guard, now=now)
+    assert blocked.reason == "KILL_SWITCH_ACTIVE"
+
+    active["on"] = False
+    allowed = await run_once(
+        session_factory, strategy_id, FakeSource(), guard, now=now + timedelta(minutes=1)
+    )
+    assert allowed.action == "buy"
+    assert allowed.order_id == "ord-after-release"
+    assert len(inner.requests) == 1
+    assert as_utc(get_strategy(session_factory, strategy_id).last_run_at) == now + timedelta(
+        minutes=1
+    )
+
+
+async def test_kill_switch_allows_manual_orders(
+    session_factory: sessionmaker[Session],
+) -> None:
+    inner = FakeExecutor(order_id="manual-order")
+    guard = KillSwitchExecutor(inner, lambda: True)
+    manual = OrderRequest(
+        chain=CHAIN,
+        token_address=TOKEN,
+        side="buy",
+        amount_usd=Decimal("10"),
+        idempotency_key="manual-key-1",
+    )
+
+    assert await guard.place_order(manual) == "manual-order"
+    assert inner.requests == [manual]
+
+
+async def test_kill_switch_raises_execution_blocked_for_strategy_orders(
+    session_factory: sessionmaker[Session],
+) -> None:
+    guard = KillSwitchExecutor(FakeExecutor(), lambda: True)
+    strategy_order = OrderRequest(
+        chain=CHAIN,
+        token_address=TOKEN,
+        side="buy",
+        amount_usd=Decimal("10"),
+        idempotency_key="strategy-key-1",
+        strategy_id="strategy-1",
+    )
+
+    with pytest.raises(ExecutionBlocked) as raised:
+        await guard.place_order(strategy_order)
+    assert raised.value.code == "KILL_SWITCH_ACTIVE"
 
 
 async def test_invalid_persisted_params_are_reported(

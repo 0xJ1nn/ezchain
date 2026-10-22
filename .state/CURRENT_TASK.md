@@ -25,3 +25,10 @@ paper account; its equity chart and open-position tiles remain fixture-preview.
 **Next:** P0.7 dashboard history/tiles (#57), engine boundary (#58), EVM venue (#59) and
 the evidence pack (#60). Then M1 wallets (#10) on a new branch. Do not start live execution
 or key custody without an ADR and the paper gate.
+
+**Hardening (#64, `feat/paper-hardening`):** strategy delete now cascades its run log in
+one transaction, `GET /paper/reconciliation` reports ledger/fill/order integrity read-only,
+and a persisted strategy-scoped kill switch (`/api/v1/system/kill-switch`) blocks
+strategy-originated execution while manual paper orders remain available. Concurrent
+run-now/scheduler evaluation is covered by a regression test that relies on the order
+idempotency key, not a process lock.

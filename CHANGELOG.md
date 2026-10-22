@@ -17,6 +17,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   all derived from append-only ledger entries.
 - User-defined declarative strategies (momentum, dip, DCA, threshold), pause/resume,
   run-now, interval gate and an append-only run log.
+- Read-only paper reconciliation (`GET /api/v1/paper/reconciliation`): journal balance,
+  cash replay, position sign, fill/order integrity and `quote_kind` counts, all derived
+  from persisted rows.
+- Persisted strategy-scoped operator kill switch (`/api/v1/system/kill-switch`); armed
+  switches block strategy-originated orders, log a hold, and keep manual paper orders
+  available.
 - Live web surfaces: markets, token page with paper ticket, positions and strategies;
   `EZCHAIN_WEB_MODE=fixture` keeps Playwright deterministic and labelled.
 - Python setup/dev scripts (`tools/setup-python.sh`, `tools/dev.sh`) and pytest coverage
@@ -51,6 +57,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
   still apply to sells (#65, PR #66).
 - Position-tile charts no longer widen the page at 390 px (#23).
+- Deleting a strategy now removes its `strategy_runs` rows and the strategy in one
+  transaction instead of failing on the foreign key; historical orders keep their
+  `strategy_id` string. Pause instead of deleting when the decision log must be retained.
+- Concurrent run-now and scheduler evaluation of one strategy is resolved by the existing
+  order idempotency key: at most one order and one fill per window.
 - Dashboard bank activity and the position-tile peak now agree with the token fixture;
   a cross-page test guards the constants (#38).
 - DexScreener token lookup now resolves the requested side (base or quote) and derives a

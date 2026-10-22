@@ -39,6 +39,16 @@ class ExecutorUnavailable(RuntimeError):
     """Raised by composition when no paper order service has been wired yet."""
 
 
+class ExecutionBlocked(RuntimeError):
+    """Raised when an operator switch stops strategy-originated execution.
+
+    The evaluation layer turns this into a logged ``hold`` without consuming the
+    strategy's decision window, so releasing the switch does not wait one interval.
+    """
+
+    code = "KILL_SWITCH_ACTIVE"
+
+
 @runtime_checkable
 class TokenSource(Protocol):
     """The only market-data call the engine needs."""
@@ -55,6 +65,25 @@ class OrderExecutor(Protocol):
     """
 
     async def place_order(self, request: OrderRequest) -> str: ...
+
+
+class KillSwitchExecutor:
+    """Decorate an order executor with the persisted operator kill switch.
+
+    The check runs per order, so arming takes effect immediately and survives a
+    restart without restarting the process. Manual paper orders (``strategy_id``
+    is ``None``) stay allowed: the switch scope is strategy-originated execution.
+    The guard holds no locks, so it is safe across processes.
+    """
+
+    def __init__(self, inner: OrderExecutor, is_active: Callable[[], bool]) -> None:
+        self._inner = inner
+        self._is_active = is_active
+
+    async def place_order(self, request: OrderRequest) -> str:
+        if request.strategy_id is not None and self._is_active():
+            raise ExecutionBlocked("strategy execution is blocked by the operator kill switch")
+        return await self._inner.place_order(request)
 
 
 @dataclass(frozen=True)
@@ -266,6 +295,21 @@ async def evaluate_strategy(
         )
         try:
             order_id = await order_executor.place_order(request)
+        except ExecutionBlocked as exc:
+            logger.warning("strategy %s execution blocked: %s", strategy.id, exc)
+            blocked = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "KILL_SWITCH_ACTIVE",
+                {
+                    **decision.inputs,
+                    "attempted_action": decision.action,
+                    "attempted_amount_usd": str(decision.amount_usd),
+                    "error_code": exc.code,
+                },
+            )
+            row = _record(session, strategy, blocked, now=now, touch_last_run=False)
+            return _result(strategy, blocked, row)
         except ExecutorUnavailable as exc:
             logger.warning("strategy %s cannot execute: %s", strategy.id, exc)
             failed = StrategyDecision(
@@ -391,6 +435,9 @@ class StrategyScheduler:
 
 
 __all__ = [
+    "ExecutionBlocked",
+    "ExecutorUnavailable",
+    "KillSwitchExecutor",
     "OrderExecutor",
     "RunResult",
     "StrategyScheduler",
