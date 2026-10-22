@@ -1,8 +1,12 @@
 """Declarative, user-defined strategies. No arbitrary code execution.
 
-A strategy is a row of typed parameters plus one of four fixed rule kinds. There is no
+A strategy is a row of typed parameters plus one of five fixed rule kinds. There is no
 plugin loading and no ``eval``: the same inputs always produce the same decision, so every
 run can be replayed from the persisted snapshot and position.
+
+``graph`` is the visual rule set from ``docs/STRATEGY-GRAPH.md``. Its parameters carry the
+validated document; the evaluator itself lives in :mod:`ezchain_core.graph`, so this module
+only parses and checks it.
 """
 
 from __future__ import annotations
@@ -13,6 +17,8 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
+from .graph.schema import GraphDocument, GraphSchemaError, parse_document
+from .graph.validate import validate as validate_graph
 from .types import StrategyKind, TokenSnapshot
 
 Action = Literal["buy", "sell", "hold"]
@@ -143,7 +149,14 @@ class ThresholdParams(StrategyParams):
     sell_above_usd: Decimal
 
 
-AnyParams = MomentumParams | DipParams | DCAParams | ThresholdParams
+@dataclass(frozen=True)
+class GraphParams(StrategyParams):
+    """A validated graph document plus the shared sizing/interval fields."""
+
+    document: GraphDocument
+
+
+AnyParams = MomentumParams | DipParams | DCAParams | ThresholdParams | GraphParams
 
 _COMMON_KEYS = {"order_usd", "interval_minutes", "max_position_usd"}
 _EXIT_KEYS = {"take_profit_pct", "stop_loss_pct"}
@@ -223,6 +236,27 @@ def validate_params(kind: StrategyKind, params: Mapping[str, Any] | None) -> Any
             max_position_usd=max_position,
             buy_below_usd=buy_below,
             sell_above_usd=sell_above,
+        )
+
+    if kind == "graph":
+        # ``order_usd`` stays allowed (the shared column) but a graph sizes its own orders.
+        _reject_unknown(params, _COMMON_KEYS | {"graph"})
+        raw_graph = params.get("graph")
+        if raw_graph is None:
+            raise StrategyValidationError("STRATEGY_GRAPH_INVALID", "graph is required")
+        try:
+            document = parse_document(raw_graph)
+        except GraphSchemaError as exc:
+            raise StrategyValidationError("STRATEGY_GRAPH_INVALID", exc.message) from exc
+        report = validate_graph(document)
+        if not report.ok:
+            details = "; ".join(f"{issue.code}: {issue.message}" for issue in report.errors)
+            raise StrategyValidationError("STRATEGY_GRAPH_INVALID", details)
+        return GraphParams(
+            order_usd=order_usd,
+            interval_minutes=interval,
+            max_position_usd=max_position,
+            document=document,
         )
 
     raise StrategyValidationError("STRATEGY_KIND_UNSUPPORTED", f"unsupported kind: {kind}")
@@ -339,6 +373,11 @@ def evaluate_strategy(
     if spec.status != "active":
         return StrategyDecision("hold", Decimal(0), "PAUSED", {})
 
+    if spec.kind == "graph":
+        # A graph needs candles, position and account state, which this snapshot-only
+        # entry point does not carry. The engine calls ``evaluate_graph`` directly.
+        return StrategyDecision("hold", Decimal(0), "GRAPH_NEEDS_CONTEXT", {})
+
     price = snapshot.price_usd
     if price is None:
         return StrategyDecision("hold", Decimal(0), "PRICE_UNKNOWN", {})
@@ -346,6 +385,9 @@ def evaluate_strategy(
         return StrategyDecision("hold", Decimal(0), "MARK_STALE", {})
 
     params = spec.typed_params
+    if isinstance(params, GraphParams):  # pragma: no cover - the kind check above returned
+        return StrategyDecision("hold", Decimal(0), "GRAPH_NEEDS_CONTEXT", {})
+
     position_value = position_quantity * price
 
     unrealized_pct: Decimal | None = None

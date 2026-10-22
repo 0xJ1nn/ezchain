@@ -14,7 +14,7 @@ from typing import Any, Literal
 Mode = Literal["paper", "live"]
 Side = Literal["buy", "sell"]
 QuoteKind = Literal["jupiter", "paper_mark"]
-StrategyKind = Literal["momentum", "dip", "dca", "threshold"]
+StrategyKind = Literal["momentum", "dip", "dca", "threshold", "graph"]
 StrategyStatus = Literal["active", "paused"]
 
 
