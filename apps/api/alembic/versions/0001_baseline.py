@@ -40,6 +40,13 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_ledger_entries_group_id"), "ledger_entries", ["group_id"], unique=False
     )
+    op.create_index(
+        "uq_ledger_genesis_account",
+        "ledger_entries",
+        ["group_id", "account"],
+        unique=True,
+        postgresql_where=sa.text("group_id = 'genesis'"),
+    )
     op.create_table(
         "market_snapshots",
         sa.Column("id", sa.String(length=36), nullable=False),

@@ -63,7 +63,12 @@ def ensure_genesis(session: Session, starting_cash_usd: Decimal) -> None:
         return
     for entry in genesis_entries(starting_cash_usd):
         session.add(LedgerEntryRow(**entry.to_row(GENESIS_GROUP)))
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # A concurrent first boot won the partial unique index. Its genesis is the
+        # only one; this transaction wrote nothing.
+        session.rollback()
 
 
 def _aware(value: datetime | None) -> datetime | None:
