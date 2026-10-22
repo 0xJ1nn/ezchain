@@ -470,3 +470,28 @@ fails closed. Chains GeckoTerminal does not index report `CANDLES_UNSUPPORTED_CH
 The candle source is a third-party index, not the chain; backtests name it in their
 result. A future `services/ingest` (M2) can replace or cross-check the source behind the
 same table.
+
+---
+
+## ADR-0025 — Paper fills use real per-chain aggregator quotes where a free source exists
+
+**Date:** 2026-10-22 · **Status:** Accepted (supersedes ADR-0020 for chains with a quote
+provider)
+
+**Context:** ADR-0020 priced every non-Solana paper fill at a DexScreener mark with no
+impact, route or gas. Paper results on EVM chains were therefore optimistic in exactly the
+places traders lose money (thin pools, sells, gas). Keyless aggregator quotes now exist for
+most chains (KyberSwap, Velora, LI.FI, Cetus, STON.fi, Osmosis SQS), verified 2026-10-22.
+
+**Decision:** each chain declares an ordered `quote_providers` ladder in the adapter
+registry; a `QuoteRouter` in `packages/adapters` tries them in order with per-provider rate
+limits, caching and circuit breakers. Sells are quoted in the sell direction by quantity;
+a buy needs a full-size sell route. Buys whose price impact exceeds
+`max_price_impact_pct` are rejected `PRICE_IMPACT_TOO_HIGH`; sells never are. The fill fee
+is the larger of the configured paper fee and the quote's declared fees + gas. Chains with no
+free provider keep the capped `paper_mark` of ADR-0020. The API never names a chain.
+
+**Consequences:** paper PnL on 20+ chains reflects impact, fees and gas. Third-party quote
+APIs become a dependency of the paper path; when every provider in a ladder is down the
+order fails closed (`NO_ROUTE`/`UPSTREAM_UNREACHABLE`), never falls back to a mark silently.
+LI.FI's tight free budget makes it a last resort. `live_execute` stays false everywhere.
