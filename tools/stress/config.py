@@ -39,6 +39,7 @@ class RunConfig:
     token: str | None = None
     token_symbol: str | None = None
     order_usd: Decimal = Decimal("1")
+    strategy_order_usd: Decimal = Decimal("1")
     strategy_kind: str = "dca"
     report_dir: Path = DEFAULT_REPORT_DIR
     file_issues: bool = False
@@ -71,6 +72,15 @@ class RunConfig:
                 raise ConfigError("--order-usd must be a decimal") from exc
         if not self.order_usd.is_finite() or self.order_usd <= 0:
             raise ConfigError("--order-usd must be a positive finite decimal")
+        if not isinstance(self.strategy_order_usd, Decimal):
+            try:
+                object.__setattr__(
+                    self, "strategy_order_usd", Decimal(str(self.strategy_order_usd))
+                )
+            except (InvalidOperation, ValueError) as exc:
+                raise ConfigError("--strategy-order-usd must be a decimal") from exc
+        if not self.strategy_order_usd.is_finite() or self.strategy_order_usd <= 0:
+            raise ConfigError("--strategy-order-usd must be a positive finite decimal")
         if self.token is not None:
             object.__setattr__(self, "token", self.token.strip() or None)
         if self.chain is not None:

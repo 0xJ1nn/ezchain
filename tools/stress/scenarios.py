@@ -37,6 +37,7 @@ from .checks import (
     check_quote,
     check_strategy,
     check_strategy_run,
+    check_strategy_run_orders,
     check_token,
 )
 from .config import RunConfig
@@ -417,12 +418,12 @@ def _market_checks(harness: Harness, token: ResolvedToken, *, scenario: str) -> 
         harness.skip_invariant("quote.shape")
 
 
-def _strategy_params(kind: str, price: Decimal | None) -> dict[str, object]:
+def _strategy_params(kind: str, price: Decimal | None, order_usd: Decimal) -> dict[str, object]:
     reference = price if price is not None and price > 0 else Decimal("1")
     common: dict[str, object] = {
-        "order_usd": "1",
+        "order_usd": str(order_usd),
         "interval_minutes": 1,
-        "max_position_usd": "10",
+        "max_position_usd": str(max(order_usd * 10, Decimal("10"))),
     }
     if kind == "dca":
         return common
@@ -478,7 +479,9 @@ def _strategy_lifecycle(harness: Harness, token: ResolvedToken, *, scenario: str
         "token_address": token.address,
         "token_symbol": token.symbol or "STRESS",
         "kind": harness.config.strategy_kind,
-        "params": _strategy_params(harness.config.strategy_kind, token.price_usd),
+        "params": _strategy_params(
+            harness.config.strategy_kind, token.price_usd, harness.config.strategy_order_usd
+        ),
         "status": "active",
     }
     created = harness.request(
@@ -600,6 +603,11 @@ def _strategy_lifecycle(harness: Harness, token: ResolvedToken, *, scenario: str
         runs_response = harness.request("GET", f"{path}/runs", scenario=scenario)
         runs = harness.json_list(runs_response, scenario=scenario, label="strategy runs") or []
         harness.add_findings(check_strategy_run(runs, scenario=scenario))
+        orders_response = harness.request(
+            "GET", "/api/v1/paper/orders?limit=200", scenario=scenario
+        )
+        orders = harness.json_list(orders_response, scenario=scenario, label="paper orders") or []
+        harness.add_findings(check_strategy_run_orders(runs, orders, scenario=scenario))
     finally:
         _delete_strategy(harness, strategy_id, scenario=scenario)
         gone = harness.request(

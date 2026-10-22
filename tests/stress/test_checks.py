@@ -16,6 +16,7 @@ from tools.stress.checks import (
     check_quote,
     check_reconciliation,
     check_strategy_run,
+    check_strategy_run_orders,
     check_token,
     percentiles,
     self_test,
@@ -298,6 +299,48 @@ def test_chain_token_and_quote_shapes() -> None:
     }
     assert check_quote(quote, scenario="t") == []
     assert check_quote({**quote, "price": "0"}, scenario="t")
+
+
+def test_market_unknown_liquidity_is_allowed_but_not_negative() -> None:
+    payload = {
+        "rows": [
+            {
+                "chain": "base",
+                "pair_address": "0xpair",
+                "base_token": "0xtoken",
+                "symbol": "TKN",
+                "price_usd": "1",
+                "liquidity_usd": None,
+                "source": {"name": "dexscreener", "observed_at": "2026-01-01T00:00:00+00:00"},
+            }
+        ],
+        "source": {"name": "dexscreener", "observed_at": "2026-01-01T00:00:00+00:00"},
+        "stale": False,
+    }
+    assert check_markets(payload, scenario="t") == []
+    payload["rows"][0]["liquidity_usd"] = "-1"
+    findings = check_markets(payload, scenario="t")
+    assert [f.invariant for f in findings] == ["markets.shape"]
+
+
+def test_strategy_run_claiming_a_trade_needs_a_filled_order() -> None:
+    runs = [{"id": "r1", "action": "sell", "order_id": "o1"}]
+    filled = [order("o1", status="filled")]
+    assert check_strategy_run_orders(runs, filled, scenario="t") == []
+
+    rejected = [order("o1", status="rejected")]
+    findings = check_strategy_run_orders(runs, rejected, scenario="t")
+    assert [f.invariant for f in findings] == ["strategy.run_order_filled"]
+    assert findings[0].code == "STRATEGY_RUN_ORDER_NOT_FILLED"
+    assert "rejected" in findings[0].actual
+
+    missing = check_strategy_run_orders(runs, [], scenario="t")
+    assert missing[0].code == "STRATEGY_RUN_ORDER_MISSING"
+
+
+def test_strategy_hold_does_not_need_an_order() -> None:
+    runs = [{"id": "r1", "action": "hold", "order_id": None}]
+    assert check_strategy_run_orders(runs, [], scenario="t") == []
 
 
 def test_strategy_run_log_must_not_be_empty() -> None:

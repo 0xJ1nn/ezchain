@@ -129,6 +129,7 @@ def build_report(
         "token_address": token_address,
         "token_symbol": token_symbol,
         "order_usd": str(config.order_usd),
+        "strategy_order_usd": str(config.strategy_order_usd),
         "strategy_kind": config.strategy_kind,
         "command": command,
         "git_commit": commit,

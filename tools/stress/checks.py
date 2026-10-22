@@ -8,6 +8,7 @@ expected/actual text and optional evidence.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -41,7 +42,11 @@ ACCOUNT_INVARIANTS = (
     "account.equity_matches",
 )
 MARKET_INVARIANTS = ("markets.shape", "chains.shape", "token.shape", "quote.shape")
-STRATEGY_INVARIANTS = ("strategies.crud", "strategy.run_log_non_empty")
+STRATEGY_INVARIANTS = (
+    "strategies.crud",
+    "strategy.run_log_non_empty",
+    "strategy.run_order_filled",
+)
 RECONCILIATION_INVARIANTS = ("reconciliation.ok",)
 HTTP_INVARIANTS = ("http.no_unexpected_5xx", "http.no_connection_errors")
 LATENCY_INVARIANTS = (
@@ -577,6 +582,64 @@ def check_strategy_run(
     ]
 
 
+def check_strategy_run_orders(
+    runs: Sequence[Mapping[str, object]],
+    orders: Sequence[Mapping[str, object]],
+    *,
+    scenario: str,
+) -> list[Finding]:
+    """A run that claims a buy/sell must point at a filled order.
+
+    A rejected order is a decision, not an execution. Reporting ``action=buy`` with a
+    rejected order id makes the decision log claim a trade that never happened.
+    """
+    order_by_id = {
+        order_id: order for order in orders if (order_id := _text(order.get("id"))) is not None
+    }
+    findings: list[Finding] = []
+    for run in runs:
+        action = _text(run.get("action"))
+        order_id = _text(run.get("order_id"))
+        if action not in {"buy", "sell"} or order_id is None:
+            continue
+        order = order_by_id.get(order_id)
+        if order is None:
+            findings.append(
+                Finding(
+                    code="STRATEGY_RUN_ORDER_MISSING",
+                    scenario=scenario,
+                    invariant="strategy.run_order_filled",
+                    summary=f"strategy run {run.get('id')!r} references an order outside history",
+                    expected="order id present in GET /paper/orders",
+                    actual=order_id,
+                )
+            )
+            continue
+        status = _text(order.get("status"))
+        if status != "filled":
+            findings.append(
+                Finding(
+                    code="STRATEGY_RUN_ORDER_NOT_FILLED",
+                    scenario=scenario,
+                    invariant="strategy.run_order_filled",
+                    summary=(f"strategy run claims {action} but order {order_id} is {status!r}"),
+                    expected="a filled order when the run action is buy/sell",
+                    actual=f"status={status!r} reason={order.get('reason')!r}",
+                    evidence=json.dumps(
+                        {
+                            "run_id": run.get("id"),
+                            "action": action,
+                            "order_id": order_id,
+                            "order_status": status,
+                            "order_reason": order.get("reason"),
+                        },
+                        sort_keys=True,
+                    ),
+                )
+            )
+    return findings
+
+
 def check_strategy(
     strategy: Mapping[str, object],
     *,
@@ -878,16 +941,19 @@ def check_markets(payload: Mapping[str, object], *, scenario: str) -> list[Findi
                     actual=repr(row.get("price_usd")),
                 )
             )
-        liquidity = _decimal(row.get("liquidity_usd"))
-        if liquidity is None or liquidity < 0:
+        raw_liquidity = row.get("liquidity_usd")
+        liquidity = _decimal(raw_liquidity)
+        # Unknown liquidity is null by contract, never zero. Only reject a non-null
+        # value that is malformed, negative or non-finite.
+        if raw_liquidity is not None and (liquidity is None or liquidity < 0):
             findings.append(
                 Finding(
                     code="MARKET_SHAPE",
                     scenario=scenario,
                     invariant="markets.shape",
                     summary=f"market row {index} has an invalid liquidity",
-                    expected="non-negative finite liquidity_usd",
-                    actual=repr(row.get("liquidity_usd")),
+                    expected="null or non-negative finite liquidity_usd",
+                    actual=repr(raw_liquidity),
                 )
             )
         findings.extend(

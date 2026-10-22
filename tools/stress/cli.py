@@ -47,6 +47,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--token", default=None, help="token address; requires --chain")
     parser.add_argument("--token-symbol", default=None)
     parser.add_argument("--order-usd", default="1", help="paper notional per order")
+    parser.add_argument(
+        "--strategy-order-usd",
+        default="1",
+        help="paper notional used by the strategy scenario (default: 1)",
+    )
     parser.add_argument("--strategy-kind", choices=STRATEGY_KINDS, default="dca")
     parser.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR))
     parser.add_argument(
@@ -123,10 +128,15 @@ def build_config(args: argparse.Namespace) -> RunConfig:
     mode = _str_arg(args, "mode")
     duration_override = _optional_float_arg(args, "duration")
     order_raw = _str_arg(args, "order_usd")
+    strategy_order_raw = _str_arg(args, "strategy_order_usd")
     try:
         order_usd = Decimal(order_raw)
     except (InvalidOperation, ValueError) as exc:
         raise ConfigError("--order-usd must be a decimal") from exc
+    try:
+        strategy_order_usd = Decimal(strategy_order_raw)
+    except (InvalidOperation, ValueError) as exc:
+        raise ConfigError("--strategy-order-usd must be a decimal") from exc
     return RunConfig(
         base_url=_str_arg(args, "base_url"),
         mode=mode,
@@ -137,6 +147,7 @@ def build_config(args: argparse.Namespace) -> RunConfig:
         token=_optional_str_arg(args, "token"),
         token_symbol=_optional_str_arg(args, "token_symbol"),
         order_usd=order_usd,
+        strategy_order_usd=strategy_order_usd,
         strategy_kind=_str_arg(args, "strategy_kind"),
         report_dir=Path(_str_arg(args, "report_dir")),
         file_issues=_bool_arg(args, "file_issues"),
