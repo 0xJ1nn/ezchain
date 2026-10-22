@@ -59,6 +59,7 @@ def _snapshot() -> TokenSnapshot:
             ),
         ),
         source=SourceRef("dexscreener", "https://dexscreener.com", datetime.now(UTC)),
+        pair_created_at=datetime(2020, 1, 1, tzinfo=UTC),
     )
 
 

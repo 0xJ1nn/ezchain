@@ -1,0 +1,65 @@
+"""Preflight safety: non-paper mode is refused before any mutation."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from tools.stress.scenarios import PreflightError, preflight
+
+
+class FakeResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+class FakeHarness:
+    def __init__(self, account_mode: object) -> None:
+        self.account_mode = account_mode
+        self.requests: list[str] = []
+        self.invariants: list[str] = []
+        self.findings: list[Any] = []
+
+    def request(self, method: str, path: str, *, scenario: str) -> FakeResponse:
+        self.requests.append(path)
+        return FakeResponse(200)
+
+    def json_object(
+        self, response: FakeResponse | None, *, scenario: str, label: str
+    ) -> dict[str, object]:
+        if label == "health":
+            return {"status": "ok", "db": "ok"}
+        return {
+            "cash_usd": "10000",
+            "equity_usd": "10000",
+            "realized_usd": "0",
+            "unrealized_usd": "0",
+            "positions": [],
+            "mode": self.account_mode,
+        }
+
+    def register_invariants(self, *identifiers: str) -> None:
+        self.invariants.extend(identifiers)
+
+    def add_findings(self, findings: object) -> None:
+        self.findings.append(findings)
+
+
+def test_refuses_live_mode_before_mutating() -> None:
+    harness = FakeHarness("live")
+    with pytest.raises(PreflightError, match="REFUSING_NON_PAPER"):
+        preflight(harness)  # type: ignore[arg-type]
+    assert harness.requests == ["/health", "/api/v1/paper/account"]
+    assert harness.invariants == []
+
+
+def test_refuses_missing_mode() -> None:
+    with pytest.raises(PreflightError, match="REFUSING_NON_PAPER"):
+        preflight(FakeHarness(None))  # type: ignore[arg-type]
+
+
+def test_accepts_exact_paper_mode() -> None:
+    harness = FakeHarness("paper")
+    preflight(harness)  # type: ignore[arg-type]
+    assert harness.invariants == ["preflight.health", "preflight.paper_mode"]
+    assert harness.requests == ["/health", "/api/v1/paper/account"]

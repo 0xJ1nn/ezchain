@@ -94,7 +94,10 @@ services:
       migrate: { condition: service_completed_successfully }
     healthcheck:
       <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      # Readiness, not liveness: web must not start until the schema is at head and
+      # Postgres is reachable. The Dockerfile HEALTHCHECK remains /healthz for plain
+      # container runtimes that only need a liveness probe.
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/readyz')"]
     deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
     logging: *logging
     networks: [data, app]

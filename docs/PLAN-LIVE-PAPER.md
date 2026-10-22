@@ -135,6 +135,8 @@ token quantities need precision.
 - Max daily realized loss `$500`, enforced as a new-entry block (sells stay available);
   max strategy budget `$2,500`.
 - Quote age `<= 60s`; liquidity `>= $10,000`; pair age `>= 10 minutes`.
+- The deepest pair decides pair age. If the source omits `pairCreatedAt`, a buy is denied
+  `PAIR_AGE_UNKNOWN` (fail closed); sells stay available. Some DEX pairs omit it.
 - Solana buy requires a sell route; non-Solana buy requires `paper_mark` and the $250 cap.
 - Order-size, paper-mark-size, position-size, open-position and daily-loss limits gate
   **new risk only (buys)**. A sell is always allowed to reduce exposure; the fail-closed
@@ -163,6 +165,12 @@ token quantities need precision.
   schema has no `strategy_id`, and the service rejects any internal order that still
   claims strategy attribution before a quote. There is no authentication yet; the
   endpoint is for a trusted network until ops adds auth.
+- **A rejected order is not a trade.** If the paper order service persists `rejected`,
+  the engine records `hold` / `ORDER_REJECTED` with the attempted action, attempted
+  amount, order id and order reason. It never logs a `buy`/`sell` action for a fill that
+  did not happen. The interval window is not consumed, so a persistently rejected
+  strategy remains due and writes one hold per scheduler tick until its params change;
+  that is deliberate visibility, not a silent retry loop.
 - **Strategy deletion is a cascade with an audit trade-off** (ADR-0022). Deleting a
   strategy removes its `strategy_runs` decision log and the strategy in one transaction;
   historical `paper_orders.strategy_id` stays as an opaque string. The execution trail is

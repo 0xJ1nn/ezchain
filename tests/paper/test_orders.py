@@ -60,6 +60,20 @@ def test_unknown_liquidity_is_rejected(session, settings, dex, jupiter) -> None:
     assert order.reason == "LIQUIDITY_UNKNOWN"
 
 
+def test_unknown_pair_age_rejects_a_buy(session, settings, dex, jupiter) -> None:
+    dex.set(make_snapshot(pair_created_at=None))
+    order = place(session, settings, dex, jupiter, make_request(amount_usd="100", key="age-none"))
+    assert order.status == "rejected"
+    assert order.reason == "PAIR_AGE_UNKNOWN"
+
+
+def test_young_pair_rejects_a_buy(session, settings, dex, jupiter) -> None:
+    dex.set(make_snapshot(pair_created_at=utcnow() - timedelta(minutes=5)))
+    order = place(session, settings, dex, jupiter, make_request(amount_usd="100", key="age-young"))
+    assert order.status == "rejected"
+    assert order.reason == "PAIR_TOO_YOUNG"
+
+
 def test_low_liquidity_is_rejected(session, settings, dex, jupiter) -> None:
     dex.set(make_snapshot(price=Decimal("2000"), liquidity=Decimal("5000")))
     order = place(session, settings, dex, jupiter, make_request(amount_usd="100", key="liq-low"))

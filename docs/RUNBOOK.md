@@ -294,3 +294,37 @@ docker compose -f infra/compose.yaml --profile observability up -d prometheus
 Do not restart the stack in a loop while an order may be in flight; read the paper order
 and fill rows first. Strategy execution is blocked by the persisted kill switch (§10.1),
 which survives a restart.
+## 13. PAPER stress harness
+
+Use this before a paper demo or after changing the order, ledger, market or strategy path.
+It is PAPER-only and refuses a non-paper API before mutating anything.
+
+```bash
+tools/stress/run.sh --mode smoke --duration 30
+tools/stress/run.sh --mode soak --duration 300 --concurrency 4
+tools/stress/run.sh --mode idempotency --duration 60
+tools/stress/run.sh --mode chaos --duration 30
+```
+
+1. Confirm `GET /api/v1/paper/account` reports `mode: paper`. If not, the harness exits
+   `2` with `REFUSING_NON_PAPER`; do not bypass it.
+2. Read the newest Markdown report under `tools/stress/reports/` (gitignored). The JSON is
+   the comparison artifact: request counts, p50/p95/p99, invariant rows and at most five
+   failure samples.
+3. A failure is a red run: `0` pass, `1` invariant/HTTP/latency finding, `2` config or
+   safety refusal, `3` issue filing failed (report kept).
+4. To file deduplicated issues for a failing run, opt in explicitly:
+   `tools/stress/run.sh --mode soak --duration 300 --file-issues --repo owner/name`.
+   Re-runs skip fingerprints already present in open `stress` issues. Pass
+   `--dry-run-issues` to inspect payloads without calling `gh`.
+5. Set `--strategy-order-usd` above the risk limit (for example `1500`) to exercise a
+   rejected strategy order. The run must log `hold` / `ORDER_REJECTED`, never `buy`/`sell`
+   with a rejected order id; `strategy.run_order_filled` enforces this.
+6. Strategy cleanup is part of the run. If a strategy survives, the report records
+   `STRATEGY_CLEANUP_FAILED` and the run is red; delete it from the strategies page only
+   after recording why.
+7. Do not point the harness at a live-venue API or add auth/key options to it. Chaos never
+   kills processes or injects 5xx responses; it only retries an invalid path and an
+   unreachable loopback port.
+
+Details and scheduling examples: [`tools/stress/README.md`](../tools/stress/README.md).
