@@ -28,8 +28,12 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] P0.3 Momentum/dip/DCA/threshold evaluator + scheduler + run log.
 - [x] P0.4 Live markets/token pages + paper ticket.
 - [x] P0.5 Paper positions + strategy builder screens.
-- [ ] P0.6 failure drills: API down, 429, stale quote, DB down, restart; evidence.
-- [ ] P0.7 dashboard paper-account wiring; wallet/automation surfaces stay M1.
+- [x] P0.6 integration: full gate, live Jupiter/paper smoke, restart persistence,
+  API-down `UPSTREAM_UNREACHABLE`; evidence pack tracked in #60.
+- [x] P0.7 dashboard KPI band reads the live paper account.
+- [ ] P0.7b dashboard equity history and live open-position tiles (#57).
+- [ ] Engine repository boundary (#58).
+- [ ] EVM venue adapter to replace `paper_mark` (#59).
 
 Known P0 limits: non-Solana paper fills are capped `paper_mark`; no strategy PnL per row;
 no live execution. See `docs/PLAN-LIVE-PAPER.md`.

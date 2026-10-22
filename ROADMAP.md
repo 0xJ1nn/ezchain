@@ -19,7 +19,9 @@ run in paper mode. No keys, no live money. Full contract:
 - [x] P0.3 strategy engine: declarative momentum/dip/DCA/threshold rules.
 - [x] P0.4 web live markets and token pages.
 - [x] P0.5 web paper ticket and strategy builder.
-- [ ] P0.6 integration: live smoke, failure drills, docs and evidence.
+- [x] P0.6 integration: full gate, live smoke, restart/API-down drills, docs.
+- [ ] P0.7 follow-ups: dashboard equity history/tiles (#57), engine repository boundary
+  (#58), EVM venue (#59), evidence pack (#60).
 
 Exit: a user can browse live markets, place a paper buy/sell, see the ledger and position,
 create a strategy and watch it place paper orders. Every number carries source, age and

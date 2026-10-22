@@ -16,11 +16,12 @@ stale and no-route states fail closed; `bash tools/ci.sh` is green.
 **Verification:** `bash tools/ci.sh`, `pnpm --filter @ezchain/web test`, `.venv/bin/pytest`,
 `.venv/bin/ruff check`, `.venv/bin/mypy --strict`, live smoke in the PR.
 
-**State:** P0.0–P0.5 merged on `feat/live-paper-foundation` (PR #51): adapters #53, paper
-#54, engine #52, live web #55, paper/strategy web #56. Live smoke passes: markets, token,
-paper buy/sell, positions and a DCA strategy order on Solana; Base USDC paper-mark buy
-also passes. `bash tools/ci.sh` is green (203 Python + 31 Playwright tests at the last
-run). P0.6 failure drills, dashboard paper-account wiring and docs/evidence remain.
+**State:** P0 is merged to `main` (PR #51): adapters #53, paper #54, engine #52, live web
+#55, paper/strategy web #56. Live smoke passes: markets, token, paper buy/sell, positions
+and a DCA strategy order on Solana; Base USDC paper-mark buy also passes. `bash tools/ci.sh`
+is green on `main` (203 Python + 31 Playwright tests). Dashboard KPI band now reads the
+paper account; its equity chart and open-position tiles remain fixture-preview.
 
-**Next:** finish P0.6, merge PR #51 to `main`, then M1 wallets (#10) on a new branch.
-Do not start live execution or key custody without an ADR and the paper gate.
+**Next:** P0.7 dashboard history/tiles (#57), engine boundary (#58), EVM venue (#59) and
+the evidence pack (#60). Then M1 wallets (#10) on a new branch. Do not start live execution
+or key custody without an ADR and the paper gate.
