@@ -18,6 +18,7 @@ import {
 	type StrategyParams,
 	type StrategyRun,
 	type StrategyStatus,
+	formStrategyKinds,
 	strategyChains,
 	strategyKindMeta,
 	strategyParamFields,
@@ -91,7 +92,15 @@ function paramSummary(strategy: Strategy) {
 		case "dca":
 			return `order ${price(order)} · every ${interval ?? "—"}m · max ${price(max)}`;
 		case "threshold":
-			return `order ${price(order)} · buy ≤ ${price(paramNumber(strategy, "buy_below_usd"))} · sell ≥ ${price(paramNumber(strategy, "sell_above_usd"))} · every ${interval ?? "—"}m · max ${price(max)}`;
+			return `order ${price(paramNumber(strategy, "order_usd"))} · buy ≤ ${price(paramNumber(strategy, "buy_below_usd"))} · sell ≥ ${price(paramNumber(strategy, "sell_above_usd"))} · every ${interval ?? "—"}m · max ${price(max)}`;
+		case "graph": {
+			const graph = strategy.params.graph as unknown as
+				| { nodes?: unknown[]; edges?: unknown[] }
+				| undefined;
+			const nodes = Array.isArray(graph?.nodes) ? graph?.nodes.length : null;
+			const edges = Array.isArray(graph?.edges) ? graph?.edges.length : null;
+			return `graph ${nodes ?? "—"} nodes · ${edges ?? "—"} wires · every ${interval ?? "—"}m · max ${price(max)}`;
+		}
 		default:
 			return "—";
 	}
@@ -157,6 +166,15 @@ function fixtureDecision(strategy: Strategy): {
 				reason: `dca:interval elapsed · ${price(paramNumber(strategy, "order_usd"))} paper buy`,
 				inputs: { interval_minutes: strategy.params.interval_minutes, order_usd: strategy.params.order_usd },
 				order_id: `paper-${Date.now().toString(36)}`,
+			};
+		case "graph":
+			// The browser never evaluates a graph. A graph strategy runs through the
+			// documented evaluator; the builder's dry run is the safe way to inspect it.
+			return {
+				action: "hold",
+				reason: "graph:kind evaluated by the engine · use the builder dry run",
+				inputs: { kind: "graph" },
+				order_id: null,
 			};
 		case "threshold": {
 			const buyBelow = paramNumber(strategy, "buy_below_usd");
@@ -545,6 +563,11 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 											<ButtonLink href={`/strategies/${strategy.id}`} size="sm">
 												Open
 											</ButtonLink>
+											{strategy.kind === "graph" && (
+												<ButtonLink href={`/strategies/${strategy.id}/builder`} size="sm">
+													Builder
+												</ButtonLink>
+											)}
 											<button
 												className="btn sm"
 												type="button"
@@ -734,7 +757,7 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 						<div className="field">
 							<span className="label">Kind</span>
 							<div className={styles.kindGrid} role="group" aria-label="Strategy kind">
-								{(Object.keys(strategyKindMeta) as StrategyKind[]).map((kind) => {
+								{formStrategyKinds.map((kind) => {
 									const meta = strategyKindMeta[kind];
 									return (
 										<button
@@ -782,6 +805,9 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 							<button className="btn primary" type="submit" disabled={busy === "create"}>
 								{busy === "create" ? "Creating…" : "Create strategy"}
 							</button>
+							<Link className="btn" href="/strategies/builder">
+								Open the visual builder
+							</Link>
 							<span className="small muted">
 								{mode === "fixture"
 									? "Fixture session: nothing is sent to an API."

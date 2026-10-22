@@ -31,6 +31,9 @@ export default async function StrategiesPage() {
 					<Link className="btn" href="/backtests">
 						Backtests
 					</Link>
+					<Link className="btn" href="/strategies/builder">
+						New visual strategy
+					</Link>
 					<a className="btn primary" href="#new-strategy">
 						New strategy
 					</a>

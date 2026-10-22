@@ -110,6 +110,11 @@ export default async function StrategyDetailPage({
 					</Badge>
 					<Badge tone={paused ? "warn" : "ok"}>{paused ? "paused" : "active"}</Badge>
 					<Badge tone="ghost">PAPER</Badge>
+					{row.kind === "graph" && (
+						<ButtonLink href={`/strategies/${row.id}/builder`} size="sm">
+							Open builder
+						</ButtonLink>
+					)}
 					<ButtonLink href="/strategies" size="sm">
 						All strategies
 					</ButtonLink>
