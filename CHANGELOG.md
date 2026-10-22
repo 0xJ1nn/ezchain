@@ -70,6 +70,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   request budget.
 - Chain staleness now includes the last scan duration, so a slow pass does not make every
   chain look stale before the next pass.
+- Strategy runs now record `hold` / `ORDER_REJECTED` when the paper order service rejects
+  an order, instead of claiming a buy or sell that never filled. The rejected order id and
+  reason stay in the run inputs for diagnosis (#71).
 - The manual paper-order route no longer accepts strategy attribution; the order service
   also rejects strategy-attributed orders while the kill switch is armed, before quoting.
 - Concurrent first boots no longer fail when both processes seed the kill-switch row; the
