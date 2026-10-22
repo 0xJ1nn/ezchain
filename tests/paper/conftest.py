@@ -58,6 +58,7 @@ def make_snapshot(
     pairs: int = 1,
     chain: str = CHAIN,
     address: str = TOKEN,
+    pair_created_at: datetime | None = datetime(2020, 1, 1, tzinfo=UTC),
 ) -> TokenSnapshot:
     observed = observed_at or utcnow()
     pair_list = (
@@ -86,6 +87,7 @@ def make_snapshot(
         pairs=pair_list,
         source=SourceRef("dexscreener", "https://dexscreener.com", observed),
         stale=stale,
+        pair_created_at=pair_created_at,
     )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -105,6 +106,75 @@ def test_low_liquidity_denies(side: str) -> None:
     )
     assert allowed is False
     assert "LIQUIDITY_TOO_LOW" in reasons
+
+
+def test_buy_with_unknown_pair_age_denies() -> None:
+    allowed, reasons = evaluate(snapshot=make_snapshot(pair_created_at=None))
+    assert allowed is False
+    assert "PAIR_AGE_UNKNOWN" in reasons
+
+
+def test_sell_with_unknown_pair_age_is_allowed() -> None:
+    quote = make_quote(side="sell", amount_out="100", amount_in="100", kind="jupiter")
+    allowed, reasons = evaluate(
+        req=request(side="sell"),
+        quote=quote,
+        snapshot=make_snapshot(pair_created_at=None),
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_young_pair_is_denied_for_a_buy() -> None:
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(pair_created_at=utcnow() - timedelta(minutes=5))
+    )
+    assert allowed is False
+    assert "PAIR_TOO_YOUNG" in reasons
+
+
+def test_old_pair_is_allowed_for_a_buy() -> None:
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(pair_created_at=utcnow() - timedelta(hours=1))
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_naive_pair_created_at_is_treated_as_utc() -> None:
+    observed = utcnow()
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(
+            observed_at=observed,
+            pair_created_at=(observed - timedelta(hours=1)).replace(tzinfo=None),
+        )
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_non_utc_pair_created_at_uses_the_same_instant() -> None:
+    observed = utcnow()
+    offset = timezone(timedelta(hours=5, minutes=30))
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(
+            observed_at=observed,
+            pair_created_at=(observed - timedelta(hours=1)).astimezone(offset),
+        )
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_young_pair_does_not_block_a_sell() -> None:
+    quote = make_quote(side="sell", amount_out="100", amount_in="100", kind="jupiter")
+    allowed, reasons = evaluate(
+        req=request(side="sell"),
+        quote=quote,
+        snapshot=make_snapshot(pair_created_at=utcnow() - timedelta(minutes=5)),
+    )
+    assert allowed is True
+    assert reasons == ()
 
 
 @pytest.mark.parametrize("side", ["buy", "sell"])

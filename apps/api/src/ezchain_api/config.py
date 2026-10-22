@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     max_open_positions: int = 10
     max_daily_loss_usd: Decimal = Field(default=Decimal("500"))
     max_quote_age_seconds: int = 60
+    min_pair_age_minutes: int = 10
     min_liquidity_usd: Decimal = Field(default=Decimal("10000"))
     paper_mark_max_order_usd: Decimal = Field(default=Decimal("250"))
 

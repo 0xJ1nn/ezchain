@@ -66,6 +66,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - Deployment blueprint: compose services, Caddy edge, Prometheus alerts, OTel collector.
 - CI gates: agent stubs, design tokens, wireframe integrity, markdown links, secret scan,
   and the pnpm lint/typecheck/build/test runtime gate.
+- PAPER-only stress harness (`tools/stress/`): smoke, soak, idempotency and chaos modes,
+  pure invariant checks for orders/fills/positions/account, latency budgets, JSON+Markdown
+  evidence, and opt-in deduplicated GitHub issue filing by failure fingerprint.
+- `tools/stress/run.sh` (venv-aware), `tools/stress/README.md` with cron/launchd examples,
+  and pytest coverage for the pure checkers and issue dedupe.
 
 ### Changed
 
@@ -90,12 +95,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   request budget.
 - Chain staleness now includes the last scan duration, so a slow pass does not make every
   chain look stale before the next pass.
+- The documented pair-age gate is enforced for paper buys: `PAIR_AGE_UNKNOWN` when the
+  source omits creation time and `PAIR_TOO_YOUNG` below `EZCHAIN_MIN_PAIR_AGE_MINUTES`
+  (default 10). Sells stay exempt so an exit is never blocked (#67).
+- Strategy runs now record `hold` / `ORDER_REJECTED` when the paper order service rejects
+  an order, instead of claiming a buy or sell that never filled. The rejected order id and
+  reason stay in the run inputs for diagnosis (#71).
 - The manual paper-order route no longer accepts strategy attribution; the order service
   also rejects strategy-attributed orders while the kill switch is armed, before quoting.
 - Concurrent first boots no longer fail when both processes seed the kill-switch row; the
   loser rolls back and reads the winner.
 - Reconciliation cash is checked against genesis plus persisted fill cash flow instead of
   a tautological replay; disarming the kill switch now requires a reason (422).
+- The web strategy builder's DCA and dip vocabularies now match the server validator:
+  DCA no longer offers take-profit/stop-loss and dip no longer offers `exit_change_pct`.
+  Creating either strategy no longer returns `STRATEGY_PARAM_UNKNOWN` (#73).
 - Paper sells are no longer blocked by order-size, paper-mark-size or daily-loss limits;
   those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
   still apply to sells (#65, PR #66).
@@ -112,6 +126,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - Paper sells are no longer denied by position-size limits; buy/sell journals balance, and
   no-route quote errors map to `NO_SELL_ROUTE` (409).
 - API timestamps are normalized to UTC; paper positions without a mark stay unknown.
+- Deleting a strategy now removes its run rows in the same transaction, so a strategy with
+  history no longer fails with a 500 (found by the stress harness cleanup check).
 
 ### Removed
 

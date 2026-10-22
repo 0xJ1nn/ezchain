@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import DexScreenerClient, JupiterClient
 from ezchain_core import OrderRequest
+from ezchain_engine import OrderRejected
 
 from ..config import Settings
 from . import paper
@@ -37,4 +38,6 @@ class PaperOrderExecutor:
                 self._dexscreener,
                 self._jupiter,
             )
+            if row.status != "filled":
+                raise OrderRejected(row.reason, order_id=row.id)
             return row.id

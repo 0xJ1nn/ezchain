@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -79,6 +80,7 @@ class FakeDex:
                 ),
             ),
             source=SourceRef("dexscreener", None, utcnow()),
+            pair_created_at=datetime(2020, 1, 1, tzinfo=UTC),
         )
 
 

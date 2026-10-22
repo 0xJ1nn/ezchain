@@ -50,6 +50,22 @@ class ExecutionBlocked(RuntimeError):
     code = "KILL_SWITCH_ACTIVE"
 
 
+class OrderRejected(RuntimeError):
+    """Raised when the order service persisted a rejection instead of a fill.
+
+    A strategy run must not record ``buy``/``sell`` for an order that never filled. The
+    evaluation layer turns this into a ``hold`` / ``ORDER_REJECTED`` decision that keeps
+    the attempted action and the rejected order id for diagnosis.
+    """
+
+    code = "ORDER_REJECTED"
+
+    def __init__(self, reason: str | None, *, order_id: str) -> None:
+        super().__init__(reason or self.code)
+        self.reason = reason
+        self.order_id = order_id
+
+
 @runtime_checkable
 class TokenSource(Protocol):
     """The only market-data call the engine needs."""
@@ -323,6 +339,32 @@ async def evaluate_strategy(
             )
             row = _record(session, strategy, blocked, now=now, touch_last_run=False)
             return _result(strategy, blocked, row)
+        except OrderRejected as exc:
+            logger.warning(
+                "strategy %s order %s rejected: %s", strategy.id, exc.order_id, exc.reason
+            )
+            rejected = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "ORDER_REJECTED",
+                {
+                    **decision.inputs,
+                    "attempted_action": decision.action,
+                    "attempted_amount_usd": str(decision.amount_usd),
+                    "order_id": exc.order_id,
+                    "order_reason": exc.reason,
+                    "error_code": exc.code,
+                },
+            )
+            row = _record(
+                session,
+                strategy,
+                rejected,
+                now=now,
+                touch_last_run=False,
+                order_id=exc.order_id,
+            )
+            return _result(strategy, rejected, row)
         except ExecutorUnavailable as exc:
             logger.warning("strategy %s cannot execute: %s", strategy.id, exc)
             failed = StrategyDecision(
@@ -457,6 +499,7 @@ __all__ = [
     "ExecutorUnavailable",
     "KillSwitchExecutor",
     "OrderExecutor",
+    "OrderRejected",
     "RunResult",
     "StrategyScheduler",
     "TokenSource",

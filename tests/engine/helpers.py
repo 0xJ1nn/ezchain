@@ -38,6 +38,7 @@ def make_snapshot(
         price_change_h24=dec(change_h24),
         source=SourceRef("dexscreener", "https://dexscreener.com", datetime.now(UTC)),
         stale=stale,
+        pair_created_at=datetime(2020, 1, 1, tzinfo=UTC),
     )
 
 

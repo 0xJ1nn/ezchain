@@ -45,6 +45,9 @@ backups/
 *.sqlite
 *.log
 
+# Stress harness evidence (never commit generated reports)
+tools/stress/reports/
+
 # Scratch (rejected by review anyway)
 _tmp_*
 scratch/
