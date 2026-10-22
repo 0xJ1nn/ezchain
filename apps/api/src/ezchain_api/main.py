@@ -30,7 +30,7 @@ from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .observability import ObservabilityMiddleware, configure_logging
-from .routers import markets, paper, strategies, system
+from .routers import account, markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
 from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
@@ -141,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(markets.router)
     app.include_router(paper.router)
+    app.include_router(account.router)
     app.include_router(strategies.router)
     return app
 

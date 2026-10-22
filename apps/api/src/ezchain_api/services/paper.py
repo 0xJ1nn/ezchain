@@ -103,7 +103,7 @@ def _domain_entry(row: LedgerEntryRow) -> LedgerEntry:
 
 
 @dataclass(frozen=True)
-class _Replay:
+class Replay:
     cash: Decimal
     realized: Decimal
     daily_realized: Decimal
@@ -111,7 +111,32 @@ class _Replay:
     realized_by_account: dict[str, Decimal]
 
 
-def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) -> _Replay:
+def group_position_delta(rows: list[LedgerEntryRow]) -> Decimal:
+    """The trade result of one order group: its cash delta plus its position delta.
+
+    A group without a position leg (genesis) is not a trade and therefore contributes
+    nothing. A buy group's result is ``-fee``; a sell group's result is
+    ``proceeds - cost_basis - fee``. This is additive across groups, so it does not depend
+    on replay order and reconciles with cash plus the cost basis of open positions.
+    """
+    position_rows = [row for row in rows if row.account.startswith(POSITION_PREFIX)]
+    if not position_rows:
+        return Decimal(0)
+    cash_delta = sum((row.usd_value for row in rows if row.account == cash_account()), Decimal(0))
+    return cash_delta + sum((row.usd_value for row in position_rows), Decimal(0))
+
+
+def ledger_rows(session: Session) -> list[LedgerEntryRow]:
+    """Every ledger entry in journal order (oldest first). Public read-only access."""
+    return _ledger_rows(session)
+
+
+def project_ledger(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) -> Replay:
+    """Project cash, positions and realized PnL from ledger rows (CONTRACT I1)."""
+    return _replay(rows, day_start=day_start)
+
+
+def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) -> Replay:
     """Project balances, positions and realized PnL from ledger rows.
 
     Per-position net realized is derived per order group: a group's cash deltas plus its
@@ -137,10 +162,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
         position_rows = [row for row in group if row.account.startswith(POSITION_PREFIX)]
         if not position_rows:
             continue
-        cash_delta = sum(
-            (row.usd_value for row in group if row.account == cash_account()), Decimal(0)
-        )
-        delta = cash_delta + sum((row.usd_value for row in position_rows), Decimal(0))
+        delta = group_position_delta(group)
         for row in position_rows:
             realized_by_account[row.account] = (
                 realized_by_account.get(row.account, Decimal(0)) + delta
@@ -151,7 +173,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
             if observed is not None and observed >= day_start:
                 daily += delta
 
-    return _Replay(
+    return Replay(
         cash=cash,
         realized=sum(realized_by_account.values(), Decimal(0)),
         daily_realized=daily,
@@ -160,7 +182,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
     )
 
 
-def _open_positions(replay: _Replay) -> int:
+def _open_positions(replay: Replay) -> int:
     return sum(1 for quantity, _ in replay.positions.values() if quantity > 0)
 
 
@@ -230,7 +252,7 @@ def _source_ref(row: MarketSnapshotRow) -> SourceRef:
 
 
 def _position_views(
-    replay: _Replay, snapshots: dict[tuple[str, str], MarketSnapshotRow]
+    replay: Replay, snapshots: dict[tuple[str, str], MarketSnapshotRow]
 ) -> list[dict[str, Any]]:
     views: list[dict[str, Any]] = []
     for account, (quantity, cost) in replay.positions.items():

@@ -7,6 +7,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Paper account read models**: `GET /api/v1/paper/ledger`, `/performance`,
+  `/attribution`, `/limits`, `/alerts` and `/export/{orders,fills,ledger}.csv` project the
+  append-only ledger into UI-facing read models (cash, equity, realized/unrealized PnL,
+  per-token attribution, risk limits, derived operator alerts and CSV exports). Every
+  number is server-computed; an unknown mark is `null`, and no endpoint mutates state.
 - `docs/evidence/p0-production/`: live market/paper/strategy/auth/API-down/restart and
   stress evidence for the PAPER production operations.
 - `docs/PRODUCTION-READINESS.md`: verified vs unverified matrix, operator checklist and the
