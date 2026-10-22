@@ -495,3 +495,29 @@ free provider keep the capped `paper_mark` of ADR-0020. The API never names a ch
 APIs become a dependency of the paper path; when every provider in a ladder is down the
 order fails closed (`NO_ROUTE`/`UPSTREAM_UNREACHABLE`), never falls back to a mark silently.
 LI.FI's tight free budget makes it a last resort. `live_execute` stays false everywhere.
+
+---
+
+## ADR-0026 — Live execution through a separate executor with a local vault
+
+**Date:** 2026-10-22 · **Status:** Accepted (maintainer instruction: "makes paper and real
+trades flawlessly", 2026-10-22)
+
+**Context:** the paper stack is production-ready; traders need the same pipeline to move
+real funds. Keys are the highest-value asset (SECURITY.md §1) and four previous bots lost
+trust by mixing keys, strategy code and accounting in one process.
+
+**Decision:** implement [LIVE-EXECUTION.md](LIVE-EXECUTION.md): a separate
+`services/executor` process is the only key holder (Argon2id + AES-256-GCM vault, keys
+generated or CLI-imported, never exported, never typed into the browser); the API sends it
+HMAC-authenticated intents; venue adapters build transactions (Jupiter on Solana,
+KyberSwap on major EVM chains), every transaction is simulated before signing, fills come
+from receipts and post to a separate live ledger. LIVE is armed by the owner with an L4
+gesture and TOTP, expires, and is capped by conservative live limits; strategies need a
+passed paper gate and an explicit promotion.
+
+**Consequences:** new runtime dependencies with binary components (`solders`,
+`eth-account`, `cryptography`, `argon2-cffi`, `pyotp`) are confined to the executor image
+(and `pyotp`/`argon2-cffi` to the API for auth). Live chains are a capability subset; the
+rest stay paper-only and say so. Real-fund testing beyond simulation and forked chains is
+an owner action with a small funded wallet; automated tests never move real funds.
