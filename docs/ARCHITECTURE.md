@@ -1,7 +1,10 @@
 # ARCHITECTURE — ezCHAIN
 
-Status: M1. The web UI scaffold exists (`apps/web`, fixture-driven); the API, engine,
-executor and ingest services are not built yet. This document is the contract every
+Status: P0. The web UI (`apps/web`), FastAPI edge (`apps/api`), strategy runtime
+(`services/engine`, inline in P0), domain/ledger (`packages/core-py`) and DexScreener /
+Jupiter adapters (`packages/adapters`) are built. The **executor** and key custody are not
+built; live execution is disabled on every chain. Ingest is request-driven inside the API
+for P0; a separate ingest worker is a later milestone. This document is the contract every
 later PR implements; deviations require an ADR.
 
 ## 1. Shape

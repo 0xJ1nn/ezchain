@@ -1,8 +1,8 @@
 # PLAN — Live paper slice (P0)
 
-Status: **active**. This plan is the contract for the first working vertical slice. It
-supersedes the M1 fixture-only assumption for the surfaces it touches; the rest of M1
-(wallets, automations, system pages) stays where it is.
+Status: **P0.0–P0.5 implemented; P0.6 in progress.** This plan is the contract for the
+first working vertical slice. It supersedes the M1 fixture-only assumption for the
+surfaces it touches; the rest of M1 (wallets, automations, system pages) stays where it is.
 
 ## Goal
 

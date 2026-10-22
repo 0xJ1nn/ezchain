@@ -1,10 +1,13 @@
-# TODO — ezCHAIN M1 close-out
+# TODO — ezCHAIN P0 + M1 close-out
 
-Status as of **2026-10-22**. The current app is a **fixture-driven web UI**: no API, no
-live data, no keys, no execution. Every unfinished route says so.
+Status as of **2026-10-22**. The app is a **live paper slice**: live multi-chain browsing,
+Jupiter paper quotes on Solana, an append-only paper ledger and user-defined strategies.
+There are no keys, no signing and no live execution. Wallet/automation/system pages remain
+fixtures or placeholders.
 
 Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
-[`docs/CONTRACT.md`](CONTRACT.md), [`docs/WIREFRAME.md`](WIREFRAME.md), [`ROADMAP.md`](../ROADMAP.md).
+[`docs/CONTRACT.md`](CONTRACT.md), [`docs/PLAN-LIVE-PAPER.md`](PLAN-LIVE-PAPER.md),
+[`docs/WIREFRAME.md`](WIREFRAME.md), [`ROADMAP.md`](../ROADMAP.md).
 
 ## Done
 
@@ -19,9 +22,17 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 
 ## Now — P0 live paper slice
 
-The active plan is [`docs/PLAN-LIVE-PAPER.md`](PLAN-LIVE-PAPER.md): live multi-chain
-browsing, paper execution and user-defined strategies. The M1 checklist below remains for
-the surfaces P0 does not touch (wallets, automations, system pages).
+- [x] P0.0 FastAPI, Postgres, package skeleton, Next proxy, Python gate.
+- [x] P0.1 DexScreener multi-chain browsing + Jupiter quotes.
+- [x] P0.2 Paper ledger/orders/fills/positions/PnL/risk.
+- [x] P0.3 Momentum/dip/DCA/threshold evaluator + scheduler + run log.
+- [x] P0.4 Live markets/token pages + paper ticket.
+- [x] P0.5 Paper positions + strategy builder screens.
+- [ ] P0.6 failure drills: API down, 429, stale quote, DB down, restart; evidence.
+- [ ] P0.7 dashboard paper-account wiring; wallet/automation surfaces stay M1.
+
+Known P0 limits: non-Solana paper fills are capped `paper_mark`; no strategy PnL per row;
+no live execution. See `docs/PLAN-LIVE-PAPER.md`.
 
 ## Now — M1
 

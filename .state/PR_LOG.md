@@ -17,3 +17,8 @@
 | 2026-10-22 | #38 | cross-page BONK constants and overdue PR log | `tools/ci.sh` green (15 tests) |
 | 2026-10-22 | #40 | M1 state close-out: token evidence list, next-work pointer | `tools/ci.sh` green (15 tests) |
 | 2026-10-22 | #41 | `pnpm shots` now runs the full Playwright suite | `pnpm shots` 15 passed |
+| 2026-10-22 | #53 | P0.1 DexScreener multi-chain discovery + Jupiter contract tests | 125 pytest, ruff/mypy green |
+| 2026-10-22 | #54 | P0.2 paper ledger, orders, positions, risk | 31 pytest, ruff/mypy, full `tools/ci.sh` green |
+| 2026-10-22 | #52 | P0.3 declarative strategy evaluator + scheduler | 44 pytest, ruff/mypy green |
+| 2026-10-22 | #55 | P0.4 live markets/token web + paper ticket | 23 Playwright, typecheck/lint/build green |
+| 2026-10-22 | #56 | P0.5 paper positions + strategy builder web | 31 Playwright, typecheck/lint/build green |
