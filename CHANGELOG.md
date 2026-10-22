@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- `docs/PRODUCTION-READINESS.md`: verified vs unverified matrix, operator checklist and the
+  release rule for the PAPER stack (398 Python + 36 Playwright tests, live auth-enabled
+  smoke, stress suite, migrations).
 - Stress harness bearer support via `EZCHAIN_STRESS_API_TOKEN`, with HTTPS/loopback
   enforcement and report redaction (#79).
 

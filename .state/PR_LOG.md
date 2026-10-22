@@ -23,3 +23,18 @@
 | 2026-10-22 | #55 | P0.4 live markets/token web + paper ticket | 23 Playwright, typecheck/lint/build green |
 | 2026-10-22 | #56 | P0.5 paper positions + strategy builder web | 31 Playwright, typecheck/lint/build green |
 | 2026-10-22 | #51 | P0 live paper slice: API, adapters, ledger, engine, live web | `tools/ci.sh` green (203 pytest, 31 Playwright); live Jupiter/paper smoke |
+| 2026-10-22 | #66 | risk: sells never blocked by size/paper-mark/daily-loss limits | `pytest` 212, ruff/mypy green; live buy/sell smoke |
+| 2026-10-22 | #68 | market eyes: fan-out/round-robin, 22/25 chains, overview/stored, monitor | 267 pytest; live Postgres scan and 22-chain browse |
+| 2026-10-22 | #69 | paper hardening: delete cascade, reconciliation, kill switch, UTC, honest run log | 239 pytest; Postgres smoke |
+| 2026-10-22 | #70 | stress harness: smoke/soak/idempotency/chaos, dedupe issue filing | 48 stress tests; live runs PASS; filed #71 |
+| 2026-10-22 | #72 | engine: rejected order logs `hold`/`ORDER_REJECTED`, not a fake trade | 295 pytest; stress reproduction passes |
+| 2026-10-22 | #74 | web: DCA/dip vocabulary matches the validator | 33 Playwright; lint/typecheck/build |
+| 2026-10-22 | #75 | risk: documented 10-minute pair-age gate enforced for buys | 304 pytest; live Base/Solana fills |
+| 2026-10-22 | #77 | web: every dashboard fixture panel badged | 34 Playwright; wireframe/delta updated |
+| 2026-10-22 | #78 | ops: Alembic, bearer auth + CSRF proxy, health/readiness/metrics, genesis single-writer | 393 pytest, 35 Playwright, fresh/legacy DB check |
+| 2026-10-22 | #81 | infra: Dockerfiles + runnable PAPER Compose/Caddy/Prometheus | static YAML + full `tools/ci.sh`; Docker build/up not verified |
+| 2026-10-22 | #83 | migrations: legacy fill-order unique constraint | 394 pytest; fresh/legacy `alembic check` |
+| 2026-10-22 | #80 | stress: bearer token support for auth-enabled API | 51 stress tests; auth-enabled live PASS, token redacted |
+| 2026-10-22 | #84/#85 | web: Playwright build guard (reverted `.next-test`) | 36 Playwright with/without dev server |
+| 2026-10-22 | #87 | money docs + dead cents/fee helpers removed | 397 pytest; no code-path change |
+| 2026-10-22 | #89 | monitor: refresh marks for open positions | 398 pytest; quote-side mark test |

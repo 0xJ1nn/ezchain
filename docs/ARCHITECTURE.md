@@ -1,10 +1,12 @@
 # ARCHITECTURE — ezCHAIN
 
-Status: P0. The web UI (`apps/web`), FastAPI edge (`apps/api`), strategy runtime
-(`services/engine`, inline in P0), domain/ledger (`packages/core-py`) and DexScreener /
-Jupiter adapters (`packages/adapters`) are built. The **executor** and key custody are not
-built; live execution is disabled on every chain. Ingest is request-driven plus a bounded
-observation loop inside the API for P0; a separate ingest worker is a later milestone. This document is the contract every
+Status: **PAPER stack with production operations**. The web UI (`apps/web`), FastAPI edge
+(`apps/api`), strategy runtime (`services/engine`, inline), domain/ledger
+(`packages/core-py`) and DexScreener / Jupiter adapters (`packages/adapters`) are built,
+with Alembic migrations, bearer auth, `/healthz`/`/readyz`/`/metrics`, structured logs and a
+stress harness. Market observation is a bounded inline loop in the API. The **executor**,
+key custody and a separate ingest worker are not built; live execution is disabled on
+every chain, and Timescale/tick retention is deferred. This document is the contract every
 later PR implements; deviations require an ADR.
 
 ## 1. Shape
