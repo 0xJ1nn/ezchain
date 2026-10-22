@@ -15,6 +15,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   non-Solana chains, capped and labelled as not executable.
 - Idempotent paper orders, fills, positions, cash/realized/unrealized PnL and risk limits,
   all derived from append-only ledger entries.
+- Continuous all-chain market observation ("market eyes"): a bounded inline scan discovers
+  across every registered chain, persists observations, records `no_data`/`stale`/`error`
+  instead of zero, and exposes `/api/v1/markets/overview` and `/api/v1/markets/stored`.
+- All-chain market browsing now fans out one token lookup per registered chain (seeds first,
+  at most 12 hints, four in flight) because `/latest/dex/tokens` caps each response at 30
+  pairs. Rows are ranked within each chain and round-robined before the limit, so every
+  data-bearing chain is represented instead of the global top few; the response carries
+  optional per-chain `coverage` and `ordered_by`. Verified seeds were added for Blast,
+  Mantle, Linea, Scroll and zkSync.
 - User-defined declarative strategies (momentum, dip, DCA, threshold), pause/resume,
   run-now, interval gate and an append-only run log.
 - Read-only paper reconciliation (`GET /api/v1/paper/reconciliation`): journal balance,
@@ -53,6 +62,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Market sorting is None-safe for every `sort` mode: missing `volume`/`liquidity` stays
+  `null` on the row, sorts last, and is never displayed as zero.
+- Market coverage now distinguishes `error` from a successful empty `no_pairs`, and the
+  overview totals no longer count a chain as both covered and errored. Chains the all-chain
+  fan-out already attempted are not re-probed, keeping a successful monitor scan within its
+  request budget.
+- Chain staleness now includes the last scan duration, so a slow pass does not make every
+  chain look stale before the next pass.
 - The manual paper-order route no longer accepts strategy attribution; the order service
   also rejects strategy-attributed orders while the kill switch is armed, before quoting.
 - Concurrent first boots no longer fail when both processes seed the kill-switch row; the

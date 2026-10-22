@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ezchain_adapters import DexScreenerClient, JupiterClient
 
 from .db import session_factory
+from .services.market_monitor import MarketMonitor
 
 
 def get_session() -> Iterator[Session]:
@@ -23,3 +24,8 @@ def get_dexscreener(request: Request) -> DexScreenerClient:
 
 def get_jupiter(request: Request) -> JupiterClient:
     return request.app.state.jupiter  # type: ignore[no-any-return]
+
+
+def get_market_monitor(request: Request) -> MarketMonitor | None:
+    """The inline monitor, or ``None`` when observation is disabled for this process."""
+    return getattr(request.app.state, "market_monitor", None)
