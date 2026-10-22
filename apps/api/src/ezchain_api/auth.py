@@ -90,7 +90,11 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         supplied = _bearer_token(request.headers.get("authorization"))
-        if supplied is None or not hmac.compare_digest(supplied, expected):
+        # Compare bytes: hmac.compare_digest(str, str) raises TypeError for non-ASCII,
+        # which would turn a malformed Authorization header into a 500.
+        if supplied is None or not hmac.compare_digest(
+            supplied.encode("utf-8"), expected.encode("utf-8")
+        ):
             return _unauthorized("missing or invalid bearer token")
         return await call_next(request)
 

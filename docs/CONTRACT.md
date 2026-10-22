@@ -96,11 +96,12 @@ Schema changes are additive or explicitly migrating. No `wipe`, `clean_slate`,
 `full_reset`, or `try: ALTER TABLE except: pass`. A fresh database must be creatable from
 `main` in CI.
 
-*Enforced by:* CI creates a DB from scratch and runs all migrations; a lint rejects
-migration filenames/content containing wipe patterns. The baseline is
-`apps/api/alembic/versions/0001_baseline.py`; `tests/api/test_migrations.py` scans every
-`upgrade()` body for destructive operations, and `/readyz` returns 503 unless
-`alembic_version` equals the script head.
+*Enforced by:* `tools/check-migrations.sh` upgrades a disposable Postgres database from
+scratch and runs `alembic check`; `tools/ci.sh` calls it when
+`EZCHAIN_TEST_DATABASE_URL` is set. A lint rejects destructive `upgrade()` bodies. The
+baseline is `apps/api/alembic/versions/0001_baseline.py` and `0002_genesis_index.py` is
+forward-only; `tests/api/test_migrations.py` scans every `upgrade()` body, and `/readyz`
+returns 503 unless `alembic_version` equals the script head.
 
 *Learned from:* v2 had ~30 destructive migrations; v3 needed an out-of-repo shim to build
 a fresh DB; pumpbot had 12 silent ALTERs.

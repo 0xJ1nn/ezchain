@@ -195,10 +195,15 @@ alembic -c apps/api/alembic.ini upgrade head
   but production rollback is redeploying the previous image, not a schema downgrade.
 - A failed migration stops the rollout. Restore the pre-migration backup before retrying;
   do not edit `alembic_version` by hand to "unblock".
+- Fresh-DB gate: `EZCHAIN_TEST_DATABASE_URL=postgresql+psycopg://.../ezchain_test \
+  bash tools/check-migrations.sh` runs `upgrade head` and `alembic check`. `tools/ci.sh`
+  runs it when that variable is set; the script refuses a URL whose database name does
+  not contain `test`, `scratch` or `_ci`.
 - Legacy dev database created by `create_all()` before Alembic: `/readyz` returns 503 with
   `migration: missing`. After confirming the schema matches the models, run
-  `alembic -c apps/api/alembic.ini stamp head` **once**. Never stamp a production
-  database; it hides real drift.
+  `alembic -c apps/api/alembic.ini stamp 0001_baseline` **once**, then run
+  `alembic -c apps/api/alembic.ini upgrade head` so the forward-only 0002 genesis index
+  is applied. Never stamp a production database; it hides real drift.
 
 ### 12.2 Health vs readiness vs metrics
 

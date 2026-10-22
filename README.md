@@ -88,7 +88,9 @@ openssl rand -hex 32             # put this in EZCHAIN_API_TOKEN for the API and
 
 Existing local databases created by `create_all()` before Alembic are unstamped:
 `/readyz` reports `migration: missing`. Verify the schema matches the models, then run
-`alembic -c apps/api/alembic.ini stamp head` once. Never stamp a production database.
+`alembic -c apps/api/alembic.ini stamp 0001_baseline` once, then run
+`alembic -c apps/api/alembic.ini upgrade head` so the forward-only 0002 index is
+applied. Never stamp a production database.
 
 For deterministic UI work and Playwright, set `EZCHAIN_WEB_MODE=fixture`; every fixture is
 labelled `FIXTURE` and never presented as live.

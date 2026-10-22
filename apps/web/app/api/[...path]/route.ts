@@ -15,14 +15,48 @@ const FORWARDED_RESPONSE_HEADERS = [
 	"content-type",
 	"cache-control",
 	"retry-after",
+	"location",
+	"www-authenticate",
 	"x-request-id",
 ] as const;
+
+function allowedOrigins(request: NextRequest): Set<string> {
+	const allowed = new Set<string>();
+	const configured = process.env.EZCHAIN_PUBLIC_URL;
+	if (configured) allowed.add(configured.replace(/\/+$/, ""));
+	const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+	const proto = request.headers.get("x-forwarded-proto") ?? "http";
+	if (host) allowed.add(`${proto}://${host}`);
+	return allowed;
+}
+
+function isCrossOrigin(request: NextRequest): boolean {
+	// Browsers send Sec-Fetch-Site; a cross-site value is enough to reject. When the
+	// header is absent, compare Origin against the edge host. curl/non-browser clients
+	// send neither and remain usable for health and paper testing.
+	if (request.headers.get("sec-fetch-site") === "cross-site") return true;
+	const origin = request.headers.get("origin");
+	if (!origin) return false;
+	return !allowedOrigins(request).has(origin.replace(/\/+$/, ""));
+}
 
 function apiBase(): string {
 	return (process.env.EZCHAIN_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 }
 
 async function proxy(request: NextRequest, context: RouteContext): Promise<Response> {
+	if (isCrossOrigin(request)) {
+		return NextResponse.json(
+			{
+				detail: {
+					code: "CROSS_ORIGIN_DENIED",
+					message: "cross-origin API calls are not allowed through the web proxy",
+					retryable: false,
+				},
+			},
+			{ status: 403 },
+		);
+	}
 	const { path } = await context.params;
 	const target = new URL(`${apiBase()}/api/${path.map(encodeURIComponent).join("/")}`);
 	target.search = request.nextUrl.search;

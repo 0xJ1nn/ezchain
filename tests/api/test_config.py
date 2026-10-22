@@ -39,6 +39,7 @@ def test_a_safe_production_boot_is_accepted() -> None:
         ({"auth_enabled": False}, "EZCHAIN_AUTH_ENABLED"),
         ({"api_token": None}, "EZCHAIN_API_TOKEN"),
         ({"api_token": "too-short"}, "EZCHAIN_API_TOKEN"),
+        ({"api_token": "\u00e9" * 40}, "EZCHAIN_API_TOKEN"),
         ({"auto_create_schema": True}, "EZCHAIN_AUTO_CREATE_SCHEMA"),
         ({"database_url": DEFAULT_DATABASE_URL}, "EZCHAIN_DATABASE_URL"),
         (

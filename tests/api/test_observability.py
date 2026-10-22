@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ezchain_api.config import Settings
+from ezchain_api.db import head_revision
 from ezchain_api.deps import get_session
 from ezchain_api.models import PaperOrderRow
 from ezchain_api.observability import (
@@ -212,14 +213,14 @@ def test_healthz_never_touches_the_database() -> None:
 
 
 def test_readyz_requires_the_migration_head(session: Session) -> None:
-    _stamp(session, "0001_baseline")
+    _stamp(session, head_revision() or "")
     client = system_client(session)
 
     ready = client.get("/readyz")
 
     assert ready.status_code == 200
     assert ready.json()["status"] == "ready"
-    assert ready.json()["revision"] == "0001_baseline"
+    assert ready.json()["revision"] == head_revision()
     assert ready.json()["migration"] == "head"
 
 
@@ -281,7 +282,7 @@ def test_health_keeps_the_compatibility_shape(session: Session) -> None:
 
 
 def test_metrics_endpoint_reports_paper_counts(session: Session) -> None:
-    _stamp(session, "0001_baseline")
+    _stamp(session, head_revision() or "")
     session.add(
         PaperOrderRow(
             idempotency_key="metrics-filled-order",

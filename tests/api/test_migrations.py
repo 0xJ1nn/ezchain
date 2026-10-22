@@ -42,8 +42,8 @@ def destructive_upgrade_operations(source: str) -> list[str]:
     return [token for token in FORBIDDEN_UPGRADE_OPERATIONS if token in body]
 
 
-def test_baseline_revision_is_the_head() -> None:
-    assert head_revision() == "0001_baseline"
+def test_migration_head_is_the_latest_revision() -> None:
+    assert head_revision() == "0002_genesis_index"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:

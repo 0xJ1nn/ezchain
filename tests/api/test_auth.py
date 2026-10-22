@@ -73,6 +73,39 @@ def test_mutation_with_wrong_token_or_scheme_is_401(
     assert basic.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_non_ascii_bearer_is_401_not_500(protected_settings: Settings) -> None:
+    # httpx refuses to encode a non-ASCII header, so drive the ASGI middleware directly.
+    async def inner(scope: object, receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = BearerAuthMiddleware(inner, protected_settings)
+    messages: list[dict[str, object]] = []
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, object]) -> None:
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/v1/system/kill-switch",
+        "raw_path": b"/api/v1/system/kill-switch",
+        "query_string": b"",
+        "headers": [(b"authorization", b"Bearer h\xe9llo")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+    }
+    await middleware(scope, receive, send)  # type: ignore[arg-type]
+
+    assert messages[0]["status"] == 401
+
+
 def test_mutation_with_correct_token_succeeds(
     protected_settings: Settings, session: Session
 ) -> None:
@@ -150,6 +183,18 @@ def _api_routes(routes: list[object]) -> list[APIRoute]:
         if original is not None:
             found.extend(_api_routes(original.routes))
     return found
+
+
+def test_every_mutating_route_lives_under_the_auth_prefix() -> None:
+    app = create_app()
+    mutations = [
+        (method, route.path_format)
+        for route in _api_routes(list(app.routes))
+        for method in route.methods or set()
+        if method not in READ_METHODS
+    ]
+    unprotected = [(method, path) for method, path in mutations if not path.startswith("/api/")]
+    assert unprotected == [], f"mutating routes outside /api/ default-deny: {unprotected}"
 
 
 def test_every_mutating_api_route_is_in_the_protected_list() -> None:

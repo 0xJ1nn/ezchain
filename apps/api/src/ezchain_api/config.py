@@ -69,6 +69,8 @@ class Settings(BaseSettings):
                 f"EZCHAIN_API_TOKEN must be set and at least {MIN_PROD_TOKEN_LENGTH} "
                 "characters in prod"
             )
+        if not token.isascii():
+            raise ValueError("EZCHAIN_API_TOKEN must be ASCII in prod")
         if self.auto_create_schema:
             raise ValueError("EZCHAIN_AUTO_CREATE_SCHEMA must be false in prod")
         if self.database_url == DEFAULT_DATABASE_URL:
