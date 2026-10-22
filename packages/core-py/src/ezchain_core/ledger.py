@@ -69,10 +69,19 @@ def buy_entries(
     quantity: Decimal,
     price_usd: Decimal,
     fee_bps: int,
+    notional_usd: Decimal | None = None,
 ) -> tuple[LedgerEntry, ...]:
+    """Journal for a buy: position +notional, cash -notional, fee expensed from cash.
+
+    ``notional_usd`` is the quoted USD amount actually paid. It is passed explicitly when
+    the implied ``quantity * price_usd`` cannot reproduce the quote exactly (a price is a
+    ratio and may be non-terminating). The position leg then carries the exact cash cost.
+    """
     if quantity <= 0 or price_usd <= 0:
         raise ValueError("quantity and price must be positive")
-    notional = quantity * price_usd
+    notional = quantity * price_usd if notional_usd is None else notional_usd
+    if notional <= 0:
+        raise ValueError("notional must be positive")
     fee = bps_fee(notional, fee_bps)
     entries = (
         LedgerEntry(
@@ -82,7 +91,7 @@ def buy_entries(
             notional,
             "buy",
         ),
-        LedgerEntry(cash_account(), "USD", -(notional + fee), -(notional + fee), "buy"),
+        LedgerEntry(cash_account(), "USD", -notional, -notional, "buy"),
         LedgerEntry(fee_account(), "USD", fee, fee, "fee"),
         LedgerEntry(cash_account(), "USD", -fee, -fee, "fee"),
     )
@@ -98,18 +107,28 @@ def sell_entries(
     price_usd: Decimal,
     avg_cost_usd: Decimal,
     fee_bps: int,
+    proceeds_usd: Decimal | None = None,
+    cost_basis_usd: Decimal | None = None,
 ) -> tuple[LedgerEntry, ...]:
+    """Journal for a sell: cash +proceeds, position -cost basis, fee expensed from cash.
+
+    Realized PnL is booked gross (proceeds - cost basis); the fee is its own expense leg,
+    which keeps the group balanced. Read models report net realized by including fees.
+    """
     if quantity <= 0 or price_usd <= 0:
         raise ValueError("quantity and price must be positive")
     if avg_cost_usd < 0:
         raise ValueError("average cost cannot be negative")
-    proceeds = quantity * price_usd
+    proceeds = quantity * price_usd if proceeds_usd is None else proceeds_usd
+    if proceeds <= 0:
+        raise ValueError("proceeds must be positive")
     fee = bps_fee(proceeds, fee_bps)
-    cash_in = proceeds - fee
-    cost_basis = quantity * avg_cost_usd
-    realized = proceeds - cost_basis - fee
+    cost_basis = quantity * avg_cost_usd if cost_basis_usd is None else cost_basis_usd
+    if cost_basis < 0:
+        raise ValueError("cost basis cannot be negative")
+    realized = proceeds - cost_basis
     entries = (
-        LedgerEntry(cash_account(), "USD", cash_in, cash_in, "sell"),
+        LedgerEntry(cash_account(), "USD", proceeds, proceeds, "sell"),
         LedgerEntry(
             position_account(chain, token_address),
             token_address,
@@ -117,6 +136,7 @@ def sell_entries(
             -cost_basis,
             "sell",
         ),
+        LedgerEntry(cash_account(), "USD", -fee, -fee, "fee"),
         LedgerEntry(fee_account(), "USD", fee, fee, "fee"),
         LedgerEntry(realized_account(), "USD", -realized, -realized, "pnl"),
     )
