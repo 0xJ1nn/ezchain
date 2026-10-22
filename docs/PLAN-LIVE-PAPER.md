@@ -15,7 +15,10 @@ No private keys, no signing, no real funds, no fiat rail, no copy-trading.
 ## Success criteria
 
 1. `pnpm dev` + the API + local Postgres boot from a documented two-command flow.
-2. `/markets` shows live pairs across at least 20 chains, with source and age on every row.
+2. `/markets` shows live pairs across at least 20 of the 25 registered chains, with source
+   and age on every row. A live `chain=all` smoke on 2026-10-22 returned rows for **22
+   chains**; Osmosis, Cosmos Hub and Moonbeam returned no indexed DexScreener pairs and
+   are reported as `no_data`, never zero.
 3. `/tokens/{chain}/{address}` shows live pairs, price, liquidity and a quote.
 4. A paper buy and a paper sell produce balanced ledger entries, a position, cash and PnL;
    both survive an API restart.
@@ -83,7 +86,9 @@ detail}`.
 |---|---|---|
 | GET | `/health` | liveness + DB + scheduler state |
 | GET | `/chains` | registry, capabilities, browse/paper/live flags |
-| GET | `/markets?chain=all&q=&sort=trending&limit=50` | live discovery rows |
+| GET | `/markets?chain=all&q=&sort=trending&limit=50` | live discovery rows + per-chain coverage |
+| GET | `/markets/overview` | per-chain observation status, age and scan errors |
+| GET | `/markets/stored?chain=all&limit=50` | latest persisted observations, liquidity desc |
 | GET | `/tokens/{chain}/{address}` | token header, pairs, safety unknowns, quote preview |
 | GET | `/quotes?chain=&token=&side=&amount_usd=` | quote or `paper_mark` envelope |
 | GET | `/paper/account` | cash, equity, realized/unrealized, positions count |
@@ -241,6 +246,8 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 
 ### P0.6 — Integration and hardening (lead + reviewers)
 
+- [x] Continuous all-chain market observation: bounded scan, persisted snapshots,
+      `/markets/overview` and `/markets/stored`, fail-closed `no_data`/`stale`/`error`.
 - [ ] Merge stacked branches, resolve contracts, run end-to-end against live APIs.
 - [ ] Manual smoke: browse 5 chains, buy/sell, restart, strategy fires.
 - [ ] Failure drills: API down, DexScreener 429, stale quote, no route, DB down.

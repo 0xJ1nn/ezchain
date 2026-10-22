@@ -23,10 +23,11 @@ from ezchain_adapters.dexscreener import (
     BASE,
     MAX_BATCH,
     MAX_DISCOVERY_ADDRESSES,
+    MAX_RESPONSE_PAIRS,
     normalize_pair,
     snapshot_from_pairs,
 )
-from ezchain_adapters.registry import get_chain
+from ezchain_adapters.registry import CHAINS, get_chain
 from ezchain_adapters.seeds import SEED_TOKENS
 
 ETH_WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
@@ -79,6 +80,7 @@ def test_public_rate_budget_is_respected() -> None:
     assert DexScreenerClient.rate_per_second * 60 == 300
     assert 1 <= DexScreenerClient.burst <= 30
     assert MAX_BATCH == 30
+    assert MAX_RESPONSE_PAIRS == 30
     assert MAX_DISCOVERY_ADDRESSES == MAX_BATCH * 4
 
 
@@ -250,7 +252,9 @@ async def test_list_markets_dedupes_filters_and_limits(
         return_value=httpx.Response(200, json={"pairs": [*pairs, duplicate, foreign, unindexed]})
     )
     async with dexscreener as client:
-        rows, source = await client.list_markets(query="WETH", chain="ethereum", limit=2)
+        rows, source = await client.list_markets(
+            query="WETH", chain="ethereum", sort="liquidity", limit=2
+        )
         all_rows, _ = await client.list_markets(query="WETH", chain="all", limit=50)
     assert len(rows) == 2
     assert all(row.chain == "ethereum" for row in rows)
@@ -366,7 +370,8 @@ async def test_chain_all_discovery_is_not_solana_only(
     requested = [address for batch in batches for address in batch]
     assert requested
     assert all(len(batch) <= MAX_BATCH for batch in batches)
-    assert len(requested) <= MAX_DISCOVERY_ADDRESSES
+    # One token lookup per registered chain; the hint feeds are four more requests.
+    assert len(batches) <= len(CHAINS)
     assert any(address.lower() == ETH_WETH.lower() for address in requested)
     chains = {row.chain for row in rows}
     assert len(chains) >= 12

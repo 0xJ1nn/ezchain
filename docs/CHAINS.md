@@ -123,6 +123,21 @@ suite exist.
 Mixed-unit hazards are rejected at the boundary (`docs/DOMAIN-MODEL.md` §2). A token with
 unknown decimals is not tradeable.
 
+### 4.1 Discovery coverage (measured 2026-10-22)
+
+`/api/v1/markets?chain=all` fans out one token lookup per registered chain because
+`/latest/dex/tokens` caps each response at 30 **pairs**, not 30 addresses. Seeds are
+requested first, at most 12 hint addresses are added per chain, and four chains are in
+flight at a time. Rows are ranked within each chain, then round-robined in registry order
+before `limit`, so a low-liquidity chain is not dropped by a global ranking. The response
+carries `coverage: [{chain, requested, returned, reason}]`; `reason` is `pairs` or
+`no_pairs`, and coverage counts are pre-slice.
+
+Live read-only smoke (`chain=all&limit=100`, 2026-10-22): **22 of 25** registered chains
+returned rows. Osmosis, Cosmos Hub and Moonbeam returned no indexed pairs and were reported
+`no_pairs`, never zero. The Blast, Mantle, Linea, Scroll and zkSync seeds were verified in
+the same pass.
+
 ## 5. Adding a chain (checklist)
 
 1. New package `packages/adapters/chain_<name>` implementing `ChainAdapter`.

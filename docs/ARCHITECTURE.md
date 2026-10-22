@@ -3,8 +3,8 @@
 Status: P0. The web UI (`apps/web`), FastAPI edge (`apps/api`), strategy runtime
 (`services/engine`, inline in P0), domain/ledger (`packages/core-py`) and DexScreener /
 Jupiter adapters (`packages/adapters`) are built. The **executor** and key custody are not
-built; live execution is disabled on every chain. Ingest is request-driven inside the API
-for P0; a separate ingest worker is a later milestone. This document is the contract every
+built; live execution is disabled on every chain. Ingest is request-driven plus a bounded
+observation loop inside the API for P0; a separate ingest worker is a later milestone. This document is the contract every
 later PR implements; deviations require an ADR.
 
 ## 1. Shape
@@ -112,6 +112,19 @@ materialized into Timescale hypertables.
 
 Rules: every event declares units and freshness; a late event is flagged, not silently
 reordered; duplicate `(source, pair, observed_at)` is idempotent.
+
+**P0 inline observation.** `apps/api` also runs a bounded market monitor
+(`EZCHAIN_MARKET_SCAN_INLINE`, default on) so the platform knows what it can see even when
+no user has a token page open. One scan calls `DexScreenerClient.list_markets(chain="all")`
+once; that adapter call fans out one token lookup per registered chain (seeds first, four
+in flight) because `/latest/dex/tokens` caps a response at 30 pairs, then round-robins the
+ranked per-chain rows. The monitor makes a second bounded per-chain attempt only for chains
+the all-chain pass returned no rows for. Each observed pair is projected onto its base
+token and persisted through `paper.record_snapshot` before it can appear in
+`/api/v1/markets/overview` or `/api/v1/markets/stored`. A failed provider or chain records
+`error` for that chain and the scan continues. Row counts and ages are DB-derived, so the
+overview survives a restart; attempt times and error text are process-local. A chain with
+no rows is `no_data`, and an old row is `stale` — never zero.
 
 ### 4.2 Order
 

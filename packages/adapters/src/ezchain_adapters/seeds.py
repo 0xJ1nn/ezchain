@@ -12,6 +12,10 @@ Recorded against the public DexScreener API on 2026-10-22. Osmosis, Cosmos Hub a
 Moonbeam returned no indexed pairs that day, so their seeds are canonical on-chain
 identifiers (``uosmo``, ``uatom``, WGLMR) rather than verified API hits; they stay so
 discovery picks the chains up if DexScreener coverage returns.
+
+The Blast, Mantle, Linea, Scroll and zkSync seeds were verified the same day with
+``/latest/dex/tokens``: every address below returned indexed pairs on its own chain
+(Blast WETH/USDB, Mantle WETH/WMNT, Linea and Scroll WETH/USDC, zkSync WETH/USDC).
 """
 
 from __future__ import annotations
@@ -67,6 +71,26 @@ SEED_TOKENS: dict[str, tuple[str, ...]] = {
         "wrap.near",  # wNEAR
         "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",  # USDC
     ),
+    "blast": (
+        "0x4300000000000000000000000000000000000004",  # WETH
+        "0x4300000000000000000000000000000000000003",  # USDB
+    ),
+    "mantle": (
+        "0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111",  # WETH
+        "0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8",  # WMNT
+    ),
+    "linea": (
+        "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",  # WETH
+        "0x176211869cA2b568f2A7D4EE941E073a821EE1ff",  # USDC
+    ),
+    "scroll": (
+        "0x5300000000000000000000000000000000000004",  # WETH
+        "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4",  # USDC
+    ),
+    "zksync": (
+        "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",  # WETH
+        "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4",  # USDC
+    ),
     "osmosis": ("uosmo",),  # OSMO
     "cosmos": ("uatom",),  # ATOM
     "fantom": (
@@ -94,10 +118,11 @@ if _MISSING_CHAINS:  # pragma: no cover - import-time registry guard
 
 
 def seed_addresses(chain: str | None) -> tuple[str, ...]:
-    """Return seed token addresses for one chain, or for every chain in stable order.
+    """Return seed token addresses for one chain, or a flat deduped list for all chains.
 
-    Addresses shared by several chains (WETH on Base and Optimism) are requested once;
-    a single batch request returns the pairs for every chain that address exists on.
+    ``chain=all`` discovery does not use the flat list: it buckets seeds per chain so a
+    shared address (WETH on Base and Optimism) is requested in each chain's own lookup.
+    The flat list remains for callers that only need the union.
     """
     if chain and chain != "all":
         return SEED_TOKENS.get(chain, ())

@@ -16,6 +16,7 @@ from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .routers import markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
+from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
 
 
@@ -47,9 +48,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
 
+    monitor: MarketMonitor | None = None
+    monitor_task: asyncio.Task[None] | None = None
+    if settings.market_scan_inline:
+        monitor = MarketMonitor(session_factory(), dexscreener, settings)
+        monitor_task = asyncio.create_task(monitor.run_forever())
+    app.state.market_monitor = monitor
+
     try:
         yield
     finally:
+        if monitor is not None:
+            monitor.stop()
+        if monitor_task is not None:
+            await monitor_task
         if scheduler is not None:
             scheduler.stop()
         if scheduler_task is not None:

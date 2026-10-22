@@ -108,3 +108,35 @@ A restore that cannot reproduce the ledger to the last entry is a failed drill.
 | Strategy | new intents from that strategy | closing existing positions |
 
 Arming is immediate and audited. Disarming requires a reason and, in live mode, 2FA.
+
+## 11. Market monitor (market eyes)
+
+The API observes every registered chain continuously when
+`EZCHAIN_MARKET_SCAN_INLINE=true` (default). One scan makes a single `chain=all`
+discovery call, probes only the chains that call missed, and persists every row to
+`market_snapshots` before it is served. The adapter fan-out issues one token lookup per
+registered chain (seeds first, four in flight) and round-robins ranked rows before the
+page limit. The scan interval is
+`EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS` (default 90, minimum 30) and the per-call row
+budget is `EZCHAIN_MARKET_SCAN_LIMIT` (default 200).
+
+Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `error`, or
+`/api/v1/markets` looks empty for a chain that used to work.
+
+1. Read `/api/v1/markets/overview`. Each chain carries `status`, `rows`,
+   `last_observed_at`, `age_seconds`, `last_attempt_at` and `last_error`.
+2. `error`: read `last_error`; a `RateLimited` message means the shared adapter cooldown
+   is active. Do not restart in a loop — wait for `last_attempt_at` to advance.
+3. `stale`: rows exist but the newest observation is older than
+   `max(max_quote_age_seconds, 2 × scan interval)`. Check that scans are still succeeding
+   and that the provider is returning rows for that chain.
+4. `no_data`: the scan succeeded and returned no pairs. Some chains are not indexed by
+   DexScreener every day. A seed without a real pair is not a price; do not add one.
+5. Verify persistence directly:
+   `curl 'localhost:8000/api/v1/markets/stored?chain=<id>&limit=5'`. Every money field is
+   a decimal string, null means unknown, and `source`/`observed_at` come from the row.
+6. To switch observation off for a process, set `EZCHAIN_MARKET_SCAN_INLINE=false` and
+   restart the API. The existing `/markets` request path keeps working; the overview
+   then shows only DB-derived rows and statuses.
+7. Never edit `market_snapshots` to make a chain look covered. A missing or stale row is
+   a valid state and a monitoring fact.
