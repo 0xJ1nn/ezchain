@@ -16,6 +16,7 @@ from ezchain_core.strategy import validate_params
 from ezchain_core.types import OrderRequest, StrategyKind
 from ezchain_engine import (
     ExecutorUnavailable,
+    GraphContextBuilder,
     OrderExecutor,
     RunResult,
     TokenSource,
@@ -72,6 +73,14 @@ async def run_strategy_once(
     token_source: TokenSource,
     order_executor: OrderExecutor,
     *,
+    graph_runtime: GraphContextBuilder | None = None,
     now: datetime | None = None,
 ) -> RunResult:
-    return await evaluate_strategy(session, strategy, token_source, order_executor, now=now)
+    return await evaluate_strategy(
+        session,
+        strategy,
+        token_source,
+        order_executor,
+        graph_runtime=graph_runtime,
+        now=now,
+    )

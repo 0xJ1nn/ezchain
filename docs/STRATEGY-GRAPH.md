@@ -1,12 +1,17 @@
 # STRATEGY GRAPH — the visual strategy contract (v1)
 
-Status: **contract for the `graph` strategy kind.** A graph strategy is a user-drawn,
-Blueprint-style node graph. It is still a *declarative rule set* — typed JSON, validated
-and evaluated by platform code. There is no `eval`, no user code and no plugin loading
-here (plugins are [STRATEGY-SDK.md](STRATEGY-SDK.md)). ADR-0023 records the decision.
+Status: **implemented for PAPER.** The `graph` strategy kind, the catalogue/validate/
+dry-run/backtest HTTP contract, the backtest artifact and the scheduler runtime are
+built. A graph strategy is a user-drawn, Blueprint-style node graph. It is still a
+*declarative rule set* — typed JSON, validated and evaluated by platform code. There is
+no `eval`, no user code and no plugin loading here (plugins are
+[STRATEGY-SDK.md](STRATEGY-SDK.md)). ADR-0023 records the decision.
 
 The same graph is what the validator checks, what the backtester replays and what the
-paper engine runs. There is exactly one evaluator: `ezchain_core.graph.evaluate`.
+paper engine runs. There is exactly one evaluator: `ezchain_core.graph.evaluate_graph`.
+
+**Not implemented:** live signing, the executor, and real-money execution. A graph can
+place PAPER orders only, through the existing risk → quote → order → fill → journal path.
 
 ## 1. Document shape
 
@@ -211,23 +216,38 @@ UI shows it.
 - Strategy row: `kind = "graph"`, `params = {"graph": <document>, "interval_minutes":
   n, "max_position_usd": "…"}`. Validation runs on create/patch; an invalid graph is
   `422 STRATEGY_GRAPH_INVALID` with the report.
-- The scheduler builds the `EvalContext`, evaluates, maps the decision onto the
-  existing `OrderRequest` path (risk → quote → order → fill → journal). Nothing about
+- The API composition root wires a `GraphContextBuilder` into the engine. It builds the
+  `EvalContext` from the live snapshot, closed candles
+  (`apps/api/src/ezchain_api/services/candles.py`), the ledger-replayed position and the
+  paper account. The scheduler then calls the one evaluator and maps the decision onto
+  the existing `OrderRequest` path (risk → quote → order → fill → journal). Nothing about
   the single execution path changes.
-- Run log `inputs` stores `{"graph_trace": …, "effects": …, "context_digest": …}` so a
-  run is replayable and the editor can show the last real values on wires.
-- Variables live in `strategy_state` (one JSON row per strategy) and are written only
-  after the run row commits.
+- A buy carries `amount_usd`. A sell carries `sell_fraction × current position value`
+  (a fraction of 100 is a full exit) and is capped at that value, so it can never
+  oversell. A hold, an unknown value or a rejected order is logged with its own reason;
+  it is never recorded as a filled trade.
+- Run log `inputs` stores `{"kind": "graph", "graph_trace": …, "effects": …,
+  "context_digest": …, "graph_vars": …}` so a run names the exact context it was made
+  from and the editor can show the last real values on wires.
+- Variables are carried in the append-only run log (`inputs.graph_vars`) and read back
+  from the strategy's latest run. This slice has no separate mutable `strategy_state`
+  table: the row that records the tick also records the state it produced.
+- If the context builder is absent or fails (no runtime, no candles, ledger failure),
+  the run is a logged hold (`GRAPH_RUNTIME_UNAVAILABLE` / `GRAPH_CONTEXT_UNAVAILABLE`)
+  and the decision window is not consumed. No order is placed.
 
 ## 8. Backtest
 
-`backtest(document, candles, *, fee_bps, slippage_model, starting_cash, start, end)`
-replays the same evaluator bar by bar with an `EvalContext` built from bars ≤ t. Fills
-happen at the **next** bar's open (no same-bar fill), fee and slippage applied, and the
-result is immutable: equity curve, drawdown, trades, metrics (net PnL, return %, max
-drawdown %, win rate, profit factor, trades, exposure %, Sharpe on bar returns) and
-per-node hit counts. The harness declares data source, fill model, fee and slippage in
-the result. Backtests are labelled `BACKTEST`, never `PAPER` or `LIVE`.
+`run_backtest(document, candles_by_tf, *, primary_timeframe, fee_bps, slippage_bps,
+starting_cash_usd, snapshot_template, max_position_usd)` replays the same evaluator bar
+by bar with an `EvalContext` built from bars ≤ t. Fills happen at the **next** bar's open
+(no same-bar fill), fee and slippage applied, and the result is immutable: equity curve,
+drawdown, trades, metrics (net PnL, return %, max drawdown %, win rate, profit factor,
+trades, closed trades, exposure %, Sharpe on bar returns, fees) and per-node hit counts.
+The harness declares data source and fill model in the result. Only the per-bar close is
+known during a replay: current liquidity, volume, change and pair-age fields are not
+injected into historical ticks, so those nodes stay unknown rather than leak look-ahead.
+Backtests are labelled `BACKTEST`, never `PAPER` or `LIVE`.
 
 ## 9. HTTP contract (API ↔ web)
 
@@ -236,14 +256,19 @@ need the bearer token (the Next proxy injects it).
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/api/v1/graph/catalogue` | → `{schema: "ezchain.graph/1", pin_types: [{id, title}], categories: [{id, title}], nodes: [{type, title, category, description, inputs: [{name, type, required, default_param}], outputs: [{name, type}], params: [{name, kind, title, unit, min, max, choices, default, required}]}]}` |
-| POST | `/api/v1/graph/validate` | `{graph}` → `ValidationReport {ok, errors: [{code, message, node, port}], warnings: [...], warmup_bars: {tf: n}}` (always 200; invalid JSON shape is 422) |
-| POST | `/api/v1/graph/dry-run` | `{graph, chain, token_address, max_position_usd?}` → `{decision: {action, amount_usd, sell_fraction, reason, effects}, trace: {values, exec}, context: {now, price_usd, candles: {tf: {bars, last_close_time, stale}}, position, account}, mode: "DRY_RUN"}` — evaluates against live data, **never** places an order |
-| POST | `/api/v1/backtests` | `{graph \| strategy_id, chain, token_address, timeframe, bars (≤ 1000), fee_bps, slippage_bps, starting_cash_usd}` → `201 Backtest {id, created_at, label: "BACKTEST", request, data_source, fill_model, metrics, equity: [{t, equity_usd, drawdown_pct}], trades: [{entry_time, exit_time, side, qty, entry_price, exit_price, pnl_usd, pnl_pct, fees_usd, reason}], node_hits}` |
+| GET | `/api/v1/graph/catalogue` | → the core `catalogue_json()`: `{schema: "ezchain.graph/1", pin_types: ["exec", "bool", "number", "series"], categories: [{id, title}], node_types: [{type, category, title, description, inputs: [{name, type, required, default_param}], outputs: [{name, type}], params: [{name, kind, required, default, min, max, exclusive_min, choices, max_length}]}]}` |
+| POST | `/api/v1/graph/validate` | `{graph}` → `ValidationReport {ok, errors: [{code, message, node, port}], warnings: [...], warmup_bars: {tf: n}}`. A JSON object always returns 200, even when the graph is invalid. A missing/non-object `graph` is `422 {code: "STRATEGY_GRAPH_INVALID", message}`. |
+| POST | `/api/v1/graph/dry-run` | `{graph, chain, token_address, max_position_usd?}` → `{decision: {action, amount_usd, sell_fraction, reason, effects}, trace: {values, exec, unknown}, context: {now, price_usd, candles: {tf: {bars, last_close_time, stale}}, position, account}, mode: "DRY_RUN"}` — evaluates against live data, **never** places an order. An invalid graph is `422 STRATEGY_GRAPH_INVALID` with the report. |
+| POST | `/api/v1/backtests` | `{graph \| strategy_id, chain, token_address, timeframe, bars (≤ 1000), fee_bps, slippage_bps, starting_cash_usd}` → `201 Backtest {id, created_at, label: "BACKTEST", request, data_source, fill_model, metrics, equity: [{t, equity_usd, drawdown_pct}], trades: [{entry_time, exit_time, side, qty, entry_price, exit_price, pnl_usd, pnl_pct, fees_usd, reason}], node_hits, final_cash_usd, final_quantity, final_equity_usd, warmup_bars}`. `trades` are closed round trips; an open position is carried by `final_quantity`, not invented into a trade. |
 | GET | `/api/v1/backtests?strategy_id=` | → list of `{id, created_at, request, metrics}` (newest first, ≤ 100) |
-| GET | `/api/v1/backtests/{id}` | → full `Backtest` |
-| GET | `/api/v1/strategies/{id}/performance` | → `{strategy_id, label: "PAPER", realized_pnl_usd, unrealized_pnl_usd, fees_usd, trades, wins, losses, win_rate_pct, open_quantity, avg_cost_usd, mark_usd, equity_curve: [{t, pnl_usd}]}` — computed from this strategy's own fills (average cost), marked at the latest snapshot; unknown mark → unrealized `null` |
+| GET | `/api/v1/backtests/{id}` | → full `Backtest` (`404 BACKTEST_NOT_FOUND`) |
+| GET | `/api/v1/strategies/{id}/performance` | → `{strategy_id, label: "PAPER", realized_pnl_usd, unrealized_pnl_usd, fees_usd, trades, wins, losses, win_rate_pct, open_quantity, avg_cost_usd, mark_usd, equity_curve: [{t, pnl_usd}]}` — `trades` counts realized sell fills, `equity_curve` is cumulative realized PnL after fees at each fill, all computed only from orders whose `strategy_id` matches. The latest snapshot marks the open position; unknown mark → `mark_usd` and `unrealized_pnl_usd` are `null`. |
 
 Strategy create/patch with `kind: "graph"` uses the existing `/api/v1/strategies`
-endpoints; `params.graph` carries the document. Runs (`/strategies/{id}/runs`) carry
-`inputs.graph_trace` for graph strategies.
+endpoints; `params.graph` carries the document and is validated on create **and** patch.
+Runs (`/strategies/{id}/runs`) carry `inputs.graph_trace`, `inputs.effects`,
+`inputs.context_digest` and `inputs.graph_vars` for graph strategies.
+
+The catalogue is the platform's single node table (no duplicated list in the API or in
+the evaluator). The web builder's live adapter is a separate UI change; in fixture mode
+it still renders its own labelled fixture catalogue.

@@ -21,6 +21,9 @@ from ezchain_api.routers import system
 EXPECTED_PROTECTED_ROUTES = (
     ("DELETE", "/api/v1/strategies/{strategy_id}"),
     ("PATCH", "/api/v1/strategies/{strategy_id}"),
+    ("POST", "/api/v1/backtests"),
+    ("POST", "/api/v1/graph/dry-run"),
+    ("POST", "/api/v1/graph/validate"),
     ("POST", "/api/v1/paper/orders"),
     ("POST", "/api/v1/strategies"),
     ("POST", "/api/v1/strategies/{strategy_id}/run"),

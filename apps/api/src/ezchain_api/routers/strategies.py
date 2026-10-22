@@ -10,12 +10,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import DexScreenerClient, get_chain
+from ezchain_core.graph import validate as validate_graph
 from ezchain_core.strategy import StrategyValidationError
-from ezchain_engine import OrderExecutor
+from ezchain_engine import GraphContextBuilder, OrderExecutor
 
 from ..deps import get_dexscreener, get_session
 from ..models import StrategyRow, StrategyRunRow
-from ..schemas import StrategyIn, StrategyOut, StrategyPatch, StrategyRunOut
+from ..schemas import (
+    StrategyIn,
+    StrategyOut,
+    StrategyPatch,
+    StrategyPerformanceOut,
+    StrategyRunOut,
+)
+from ..services import performance
 from ..services import strategies as strategy_service
 from ..services.strategies import (
     MissingOrderExecutor,
@@ -64,16 +72,27 @@ def _validate_params(kind: str, params: dict[str, object] | None) -> None:
     try:
         validate_strategy_params(kind, params)
     except StrategyValidationError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": exc.code, "message": exc.message, "retryable": False},
-        ) from exc
+        detail: dict[str, object] = {
+            "code": exc.code,
+            "message": exc.message,
+            "retryable": False,
+        }
+        if exc.code == "STRATEGY_GRAPH_INVALID":
+            # The editor needs the full report to highlight the offending node, exactly
+            # as the standalone /graph/validate endpoint returns it.
+            detail["report"] = validate_graph((params or {}).get("graph")).to_dict()
+        raise HTTPException(status_code=422, detail=detail) from exc
 
 
 def _order_executor(request: Request) -> OrderExecutor:
     """The composition root sets ``app.state.order_executor``; until then, fail closed."""
     executor = getattr(request.app.state, "order_executor", None)
     return cast(OrderExecutor, executor if executor is not None else MissingOrderExecutor())
+
+
+def _graph_runtime(request: Request) -> GraphContextBuilder | None:
+    """The composition root sets ``app.state.graph_runtime``; absent means no candles."""
+    return cast(GraphContextBuilder | None, getattr(request.app.state, "graph_runtime", None))
 
 
 @router.get("", response_model=list[StrategyOut])
@@ -153,7 +172,13 @@ async def run_strategy(
                 "retryable": False,
             },
         )
-    result = await run_strategy_once(session, row, dexscreener, _order_executor(request))
+    result = await run_strategy_once(
+        session,
+        row,
+        dexscreener,
+        _order_executor(request),
+        graph_runtime=_graph_runtime(request),
+    )
     if result.run_id is None or result.created_at is None:
         raise HTTPException(
             status_code=500,
@@ -172,6 +197,21 @@ async def run_strategy(
         order_id=result.order_id,
         created_at=_dt(result.created_at) or "",
     )
+
+
+@router.get("/{strategy_id}/performance", response_model=StrategyPerformanceOut)
+def strategy_performance(
+    strategy_id: str, session: Session = Depends(get_session)
+) -> StrategyPerformanceOut:
+    """PAPER performance from this strategy's own fills, never the whole account."""
+    get_or_404(session, strategy_id)
+    body = performance.strategy_performance(session, strategy_id)
+    if body is None:  # pragma: no cover - get_or_404 already proved the row exists
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STRATEGY_NOT_FOUND", "message": "strategy not found"},
+        )
+    return StrategyPerformanceOut.model_validate(body)
 
 
 @router.get("/{strategy_id}/runs", response_model=list[StrategyRunOut])
