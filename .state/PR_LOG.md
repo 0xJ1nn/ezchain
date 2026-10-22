@@ -22,3 +22,4 @@
 | 2026-10-22 | #52 | P0.3 declarative strategy evaluator + scheduler | 44 pytest, ruff/mypy green |
 | 2026-10-22 | #55 | P0.4 live markets/token web + paper ticket | 23 Playwright, typecheck/lint/build green |
 | 2026-10-22 | #56 | P0.5 paper positions + strategy builder web | 31 Playwright, typecheck/lint/build green |
+| 2026-10-22 | #51 | P0 live paper slice: API, adapters, ledger, engine, live web | `tools/ci.sh` green (203 pytest, 31 Playwright); live Jupiter/paper smoke |
