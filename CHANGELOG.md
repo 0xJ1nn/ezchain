@@ -116,6 +116,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Playwright fails fast with an actionable message when a `next dev` server is running
+  on :3000, instead of corrupting the shared `apps/web/.next` manifest and producing a
+  flaky 500. The `.next-test` approach was reverted because Next rewrites tracked type
+  files for the active build directory (#36).
 - Playwright uses a separate `.next-test` build directory, so a running `next dev` on
   :3000 cannot corrupt the gate server on :3100. The gate now stays green with a dev
   server active (#36).
