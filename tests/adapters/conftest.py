@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import DexScreenerClient, GeckoTerminalClient, JupiterClient
 from ezchain_adapters.ratelimit import TokenBucket
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -64,3 +64,9 @@ def dexscreener(clock: FakeClock, fast_limiter: TokenBucket) -> DexScreenerClien
 @pytest.fixture
 def jupiter(clock: FakeClock, fast_limiter: TokenBucket) -> JupiterClient:
     return JupiterClient(limiter=fast_limiter, clock=clock, sleep=clock.sleep)
+
+
+@pytest.fixture
+def geckoterminal(clock: FakeClock, fast_limiter: TokenBucket) -> GeckoTerminalClient:
+    return GeckoTerminalClient(limiter=fast_limiter, clock=clock, sleep=clock.sleep)
+

@@ -29,3 +29,9 @@ class RateLimited(AdapterError):
 
 class NoRoute(AdapterError):
     code = "NO_SELL_ROUTE"
+
+
+class CandlesUnsupported(AdapterError):
+    """This chain or timeframe has no candle provider. Never fabricate history."""
+
+    code = "CANDLES_UNSUPPORTED_CHAIN"
