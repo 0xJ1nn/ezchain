@@ -542,3 +542,37 @@ passed paper gate and an explicit promotion.
 (and `pyotp`/`argon2-cffi` to the API for auth). Live chains are a capability subset; the
 rest stay paper-only and say so. Real-fund testing beyond simulation and forked chains is
 an owner action with a small funded wallet; automated tests never move real funds.
+
+---
+
+## ADR-0027 — Paper fills serialize per account; stale sell sizes are rejected
+
+**Date:** 2026-10-23 · **Status:** Accepted (concurrency hardening; no invariant change)
+
+**Context:** the paper order service replayed the ledger, sized a sell and committed the
+fill without a cross-request lock. Four concurrent full-size sells could each see the same
+held quantity and fill it; two buys on different tokens could each pass the same cash check.
+The stress harness reproduced both (`race.no_oversell`, negative cash), and a negative
+position also made later reads fail. The quote itself is network I/O and must not hold a
+database transaction open.
+
+**Decision:** the quote happens outside a transaction. The replay, order claim, risk check,
+fill and journal then run inside one **account-scoped** critical section: an in-process
+lock plus, on PostgreSQL, a transaction-scoped `pg_advisory_xact_lock` on `paper:account`.
+This is deliberately coarser than a per-token lock because cash, the open-position count and
+daily realized PnL belong to the account, not the token. A sell whose quoted quantity is
+larger than the quantity still held is rejected `POSITION_CHANGED`; it is never resized
+against a stale quote. The rejected order persists the quote (`quote_kind`, `quote_json`) so
+the refusal is replayable. The database must run at READ COMMITTED (the default): after the
+advisory lock is granted, each statement sees the previous winner's committed rows.
+
+The quote ladder also gets a total deadline of 8 s and a 5 s per-provider/exit attempt.
+Exhausting the budget fails closed with `NO_ROUTE`/`TIMEOUT`; it never degrades to a mark or
+returns an open connection. The paper-mark path is inside the same budget.
+
+**Consequences:** paper orders are serialized across the whole account, so throughput is
+bounded but every fill is consistent. A trader who races a changing position gets an
+explicit `POSITION_CHANGED` and retries with a fresh quote. The in-process lock covers the
+single-worker API and SQLite tests; the advisory lock covers multiple API processes. A
+future per-account sharding scheme needs its own ADR and must keep cash and open positions
+in the same serialization domain.

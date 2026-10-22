@@ -888,9 +888,11 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 		const document = toDocument(snapshot());
 		const candles = document.nodes.find((node) => node.type === "data.candles");
 		const timeframe = typeof candles?.params.timeframe === "string" ? candles.params.timeframe : "5m";
+		// The API accepts exactly one of graph/strategy_id. The builder sends the current
+		// document so unsaved edits are what get tested; saved-strategy backtests use the
+		// strategy id path elsewhere.
 		const result = await runBacktest(mode, {
 			graph: document,
-			strategy_id: strategy?.id,
 			chain: meta.chain,
 			token_address: meta.token_address.trim(),
 			timeframe,
@@ -907,7 +909,7 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 		setBacktest(result.data);
 		setDrawer("backtest");
 		setNotice({ tone: "ok", text: "Backtest complete · labelled BACKTEST, never PAPER." });
-	}, [meta, mode, snapshot, strategy, validateNow]);
+	}, [meta, mode, snapshot, validateNow]);
 
 	const save = useCallback(async () => {
 		const errors: Record<string, string> = {};

@@ -2,6 +2,9 @@ import { defineConfig } from "@playwright/test";
 import { browserChannel } from "./e2e/browser-channel";
 import { PROXY_TEST_API_URL, PROXY_TEST_TOKEN } from "./e2e/proxy-env";
 
+const PORT = process.env.EZCHAIN_PW_PORT ?? "3100";
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+
 export default defineConfig({
 	testDir: "./e2e",
 	testIgnore: "**/live-paper.spec.ts",
@@ -14,7 +17,7 @@ export default defineConfig({
 	workers: "50%",
 	reporter: [["list"]],
 	use: {
-		baseURL: "http://127.0.0.1:3100",
+		baseURL: BASE_URL,
 		// Installed Chrome when present, bundled Chromium otherwise. EZCHAIN_PW_CHANNEL
 		// overrides the detection.
 		channel: browserChannel(),
@@ -22,8 +25,8 @@ export default defineConfig({
 		trace: "retain-on-failure",
 	},
 	webServer: {
-		command: "NEXT_TELEMETRY_DISABLED=1 pnpm dev --port 3100",
-		url: "http://127.0.0.1:3100",
+		command: `NEXT_TELEMETRY_DISABLED=1 pnpm dev --port ${PORT}`,
+		url: BASE_URL,
 		reuseExistingServer: false,
 		timeout: 120_000,
 		env: {

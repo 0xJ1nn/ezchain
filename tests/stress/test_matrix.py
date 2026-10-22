@@ -96,6 +96,7 @@ def test_the_documented_rejection_vocabulary() -> None:
         "PAPER_MARK_LIMIT",
         "QUOTE_STALE",
         "INSUFFICIENT_POSITION",
+        "PRICE_IMPACT_TOO_HIGH",
         "KILL_SWITCH_ACTIVE",
     ):
         assert documented_rejection(reason), reason

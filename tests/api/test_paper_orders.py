@@ -76,3 +76,71 @@ def test_manual_order_with_strategy_id_is_ignored(client_for, session: Session) 
     row = session.scalar(select(PaperOrderRow))
     assert row is not None
     assert row.strategy_id is None
+
+
+def _valid_payload() -> dict[str, str]:
+    return {
+        "chain": CHAIN,
+        "token_address": TOKEN,
+        "side": "buy",
+        "amount_usd": "25",
+        "idempotency_key": "validation-key-1",
+    }
+
+
+def test_float_overflow_amount_is_422_not_500(client_for, session: Session) -> None:
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+    payload = _valid_payload()
+    payload["amount_usd"] = "1e400"
+
+    response = client.post("/api/v1/paper/orders", json=payload)
+
+    assert response.status_code == 422
+    assert session.scalar(select(PaperOrderRow)) is None
+
+
+def test_non_ascii_idempotency_key_is_422(client_for, session: Session) -> None:
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+    payload = _valid_payload()
+    payload["idempotency_key"] = "idem-ünicode-123"
+
+    response = client.post("/api/v1/paper/orders", json=payload)
+
+    assert response.status_code == 422
+    assert session.scalar(select(PaperOrderRow)) is None
+
+
+def test_json_float_overflow_is_422_not_500(client_for, session: Session) -> None:
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+    body = (
+        '{"chain": "'
+        + CHAIN
+        + '", "token_address": "'
+        + TOKEN
+        + '", "side": "buy", "amount_usd": 1e400, '
+        + '"idempotency_key": "overflow-raw-123"}'
+    )
+
+    response = client.post(
+        "/api/v1/paper/orders",
+        content=body.encode(),
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert session.scalar(select(PaperOrderRow)) is None

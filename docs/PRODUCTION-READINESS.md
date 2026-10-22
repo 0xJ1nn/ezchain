@@ -27,7 +27,10 @@ no copy-trading. `live_execute` is `false` for every chain.
 | Observability | `/healthz`, `/readyz`, `/metrics`, JSON logs | 200/200/200 with DB at head; request id/path/status/duration logged |
 | Stress | smoke, idempotency, soak 60s×4, chaos | all PASS with 0 findings against a clean paper API |
 | Stress → issue loop | `--strategy-order-usd 1500` | filed #71; PR #72 fixed it; same run now passes and files nothing |
-| Web truth | dashboard panels, strategy builder | fixture panels carry `FIXTURE`; DCA/dip vocabularies match the validator |
+| Web truth | dashboard, strategy builder | live reads carry `PAPER`/source/age; fixture mode is labelled; DCA/dip vocabularies match the validator |
+| Graph strategies | `/api/v1/graph/catalogue`, `/validate`, `/dry-run`, `/backtests` | validated live against Base WETH; dry run placed no order; backtest returned `BACKTEST` with GeckoTerminal closed bars. Evidence: [graph-api-paper.md](evidence/p0-production/graph-api-paper.md) |
+| Paper read models | `/paper/ledger`, `/performance`, `/attribution`, `/limits`, `/alerts`, CSV exports | server-computed from the ledger; unknown marks stay `null`; 1001 Python tests green before the graph merge |
+| Live UI paper flow | Playwright live spec + 8001 API + disposable Postgres | buy $1 → position → full sell → reconciliation `ok: true`; evidence: [live-ui-paper-flow.md](evidence/p0-production/live-ui-paper-flow.md) |
 | Gate determinism | Playwright with a dev server on :3000 | fails fast with instructions instead of corrupting `.next`; green without it |
 
 ## 2. Not verified

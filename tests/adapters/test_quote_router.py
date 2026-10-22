@@ -229,3 +229,66 @@ async def test_zero_amount_out_is_treated_as_no_route() -> None:
         chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
     )
     assert quote.kind == "velora"
+
+
+class SlowProvider(FakeProvider):
+    """A provider that never answers inside the router's attempt budget."""
+
+    async def quote(self, request: QuoteRequest) -> Quote:
+        import asyncio
+
+        self.calls.append(request)
+        await asyncio.sleep(1)
+        return make_quote(request, kind=self.kind)
+
+
+async def test_provider_timeout_fails_closed_with_a_reason(monkeypatch) -> None:
+    from ezchain_adapters import quotes as quotes_module
+
+    monkeypatch.setattr(quotes_module, "PROVIDER_ATTEMPT_SECONDS", 0.01)
+    monkeypatch.setattr(quotes_module, "QUOTE_DEADLINE_SECONDS", 0.05)
+    with pytest.raises(NoRoute) as caught:
+        await router(SlowProvider("kyberswap")).quote(
+            chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+    assert "TIMEOUT" in (caught.value.detail or "")
+    assert caught.value.code == "NO_ROUTE"
+
+
+async def test_timeout_tries_the_next_rung(monkeypatch) -> None:
+    from ezchain_adapters import quotes as quotes_module
+
+    monkeypatch.setattr(quotes_module, "PROVIDER_ATTEMPT_SECONDS", 0.01)
+    monkeypatch.setattr(quotes_module, "QUOTE_DEADLINE_SECONDS", 0.05)
+    slow = SlowProvider("kyberswap")
+    fallback = FakeProvider("velora")
+    quote = await router(slow, fallback).quote(
+        chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+    )
+    assert quote.kind == "velora"
+
+
+class SlowExitProvider(FakeProvider):
+    """Answers a buy, then hangs on the mandatory full-size sell check."""
+
+    async def quote(self, request: QuoteRequest) -> Quote:
+        import asyncio
+
+        self.calls.append(request)
+        if request.side == "buy":
+            return make_quote(request, kind=self.kind)
+        await asyncio.sleep(1)
+        return make_quote(request, kind=self.kind)
+
+
+async def test_exit_timeout_fails_closed_with_exit_timeout(monkeypatch) -> None:
+    from ezchain_adapters import quotes as quotes_module
+
+    monkeypatch.setattr(quotes_module, "PROVIDER_ATTEMPT_SECONDS", 0.01)
+    monkeypatch.setattr(quotes_module, "QUOTE_DEADLINE_SECONDS", 0.05)
+    with pytest.raises(NoRoute) as caught:
+        await router(SlowExitProvider("kyberswap")).quote(
+            chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+    assert "EXIT_TIMEOUT" in (caught.value.detail or "")
+    assert caught.value.code == "NO_ROUTE"

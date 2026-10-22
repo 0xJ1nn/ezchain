@@ -13,20 +13,19 @@ test("dashboard renders from fixtures with no external requests", async ({ page 
 
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
-	await expect(page.locator(".hero-stat .value")).toHaveText("$3,482.16");
+	await expect(page.locator(".hero-stat .value")).toHaveText("—");
+	await expect(page.getByText("unknown mark excluded").first()).toBeVisible();
 	await expect(page.getByRole("link", { name: "KILL SWITCH", exact: true })).toBeVisible();
 	await expect(page.getByText("One screen to answer")).toBeVisible();
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
-test("every fixture dashboard panel carries an explicit FIXTURE badge", async ({ page }) => {
+test("fixture mode is labelled and never claims live data", async ({ page }) => {
 	await page.goto("/");
-	const panelCount = await page.locator("section.panel").count();
-	await expect(page.locator("section.panel .badge", { hasText: "FIXTURE" })).toHaveCount(
-		panelCount,
-	);
-	await expect(page.getByText("fixture preview", { exact: true })).toBeVisible();
+	await expect(page.getByText("FIXTURE", { exact: true }).first()).toBeVisible();
+	await expect(page.getByText("Fixture preview")).toBeVisible();
+	await expect(page.getByText("LIVE PAPER API")).toHaveCount(0);
 	await expect(page.getByText("live checks")).toHaveCount(0);
 });
 

@@ -26,10 +26,15 @@ import type {
 	Backtest,
 	BacktestRequest,
 	BacktestSummary,
+	CatalogueCategory,
+	CatalogueNode,
+	CatalogueParam,
+	CataloguePinType,
 	DryRunRequest,
 	DryRunResult,
 	GraphCatalogue,
 	GraphResult,
+	ParamKind,
 	ValidationReport,
 } from "./graph-types";
 
@@ -131,12 +136,63 @@ function requireDocument(graph: unknown) {
 	return parsed.document;
 }
 
+
+/**
+ * The API serves the core catalogue (`node_types`, string `pin_types`, param kinds
+ * `decimal|int|enum|str`). The editor uses the presentation shape (`nodes`, pin objects,
+ * `number|select|text`). This is the only translation; node semantics stay in core.
+ */
+export function adaptCatalogue(raw: unknown): GraphCatalogue {
+	const value = raw as Record<string, unknown>;
+	if (Array.isArray(value.nodes)) return raw as GraphCatalogue;
+
+	const pinTypes: CataloguePinType[] = Array.isArray(value.pin_types)
+		? (value.pin_types as unknown[]).map((entry) =>
+				typeof entry === "string"
+					? { id: entry as CataloguePinType["id"], title: entry.charAt(0).toUpperCase() + entry.slice(1) }
+					: (entry as CataloguePinType),
+			)
+		: [];
+	const categories = (value.categories ?? []) as CatalogueCategory[];
+	const params = (rawNode: Record<string, unknown>): CatalogueParam[] =>
+		((rawNode.params ?? []) as Record<string, unknown>[]).map((param) => {
+			const kind = String(param.kind ?? "text");
+			const mapped: ParamKind = kind === "enum" ? "select" : kind === "str" ? "text" : "number";
+			const choices = Array.isArray(param.choices) && param.choices.length > 0
+				? (param.choices as string[])
+				: null;
+			return {
+				name: String(param.name ?? ""),
+				kind: mapped,
+				title: String(param.title ?? param.name ?? ""),
+				unit: param.unit === undefined ? null : (param.unit as string | null),
+				min: (param.min ?? null) as number | string | null,
+				max: (param.max ?? null) as number | string | null,
+				choices,
+				default: (param.default ?? null) as string | number | null,
+				required: param.required === true,
+			};
+		});
+	const nodes: CatalogueNode[] = ((value.node_types ?? []) as Record<string, unknown>[]).map(
+		(node) => ({
+			type: String(node.type ?? ""),
+			title: String(node.title ?? node.type ?? ""),
+			category: String(node.category ?? ""),
+			description: String(node.description ?? ""),
+			inputs: (node.inputs ?? []) as CatalogueNode["inputs"],
+			outputs: (node.outputs ?? []) as CatalogueNode["outputs"],
+			params: params(node),
+		}),
+	);
+	return { schema: String(value.schema ?? "ezchain.graph/1"), pin_types: pinTypes, categories, nodes };
+}
+
 export async function getGraphCatalogue(
 	mode: GraphMode,
 ): Promise<GraphResult<GraphCatalogue>> {
 	return capture(mode, async () => {
-		if (mode === "fixture") return fixtureCatalogue;
-		return request<GraphCatalogue>("/graph/catalogue");
+		if (mode === "fixture") return adaptCatalogue(fixtureCatalogue);
+		return adaptCatalogue(await request<unknown>("/graph/catalogue"));
 	});
 }
 

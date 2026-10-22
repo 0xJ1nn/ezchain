@@ -87,6 +87,7 @@ from .ledger import (
 from .matrix import (
     STATUS_FAILED,
     STATUS_NO_DATA,
+    STATUS_NO_QUOTE,
     STATUS_OK,
     ChainRow,
     documented_rejection,
@@ -332,6 +333,64 @@ def _read_token(
     )
     harness.register_invariants("token.shape")
     return payload
+
+
+QUOTE_UNAVAILABLE_CODES = frozenset(
+    {
+        "NO_ROUTE",
+        "NO_SELL_ROUTE",
+        "UPSTREAM_UNREACHABLE",
+        "RATE_LIMITED",
+        "PRICE_IMPACT_TOO_HIGH",
+        "TIMEOUT",
+        "EXIT_TIMEOUT",
+    }
+)
+
+
+def quote_failure_code(
+    harness: Harness,
+    token: ResolvedToken,
+    *,
+    side: str,
+    amount_usd: Decimal,
+    quantity: Decimal | None,
+    scenario: str,
+) -> str | None:
+    """The API's reason for a failed quote read, or ``None`` for a non-quote failure.
+
+    A ladder with no executable route is a *documented* fail-closed state, not a matrix
+    failure. This second read is only made when the first quote read returned nothing.
+    """
+    params: dict[str, str | int | float] = {
+        "chain": token.chain,
+        "token": token.address,
+        "side": side,
+        "amount_usd": str(amount_usd),
+    }
+    if quantity is not None:
+        params["quantity"] = str(quantity)
+    response = harness.request(
+        "GET",
+        "/api/v1/quotes",
+        scenario=scenario,
+        params=params,
+        expected=(200,),
+        allow_status=(409, 429),
+    )
+    if response is None:
+        return "REQUEST_FAILED"
+    if response.status_code == 200:
+        return "NO_QUOTE"
+    if response.status_code in {409, 429}:
+        payload = harness.json_object(response, scenario=scenario, label=f"{side} quote reason")
+        detail = None if payload is None else payload.get("detail")
+        if isinstance(detail, Mapping):
+            code = _str(detail.get("code"))
+            if code is not None:
+                return code
+        return f"HTTP_{response.status_code}"
+    return f"HTTP_{response.status_code}"
 
 
 def _read_quote(
@@ -1659,7 +1718,7 @@ def _race(harness: Harness, token: ResolvedToken, *, scenario: str = "race") -> 
             {
                 "held_quantity": str(held),
                 "concurrent_sells": workers,
-                "filled_sell_orders": 0,
+                "sell_orders_created": 0,
                 "ok": True,
                 "detail": "skipped: no sell order was created",
             },
@@ -1708,7 +1767,7 @@ def _race(harness: Harness, token: ResolvedToken, *, scenario: str = "race") -> 
             "held_quantity": str(held),
             "attempted_sell_notional": str(amount),
             "concurrent_sells": workers,
-            "filled_sell_orders": len(sell_order_ids),
+            "sell_orders_created": len(sell_order_ids),
             "sold_quantity": str(sold),
             "final_quantity": None if final_quantity is None else str(final_quantity),
             "cash_usd": None if cash is None else str(cash),
@@ -1981,13 +2040,30 @@ def _matrix_chain(
         )
         is None
     ):
+        code = quote_failure_code(
+            harness,
+            resolved,
+            side="buy",
+            amount_usd=harness.config.order_usd,
+            quantity=None,
+            scenario=scenario,
+        )
+        if code in QUOTE_UNAVAILABLE_CODES:
+            return ChainRow(
+                chain=chain,
+                status=STATUS_NO_QUOTE,
+                token=address,
+                symbol=resolved.symbol,
+                quote_kind=quote_kind,
+                reason=f"no buy quote: {code}",
+            )
         return ChainRow(
             chain=chain,
             status=STATUS_FAILED,
             token=address,
             symbol=resolved.symbol,
             quote_kind=quote_kind,
-            reason="no buy quote",
+            reason=f"no buy quote: {code or 'unknown'}",
         )
 
     if not harness.reserve_matrix_slot():

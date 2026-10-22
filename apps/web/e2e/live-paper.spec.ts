@@ -47,12 +47,13 @@ test("live markets and token page render real data", async ({ page }) => {
 
 test("paper buy and sell complete through the UI", async ({ page }) => {
 	await page.goto(`/tokens/${CHAIN}/${TOKEN}`);
-	const amount = page.getByLabel("Paper amount in USD");
+	const ticket = page.locator("#ticket");
+	const amount = ticket.getByLabel("Paper amount in USD");
 	await expect(amount).toBeVisible();
 	await amount.fill("1");
-	await page.getByRole("button", { name: "Preview quote" }).click();
+	await ticket.getByRole("button", { name: "Preview quote" }).click();
 
-	const confirm = page.getByRole("button", { name: "Confirm paper order" });
+	const confirm = ticket.getByRole("button", { name: "Confirm paper order" });
 	await expect(confirm).toBeEnabled({ timeout: 30_000 });
 	await confirm.click();
 
@@ -67,10 +68,11 @@ test("paper buy and sell complete through the UI", async ({ page }) => {
 	// Sell the full position by asking for more USD than the position is worth; the
 	// server clamps a sell to the held quantity (never oversells).
 	await page.goto(`/tokens/${CHAIN}/${TOKEN}?side=sell&amount=1000000`);
-	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeEnabled({
+	const sellTicket = page.locator("#ticket");
+	await expect(sellTicket.getByRole("button", { name: "Confirm paper order" })).toBeEnabled({
 		timeout: 30_000,
 	});
-	await page.getByRole("button", { name: "Confirm paper order" }).click();
+	await sellTicket.getByRole("button", { name: "Confirm paper order" }).click();
 	await expect(page.getByText("PAPER FILL")).toBeVisible({ timeout: 30_000 });
 
 	// Reconciliation is a first-class read, not a hidden script.

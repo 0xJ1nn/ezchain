@@ -22,6 +22,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   the new `backtests` table (`0006_backtests`, forward-only). Validation and dry-run
   keep unknown values `null`; the dry run never places an order. Live signing/execution
   still does not exist.
+- **Operator UI routes**: every sidebar destination now renders a real surface backed by
+  the typed API clients or an explicit labelled FIXTURE/empty/error state. Adds
+  performance, wallets, activity, reports (browser CSV), automations, signals, backtests
+  status, risk with a persisted kill-switch control, derived alerts, chains/coverage,
+  integrations, settings, security, developer, operations (health/ready/metrics/
+  reconciliation), workspace and the state/component/mobile galleries. The placeholder
+  catch-all route is removed; unknown routes return 404.
+
 - `docs/evidence/p0-production/`: live market/paper/strategy/auth/API-down/restart and
   stress evidence for the PAPER production operations.
 - `docs/PRODUCTION-READINESS.md`: verified vs unverified matrix, operator checklist and the

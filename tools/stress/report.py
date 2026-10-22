@@ -336,7 +336,7 @@ def _render_race_and_killswitch(lines: list[str], report: Mapping[str, object]) 
                 f"{_as_str(row.get('sold_quantity'), '-')} · final: "
                 f"{_as_str(row.get('final_quantity'), 'gone')}",
                 f"- Concurrent full-size sells: {_as_str(row.get('concurrent_sells'), '-')} "
-                f"({_as_str(row.get('filled_sell_orders'), '0')} filled)",
+                f"({_as_str(row.get('sell_orders_created'), '0')} order(s) created)",
                 f"- Cash after: {_as_str(row.get('cash_usd'), '-')}",
             ]
         )

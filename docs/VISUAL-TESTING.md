@@ -8,6 +8,7 @@ viewports, and compare it with the wireframe or the approved visual.
 ```bash
 pnpm install
 pnpm --filter @ezchain/web test       # Playwright smoke + screenshots
+# parallel worktrees: EZCHAIN_PW_PORT=3300 pnpm --filter @ezchain/web test
 ```
 
 The Playwright config starts the app on `127.0.0.1:3100`, uses installed Chrome when

@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from typing import Any, cast
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from ezchain_adapters import (
@@ -29,6 +31,7 @@ from ezchain_engine import KillSwitchExecutor, StrategyScheduler
 from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
+from .errors import request_validation_error
 from .observability import ObservabilityMiddleware, configure_logging
 from .routers import account, backtests, graph, markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
@@ -145,6 +148,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(ObservabilityMiddleware)
+
+    app.add_exception_handler(RequestValidationError, cast(Any, request_validation_error))
+
     app.include_router(system.router)
     app.include_router(markets.router)
     app.include_router(paper.router)

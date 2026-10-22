@@ -41,12 +41,15 @@ RISK_REJECTION_REASONS: frozenset[str] = frozenset(
         "INSUFFICIENT_CASH",
         "INSUFFICIENT_POSITION",
         "NO_ROUTE",
+        "POSITION_CHANGED",
+        "PRICE_IMPACT_TOO_HIGH",
         "KILL_SWITCH_ACTIVE",
     }
 )
 
 STATUS_OK = "ok"
 STATUS_NO_DATA = "no_data"
+STATUS_NO_QUOTE = "no_quote"
 STATUS_REJECTED = "rejected"
 STATUS_FAILED = "failed"
 
@@ -165,6 +168,7 @@ __all__ = [
     "RISK_REJECTION_REASONS",
     "STATUS_FAILED",
     "STATUS_NO_DATA",
+    "STATUS_NO_QUOTE",
     "STATUS_OK",
     "STATUS_REJECTED",
     "ChainRow",

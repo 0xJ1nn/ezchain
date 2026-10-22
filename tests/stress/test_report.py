@@ -166,7 +166,7 @@ def test_race_and_killswitch_sections() -> None:
                     "sold_quantity": "2",
                     "final_quantity": None,
                     "concurrent_sells": 4,
-                    "filled_sell_orders": 1,
+                    "sell_orders_created": 1,
                     "cash_usd": "10",
                 }
             ],

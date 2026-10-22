@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException
+import math
+from decimal import Decimal
+from typing import Any
+
+from fastapi import HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from ezchain_adapters import (
     AdapterError,
@@ -58,3 +64,23 @@ def candles_http_error(exc: AdapterError) -> HTTPException:
             },
         )
     return adapter_http_error(exc)
+
+
+def json_safe(value: Any) -> Any:
+    """Make validation errors serializable even when the rejected input was inf/NaN."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, Decimal) and not value.is_finite():
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+async def request_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Never turn a rejected non-finite JSON number into a 500 while rendering it."""
+    return JSONResponse(status_code=422, content={"detail": json_safe(exc.errors())})

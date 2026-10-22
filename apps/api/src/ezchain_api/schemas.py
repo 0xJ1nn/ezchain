@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+import math
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -210,10 +211,38 @@ class PaperOrderIn(BaseModel):
     amount_usd: Decimal = Field(gt=0)
     idempotency_key: str = Field(min_length=8, max_length=120)
 
+    @field_validator("amount_usd", mode="before")
+    @classmethod
+    def finite_before_parse(cls, value: object) -> object:
+        """Reject `1e400` (a JSON float that becomes infinity) before Decimal parsing."""
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("amount_usd must be finite")
+        if isinstance(value, Decimal) and not value.is_finite():
+            raise ValueError("amount_usd must be finite")
+        return value
+
     @field_validator("amount_usd")
     @classmethod
     def cents(cls, value: Decimal) -> Decimal:
-        return value.quantize(Decimal("0.01"))
+        if not value.is_finite():
+            raise ValueError("amount_usd must be finite")
+        try:
+            quantized = value.quantize(Decimal("0.01"))
+        except InvalidOperation as exc:
+            raise ValueError("amount_usd is outside the supported range") from exc
+        if quantized <= 0:
+            raise ValueError("amount_usd must be > 0")
+        return quantized
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def ascii_key(cls, value: str) -> str:
+        """Keys cross process and log boundaries; non-ASCII/control bytes are refused."""
+        if not value.isascii():
+            raise ValueError("idempotency_key must be ASCII")
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("idempotency_key must not contain control characters")
+        return value
 
 
 class OrderOut(BaseModel):

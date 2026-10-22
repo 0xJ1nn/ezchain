@@ -19,6 +19,7 @@ Conventions shared by every provider adapter:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
@@ -39,6 +40,11 @@ from .ratelimit import TokenBucket, default_sleep
 from .registry import BY_ID, PAPER_MARK, ChainMeta, QuoteAsset
 
 QUOTE_CACHE_TTL_SECONDS = 10.0
+# A trader should get a quote or a reason, not an open connection. The ladder can try
+# several providers; the total budget is bounded so one dead rung cannot hold the request
+# for the sum of every provider's HTTP timeout.
+QUOTE_DEADLINE_SECONDS = 8.0
+PROVIDER_ATTEMPT_SECONDS = 5.0
 MAX_TOKEN_DECIMALS = 36
 
 
@@ -243,32 +249,71 @@ class QuoteRouter:
             quantity=quantity,
         )
         failures: list[str] = []
+        deadline = time.monotonic() + QUOTE_DEADLINE_SECONDS
         for kind in meta.quote_providers:
             if kind == PAPER_MARK:
                 break
             provider = self._providers.get(kind)
             if provider is None or not provider.supports(meta):
                 continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                failures.append("deadline")
+                break
             try:
-                quote = await provider.quote(request)
+                quote = await asyncio.wait_for(
+                    provider.quote(request), timeout=min(remaining, PROVIDER_ATTEMPT_SECONDS)
+                )
+            except TimeoutError:
+                failures.append(f"{kind}:TIMEOUT")
+                continue
             except AdapterError as exc:
                 failures.append(f"{kind}:{exc.code}")
                 continue
             if quote.amount_out <= 0:
                 failures.append(f"{kind}:NO_ROUTE")
                 continue
-            if typed_side == "buy" and not await self._has_exit(provider, request, quote):
-                # An entry with no executable exit is not an entry (ADR-0015), so try the
-                # next rung rather than book a position that cannot be closed.
-                failures.append(f"{kind}:NO_SELL_ROUTE")
-                continue
+            if typed_side == "buy":
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    failures.append("deadline")
+                    break
+                try:
+                    exit_ok = await asyncio.wait_for(
+                        self._has_exit(provider, request, quote),
+                        timeout=min(remaining, PROVIDER_ATTEMPT_SECONDS),
+                    )
+                except TimeoutError:
+                    failures.append(f"{kind}:EXIT_TIMEOUT")
+                    continue
+                if not exit_ok:
+                    # An entry with no executable exit is not an entry (ADR-0015), so try
+                    # the next rung rather than book a position that cannot be closed.
+                    failures.append(f"{kind}:NO_SELL_ROUTE")
+                    continue
             return quote
 
         if meta.quote_providers[0] == PAPER_MARK:
-            return await self._paper_mark(request)
+            remaining = max(0.1, deadline - time.monotonic())
+            try:
+                return await asyncio.wait_for(self._paper_mark(request), timeout=remaining)
+            except TimeoutError as exc:
+                raise NoRoute(
+                    "paper mark timed out",
+                    detail=f"deadline={QUOTE_DEADLINE_SECONDS:g}s",
+                    code="NO_ROUTE",
+                ) from exc
         # Fail closed. A chain with an executable ladder never degrades into a mark: a
         # silent downgrade would book a fill the venue could not have produced.
-        raise NoRoute("no executable quote", detail=", ".join(failures) or None)
+        # A buy that only failed the full-size-exit check is a NO_SELL_ROUTE; a ladder
+        # that timed out or had every rung unavailable is a NO_ROUTE. The trader sees the
+        # difference between "cannot exit this token" and "no venue answered".
+        code = (
+            "NO_SELL_ROUTE"
+            if failures and all(item.endswith(":NO_SELL_ROUTE") for item in failures)
+            else "NO_ROUTE"
+        )
+        raise NoRoute("no executable quote", detail=", ".join(failures) or None, code=code)
 
     async def _has_exit(self, provider: QuoteProvider, request: QuoteRequest, quote: Quote) -> bool:
         """The received size must have a full-size sell quote from the same venue."""

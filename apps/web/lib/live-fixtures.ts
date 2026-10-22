@@ -9,6 +9,7 @@ import {
 	ApiError,
 	type Chain,
 	type MarketList,
+	type MarketOverview,
 	type MarketQuery,
 	type MarketRow,
 	type PairInfo,
@@ -30,6 +31,9 @@ const CHAIN_REGISTRY: Chain[] = [
 			paper_execute: true,
 			live_execute: false,
 			quote_kind: "jupiter",
+			quote_providers: ["jupiter"],
+			executable_quotes: true,
+			candles: true,
 		},
 		venues: ["jupiter"],
 		notes: "Jupiter Lite paper quotes.",
@@ -40,7 +44,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "ETH",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -50,7 +62,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "ETH",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -60,7 +80,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "BNB",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -70,7 +98,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "ETH",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -80,7 +116,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "POL",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -90,7 +134,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "ETH",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -100,7 +152,15 @@ const CHAIN_REGISTRY: Chain[] = [
 		family: "evm",
 		native_asset: "AVAX",
 		tier: "T2",
-		capabilities: { browse: true, paper_execute: true, live_execute: false, quote_kind: "paper_mark" },
+		capabilities: {
+			browse: true,
+			paper_execute: true,
+			live_execute: false,
+			quote_kind: "paper_mark",
+			quote_providers: ["paper_mark"],
+			executable_quotes: false,
+			candles: true,
+		},
 		venues: [],
 		notes: "Paper marks only in P0.",
 	},
@@ -417,6 +477,43 @@ function rowFromSeed(seed: Seed, source: Source): MarketRow {
 
 export function fixtureChains(): Chain[] {
 	return CHAIN_REGISTRY.map((chain) => ({ ...chain, capabilities: { ...chain.capabilities } }));
+}
+
+/**
+ * Fixture coverage built from the fixture registry and its sample rows. It exercises the
+ * overview renderer without pretending a market scan ran; every source is `fixture` and
+ * the page labels the result FIXTURE.
+ */
+export function fixtureMarketOverview(): MarketOverview {
+	const now = Date.now();
+	const source = fixtureSource(now, 4);
+	const chains = CHAIN_REGISTRY.map((chain) => {
+		const rows = SEEDS.filter((seed) => seed.chain === chain.id);
+		return {
+			id: chain.id,
+			name: chain.name,
+			family: chain.family,
+			quote_kind: chain.capabilities.quote_kind,
+			status: rows.length > 0 ? ("ok" as const) : ("no_data" as const),
+			rows: rows.length,
+			last_observed_at: rows.length > 0 ? source.observed_at : null,
+			age_seconds: rows.length > 0 ? 4 : null,
+			last_attempt_at: rows.length > 0 ? source.observed_at : null,
+			last_error: null,
+		};
+	});
+	return {
+		as_of: source.observed_at,
+		chains,
+		totals: {
+			chains: chains.length,
+			covered: chains.filter((chain) => chain.status === "ok").length,
+			stale: 0,
+			no_data: chains.filter((chain) => chain.status === "no_data").length,
+			error: 0,
+			snapshots: chains.reduce((sum, chain) => sum + chain.rows, 0),
+		},
+	};
 }
 
 export function fixtureMarketList(query: MarketQuery = {}): MarketList {

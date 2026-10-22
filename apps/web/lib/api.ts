@@ -101,6 +101,35 @@ export interface TokenSnapshot {
 	stale: boolean;
 }
 
+/** One registered chain as the API's market monitor currently sees it. */
+export interface MarketChainOverview {
+	id: string;
+	name: string;
+	family: string;
+	quote_kind: string;
+	status: "ok" | "stale" | "no_data" | "error" | "scanning";
+	rows: number;
+	last_observed_at: string | null;
+	age_seconds: number | null;
+	last_attempt_at: string | null;
+	last_error: string | null;
+}
+
+export interface MarketOverviewTotals {
+	chains: number;
+	covered: number;
+	stale: number;
+	no_data: number;
+	error: number;
+	snapshots: number;
+}
+
+export interface MarketOverview {
+	as_of: string;
+	chains: MarketChainOverview[];
+	totals: MarketOverviewTotals;
+}
+
 export interface Quote {
 	chain: string;
 	token_in: string;
@@ -320,6 +349,14 @@ export async function getChains(): Promise<Chain[]> {
 		return fixtures.fixtureChains();
 	}
 	return request<Chain[]>("/v1/chains");
+}
+
+export async function getMarketsOverview(): Promise<MarketOverview> {
+	if (webMode() === "fixture") {
+		const fixtures = await import("./live-fixtures");
+		return fixtures.fixtureMarketOverview();
+	}
+	return request<MarketOverview>("/v1/markets/overview");
 }
 
 export async function getToken(chain: string, address: string): Promise<TokenSnapshot> {
