@@ -116,6 +116,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Playwright uses a separate `.next-test` build directory, so a running `next dev` on
+  :3000 cannot corrupt the gate server on :3100. The gate now stays green with a dev
+  server active (#36).
 - Market sorting is None-safe for every `sort` mode: missing `volume`/`liquidity` stays
   `null` on the row, sorts last, and is never displayed as zero.
 - Market coverage now distinguishes `error` from a successful empty `no_pairs`, and the

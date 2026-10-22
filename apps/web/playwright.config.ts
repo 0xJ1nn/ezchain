@@ -19,6 +19,7 @@ export default defineConfig({
 		timeout: 120_000,
 		env: {
 			EZCHAIN_WEB_MODE: "fixture",
+			EZCHAIN_NEXT_DIST_DIR: ".next-test",
 			EZCHAIN_API_URL: PROXY_TEST_API_URL,
 			EZCHAIN_API_TOKEN: PROXY_TEST_TOKEN,
 		},

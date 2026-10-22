@@ -30,6 +30,7 @@ htmlcov/
 # Node
 node_modules/
 .next/
+.next-test/
 .turbo/
 dist/
 build/
