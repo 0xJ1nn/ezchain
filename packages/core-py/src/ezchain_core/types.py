@@ -143,6 +143,9 @@ class TokenSnapshot:
     safety: dict[str, Any] = field(default_factory=dict)
     source: SourceRef | None = None
     stale: bool = False
+    # Creation time of the deepest pair the snapshot was taken from. None means the
+    # source did not report it; risk treats that as unknown, never as an old pair.
+    pair_created_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -163,6 +166,9 @@ class TokenSnapshot:
             "safety": self.safety,
             "source": None if self.source is None else self.source.to_dict(),
             "stale": self.stale,
+            "pair_created_at": None
+            if self.pair_created_at is None
+            else self.pair_created_at.isoformat(),
         }
 
 

@@ -306,6 +306,7 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
         max_open_positions=settings.max_open_positions,
         max_daily_loss_usd=settings.max_daily_loss_usd,
         max_quote_age_seconds=float(settings.max_quote_age_seconds),
+        min_pair_age_minutes=settings.min_pair_age_minutes,
         min_liquidity_usd=settings.min_liquidity_usd,
         paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
     )

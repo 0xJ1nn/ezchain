@@ -270,6 +270,7 @@ def snapshot_from_pairs(
         safety=dict(SAFETY_UNKNOWN),
         source=best_row.source,
         stale=False,
+        pair_created_at=best_row.pair_created_at,
     )
 
 
