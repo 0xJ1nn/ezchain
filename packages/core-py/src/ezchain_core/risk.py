@@ -39,9 +39,19 @@ def evaluate_order(
         reasons.append("INVALID_SIDE")
     if request.amount_usd <= 0:
         reasons.append("INVALID_AMOUNT")
-    if request.amount_usd > limits.max_order_usd:
+    # Size, paper-mark and daily-loss limits cap new risk. They must never block a sell:
+    # a position larger than max_order_usd still has to be exitable, and a daily-loss
+    # breach is exactly when reducing exposure matters most. Fail-closed data gates
+    # (price, liquidity, route, freshness) still apply to sells below. Sell quantity is
+    # bounded to the held position by the order service; this pure policy does not carry
+    # a position quantity and must not invent a second cap.
+    if request.side == "buy" and request.amount_usd > limits.max_order_usd:
         reasons.append("ORDER_LIMIT")
-    if quote.kind == "paper_mark" and request.amount_usd > limits.paper_mark_max_order_usd:
+    if (
+        request.side == "buy"
+        and quote.kind == "paper_mark"
+        and request.amount_usd > limits.paper_mark_max_order_usd
+    ):
         reasons.append("PAPER_MARK_LIMIT")
 
     source = now_source or quote.source
@@ -69,7 +79,7 @@ def evaluate_order(
             reasons.append("POSITION_LIMIT")
         if open_positions >= limits.max_open_positions and current_position_value_usd == 0:
             reasons.append("MAX_OPEN_POSITIONS")
-    if daily_realized_pnl_usd <= -limits.max_daily_loss_usd:
+    if request.side == "buy" and daily_realized_pnl_usd <= -limits.max_daily_loss_usd:
         reasons.append("DAILY_LOSS_LIMIT")
 
     return (not reasons, tuple(reasons))

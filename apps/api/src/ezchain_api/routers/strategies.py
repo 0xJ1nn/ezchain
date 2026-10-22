@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import DexScreenerClient, get_chain
@@ -16,6 +16,7 @@ from ezchain_engine import OrderExecutor
 from ..deps import get_dexscreener, get_session
 from ..models import StrategyRow, StrategyRunRow
 from ..schemas import StrategyIn, StrategyOut, StrategyPatch, StrategyRunOut
+from ..services import strategies as strategy_service
 from ..services.strategies import (
     MissingOrderExecutor,
     run_strategy_once,
@@ -28,7 +29,10 @@ router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
 def _dt(value: object) -> str | None:
     if value is None:
         return None
-    return value.isoformat() if isinstance(value, datetime) else str(value)
+    if isinstance(value, datetime):
+        moment = value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return moment.isoformat()
+    return str(value)
 
 
 def _out(row: StrategyRow) -> StrategyOut:
@@ -125,12 +129,11 @@ def patch_strategy(
 
 @router.delete("/{strategy_id}", status_code=204)
 def delete_strategy(strategy_id: str, session: Session = Depends(get_session)) -> None:
-    row = get_or_404(session, strategy_id)
-    # Run rows reference the strategy; delete them in the same transaction so a strategy
-    # with history can be removed instead of failing the FK constraint with a 500.
-    session.execute(delete(StrategyRunRow).where(StrategyRunRow.strategy_id == strategy_id))
-    session.delete(row)
-    session.commit()
+    if not strategy_service.delete_strategy(session, strategy_id):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STRATEGY_NOT_FOUND", "message": "strategy not found"},
+        )
 
 
 @router.post("/{strategy_id}/run", response_model=StrategyRunOut)

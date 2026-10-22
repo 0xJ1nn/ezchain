@@ -15,7 +15,10 @@ No private keys, no signing, no real funds, no fiat rail, no copy-trading.
 ## Success criteria
 
 1. `pnpm dev` + the API + local Postgres boot from a documented two-command flow.
-2. `/markets` shows live pairs across at least 20 chains, with source and age on every row.
+2. `/markets` shows live pairs across at least 20 of the 25 registered chains, with source
+   and age on every row. A live `chain=all` smoke on 2026-10-22 returned rows for **22
+   chains**; Osmosis, Cosmos Hub and Moonbeam returned no indexed DexScreener pairs and
+   are reported as `no_data`, never zero.
 3. `/tokens/{chain}/{address}` shows live pairs, price, liquidity and a quote.
 4. A paper buy and a paper sell produce balanced ledger entries, a position, cash and PnL;
    both survive an API restart.
@@ -69,7 +72,8 @@ Rules:
 - Every number carries `source`, `observed_at` and `age_seconds`.
 - `age > 60s` is `stale`; a stale quote cannot open a position.
 - A buy on Solana requires a full-size sell quote; no route → `NO_SELL_ROUTE`.
-- Non-Solana paper fills are capped at **$250** and labelled `PAPER · MARK` in the UI.
+- Non-Solana paper **buys** are capped at **$250** and labelled `PAPER · MARK` in the UI.
+  A paper-mark sell is reduce-only and is not capped, so an exit is always possible.
   This is a deliberate v1 limitation recorded in ADR-0020.
 - No client-side PnL or quote math; the API returns computed view models.
 
@@ -82,7 +86,9 @@ detail}`.
 |---|---|---|
 | GET | `/health` | liveness + DB + scheduler state |
 | GET | `/chains` | registry, capabilities, browse/paper/live flags |
-| GET | `/markets?chain=all&q=&sort=trending&limit=50` | live discovery rows |
+| GET | `/markets?chain=all&q=&sort=trending&limit=50` | live discovery rows + per-chain coverage |
+| GET | `/markets/overview` | per-chain observation status, age and scan errors |
+| GET | `/markets/stored?chain=all&limit=50` | latest persisted observations, liquidity desc |
 | GET | `/tokens/{chain}/{address}` | token header, pairs, safety unknowns, quote preview |
 | GET | `/quotes?chain=&token=&side=&amount_usd=` | quote or `paper_mark` envelope |
 | GET | `/paper/account` | cash, equity, realized/unrealized, positions count |
@@ -90,13 +96,21 @@ detail}`.
 | GET | `/paper/orders?limit=` | order history |
 | POST | `/paper/orders` | `{chain, token_address, side, amount_usd, idempotency_key}` |
 | GET | `/paper/fills?limit=` | fill history |
+| GET | `/paper/reconciliation` | read-only ledger/fill/order reconciliation |
 | GET | `/strategies` | user strategies + last run |
 | POST | `/strategies` | create declarative strategy |
 | GET | `/strategies/{id}` | detail + runs |
 | PATCH | `/strategies/{id}` | pause/resume/params |
-| DELETE | `/strategies/{id}` | delete (soft) |
+| DELETE | `/strategies/{id}` | delete strategy and its run log (orders keep attribution) |
 | POST | `/strategies/{id}/run` | evaluate now, return decision |
 | GET | `/strategies/{id}/runs` | decision log |
+| GET | `/system/kill-switch` | persisted strategy-scoped operator switch |
+| POST | `/system/kill-switch` | `{active, reason}`: arm/release and return state |
+
+Discovery responses carry per-chain `coverage` and `ordered_by`
+(`chain_round_robin` for `chain=all`, `global_sort` for search and single-chain queries).
+Rows still carry `source`, `observed_at` and decimal-string money; unknown liquidity or
+volume is `null`, never zero.
 
 Money fields are integer USD cents in the API and decimal strings at the boundary where
 token quantities need precision.
@@ -118,10 +132,48 @@ token quantities need precision.
 ## Risk policy (P0)
 
 - Max order notional `$1,000`; max position `$2,500`; max 10 open positions.
-- Max daily realized loss `$500`; max strategy budget `$2,500`.
+- Max daily realized loss `$500`, enforced as a new-entry block (sells stay available);
+  max strategy budget `$2,500`.
 - Quote age `<= 60s`; liquidity `>= $10,000`; pair age `>= 10 minutes`.
 - Solana buy requires a sell route; non-Solana buy requires `paper_mark` and the $250 cap.
+- Order-size, paper-mark-size, position-size, open-position and daily-loss limits gate
+  **new risk only (buys)**. A sell is always allowed to reduce exposure; the fail-closed
+  data gates (price, liquidity, route, freshness) still apply.
 - Any unknown/missing field → `DENY` with a reason code; unknown is never zero.
+
+## Execution hardening (P0.6)
+
+- **Reconciliation is a read model.** `GET /paper/reconciliation` derives everything
+  from persisted `ledger_entries`, `paper_fills` and `paper_orders`: per-group
+  `SUM(usd_value)` within `0.000001`, ledger cash against an independent
+  `genesis + Σ(sell notional − buy notional − fee)` projection, open positions,
+  fill/order counts, orphan fills, filled orders without exactly one fill, negative cash
+  and negative position quantities, and fill counts by `quote_kind`. Genesis comes from
+  the `equity:genesis` ledger account, never from the cash sum. It never writes or
+  repairs. `ok: false` means pause and investigate, not "retry until clean".
+- **Strategy-scoped kill switch.** The flag is persisted in `system_flags`
+  (`engine_kill_switch`) so it survives a restart and is visible to every process. This is
+  the only new table in this slice; ops generates the Alembic baseline after merge. The
+  engine wraps the order executor; a request with `strategy_id` is refused with
+  `ExecutionBlocked` (`KILL_SWITCH_ACTIVE`) and the run log records a `hold` with the
+  attempted action and amount. The strategy window is not consumed, so releasing the
+  switch takes effect on the next run. The scheduler skips its pass entirely while armed,
+  so an idle outage writes no hold row per strategy per tick; a manual run still records
+  one `KILL_SWITCH_ACTIVE` hold. Manual paper orders stay allowed but the HTTP request
+  schema has no `strategy_id`, and the service rejects any internal order that still
+  claims strategy attribution before a quote. There is no authentication yet; the
+  endpoint is for a trusted network until ops adds auth.
+- **Strategy deletion is a cascade with an audit trade-off** (ADR-0022). Deleting a
+  strategy removes its `strategy_runs` decision log and the strategy in one transaction;
+  historical `paper_orders.strategy_id` stays as an opaque string. The execution trail is
+  preserved, but the reasoning that led to those orders is not, and the deleted
+  strategy's decisions cannot be replayed. Operators who need the decision log for an
+  investigation should **pause** the strategy instead of deleting it.
+- **Concurrency is resolved by the idempotency key.** A manual run and the scheduler can
+  evaluate the same strategy at once. Both may decide to buy, but the unique
+  `paper_orders.idempotency_key` admits one order and one fill per window; the loser
+  returns the winning order. No in-process lock is used, so multiple API/engine
+  processes stay safe.
 
 ## User-defined strategies (declarative, no code execution)
 
@@ -236,6 +288,8 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 
 ### P0.6 — Integration and hardening (lead + reviewers)
 
+- [x] Continuous all-chain market observation: bounded scan, persisted snapshots,
+      `/markets/overview` and `/markets/stored`, fail-closed `no_data`/`stale`/`error`.
 - [ ] Merge stacked branches, resolve contracts, run end-to-end against live APIs.
 - [ ] Manual smoke: browse 5 chains, buy/sell, restart, strategy fires.
 - [ ] Failure drills: API down, DexScreener 429, stale quote, no route, DB down.

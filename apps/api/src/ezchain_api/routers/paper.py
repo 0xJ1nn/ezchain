@@ -14,8 +14,15 @@ from ..config import Settings, get_settings
 from ..deps import get_dexscreener, get_jupiter, get_session
 from ..errors import adapter_http_error
 from ..models import PaperFillRow, PaperOrderRow
-from ..schemas import FillOut, OrderOut, PaperAccountOut, PaperOrderIn, PositionOut
-from ..services import paper
+from ..schemas import (
+    FillOut,
+    OrderOut,
+    PaperAccountOut,
+    PaperOrderIn,
+    PositionOut,
+    ReconciliationOut,
+)
+from ..services import paper, reconciliation
 
 router = APIRouter(prefix="/api/v1/paper", tags=["paper"])
 
@@ -86,6 +93,12 @@ def fill_history(
     return [_fill(row) for row in paper.fills(session, limit)]
 
 
+@router.get("/reconciliation", response_model=ReconciliationOut)
+def reconciliation_report(session: Session = Depends(get_session)) -> ReconciliationOut:
+    """Read-only proof that the journal, fills and orders agree."""
+    return ReconciliationOut.model_validate(reconciliation.reconciliation(session))
+
+
 @router.post("/orders", response_model=OrderOut, status_code=201)
 async def create_order(
     payload: PaperOrderIn,
@@ -105,7 +118,6 @@ async def create_order(
         side=payload.side,
         amount_usd=payload.amount_usd,
         idempotency_key=payload.idempotency_key,
-        strategy_id=payload.strategy_id,
     )
     try:
         row = await paper.place_order(session, request, settings, dexscreener, jupiter)

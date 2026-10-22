@@ -109,7 +109,72 @@ A restore that cannot reproduce the ledger to the last entry is a failed drill.
 
 Arming is immediate and audited. Disarming requires a reason and, in live mode, 2FA.
 
-## 11. PAPER stress harness
+### 10.1 Paper strategy switch (implemented, P0)
+
+The paper slice implements only the **strategy** scope. The state is a row in
+`system_flags` keyed `engine_kill_switch`, seeded from `EZCHAIN_ENGINE_KILL_SWITCH` on
+first boot, so it survives a restart and is read by every process.
+
+```bash
+curl -s localhost:8000/api/v1/system/kill-switch
+
+curl -s -X POST localhost:8000/api/v1/system/kill-switch \
+  -H 'content-type: application/json' \
+  -d '{"active": true, "reason": "venue incident"}'
+```
+
+- `POST` returns `{active, reason, updated_at, scope: "strategy"}`. `updated_at` is the
+  audit timestamp; there is **no authentication yet**, so the actor is not recorded.
+  Keep the endpoint on a trusted network until ops adds auth. Releasing (`active: false`)
+  requires a non-empty reason and returns 422 otherwise; arming may omit it.
+- Two processes may boot together; the seed insert is idempotent and the loser of the
+  race reads the winner's row instead of failing startup.
+- The engine checks the flag on every strategy-originated order, and an armed switch makes
+  the scheduler skip its pass before any market read. When a manual run is attempted, the
+  run log records `hold` / `KILL_SWITCH_ACTIVE` with the attempted action and amount, and
+  the strategy's interval window is **not** consumed — releasing the switch retries on the
+  next tick.
+- Manual paper orders stay allowed. The HTTP route does not accept `strategy_id`;
+  strategy attribution is internal to the engine. As defence in depth, the order service
+  also rejects any strategy-attributed order while the switch is armed
+  (`KILL_SWITCH_ACTIVE`) before it requests a quote. Existing positions are not sold by
+  the switch; close them deliberately.
+- Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.
+
+## 11. Market monitor (market eyes)
+
+The API observes every registered chain continuously when
+`EZCHAIN_MARKET_SCAN_INLINE=true` (default). One scan makes a single `chain=all`
+discovery call, uses its per-chain coverage, and persists every row to
+`market_snapshots` before it is served. A chain the fan-out already attempted is not
+re-probed; a failed all-chain call falls back to one probe per chain. The adapter fan-out issues one token lookup per
+registered chain (seeds first, four in flight) and round-robins ranked rows before the
+page limit. The scan interval is
+`EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS` (default 90, minimum 30) and the per-call row
+budget is `EZCHAIN_MARKET_SCAN_LIMIT` (default 200).
+
+Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `error`, or
+`/api/v1/markets` looks empty for a chain that used to work.
+
+1. Read `/api/v1/markets/overview`. Each chain carries `status`, `rows`,
+   `last_observed_at`, `age_seconds`, `last_attempt_at` and `last_error`.
+2. `error`: read `last_error`; a `RateLimited` message means the shared adapter cooldown
+   is active. Do not restart in a loop — wait for `last_attempt_at` to advance.
+3. `stale`: rows exist but the newest observation is older than
+   `max(60s, scan interval + last scan duration + 15s)`. Check that scans are still
+   succeeding and that the provider is returning rows for that chain.
+4. `no_data`: the scan succeeded and returned no pairs. Some chains are not indexed by
+   DexScreener every day. A seed without a real pair is not a price; do not add one.
+5. Verify persistence directly:
+   `curl 'localhost:8000/api/v1/markets/stored?chain=<id>&limit=5'`. Every money field is
+   a decimal string, null means unknown, and `source`/`observed_at` come from the row.
+6. To switch observation off for a process, set `EZCHAIN_MARKET_SCAN_INLINE=false` and
+   restart the API. The existing `/markets` request path keeps working; the overview
+   then shows only DB-derived rows and statuses.
+7. Never edit `market_snapshots` to make a chain look covered. A missing or stale row is
+   a valid state and a monitoring fact.
+
+## 12. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.
 It is PAPER-only and refuses a non-paper API before mutating anything.

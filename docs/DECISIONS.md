@@ -363,14 +363,16 @@ the first slice would delay the paper loop and add API-key dependencies. A paper
 still needs a real observed price, not a synthetic one.
 
 **Decision:** Solana paper orders use Jupiter quotes. Other chains use the best DexScreener
-pair price as a `paper_mark`: it carries source, `observed_at` and age; it is capped at
-$250 per order; it is labelled `PAPER · MARK` in the UI; and `live_execute` is `false`.
-A `paper_mark` is not an executable route and cannot unlock live mode.
+pair price as a `paper_mark`: it carries source, `observed_at` and age; new risk is capped
+at $250 per **buy**; it is labelled `PAPER · MARK` in the UI; and `live_execute` is
+`false`. A `paper_mark` sell is reduce-only and may exceed the entry cap so a position can
+always be closed. A `paper_mark` is not an executable route and cannot unlock live mode.
 
 **Consequences:** the paper loop works across every browsable chain on day one without
-pretending the fill is executable. EVM execution needs a real venue adapter and an ADR
-before it can move from `paper_mark` to a quote. Slippage/impact on `paper_mark` fills is
-unknown and must be shown as unknown, never zero.
+pretending the fill is executable. The entry cap sizes new risk but never traps an exit.
+EVM execution needs a real venue adapter and an ADR before it can move from `paper_mark`
+to a quote. Slippage/impact on `paper_mark` fills is unknown and must be shown as unknown,
+never zero.
 
 ---
 
@@ -392,4 +394,30 @@ service.
 **Consequences:** one process to run locally. The API must keep the task bounded and
 observable; if p95 latency regresses, split the worker. The inline path is not a second
 execution pipeline — it uses the same service and ledger.
+
+---
+
+## ADR-0022 — Deleting a strategy also deletes its decision log
+
+**Date:** 2026-10-22 · **Status:** Accepted for P0
+
+**Context:** a strategy owns an append-only `strategy_runs` log: inputs, decision, reason
+and the resulting order id. The first delete implementation removed the strategy row but
+left its runs, which fails on the `strategy_runs.strategy_id → strategies.id` foreign key
+in Postgres. Keeping the runs would require nullable attribution or an archival store; P0
+has neither. CONTRACT I9 says any rule that gates money must be replayable from persisted
+inputs, so removing a decision log is a real loss, not a cosmetic delete.
+
+**Decision:** `DELETE /strategies/{id}` removes the strategy and all of its
+`strategy_runs` rows in one transaction. `paper_orders.strategy_id` is not a foreign key:
+it stays behind as an opaque historical string, so the execution trail (order, fill,
+ledger) survives. Deletion intentionally removes the decision/reasoning log. Pause is the
+retention path. The scheduler and manual run tolerate a strategy disappearing mid-run: the
+run insert is dropped with a warning rather than failing the pass.
+
+**Consequences:** the order and ledger audit trail remains complete, and a deleted id
+cannot be confused with a live strategy. The deleted strategy's decisions **cannot be
+replayed or audited** after deletion — the inputs and reason codes are gone. Anyone who
+needs to investigate a strategy's behaviour must pause it instead of deleting it. A future
+archive-before-delete feature needs its own ADR and storage decision.
 

@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -28,6 +28,12 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
         poolclass=StaticPool,
         future=True,
     )
+
+    @event.listens_for(engine, "connect")
+    def _foreign_keys(dbapi_connection: Any, _record: Any) -> None:
+        # SQLite ignores foreign keys unless asked; Postgres enforces them.
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
     yield factory

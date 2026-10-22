@@ -15,8 +15,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   non-Solana chains, capped and labelled as not executable.
 - Idempotent paper orders, fills, positions, cash/realized/unrealized PnL and risk limits,
   all derived from append-only ledger entries.
+- Continuous all-chain market observation ("market eyes"): a bounded inline scan discovers
+  across every registered chain, persists observations, records `no_data`/`stale`/`error`
+  instead of zero, and exposes `/api/v1/markets/overview` and `/api/v1/markets/stored`.
+- All-chain market browsing now fans out one token lookup per registered chain (seeds first,
+  at most 12 hints, four in flight) because `/latest/dex/tokens` caps each response at 30
+  pairs. Rows are ranked within each chain and round-robined before the limit, so every
+  data-bearing chain is represented instead of the global top few; the response carries
+  optional per-chain `coverage` and `ordered_by`. Verified seeds were added for Blast,
+  Mantle, Linea, Scroll and zkSync.
 - User-defined declarative strategies (momentum, dip, DCA, threshold), pause/resume,
   run-now, interval gate and an append-only run log.
+- Read-only paper reconciliation (`GET /api/v1/paper/reconciliation`): journal balance,
+  cash replay, position sign, fill/order integrity and `quote_kind` counts, all derived
+  from persisted rows.
+- Persisted strategy-scoped operator kill switch (`/api/v1/system/kill-switch`); armed
+  switches block strategy-originated orders, log a hold, and keep manual paper orders
+  available.
 - Live web surfaces: markets, token page with paper ticket, positions and strategies;
   `EZCHAIN_WEB_MODE=fixture` keeps Playwright deterministic and labelled.
 - Python setup/dev scripts (`tools/setup-python.sh`, `tools/dev.sh`) and pytest coverage
@@ -52,7 +67,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Market sorting is None-safe for every `sort` mode: missing `volume`/`liquidity` stays
+  `null` on the row, sorts last, and is never displayed as zero.
+- Market coverage now distinguishes `error` from a successful empty `no_pairs`, and the
+  overview totals no longer count a chain as both covered and errored. Chains the all-chain
+  fan-out already attempted are not re-probed, keeping a successful monitor scan within its
+  request budget.
+- Chain staleness now includes the last scan duration, so a slow pass does not make every
+  chain look stale before the next pass.
+- The manual paper-order route no longer accepts strategy attribution; the order service
+  also rejects strategy-attributed orders while the kill switch is armed, before quoting.
+- Concurrent first boots no longer fail when both processes seed the kill-switch row; the
+  loser rolls back and reads the winner.
+- Reconciliation cash is checked against genesis plus persisted fill cash flow instead of
+  a tautological replay; disarming the kill switch now requires a reason (422).
+- Paper sells are no longer blocked by order-size, paper-mark-size or daily-loss limits;
+  those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
+  still apply to sells (#65, PR #66).
 - Position-tile charts no longer widen the page at 390 px (#23).
+- Deleting a strategy now removes its `strategy_runs` rows and the strategy in one
+  transaction instead of failing on the foreign key; historical orders keep their
+  `strategy_id` string. Pause instead of deleting when the decision log must be retained.
+- Concurrent run-now and scheduler evaluation of one strategy is resolved by the existing
+  order idempotency key: at most one order and one fill per window.
 - Dashboard bank activity and the position-tile peak now agree with the token fixture;
   a cross-page test guards the constants (#38).
 - DexScreener token lookup now resolves the requested side (base or quote) and derives a
