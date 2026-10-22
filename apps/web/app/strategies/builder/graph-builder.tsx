@@ -1114,7 +1114,7 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 	if (loading) {
 		return (
 			<section className={styles.statePanel}>
-				<h1 className={styles.stateTitle}>Visual strategy builder</h1>
+				<h2 className={styles.stateTitle}>Visual strategy builder</h2>
 				<div className={styles.empty}>Loading the catalogue…</div>
 			</section>
 		);
@@ -1123,7 +1123,7 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 	if (loadError) {
 		return (
 			<section className={styles.statePanel} data-testid="builder-load-error">
-				<h1 className={styles.stateTitle}>Builder unavailable</h1>
+				<h2 className={styles.stateTitle}>Builder unavailable</h2>
 				<Badge tone="err">{loadError.code}</Badge>
 				<div className={styles.empty}>
 					<strong>Nothing is being guessed.</strong>
@@ -1144,7 +1144,7 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 	if (foreign) {
 		return (
 			<section className={styles.statePanel} data-testid="builder-not-graph">
-				<h1 className={styles.stateTitle}>{foreign.name}</h1>
+				<h2 className={styles.stateTitle}>{foreign.name}</h2>
 				<Badge tone="warn">kind: {foreign.kind}</Badge>
 				<div className={styles.empty}>
 					<strong>This strategy is not a visual graph strategy.</strong>
