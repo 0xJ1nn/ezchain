@@ -79,6 +79,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   loser rolls back and reads the winner.
 - Reconciliation cash is checked against genesis plus persisted fill cash flow instead of
   a tautological replay; disarming the kill switch now requires a reason (422).
+- The web strategy builder's DCA and dip vocabularies now match the server validator:
+  DCA no longer offers take-profit/stop-loss and dip no longer offers `exit_change_pct`.
+  Creating either strategy no longer returns `STRATEGY_PARAM_UNKNOWN` (#73).
 - Paper sells are no longer blocked by order-size, paper-mark-size or daily-loss limits;
   those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
   still apply to sells (#65, PR #66).

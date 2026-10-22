@@ -73,6 +73,30 @@ test("create -> run -> pause a strategy in fixture mode", async ({ page }) => {
 	await page.screenshot({ path: ".shots/strategies-1440.png", fullPage: true });
 });
 
+test("DCA kind hides exit-only fields", async ({ page }) => {
+	await page.goto("/strategies");
+	const form = page
+		.locator("section.panel")
+		.filter({ has: page.getByRole("heading", { name: "Create strategy" }) });
+
+	await form.getByRole("button", { name: /DCA/ }).click();
+	await expect(form.getByLabel("Order size (USD)")).toBeVisible();
+	await expect(form.getByLabel("Interval (minutes)")).toBeVisible();
+	await expect(form.getByLabel("Max position (USD)")).toBeVisible();
+	await expect(form.getByLabel("Take profit (%)")).toHaveCount(0);
+	await expect(form.getByLabel("Stop loss (%)")).toHaveCount(0);
+
+	await form.getByRole("button", { name: /Momentum/ }).click();
+	await expect(form.getByLabel("Take profit (%)")).toBeVisible();
+	await expect(form.getByLabel("Stop loss (%)")).toBeVisible();
+	await expect(form.getByLabel("Exit change (%)")).toBeVisible();
+
+	await form.getByRole("button", { name: /Dip/ }).click();
+	await expect(form.getByLabel("Take profit (%)")).toBeVisible();
+	await expect(form.getByLabel("Stop loss (%)")).toBeVisible();
+	await expect(form.getByLabel("Exit change (%)")).toHaveCount(0);
+});
+
 test("strategy detail renders params and its run log", async ({ page }) => {
 	await page.goto("/strategies/str-bonk-momentum");
 
