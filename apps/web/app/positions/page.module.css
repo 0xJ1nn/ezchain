@@ -1,0 +1,89 @@
+.paperTag {
+	margin-left: 6px;
+	vertical-align: 1px;
+}
+
+.accountMeta {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	align-items: center;
+}
+
+.statePanel {
+	max-width: 720px;
+}
+
+.stateTitle {
+	font: 650 13px var(--mono);
+	margin-bottom: 6px;
+}
+
+.stateBody {
+	font-size: 12px;
+	color: var(--muted);
+	max-width: 78ch;
+}
+
+.monoCell {
+	font-family: var(--mono);
+	white-space: nowrap;
+}
+
+.tokenCell {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.tokenAddress {
+	font: 9.5px var(--mono);
+	color: var(--muted);
+}
+
+.numberCell {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.staleRow {
+	background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+}
+
+.unknown {
+	color: var(--muted);
+	font-family: var(--mono);
+}
+
+.summaryLine {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	align-items: center;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+.tileHeading {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 8px;
+}
+
+.tileHeading h2 {
+	font-size: 12px;
+	font-weight: 650;
+}
+
+@media (max-width: 760px) {
+	.statePanel {
+		max-width: none;
+	}
+	.numberCell {
+		justify-content: flex-end;
+	}
+}
