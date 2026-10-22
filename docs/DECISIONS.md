@@ -470,3 +470,49 @@ fails closed. Chains GeckoTerminal does not index report `CANDLES_UNSUPPORTED_CH
 The candle source is a third-party index, not the chain; backtests name it in their
 result. A future `services/ingest` (M2) can replace or cross-check the source behind the
 same table.
+
+---
+
+## ADR-0025 — Every chain with a keyless quote source fills at a real executable quote
+
+**Date:** 2026-10-22 · **Status:** Accepted (supersedes the blanket `paper_mark` of ADR-0020)
+
+**Context:** ADR-0020 gave Solana a real Jupiter quote and every other chain a DexScreener
+mark. A mark fill has no price impact, no route and no gas, so a paper PnL on Base or
+Arbitrum was optimistic in a way no live order could reproduce. The 2026-10-22 probe found
+keyless, keyless-forever quote APIs for 19 of the 25 registered chains; the remaining six
+have no free quote source at all.
+
+**Options:** (a) keep the mark everywhere except Solana, (b) implement an on-chain
+`Quoter.quoteExactInputSingle` eth_call for the long tail, (c) route each chain to the best
+keyless HTTP quote source and keep the mark only where none exists.
+
+**Decision:** (c). The quote ladder lives on `ChainMeta.quote_providers` in
+`packages/adapters` — `kyberswap → velora → lifi` on the EVM majors, `lifi` alone on
+Mantle/Scroll/zkSync/Cronos/Celo/Metis, `cetus` on Sui, `stonfi` on TON, `osmosis_sqs` on
+Osmosis, `jupiter` on Solana. Chains with no source (Blast, Fantom, Moonbeam, Aptos, Tron,
+NEAR, Cosmos Hub) keep the capped `paper_mark` exactly as ADR-0020 defined it. The API asks
+a `QuoteRouter`; no chain-name literal exists outside `packages/adapters`.
+
+Rules that ride with it:
+
+- A sell is quoted in the sell direction (`token → stable`, sized by quantity); a buy quote
+  is never inverted.
+- A buy is only valid when the received size also has a full-size sell quote from the same
+  venue — an entry with no executable exit is not an entry (ADR-0015).
+- Provider fees and gas are declared in `Quote.fee_usd`. The fill pays
+  `max(paper_fee_bps, fee_usd)`, never their sum.
+- A buy with a quoted impact above `EZCHAIN_MAX_PRICE_IMPACT_PCT` (default 5%) is rejected
+  with `PRICE_IMPACT_TOO_HIGH`. A sell is never blocked by impact.
+- When every rung fails, the order fails closed with `NO_ROUTE`. A chain with an executable
+  ladder never silently degrades to a mark.
+- `live_execute` stays `false` on every chain: these are quotes, not a signing path.
+
+**Consequences:** paper fills now carry direction-specific size, impact, route and cost on
+19 chains. The platform inherits five third-party availability surfaces; each provider has
+its own token bucket, 10 s response cache and 60 s circuit breaker, and the ladder absorbs a
+dead rung. LI.FI's free tier (75 requests / 2 h) cannot serve a hot loop, so it is only a
+primary on the six chains with no alternative. Osmosis decimals come from a table because
+GeckoTerminal does not index the network; an unlisted denom fails closed. Chains without a
+free source stay marked, and the UI badge reads `paper_mark` for them — truthful, not
+hopeful.

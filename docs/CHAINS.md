@@ -65,10 +65,13 @@ quoted effective price. If a venue cannot quote, paper rejects too. No synthetic
 
 Tier = verification level, not ambition.
 
-**Verified today: none.** Every row below is a target. No adapter package exists yet;
-`packages/` contains only `ui`, and there is no `services/ingest` or `services/executor`.
-A row may only be promoted when its adapter contract suite passes against live mainnet
-and the recorded fixtures (§5). Until then the UI must not present it as tradeable.
+**Verified today:** the `paper quote` column is filled per chain from the keyless quote
+adapters in `packages/adapters` (ADR-0025). Quotes are verified against the live provider
+and recorded as fixtures in `tests/adapters/fixtures/`; nothing here is a live-execution
+tier. Balance, transfer, receipt and reorg handling are still targets — no
+`services/guard` or `services/executor` signing path exists. A row may only be promoted
+when its adapter contract suite passes against live mainnet and the recorded fixtures (§5).
+Until then the UI must not present it as tradeable beyond paper mode.
 
 - **T1** — adapter contract tests pass against live mainnet and recorded fixtures; swaps,
   balances, transfers, confirmations, reorg handling; used in paper and live.
@@ -79,22 +82,32 @@ and the recorded fixtures (§5). Until then the UI must not present it as tradea
 | Chain | Family | Target tier | Verified today | Target execution | Notes |
 |---|---|---|---|---|---|
 | Solana | SVM | T1 | paper quote + paper fill | Jupiter, Raydium, PumpSwap | first-class; rent/ATA accounting |
-| Ethereum | EVM | T1 | — | Uniswap v3/v4, 1inch | L1 gas model, EIP-1559 |
-| Base | EVM | T1 | — | Uniswap, Aerodrome | OP-stack finality |
-| Arbitrum One | EVM | T1 | — | Uniswap, Camelot | L2 sequencer feed |
-| Polygon PoS | EVM | T1 | — | Uniswap, QuickSwap | |
-| BNB Chain | EVM | T1 | — | PancakeSwap | |
-| Optimism | EVM | T2 | — | Uniswap, Velodrome | |
-| Avalanche C | EVM | T2 | — | Trader Joe | |
-| Linea / Scroll / zkSync / Mantle / Blast | EVM | T2 | — | Uniswap/1inch | shared EVM adapter, per-chain config |
-| Berachain / Sonic | EVM | Planned | — | — | EVM adapter |
-| Sui | Move | T2 | — | Cetus, Bluefin | object model, sponsored tx |
-| Aptos | Move | T2 | — | Pancake/Aptos | |
-| TON | TVM | T2 | — | STON.fi, DeDust | wallet v5, jetton |
-| Tron | TVM | T2 | — | SunSwap | energy/bandwidth fees |
+| Ethereum | EVM | T1 | paper quote + paper fill | Uniswap v3/v4, 1inch | KyberSwap primary; L1 gas model |
+| Base | EVM | T1 | paper quote + paper fill | Uniswap, Aerodrome | OP-stack L1 data fee in `fee_usd` |
+| Arbitrum One | EVM | T1 | paper quote + paper fill | Uniswap, Camelot | L2 sequencer feed |
+| Polygon PoS | EVM | T1 | paper quote + paper fill | Uniswap, QuickSwap | |
+| BNB Chain | EVM | T1 | paper quote + paper fill | PancakeSwap | USDC is 18-decimal here |
+| Optimism | EVM | T2 | paper quote + paper fill | Uniswap, Velodrome | `l1FeeUsd` folded into `fee_usd` |
+| Avalanche C | EVM | T2 | paper quote + paper fill | Trader Joe | native USDC `0xB97E…48a6E` |
+| Linea | EVM | T2 | paper quote + paper fill | Uniswap/1inch | KyberSwap primary, LI.FI fallback |
+| Scroll | EVM | T2 | paper quote + paper fill | Uniswap/1inch | LI.FI only (75 req / 2 h) |
+| zkSync Era | EVM | T2 | paper quote + paper fill | Uniswap/1inch | LI.FI only |
+| Mantle | EVM | T2 | paper quote + paper fill | Uniswap/1inch | LI.FI only |
+| Blast | EVM | T2 | `paper_mark` only | — | no keyless quote source |
+| Cronos | EVM | T2 | paper quote + paper fill | VVS/Uniswap | LI.FI only |
+| Celo | EVM | T2 | paper quote + paper fill | Uniswap | LI.FI only |
+| Metis | EVM | T2 | paper quote + paper fill | Netswap/Uniswap | LI.FI only, m.USDC stable |
+| Fantom | EVM | T2 | `paper_mark` only | — | chain sunset in favour of Sonic |
+| Berachain / Sonic | EVM | Planned | — | — | EVM adapter; KyberSwap quotes Sonic live |
+| Sui | Move | T2 | paper quote + paper fill | Cetus, Bluefin | Cetus `deviation_ratio` is the impact |
+| Aptos | Move | T2 | `paper_mark` only | Pancake/Aptos | Panora is key-gated |
+| TON | TVM | T2 | paper quote + paper fill | STON.fi, DeDust | USDT jetton stable; wallet v5 pending |
+| Tron | TVM | T2 | `paper_mark` only | SunSwap | no HTTP quote endpoint exists |
 | Bitcoin | UTXO | T2 read/transfer | — | — (no native swap) | xpub watch, PSBT via hardware |
-| Cosmos Hub / Osmosis / Injective / Neutron | Cosmos SDK | T3 | — | Osmosis (T2 planned) | IBC awareness |
-| NEAR | NEAR | T3 | — | Ref Finance (planned) | |
+| Osmosis | Cosmos SDK | T3 | paper quote + paper fill | Osmosis | SQS router; denom decimals are a table |
+| Cosmos Hub / Injective / Neutron | Cosmos SDK | T3 | — | Osmosis (T2 planned) | IBC awareness |
+| NEAR | NEAR | T3 | `paper_mark` only | Ref Finance (planned) | no HTTP quote endpoint exists |
+| Moonbeam | EVM | T3 | `paper_mark` only | — | no keyless quote source |
 | Starknet | Cairo | T3 | — | JediSwap (planned) | |
 | Cardano | UTXO/eUTXO | Planned | — | — | |
 | Lightning | LN | Planned | — | — | |
@@ -103,11 +116,16 @@ and the recorded fixtures (§5). Until then the UI must not present it as tradea
 shown as T2 says "beta" next to execution; T3 disables the trade button with the reason.
 A chain with no adapter says "not implemented", not "T1".
 
-`paper quote + paper fill` means the P0 API has been exercised against live mainnet
-quotes and the paper ledger; it is **not** a live-execution tier. Every other chain is
-`paper_mark` only: live browsing plus a capped paper fill at the best DexScreener pair
-price, with `live_execute: false`. No chain is T1 until the executor and live contract
-suite exist.
+`paper quote + paper fill` means the API quotes the chain through its ladder against the
+live provider and books the fill in the paper ledger; it is **not** a live-execution tier.
+A `paper_mark` row keeps the ADR-0020 behaviour: live browsing plus a capped ($250 buy)
+paper fill at the best DexScreener pair price, with unknown impact. `live_execute` is
+`false` everywhere, and no chain is T1 until the executor and live contract suite exist.
+
+Each chain's ladder, its pricing stable and its primary provider are data in
+`packages/adapters/.../registry.py` and are served at `/api/v1/chains`
+(`capabilities.quote_kind`, `capabilities.quote_providers`). The badge is the head of the
+ladder, so it cannot claim a provider the chain does not use.
 
 ## 4. Per-chain data requirements
 
@@ -167,8 +185,33 @@ abstraction in its own PR first.
   capabilities: { swap: true, rent: true, simulation: true, reorg_depth: 0 }
   rpc_providers: [helius, triton, public]
   venues: [jupiter, raydium, pumpswap]
+  quote_providers: [jupiter]          # ordered fallback ladder
+  quote_asset: { address: EPjF…Dt1v, symbol: USDC, decimals: 6 }
 ```
 
 The registry is served at `/api/v1/chains` and is the only source for the UI, docs and
 adapter selection. Providers are health-checked; a degraded provider moves traffic, it
 does not fail the chain.
+
+## 7. Quote ladders (keyless sources, verified 2026-10-22)
+
+Each rung was exercised with `curl` before the adapter was written; one real response per
+provider is recorded in `tests/adapters/fixtures/`. A chain's ladder is ordered: the router
+takes the first rung that answers **and** can also sell the size it just bought.
+
+| Chain | Ladder | Pricing stable | Limits and failure modes |
+|---|---|---|---|
+| Solana | jupiter | USDC mint | keyless 0.5 rps; `priceImpactPct` is a ratio |
+| Ethereum, Base, Arbitrum, Polygon, BNB, Optimism, Avalanche | kyberswap → velora → lifi | USDC (USDC 18-dec on BNB) | KyberSwap 3 rps public and no impact field (derived from USD legs); Velora zeroed 1 bp partner fee; LI.FI 75 req / 2 h |
+| Linea | kyberswap → lifi | USDC | Velora no longer lists Linea |
+| Sonic (not registered) | kyberswap → velora → lifi | USDC | verified live; no registry entry yet |
+| Mantle, Scroll, zkSync, Cronos, Celo, Metis | lifi | USDC (m.USDC on Metis) | LI.FI bakes a 0.25% fee into `toAmount`, declared in `fee_usd` |
+| Sui | cetus | USDC | no documented rate limit; paced at 1 rps; gas in MIST, no USD price |
+| TON | stonfi | USDT jetton | POST with query-string args; native TON is the pTON zero address |
+| Osmosis | osmosis_sqs | USDC (IBC denom) | `tokenIn` is `amount+denom`; a denom outside the decimals table fails closed |
+| Blast, Fantom, Moonbeam, Aptos, Tron, NEAR, Cosmos Hub | `paper_mark` | — | no keyless executable quote; ADR-0020 cap applies |
+
+Provider guard rails, all per instance: token bucket at the documented rate, 10 s response
+cache, and a 60 s circuit breaker opened by 5xx/530/HTML-WAF, not by a `no route` answer.
+When every rung is down the order fails closed with `NO_ROUTE`; an executable chain never
+silently falls back to a mark.
