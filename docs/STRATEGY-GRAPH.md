@@ -228,3 +228,22 @@ result is immutable: equity curve, drawdown, trades, metrics (net PnL, return %,
 drawdown %, win rate, profit factor, trades, exposure %, Sharpe on bar returns) and
 per-node hit counts. The harness declares data source, fill model, fee and slippage in
 the result. Backtests are labelled `BACKTEST`, never `PAPER` or `LIVE`.
+
+## 9. HTTP contract (API ↔ web)
+
+All bodies are JSON; Decimals are strings; unknown is `null`. Reads are open, mutations
+need the bearer token (the Next proxy injects it).
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/api/v1/graph/catalogue` | → `{schema: "ezchain.graph/1", pin_types: [{id, title}], categories: [{id, title}], nodes: [{type, title, category, description, inputs: [{name, type, required, default_param}], outputs: [{name, type}], params: [{name, kind, title, unit, min, max, choices, default, required}]}]}` |
+| POST | `/api/v1/graph/validate` | `{graph}` → `ValidationReport {ok, errors: [{code, message, node, port}], warnings: [...], warmup_bars: {tf: n}}` (always 200; invalid JSON shape is 422) |
+| POST | `/api/v1/graph/dry-run` | `{graph, chain, token_address, max_position_usd?}` → `{decision: {action, amount_usd, sell_fraction, reason, effects}, trace: {values, exec}, context: {now, price_usd, candles: {tf: {bars, last_close_time, stale}}, position, account}, mode: "DRY_RUN"}` — evaluates against live data, **never** places an order |
+| POST | `/api/v1/backtests` | `{graph \| strategy_id, chain, token_address, timeframe, bars (≤ 1000), fee_bps, slippage_bps, starting_cash_usd}` → `201 Backtest {id, created_at, label: "BACKTEST", request, data_source, fill_model, metrics, equity: [{t, equity_usd, drawdown_pct}], trades: [{entry_time, exit_time, side, qty, entry_price, exit_price, pnl_usd, pnl_pct, fees_usd, reason}], node_hits}` |
+| GET | `/api/v1/backtests?strategy_id=` | → list of `{id, created_at, request, metrics}` (newest first, ≤ 100) |
+| GET | `/api/v1/backtests/{id}` | → full `Backtest` |
+| GET | `/api/v1/strategies/{id}/performance` | → `{strategy_id, label: "PAPER", realized_pnl_usd, unrealized_pnl_usd, fees_usd, trades, wins, losses, win_rate_pct, open_quantity, avg_cost_usd, mark_usd, equity_curve: [{t, pnl_usd}]}` — computed from this strategy's own fills (average cost), marked at the latest snapshot; unknown mark → unrealized `null` |
+
+Strategy create/patch with `kind: "graph"` uses the existing `/api/v1/strategies`
+endpoints; `params.graph` carries the document. Runs (`/strategies/{id}/runs`) carry
+`inputs.graph_trace` for graph strategies.
