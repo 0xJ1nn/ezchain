@@ -196,3 +196,23 @@ confusion; per-page recomputation.
 
 **Consequences:** consistency and testability. Any new field requires an API + tile +
 docs change in one PR.
+
+---
+
+## ADR-0013 — M1 web UI uses CSS custom properties, not Tailwind
+
+**Date:** 2026-10-22 · **Status:** Accepted
+
+**Context:** `docs/ARCHITECTURE.md` named Tailwind and TanStack Query for `apps/web`.
+The M1 scaffold has no API to query, and the wireframe already ships a complete CSS
+vocabulary. Adding Tailwind now would create two styling systems and a second set of
+defaults before the visual pass.
+
+**Decision:** `apps/web` uses Next.js 15 App Router, TypeScript, CSS custom properties
+generated from `design/tokens.json`, and plain global CSS derived from the wireframe.
+TanStack Query is deferred until `apps/api` exists. Tailwind may be adopted by a later
+ADR if the visual pass needs it; it is not a dependency today.
+
+**Consequences:** one styling source of truth, a small dependency surface, and a
+build that works offline. Revisit when the API and data-fetching layer land; do not add
+a second styling system silently.

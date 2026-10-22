@@ -1,7 +1,8 @@
 # ARCHITECTURE — ezCHAIN
 
-Status: design. No runtime code yet. This document is the contract every later PR
-implements; deviations require an ADR.
+Status: M1. The web UI scaffold exists (`apps/web`, fixture-driven); the API, engine,
+executor and ingest services are not built yet. This document is the contract every
+later PR implements; deviations require an ADR.
 
 ## 1. Shape
 
@@ -66,7 +67,7 @@ services. The same images scale out unchanged.
 
 ```
 apps/
-  web/                     # Next.js 15, App Router, Tailwind, TanStack Query
+  web/                     # Next.js 15, App Router, CSS tokens (ADR-0013)
   api/                     # FastAPI edge
 services/
   engine/                  # strategy host, automation scheduler, signal router

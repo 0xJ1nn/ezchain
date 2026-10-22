@@ -6,9 +6,10 @@ ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledg
 positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
-> Status: **design + wireframe**. No runtime code yet. This repository holds the
-> product spec, architecture, infra contract and the low-fidelity wireframe that the
-> visual design is built from.
+> Status: **M1 — web UI scaffold**. The shell and dashboard are implemented from the
+> wireframe. The API, engine, executor and ingest services are not built yet; routes
+> without an implementation say so instead of pretending. The product spec, architecture,
+> infra contract and 31-page wireframe remain the source of truth.
 
 ## Why this exists
 
@@ -26,6 +27,8 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 | Path | What |
 |---|---|
 | `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
+| `apps/web/` | Next.js UI: shell + dashboard (M1), fixture-driven |
+| `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain model, chains, SDK, infra, security, workflow |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
 | `design/BRIEF.md` | Design brief for the visual pass (Claude Design input) |
@@ -46,18 +49,29 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 6. **Measured, not vibes.** Backtests and paper gates are mandatory before live; claims
    name their data population and harness.
 
-## Quick start (when runtime lands)
+## Quick start — web UI (M1)
+
+```bash
+pnpm install
+pnpm dev
+open http://localhost:3000
+```
+
+The UI is fixture-driven: no API, no keys, no chain calls. Every route without an
+implementation renders an explicit "not implemented yet" page.
+
+## Wireframe
+
+```bash
+npx serve design/wireframe      # or any static file server
+```
+
+The full stack quick start (compose, API, executor) lands when those services exist:
 
 ```bash
 cp infra/.env.example infra/.env
 docker compose -f infra/compose.yaml up -d
 open http://localhost:8080
-```
-
-For now, open the wireframe:
-
-```bash
-npx serve design/wireframe      # or any static file server
 ```
 
 ## License

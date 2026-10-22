@@ -34,6 +34,9 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+playwright-report/
+test-results/
+.shots/
 
 # Runtime data
 data/
