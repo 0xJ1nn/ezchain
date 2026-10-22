@@ -1,12 +1,15 @@
-/* Page-local state styling. The shared tokens and components stay in app/ui.css. */
-.disabledField {
-	opacity: 0.6;
-	cursor: not-allowed;
+/* Page-local layout only. Shared tokens and primitives stay in app/ui.css. */
+
+/* Wrap chain links on narrow screens instead of hiding the tail of the registry. */
+.chainTabs {
+	flex-wrap: wrap;
+	overflow-x: visible;
 }
 
-.disabledTab {
-	opacity: 0.6;
-	cursor: not-allowed;
+.toolbarNote {
+	font-size: 10.5px;
+	color: var(--muted);
+	flex: 1 1 100%;
 }
 
 /* The main table still needs horizontal scrolling once secondary columns are hidden. */
