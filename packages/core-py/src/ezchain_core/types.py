@@ -1,7 +1,7 @@
 """Shared domain types for the ezCHAIN paper slice.
 
-Money is integer USD cents at the API boundary; prices and token quantities use Decimal
-inside the domain. No floats cross a money path.
+Money is a decimal USD string at the API boundary; prices, fees and token quantities use
+Decimal inside the domain. No floats cross a money path.
 """
 
 from __future__ import annotations

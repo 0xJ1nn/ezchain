@@ -169,6 +169,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Removed
 
+- Removed unused `paper_mark_fee_bps` and the dead `cents_to_usd`/`usd_to_cents`
+  helpers. Money is documented as decimal USD strings and exact `NUMERIC` storage, not
+  integer cents (#86).
 - Decorative default-stack services that no code used: TimescaleDB (replaced by plain
   Postgres 16), Redis, NATS, the standalone engine, executor and ingest. They are either
   inline in the API today or not built; the intended future shape is in
