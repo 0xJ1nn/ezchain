@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
@@ -75,6 +76,19 @@ def now() -> datetime:
 
 class LedgerEntryRow(Base):
     __tablename__ = "ledger_entries"
+    __table_args__ = (
+        # A genesis journal has exactly one cash and one equity leg. Two processes racing
+        # on first boot must not both write a second genesis; the partial unique index
+        # makes the loser fail its transaction instead of doubling the starting cash.
+        Index(
+            "uq_ledger_genesis_account",
+            "group_id",
+            "account",
+            unique=True,
+            postgresql_where=text("group_id = 'genesis'"),
+            sqlite_where=text("group_id = 'genesis'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     group_id: Mapped[str] = mapped_column(String(36), index=True)

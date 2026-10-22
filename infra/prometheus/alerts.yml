@@ -1,45 +1,57 @@
+# Alerts for the PAPER stack.
+#
+# Every expression below is backed by a signal that exists in this stack:
+#   up                            Prometheus scrape target (built in)
+#   ezchain_up                    API self-reported health gauge
+#   ezchain_http_requests_total   API HTTP request counter
+#   ezchain_paper_orders_total    API paper order counter
+#
+# Executor, queue-depth, breaker, source-freshness, ledger-drift and backup alerts
+# were removed: those services/metrics do not exist, so those rules could never
+# fire. Add them back with the deployable that exposes the metric, not before.
+
 groups:
-  - name: money-path
+  - name: paper-api
     rules:
-      - alert: LedgerDrift
-        expr: ezchain_ledger_drift_entries > 0
-        for: 1m
-        labels: { severity: critical }
-        annotations:
-          summary: "Ledger drift detected ({{ $value }} entries)"
-          runbook: "docs/RUNBOOK.md#ledger-drift"
-
-      - alert: ExecutorUnreachable
-        expr: up{job="executor"} == 0
+      - alert: ApiDown
+        expr: up{job="api"} == 0
         for: 2m
         labels: { severity: critical }
         annotations:
-          summary: "Executor is down; no orders can be signed"
+          summary: "API scrape target is down"
+          description: "Prometheus cannot scrape api:8000; the edge cannot serve paper data."
+          runbook: "docs/RUNBOOK.md#12-paper-stack-operations-implemented"
 
-      - alert: QueueDepthHigh
-        expr: ezchain_queue_depth > 10000
-        for: 5m
-        labels: { severity: warning }
-        annotations:
-          summary: "Queue depth {{ $value }}; ingest is outpacing consumers"
-
-      - alert: SourceStale
-        expr: ezchain_source_freshness_seconds > 60
+      - alert: ApiUnhealthy
+        expr: ezchain_up == 0
         for: 2m
-        labels: { severity: warning }
+        labels: { severity: critical }
         annotations:
-          summary: "Market source {{ $labels.source }} is stale"
+          summary: "API reports itself unhealthy"
+          description: "The process is running but reports not-up; check /healthz, /readyz and the API logs."
+          runbook: "docs/RUNBOOK.md#12-paper-stack-operations-implemented"
 
-      - alert: CircuitBreakerOpen
-        expr: ezchain_breaker_state > 0
-        for: 5m
-        labels: { severity: warning }
-        annotations:
-          summary: "Breaker open for {{ $labels.target }}"
-
-      - alert: BackupFailed
-        expr: ezchain_backup_last_success_timestamp_seconds < time() - 90000
+      - alert: ApiMetricsMissing
+        expr: absent(ezchain_http_requests_total)
         for: 10m
-        labels: { severity: critical }
+        labels: { severity: warning }
         annotations:
-          summary: "No successful backup in 25h"
+          summary: "API HTTP metric is absent"
+          description: "The API scrape target is up but does not expose ezchain_http_requests_total."
+
+      - alert: ApiRequestRateHigh
+        expr: sum(rate(ezchain_http_requests_total[5m])) > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API request rate above 100/s"
+          description: "Sustained traffic above the single-node paper budget; check for a client or scheduler loop."
+
+      - alert: PaperOrderBurst
+        expr: sum(increase(ezchain_paper_orders_total[5m])) > 20
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 20 paper orders in 5 minutes"
+          description: "Unusual order burst; review strategies and consider the kill switch."
+          runbook: "docs/RUNBOOK.md#101-paper-strategy-switch-implemented-p0"

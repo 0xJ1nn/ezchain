@@ -12,8 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from ezchain_adapters import DexScreenerClient, JupiterClient
 from ezchain_engine import KillSwitchExecutor, StrategyScheduler
 
+from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
+from .observability import ObservabilityMiddleware, configure_logging
 from .routers import markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
 from .services.market_monitor import MarketMonitor
@@ -88,12 +90,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging(settings.log_level)
     app = FastAPI(
         title="ezCHAIN API",
         version="0.1.0",
         description="Live market browsing and paper execution. No keys, no live money.",
         lifespan=lifespan,
     )
+    # Later additions are outermost: access logs wrap CORS, and CORS wraps auth so a
+    # 401 still carries CORS headers for the browser.
+    app.add_middleware(BearerAuthMiddleware, settings=settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -101,6 +107,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
+    app.add_middleware(ObservabilityMiddleware)
     app.include_router(system.router)
     app.include_router(markets.router)
     app.include_router(paper.router)

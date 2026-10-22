@@ -1,7 +1,11 @@
 # RUNBOOK — incidents and recovery
 
-Commands use the `ezchain-admin` interface defined in `docs/INFRA.md`. Until M1 they are
-the contract, not a working binary. Every action here is audited.
+**PAPER stack (implemented):** §12 contains the commands that work today: health checks,
+migrate/upgrade/rollback, 401 debugging and backup/restore.
+
+Sections 1–11 describe the target live system. They use the `ezchain-admin` interface,
+which does not exist yet; they are the contract, not a working binary. Every action there
+is audited once the executor and audit log exist.
 
 ## 0. First five minutes
 
@@ -116,17 +120,21 @@ The paper slice implements only the **strategy** scope. The state is a row in
 first boot, so it survives a restart and is read by every process.
 
 ```bash
-curl -s localhost:8000/api/v1/system/kill-switch
+# Through the edge: Caddy routes /api/* to the Next route handler, which adds the
+# bearer token server-side. No token in the browser or in this command.
+curl -s http://localhost:8080/api/v1/system/kill-switch
 
-curl -s -X POST localhost:8000/api/v1/system/kill-switch \
+curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   -H 'content-type: application/json' \
   -d '{"active": true, "reason": "venue incident"}'
 ```
 
 - `POST` returns `{active, reason, updated_at, scope: "strategy"}`. `updated_at` is the
-  audit timestamp; there is **no authentication yet**, so the actor is not recorded.
-  Keep the endpoint on a trusted network until ops adds auth. Releasing (`active: false`)
-  requires a non-empty reason and returns 422 otherwise; arming may omit it.
+  audit timestamp. Mutating routes require `Authorization: Bearer $EZCHAIN_API_TOKEN`
+  (or reach the API through the web server's proxy, which injects it); the token
+  identifies the deployment, not an individual operator, so record the human in the
+  incident log. Releasing (`active: false`) requires a non-empty reason and returns 422
+  otherwise; arming may omit it.
 - Two processes may boot together; the seed insert is idempotent and the loser of the
   race reads the winner's row instead of failing startup.
 - The engine checks the flag on every strategy-originated order, and an armed switch makes
@@ -174,7 +182,185 @@ Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `er
 7. Never edit `market_snapshots` to make a chain look covered. A missing or stale row is
    a valid state and a monitoring fact.
 
-## 12. PAPER stress harness
+## 12. PAPER stack operations (implemented)
+
+The commands below target `infra/compose.yaml`. They assume `infra/.env` exists and that
+you are in the repository root. Nothing here needs a published API port: the edge on
+`localhost:8080` is the only host entry point.
+
+### 12.1 Health and readiness
+
+```bash
+docker compose -f infra/compose.yaml ps
+curl -fsS http://localhost:8080/healthz
+curl -fsS http://localhost:8080/readyz
+curl -fsS http://localhost:8080/metrics | head
+docker compose -f infra/compose.yaml logs --tail=100 api
+```
+
+- `/healthz` is liveness. A 200 means the API process is serving HTTP. It must not be
+  used to decide whether the database is ready.
+- `/readyz` is readiness. A non-200 means the API cannot serve paper traffic (usually
+  Postgres is down or migrations have not run). Check
+  `docker compose -f infra/compose.yaml ps postgres` and the `migrate` logs.
+- `/metrics` is Prometheus text format. It is served by the API, not by the web handler.
+- A container marked `unhealthy` in `ps` has failed its own healthcheck. Read
+  `docker compose -f infra/compose.yaml logs <service>` before restarting anything.
+
+### 12.2 401 Unauthorized from `/api/*`
+
+The browser never holds the API token. Caddy sends `/api/*` to the Next.js route handler,
+which adds `Authorization: Bearer $EZCHAIN_API_TOKEN` server-side. A 401 almost always
+means the API and web containers disagree about the token, or a request bypassed the edge.
+
+1. Confirm `EZCHAIN_API_TOKEN` is set in `infra/.env` and is at least 32 characters.
+2. Compare the value the two containers actually received **without printing it**:
+
+   ```bash
+   docker compose -f infra/compose.yaml exec -T web sh -c \
+     'printf %s "$EZCHAIN_API_TOKEN" | sha256sum'
+   docker compose -f infra/compose.yaml exec -T api sh -c \
+     'printf %s "$EZCHAIN_API_TOKEN" | sha256sum'
+   ```
+
+   The digests must match. If they do not, the containers were created from different
+   `.env` values.
+3. Recreate both after editing `.env`:
+
+   ```bash
+   docker compose -f infra/compose.yaml up -d --force-recreate api web
+   ```
+
+4. Confirm the request went through the edge (`http://localhost:8080/api/...`), not to a
+   direct API port. The API is not published.
+5. If you are debugging the API directly, send the header from inside the container (the
+   API image has Python, not curl):
+
+   ```bash
+   docker compose -f infra/compose.yaml exec -T api python - <<'PY'
+   import os, urllib.request
+   req = urllib.request.Request(
+       "http://127.0.0.1:8000/api/v1/chains",
+       headers={"Authorization": "Bearer " + os.environ["EZCHAIN_API_TOKEN"]},
+   )
+   print(urllib.request.urlopen(req).status)
+   PY
+   ```
+
+6. Never add the token to browser code, `NEXT_PUBLIC_*`, screenshots or logs. If a token
+   leaks, rotate it in `infra/.env` and recreate `api` and `web`.
+
+### 12.3 Migrate, upgrade and rollback
+
+```bash
+# Run the one-shot migration and inspect the exit status.
+docker compose -f infra/compose.yaml up -d migrate
+docker compose -f infra/compose.yaml ps -a migrate
+docker compose -f infra/compose.yaml logs migrate
+
+# Rebuild and roll the stack forward. api starts only if migrate exits 0.
+docker compose -f infra/compose.yaml up -d --build
+
+# A failed migration leaves the old api container running. Fix the migration
+# forward; do not edit an applied revision or run a down-migration.
+```
+
+Rollback is redeploying the previous image tag:
+
+```bash
+EZCHAIN_VERSION=<previous-tag> docker compose -f infra/compose.yaml up -d --no-build api web caddy
+```
+
+If the previous tag is not present locally, rebuild it from the previous commit. Schema
+rollback is an incident, not a routine command. A forward-only migration must remain
+backward-compatible for one minor release.
+
+### 12.4 Backup and restore
+
+Use the `pg_dump`/`pg_restore` commands in
+[`docs/INFRA.md`](INFRA.md#7-storage-backup-and-restore). Always restore into
+`ezchain_restore` first and verify row counts and
+`GET /api/v1/paper/reconciliation` before replacing the live database.
+
+`docker compose down` keeps named volumes. `docker compose down -v` deletes `pgdata` and
+is a destructive data reset: take a verified dump first, and record the action.
+
+### 12.5 Logs, restart and profiles
+
+```bash
+docker compose -f infra/compose.yaml logs -f api
+docker compose -f infra/compose.yaml restart api
+docker compose -f infra/compose.yaml --profile observability up -d prometheus
+```
+
+Do not restart the stack in a loop while an order may be in flight; read the paper order
+and fill rows first. Strategy execution is blocked by the persisted kill switch (§10.1),
+which survives a restart.
+
+## 12.6 Deploy migrations, auth and probes
+
+### 12.6.1 Migrate on deploy
+
+The `migrate` service runs before the API starts. Manually it is:
+
+```bash
+ezchain-api migrate                        # packaged entry point
+python -m ezchain_api.migrate              # same runner without the script
+alembic -c apps/api/alembic.ini upgrade head
+```
+
+- The URL comes from `EZCHAIN_DATABASE_URL`; never from `alembic.ini`.
+- The ini is normally found at `apps/api/alembic.ini`. In a packaged image that places it
+  elsewhere, set `EZCHAIN_ALEMBIC_INI` to the absolute path.
+- Migrations are forward-only (CONTRACT I8). `downgrade()` exists for local recovery,
+  but production rollback is redeploying the previous image, not a schema downgrade.
+- A failed migration stops the rollout. Restore the pre-migration backup before retrying;
+  do not edit `alembic_version` by hand to "unblock".
+- Fresh-DB gate: `EZCHAIN_TEST_DATABASE_URL=postgresql+psycopg://.../ezchain_test \
+  bash tools/check-migrations.sh` runs `upgrade head` and `alembic check`. `tools/ci.sh`
+  runs it when that variable is set; the script refuses a URL whose database name does
+  not contain `test`, `scratch` or `_ci`.
+- Legacy dev database created by `create_all()` before Alembic: `/readyz` returns 503 with
+  `migration: missing`. After confirming the schema matches the models, run
+  `alembic -c apps/api/alembic.ini stamp 0001_baseline` **once**, then run
+  `alembic -c apps/api/alembic.ini upgrade head` so the forward-only 0002 genesis index
+  is applied. Never stamp a production database; it hides real drift.
+
+### 12.6.2 Health vs readiness vs metrics
+
+| Endpoint | Question | Failure |
+|---|---|---|
+| `/healthz` | is the process alive? | always 200; no DB |
+| `/readyz` | can it serve writes with the right schema? | 503 with JSON when DB is down, schema missing or not at head |
+| `/health` | legacy compatibility probe | 503 when DB is down; includes scheduler/monitor flags |
+| `/metrics` | Prometheus text | 200; `ezchain_up 0` when DB is unreachable |
+
+Use `/healthz` for restart policy, `/readyz` for load-balancer membership and deploy
+gates, and `/metrics` for alerting. A 200 `/healthz` with a 503 `/readyz` means the
+process is running but must not receive work.
+
+### 12.6.3 401 and 403 triage
+
+Symptom: a web mutation returns `401` with `detail.code == "UNAUTHORIZED"`, while pages
+read normally.
+
+1. Reads (`GET`/`HEAD`/`OPTIONS`) are open by design; only mutations are protected.
+2. The browser should call the Next server at `/api/...`, never the API directly. The
+   proxy drops any browser `Authorization` header and injects `EZCHAIN_API_TOKEN`.
+3. Confirm the **web** process has `EZCHAIN_API_TOKEN` set; restart it after changing it.
+4. Confirm the **API** process has the same token. In prod it must be at least 32 chars or
+   the API refuses to boot with `EZCHAIN_API_TOKEN` in the error.
+5. Do not paste the token into browser code, a query string or a support bundle. Rotate it
+   if it was exposed: change both processes, restart, then re-test a mutation.
+6. In local dev only, an unset token allows mutations with one warning. That is not a
+   production mode.
+
+`403 CROSS_ORIGIN_DENIED` means the Next proxy rejected a browser request whose
+`Origin`/`Sec-Fetch-Site` did not match the edge. Set `EZCHAIN_PUBLIC_URL` to the exact
+public origin (for example `https://ezchain.example.com`) in the web container; the
+proxy also accepts the forwarded host/proto. A non-browser client with no Origin header
+is still allowed, so this only affects browser CSRF attempts and misconfigured origins.
+## 13. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.
 It is PAPER-only and refuses a non-paper API before mutating anything. For an

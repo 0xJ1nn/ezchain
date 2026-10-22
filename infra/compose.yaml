@@ -1,6 +1,24 @@
-# ezCHAIN — single-node deployment contract.
-# Status: blueprint (M0). Images are published from `main` starting at v0.1.0.
-# Nothing here is decorative: every service is referenced by docs/ARCHITECTURE.md.
+# ezCHAIN — PAPER stack (issue #63).
+#
+# This file is the runnable deployment contract. Every service below is used by the
+# code in this repository today:
+#
+#   postgres -> migrate (Alembic) -> api (FastAPI + inline engine/market scanner)
+#                                        |
+#                                     web (Next.js) -> caddy (only published port)
+#
+# Redis, NATS, a standalone engine/executor/ingest and the OTel collector are NOT
+# part of this stack. They do not exist as deployables yet; see
+# infra/compose.blueprint.yaml and docs/INFRA.md.
+#
+# Start:
+#   cp infra/.env.example infra/.env
+#   # set POSTGRES_PASSWORD and EZCHAIN_API_TOKEN in infra/.env
+#   docker compose -f infra/compose.yaml up --build -d
+#
+# The API and Postgres are never published to the host. Browser traffic enters through
+# Caddy on EZCHAIN_PORT (default 8080).
+
 name: ezchain
 
 x-logging: &logging
@@ -13,119 +31,97 @@ x-health: &health
   retries: 5
   start_period: 30s
 
+# Shared by `migrate` and `api` so both see exactly the same database and flags.
+x-api-env: &api-env
+  EZCHAIN_ENVIRONMENT: prod
+  EZCHAIN_DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-ezchain}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}@postgres:5432/${POSTGRES_DB:-ezchain}"
+  EZCHAIN_AUTO_CREATE_SCHEMA: "false"
+  EZCHAIN_AUTH_ENABLED: "true"
+  EZCHAIN_API_TOKEN: "${EZCHAIN_API_TOKEN:?set EZCHAIN_API_TOKEN in infra/.env (at least 32 characters)}"
+  EZCHAIN_DATA_MODE: "${EZCHAIN_DATA_MODE:-live}"
+  EZCHAIN_ENGINE_INLINE: "${EZCHAIN_ENGINE_INLINE:-true}"
+  EZCHAIN_ENGINE_INTERVAL_SECONDS: "${EZCHAIN_ENGINE_INTERVAL_SECONDS:-30}"
+  EZCHAIN_MARKET_SCAN_INLINE: "${EZCHAIN_MARKET_SCAN_INLINE:-true}"
+  EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS: "${EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS:-90}"
+  EZCHAIN_MARKET_SCAN_LIMIT: "${EZCHAIN_MARKET_SCAN_LIMIT:-200}"
+  EZCHAIN_LOG_LEVEL: "${EZCHAIN_LOG_LEVEL:-INFO}"
+
 services:
   postgres:
-    image: timescale/timescaledb:2.17.2-pg16
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ezchain}
       POSTGRES_USER: ${POSTGRES_USER:-ezchain}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       <<: *health
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
+    deploy: { resources: { limits: { cpus: "1", memory: 1g } } }
     logging: *logging
     networks: [data]
 
-  redis:
-    image: redis:7.4-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
-    healthcheck:
-      <<: *health
-      test: ["CMD", "redis-cli", "ping"]
-    deploy: { resources: { limits: { cpus: "0.5", memory: 384m } } }
-    logging: *logging
-    networks: [data]
-
-  nats:
-    image: nats:2.10-alpine
-    restart: unless-stopped
-    command: ["-js", "-m", "8222", "--max_mem_store", "256MB", "--max_file_store", "2GB"]
-    volumes: [natsdata:/data]
-    healthcheck:
-      <<: *health
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz | grep -q ok"]
-    deploy: { resources: { limits: { cpus: "0.5", memory: 384m } } }
-    logging: *logging
-    networks: [data]
-
+  # One-shot schema job. Success is the exit code; a healthcheck would be meaningless
+  # for a container that is supposed to stop. The API never creates tables itself
+  # (EZCHAIN_AUTO_CREATE_SCHEMA=false).
+  # Requires the Alembic bundle at apps/api/alembic.ini + apps/api/alembic/.
   migrate:
-    image: ghcr.io/ezchain/api:${EZCHAIN_VERSION:-0.1.0}
-    command: ["ezchain-api", "migrate"]
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: ezchain/api:${EZCHAIN_VERSION:-local}
+    command: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
     env_file: [.env]
+    environment: *api-env
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512m } } }
+    logging: *logging
     networks: [data]
 
   api:
-    image: ghcr.io/ezchain/api:${EZCHAIN_VERSION:-0.1.0}
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: ezchain/api:${EZCHAIN_VERSION:-local}
     restart: unless-stopped
     env_file: [.env]
+    environment: *api-env
     depends_on:
-      migrate: { condition: service_completed_successfully }
-      redis: { condition: service_healthy }
-      nats: { condition: service_healthy }
-    healthcheck:
-      <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
-    deploy: { resources: { limits: { cpus: "2", memory: 1g } } }
-    logging: *logging
-    networks: [data, app]
-
-  engine:
-    image: ghcr.io/ezchain/engine:${EZCHAIN_VERSION:-0.1.0}
-    restart: unless-stopped
-    env_file: [.env]
-    depends_on:
-      api: { condition: service_healthy }
-    healthcheck:
-      <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/healthz')"]
-    deploy: { resources: { limits: { cpus: "2", memory: 2g } } }
-    logging: *logging
-    networks: [data]
-
-  executor:
-    image: ghcr.io/ezchain/executor:${EZCHAIN_VERSION:-0.1.0}
-    restart: unless-stopped
-    env_file: [.env]
-    depends_on:
+      postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     healthcheck:
       <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/healthz')"]
-    deploy: { resources: { limits: { cpus: "1", memory: 768m } } }
-    logging: *logging
-    networks: [data]
-
-  ingest:
-    image: ghcr.io/ezchain/ingest:${EZCHAIN_VERSION:-0.1.0}
-    restart: unless-stopped
-    env_file: [.env]
-    depends_on:
-      nats: { condition: service_healthy }
-    healthcheck:
-      <<: *health
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8002/healthz')"]
-    deploy: { resources: { limits: { cpus: "2", memory: 1g } } }
+      # Readiness, not liveness: web must not start until the schema is at head and
+      # Postgres is reachable. The Dockerfile HEALTHCHECK remains /healthz for plain
+      # container runtimes that only need a liveness probe.
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/readyz')"]
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
     logging: *logging
     networks: [data, app]
 
   web:
-    image: ghcr.io/ezchain/web:${EZCHAIN_VERSION:-0.1.0}
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: ezchain/web:${EZCHAIN_VERSION:-local}
     restart: unless-stopped
     env_file: [.env]
+    environment:
+      EZCHAIN_API_URL: "${EZCHAIN_API_URL:-http://api:8000}"
+      EZCHAIN_PUBLIC_URL: "${EZCHAIN_PUBLIC_URL:?set EZCHAIN_PUBLIC_URL in infra/.env}"
+      # Server-side only. Never expose this through a NEXT_PUBLIC_* variable.
+      EZCHAIN_API_TOKEN: "${EZCHAIN_API_TOKEN:?set EZCHAIN_API_TOKEN in infra/.env (at least 32 characters)}"
+      EZCHAIN_WEB_MODE: "${EZCHAIN_WEB_MODE:-live}"
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
       <<: *health
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null"]
-    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256m } } }
     logging: *logging
     networks: [app]
 
@@ -134,8 +130,6 @@ services:
     restart: unless-stopped
     ports:
       - "${EZCHAIN_BIND:-127.0.0.1}:${EZCHAIN_PORT:-8080}:8080"
-    environment:
-      EZCHAIN_DOMAIN: ${EZCHAIN_DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
@@ -143,31 +137,39 @@ services:
     depends_on:
       web: { condition: service_healthy }
       api: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+    deploy: { resources: { limits: { cpus: "0.25", memory: 128m } } }
     logging: *logging
     networks: [app]
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.111.0
-    profiles: [observability]
-    restart: unless-stopped
-    command: ["--config=/etc/otel/config.yaml"]
-    volumes:
-      - ./otel/collector.yaml:/etc/otel/config.yaml:ro
-    logging: *logging
-    networks: [data, app]
-
+  # Optional debugging profile. It scrapes the only real metrics endpoint in this
+  # stack (api:8000/metrics); there are no executor/ingest targets to scrape yet.
   prometheus:
     image: prom/prometheus:v2.54.1
     profiles: [observability]
     restart: unless-stopped
-    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    ports:
+      - "${EZCHAIN_BIND:-127.0.0.1}:9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - promdata:/prometheus
+    healthcheck:
+      <<: *health
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/healthy"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512m } } }
     logging: *logging
     networks: [app]
 
+  # Optional dashboard. It has no provisioned dashboards in this repository yet, so
+  # it is not part of the default stack. Bound to localhost only; set
+  # EZCHAIN_GRAFANA_ADMIN_PASSWORD before exposing it beyond this host.
   grafana:
     image: grafana/grafana:11.2.0
     profiles: [observability]
@@ -175,25 +177,30 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_PASSWORD: "${EZCHAIN_GRAFANA_ADMIN_PASSWORD:-admin}"
       GF_SERVER_ROOT_URL: "http://localhost:3001"
     volumes:
       - grafanadata:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    ports: ["127.0.0.1:3001:3000"]
+    ports:
+      - "${EZCHAIN_BIND:-127.0.0.1}:3001:3000"
+    healthcheck:
+      <<: *health
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256m } } }
     logging: *logging
     networks: [app]
 
 volumes:
   pgdata:
-  natsdata:
   caddydata:
   caddyconfig:
   promdata:
   grafanadata:
 
 networks:
-  # `data` is internal: only api/engine/executor/ingest reach the stores.
+  # Internal only: Postgres and the one-shot migration job.
   data:
     internal: true
-  # `app` is the browser-facing edge.
+  # Browser-facing edge: caddy, web, api, and the optional observability tools.
   app:

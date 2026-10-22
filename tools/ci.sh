@@ -49,6 +49,10 @@ if [ -x .venv/bin/pytest ]; then
   .venv/bin/pytest -q
   ran=1
 fi
+if [ -n "${EZCHAIN_TEST_DATABASE_URL:-}" ]; then
+  bash tools/check-migrations.sh
+  ran=1
+fi
 if [ -f pnpm-workspace.yaml ]; then
   command -v pnpm >/dev/null 2>&1 || {
     echo "pnpm is required for the web gate: npm install -g pnpm@9"
