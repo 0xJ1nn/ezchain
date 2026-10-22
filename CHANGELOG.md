@@ -7,6 +7,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **PAPER Docker stack (issue #63)**: `apps/api/Dockerfile` and `apps/web/Dockerfile`
+  build from the repository root as multi-stage, non-root images; `infra/compose.yaml`
+  runs Postgres 16, a one-shot Alembic `migrate` job, the API, the web app and Caddy, with
+  healthchecks, restart policies and resource budgets. Only Caddy publishes a port.
+- Optional `observability` compose profile: Prometheus scrapes only the real
+  `api:8000/metrics` endpoint; Grafana remains localhost-only and has no provisioned
+  dashboards.
+- `infra/compose.blueprint.yaml` records the future Redis/NATS/engine/executor/ingest/OTel
+  services with their blocking reasons. They are profile-gated and not runnable.
+- `Docker quick start` in `README.md`: required secrets, token generation, URLs, health
+  endpoints and the internal-only OpenAPI UI.
+- `docs/INFRA.md` now describes the actual PAPER topology, networks, migrations,
+  health/metrics, backups and restore; `docs/RUNBOOK.md` adds migrate/upgrade/rollback,
+  401, health and compose operations.
 - **P0 live paper slice**: FastAPI edge, Postgres schema, `packages/core-py` domain and
   append-only ledger, DexScreener/Jupiter adapters, and an inline strategy scheduler.
 - Live multi-chain market browsing with a 25-chain registry, source and `observed_at` on
@@ -54,6 +68,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- Caddy now sends `/api/*` to `web:3000` so the Next.js route handler injects the bearer
+  token; `/healthz`, `/readyz` and `/metrics` go to `api:8000`, and everything else is the
+  web app. The edge listens on `:8080` instead of matching `localhost`.
+- `infra/.env.example` now matches the real app: psycopg URL, `EZCHAIN_ENVIRONMENT=prod`,
+  `EZCHAIN_AUTO_CREATE_SCHEMA=false`, `EZCHAIN_AUTH_ENABLED=true`, `EZCHAIN_API_TOKEN`,
+  container API URL and the inline engine/market flags. Future-only keys are commented.
+- Prometheus scrapes only `api:8000` and itself. Alerts now reference metrics the API
+  exposes (`ezchain_up`, `ezchain_http_requests_total`, `ezchain_paper_orders_total`);
+  executor, queue, breaker, drift and backup alerts were removed.
+- `README.md` and infra docs now describe the runnable PAPER stack instead of calling
+  Compose a non-runnable blueprint.
 - `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md` and `docs/PLAN-LIVE-PAPER.md` now
   describe the P0 live paper slice; the web defaults to live and tests set `fixture`.
 - `docs/CHAINS.md` now presents a **target** support matrix with a `Verified today`
@@ -95,7 +120,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Removed
 
-- Nothing yet.
+- Decorative default-stack services that no code used: TimescaleDB (replaced by plain
+  Postgres 16), Redis, NATS, the standalone engine, executor and ingest. They are either
+  inline in the API today or not built; the intended future shape is in
+  `infra/compose.blueprint.yaml`.
+- `asyncpg`, bare `DATABASE_URL`, `EZCHAIN_ENV=local`, and the active NATS/Redis/vault
+  keys from `infra/.env.example`. The only database URL is the psycopg one.
 
 ## [0.0.0] — 2026-10-20
 

@@ -1,0 +1,61 @@
+# Docker build context for apps/api/Dockerfile and apps/web/Dockerfile.
+# Both images build from the repository root; keep the context small and free of
+# local state, secrets and test artifacts.
+
+# Version control and editor state
+.git
+.gitignore
+.gitattributes
+.github
+.githooks
+.codex
+.cursor
+.opencode
+.state
+.DS_Store
+
+# Local environments and caches
+**/.venv
+**/venv
+**/node_modules
+**/.next
+**/.turbo
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+
+# Test and screenshot output
+**/test-results
+**/playwright-report
+**/.shots
+apps/web/e2e
+
+# Docs, design source and CI-only material are not needed to build either image
+design
+docs
+tests
+infra
+**/*.md
+LICENSE
+
+# Secrets and local configuration — never bake these into an image
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+*.jks
+secrets
+
+# Logs and local databases
+*.log
+*.db
+*.sqlite
+data
+backups

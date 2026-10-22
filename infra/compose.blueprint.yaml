@@ -1,0 +1,95 @@
+# ezCHAIN — BLUEPRINT topology. NOT BUILT. NOT RUNNABLE.
+#
+# This file records the services described in docs/ARCHITECTURE.md that do not exist
+# as deployables yet. No image below is published, and services/executor and
+# services/ingest have no source tree. It is kept so the intended shape is visible
+# and reviewable; it is not a deployment path.
+#
+# The runnable PAPER stack is infra/compose.yaml. Do not mix the two files.
+#
+# Every service is gated behind the `blueprint` profile so an accidental
+# `docker compose up` starts nothing:
+#   docker compose -f infra/compose.blueprint.yaml --profile blueprint up
+# will still fail, by design, until the images exist.
+#
+# Status per service:
+#   redis          not used by any code path today (no cache/rate-limit layer)
+#   nats           not used; the engine is inline in the API in PAPER
+#   engine         package exists, but it runs in-process; a standalone deployable
+#                  needs its own HTTP surface and an image
+#   executor       not built; keys and signing are deliberately absent
+#   ingest         not built; market observation is request-driven inside the API
+#   otel-collector config exists in infra/otel/, but the app does not export OTLP
+
+name: ezchain-blueprint
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+services:
+  redis:
+    profiles: [blueprint]
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    logging: *logging
+    networks: [data]
+
+  nats:
+    profiles: [blueprint]
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js", "-m", "8222", "--max_mem_store", "256MB", "--max_file_store", "2GB"]
+    volumes: [natsdata:/data]
+    logging: *logging
+    networks: [data]
+
+  # Intended to consume NATS market events and drive strategies. Today the same
+  # package runs inside the API (EZCHAIN_ENGINE_INLINE=true), so this is a split of
+  # an existing process, not a missing feature.
+  engine:
+    profiles: [blueprint]
+    image: ghcr.io/ezchain/engine:blueprint
+    restart: unless-stopped
+    env_file: [.env]
+    logging: *logging
+    networks: [data]
+
+  # The only future key holder. Requires a vault design, key ceremony and an
+  # internal mTLS/HMAC request contract before it can exist.
+  executor:
+    profiles: [blueprint]
+    image: ghcr.io/ezchain/executor:blueprint
+    restart: unless-stopped
+    env_file: [.env]
+    logging: *logging
+    networks: [data]
+
+  # Future chain/venue stream workers. PAPER uses the API's bounded market monitor.
+  ingest:
+    profiles: [blueprint]
+    image: ghcr.io/ezchain/ingest:blueprint
+    restart: unless-stopped
+    env_file: [.env]
+    logging: *logging
+    networks: [data, app]
+
+  # infra/otel/collector.yaml exists but nothing emits OTLP yet.
+  otel-collector:
+    profiles: [blueprint]
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel/collector.yaml:/etc/otel/config.yaml:ro
+    logging: *logging
+    networks: [data, app]
+
+volumes:
+  natsdata:
+
+networks:
+  data:
+    internal: true
+  app:

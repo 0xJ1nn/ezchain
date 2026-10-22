@@ -1,27 +1,51 @@
 {
-	# ezCHAIN edge. Local TLS is intentionally off in local mode.
-	http://{$EZCHAIN_DOMAIN}:8080 {
-		encode zstd gzip
+	# Plain HTTP inside the container. For a public deployment put a TLS terminator
+	# (or a Caddy TLS site block) in front; this file must not assume `localhost`
+	# resolves inside the compose network.
+	admin off
+}
 
-		header {
-			X-Content-Type-Options nosniff
-			Referrer-Policy strict-origin-when-cross-origin
-			X-Frame-Options DENY
-			Permissions-Policy "camera=(), microphone=(), geolocation=()"
-			-Server
-		}
+:8080 {
+	encode zstd gzip
 
-		handle /api/* {
-			reverse_proxy api:8000
-		}
-		handle /ws* {
-			reverse_proxy api:8000
-		}
-		handle /healthz {
-			reverse_proxy api:8000
-		}
-		handle {
-			reverse_proxy web:3000
-		}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
 	}
+
+	# API traffic goes through the Next.js route handler, which injects the
+	# server-side bearer token. Do not proxy /api straight to the API: the browser
+	# must never hold EZCHAIN_API_TOKEN.
+	handle /api/* {
+		reverse_proxy web:3000
+	}
+
+	# Liveness, readiness and Prometheus metrics are served by the API.
+	handle /healthz {
+		reverse_proxy api:8000
+	}
+	handle /readyz {
+		reverse_proxy api:8000
+	}
+	handle /metrics {
+		reverse_proxy api:8000
+	}
+
+	# Everything else is the product UI.
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# The FastAPI OpenAPI UI is intentionally not published. On a trusted machine,
+	# uncomment these two handlers to browse it through the edge:
+	#
+	# handle /docs* {
+	# 	reverse_proxy api:8000
+	# }
+	# handle /openapi.json {
+	# 	reverse_proxy api:8000
+	# }
 }
