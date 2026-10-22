@@ -1,33 +1,9 @@
 // Dashboard fixtures. These stand in for the server view models until apps/api exists.
 // The numbers are reconciled here once; the UI only formats them. No client-side PnL math.
 
+import { pct, signedUsd, usd, usd0 } from "./format";
+
 export type Tone = "default" | "ok" | "err" | "warn" | "info" | "ghost";
-
-const MINUS = "\u2212";
-
-function usd(n: number) {
-	return `${n < 0 ? MINUS : ""}$${Math.abs(n).toLocaleString("en-US", {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-	})}`;
-}
-
-function signedUsd(n: number) {
-	return `${n >= 0 ? "+" : MINUS}$${Math.abs(n).toLocaleString("en-US", {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-	})}`;
-}
-
-function usd0(n: number) {
-	return `${n < 0 ? MINUS : ""}$${Math.abs(n).toLocaleString("en-US", {
-		maximumFractionDigits: 0,
-	})}`;
-}
-
-function pct(n: number) {
-	return `${n >= 0 ? "+" : MINUS}${Math.abs(n).toFixed(1)}%`;
-}
 
 export interface PositionFixture {
 	id: string;
