@@ -1,0 +1,22 @@
+/* Page-local state styling. The shared tokens and components stay in app/ui.css. */
+.disabledField {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.disabledTab {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+/* The main table still needs horizontal scrolling once secondary columns are hidden. */
+.swipeHint {
+	display: none;
+}
+
+@media (max-width: 760px) {
+	.swipeHint {
+		display: block;
+		padding: 6px 10px 0;
+	}
+}
