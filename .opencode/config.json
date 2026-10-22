@@ -1,0 +1,9 @@
+{
+  "agents": [
+    {
+      "name": "ezCHAIN Developer",
+      "description": "Development partner for ezCHAIN",
+      "instructions": "Read project.md (canonical engineering rules) and AGENTS.md before every meaningful task. Follow docs/CONTRACT.md invariants. Teach the maintainer — explain problems, changes, risks and alternatives in simple language. One task, one branch, one PR."
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 # Contributing to ezCHAIN
 
-Read `AGENTS.md` (rules) and `docs/CONTRACT.md` (invariants) before your first PR.
+Read [`project.md`](project.md) (canonical rules), [`AGENTS.md`](AGENTS.md) (quick
+reference) and [`docs/CONTRACT.md`](docs/CONTRACT.md) (invariants) before your first PR.
 
 ## Ways to contribute
 
@@ -21,8 +22,9 @@ node tools/sync-agent-stubs.mjs
 bash tools/ci.sh
 ```
 
-Runtime setup lands with M1 (`uv sync --all-packages`, `pnpm install`). Until then the
-repository is docs + design + infra, and those gates are the whole contract.
+Runtime setup lands with M1. Exact commands are documented in the README when they are
+verified to work on a clean clone. Until the Python services exist, the repository is
+docs + design + web UI + infra, and the local gates are the whole contract.
 
 ## PRs
 

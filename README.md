@@ -25,6 +25,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
 
 | Path | What |
 |---|---|
+| `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
 | `docs/` | Product, architecture, domain model, chains, SDK, infra, security, workflow |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
 | `design/BRIEF.md` | Design brief for the visual pass (Claude Design input) |
