@@ -36,6 +36,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - Deployment blueprint: compose services, Caddy edge, Prometheus alerts, OTel collector.
 - CI gates: agent stubs, design tokens, wireframe integrity, markdown links, secret scan,
   and the pnpm lint/typecheck/build/test runtime gate.
+- PAPER-only stress harness (`tools/stress/`): smoke, soak, idempotency and chaos modes,
+  pure invariant checks for orders/fills/positions/account, latency budgets, JSON+Markdown
+  evidence, and opt-in deduplicated GitHub issue filing by failure fingerprint.
+- `tools/stress/run.sh` (venv-aware), `tools/stress/README.md` with cron/launchd examples,
+  and pytest coverage for the pure checkers and issue dedupe.
 
 ### Changed
 
@@ -55,6 +60,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - Paper sells are no longer denied by position-size limits; buy/sell journals balance, and
   no-route quote errors map to `NO_SELL_ROUTE` (409).
 - API timestamps are normalized to UTC; paper positions without a mark stay unknown.
+- Deleting a strategy now removes its run rows in the same transaction, so a strategy with
+  history no longer fails with a 500 (found by the stress harness cleanup check).
 
 ### Removed
 

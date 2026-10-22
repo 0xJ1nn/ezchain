@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import DexScreenerClient, get_chain
@@ -126,6 +126,9 @@ def patch_strategy(
 @router.delete("/{strategy_id}", status_code=204)
 def delete_strategy(strategy_id: str, session: Session = Depends(get_session)) -> None:
     row = get_or_404(session, strategy_id)
+    # Run rows reference the strategy; delete them in the same transaction so a strategy
+    # with history can be removed instead of failing the FK constraint with a 500.
+    session.execute(delete(StrategyRunRow).where(StrategyRunRow.strategy_id == strategy_id))
     session.delete(row)
     session.commit()
 
