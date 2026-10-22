@@ -421,3 +421,52 @@ replayed or audited** after deletion — the inputs and reason codes are gone. A
 needs to investigate a strategy's behaviour must pause it instead of deleting it. A future
 archive-before-delete feature needs its own ADR and storage decision.
 
+
+---
+
+## ADR-0023 — Visual graph strategies are declarative typed documents
+
+**Date:** 2026-10-22 · **Status:** Accepted (maintainer instruction: "Unreal Engine
+Blueprint-level strategy builder", 2026-10-22)
+
+**Context:** P0 ships four fixed rule kinds (momentum, dip, DCA, threshold). Traders need
+to compose their own logic — indicators, crosses, exits, cooldowns — without writing code
+and without the platform shipping alpha. A node editor is the established way to do this
+(Unreal Blueprints, Kryll, Composer), but a graph must not become a back door for code
+execution, look-ahead bias or a second execution path.
+
+**Decision:** add strategy kind `graph`. A graph is a typed JSON document
+(`ezchain.graph/1`, [STRATEGY-GRAPH.md](STRATEGY-GRAPH.md)) validated against one node
+catalogue in `ezchain_core.graph` and evaluated by one pure, deterministic evaluator that
+the paper engine and the backtester share. Data is three-valued (unknown is never zero;
+an unknown branch condition does nothing). Candles reach the graph only after they close.
+Orders produced by a graph are intents that still pass risk → quote → order → fill →
+journal. The UI renders the palette from the catalogue the API serves; it never redefines
+node semantics.
+
+**Consequences:** traders build and backtest their own strategies; the repository still
+contains no strategy. Every graph run persists its trace so wires can show the real last
+values and runs can be replayed. Adding a node type is a core change with tests, not a UI
+change. Arbitrary code strategies stay in the plugin SDK, isolated per
+[STRATEGY-SDK.md](STRATEGY-SDK.md).
+
+---
+
+## ADR-0024 — OHLCV history comes from GeckoTerminal, stored as closed bars
+
+**Date:** 2026-10-22 · **Status:** Accepted
+
+**Context:** indicators and backtests need bar history; the stack stores only the current
+DexScreener snapshot per token. Recording our own ticks would take days before a
+strategy could warm up and would have gaps whenever the API is down.
+
+**Decision:** fetch per-pool OHLCV from the keyless GeckoTerminal public API (the most
+liquid DexScreener pair, priced for our token), rate-limited and cached in a
+`market_candles` table keyed by chain, token, timeframe and open time. Only closed bars are
+served. Bars carry their source and fetch time; a stale or missing series is unknown and
+fails closed. Chains GeckoTerminal does not index report `CANDLES_UNSUPPORTED_CHAIN`.
+
+**Consequences:** strategies warm up immediately and backtests have months of history.
+The candle source is a third-party index, not the chain; backtests name it in their
+result. A future `services/ingest` (M2) can replace or cross-check the source behind the
+same table.
