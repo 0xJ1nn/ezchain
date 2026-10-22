@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import DexScreenerClient, QuoteRouter
 
 from .db import session_factory
 from .services.market_monitor import MarketMonitor
@@ -22,8 +22,9 @@ def get_dexscreener(request: Request) -> DexScreenerClient:
     return request.app.state.dexscreener  # type: ignore[no-any-return]
 
 
-def get_jupiter(request: Request) -> JupiterClient:
-    return request.app.state.jupiter  # type: ignore[no-any-return]
+def get_quote_router(request: Request) -> QuoteRouter:
+    """The per-chain quote ladder, built once at startup with every provider open."""
+    return request.app.state.quote_router  # type: ignore[no-any-return]
 
 
 def get_market_monitor(request: Request) -> MarketMonitor | None:

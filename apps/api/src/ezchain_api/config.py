@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     min_pair_age_minutes: int = 10
     min_liquidity_usd: Decimal = Field(default=Decimal("10000"))
     paper_mark_max_order_usd: Decimal = Field(default=Decimal("250"))
+    # Execution-cost ceiling for a new position, as a ratio (0.05 = 5%). Applies to
+    # executable quotes only; a paper_mark reports no impact and a sell is never blocked.
+    max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
 
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
 

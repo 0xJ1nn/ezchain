@@ -7,11 +7,11 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import AdapterError, DexScreenerClient, JupiterClient, get_chain
+from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 from ezchain_core import OrderRequest
 
 from ..config import Settings, get_settings
-from ..deps import get_dexscreener, get_jupiter, get_session
+from ..deps import get_dexscreener, get_quote_router, get_session
 from ..errors import adapter_http_error
 from ..models import PaperFillRow, PaperOrderRow
 from ..schemas import (
@@ -105,7 +105,7 @@ async def create_order(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
     dexscreener: DexScreenerClient = Depends(get_dexscreener),
-    jupiter: JupiterClient = Depends(get_jupiter),
+    quotes: QuoteRouter = Depends(get_quote_router),
 ) -> OrderOut:
     if get_chain(payload.chain) is None:
         raise HTTPException(
@@ -120,7 +120,7 @@ async def create_order(
         idempotency_key=payload.idempotency_key,
     )
     try:
-        row = await paper.place_order(session, request, settings, dexscreener, jupiter)
+        row = await paper.place_order(session, request, settings, dexscreener, quotes)
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
     return _order(row)

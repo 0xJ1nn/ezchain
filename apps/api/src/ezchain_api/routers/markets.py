@@ -9,10 +9,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import AdapterError, DexScreenerClient, JupiterClient, get_chain
+from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 
 from ..config import Settings, get_settings
-from ..deps import get_dexscreener, get_jupiter, get_market_monitor, get_session
+from ..deps import get_dexscreener, get_market_monitor, get_quote_router, get_session
 from ..errors import adapter_http_error
 from ..models import MarketSnapshotRow
 from ..schemas import (
@@ -26,7 +26,6 @@ from ..schemas import (
     TokenOut,
 )
 from ..services.market_monitor import MarketMonitor, build_overview, stored_snapshots
-from ..services.quotes import get_quote
 
 router = APIRouter(tags=["markets"])
 
@@ -137,24 +136,19 @@ async def quote(
     side: Literal["buy", "sell"],
     amount_usd: Decimal = Query(gt=0),
     quantity: Decimal | None = Query(default=None, gt=0),
-    dexscreener: DexScreenerClient = Depends(get_dexscreener),
-    jupiter: JupiterClient = Depends(get_jupiter),
-    settings: Settings = Depends(get_settings),
+    quotes: QuoteRouter = Depends(get_quote_router),
 ) -> QuoteOut:
     if get_chain(chain) is None:
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
         )
     try:
-        result = await get_quote(
+        result = await quotes.quote(
             chain=chain,
             token_address=token,
             side=side,
             amount_usd=amount_usd,
             quantity=quantity,
-            dexscreener=dexscreener,
-            jupiter=jupiter,
-            settings=settings,
         )
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc

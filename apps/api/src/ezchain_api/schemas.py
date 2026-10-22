@@ -19,7 +19,10 @@ class CapabilitiesOut(BaseModel):
     browse: bool
     paper_execute: bool
     live_execute: bool
+    # The primary provider a chain's badge names, plus the full fallback ladder.
     quote_kind: str
+    quote_providers: list[str]
+    executable_quotes: bool
 
 
 class ChainOut(BaseModel):

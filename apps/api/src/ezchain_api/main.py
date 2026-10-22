@@ -9,7 +9,21 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import (
+    CetusClient,
+    DecimalsResolver,
+    DexScreenerClient,
+    GeckoTerminalClient,
+    HttpQuoteProvider,
+    JsonApiClient,
+    JupiterClient,
+    KyberSwapClient,
+    LifiClient,
+    OsmosisSqsClient,
+    QuoteRouter,
+    StonfiClient,
+    VeloraClient,
+)
 from ezchain_engine import KillSwitchExecutor, StrategyScheduler
 
 from .auth import BearerAuthMiddleware
@@ -33,11 +47,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_kill_switch(session, settings)
 
     dexscreener = DexScreenerClient()
+    gecko = GeckoTerminalClient()
+    decimals = DecimalsResolver(gecko)
     jupiter = JupiterClient()
-    await dexscreener.__aenter__()
-    await jupiter.__aenter__()
+    # One instance per provider: each owns its own bucket, cache and circuit breaker, so a
+    # provider that starts failing cannot slow the ones that still answer.
+    providers: list[HttpQuoteProvider] = [
+        KyberSwapClient(decimals=decimals),
+        VeloraClient(decimals=decimals),
+        LifiClient(decimals=decimals),
+        CetusClient(decimals=decimals),
+        StonfiClient(decimals=decimals),
+        OsmosisSqsClient(decimals=decimals),
+        jupiter,
+    ]
+    clients: list[JsonApiClient] = [dexscreener, gecko, *providers]
+    for client in clients:
+        await client.__aenter__()
     app.state.dexscreener = dexscreener
-    app.state.jupiter = jupiter
+    app.state.quote_router = QuoteRouter(providers=providers, dexscreener=dexscreener)
 
     def kill_switch_active() -> bool:
         """Read the persisted flag per order so arming applies across processes."""
@@ -45,7 +73,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return read_kill_switch(session, settings).active
 
     executor = KillSwitchExecutor(
-        PaperOrderExecutor(session_factory(), settings, dexscreener, jupiter),
+        PaperOrderExecutor(session_factory(), settings, dexscreener, app.state.quote_router),
         kill_switch_active,
     )
     app.state.order_executor = executor
@@ -84,8 +112,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             scheduler.stop()
         if scheduler_task is not None:
             await scheduler_task
-        await dexscreener.__aexit__(None, None, None)
-        await jupiter.__aexit__(None, None, None)
+        for client in clients:
+            await client.__aexit__(None, None, None)
 
 
 def create_app() -> FastAPI:
