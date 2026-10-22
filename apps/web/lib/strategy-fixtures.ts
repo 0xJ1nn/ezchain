@@ -2,7 +2,7 @@
 // numeric params. The web never evaluates a strategy locally; it posts the config to the
 // engine and renders the engine's decision and run log.
 
-export type StrategyKind = "momentum" | "dip" | "dca" | "threshold";
+export type StrategyKind = "momentum" | "dip" | "dca" | "threshold" | "graph";
 export type StrategyStatus = "active" | "paused";
 export type StrategyParams = Record<string, string | number>;
 
@@ -56,7 +56,15 @@ export const strategyKindMeta: Record<
 		description: "Buy below a price, sell above a price.",
 		rule: "mark ≤ buy_below_usd, then mark ≥ sell_above_usd",
 	},
+	graph: {
+		label: "Graph",
+		description: "A typed node graph: events, indicators, logic, guards and actions.",
+		rule: "ezchain.graph/1 document · validated before it can run",
+	},
 };
+
+/** The kinds the declarative create form can build. Graph strategies use the builder. */
+export const formStrategyKinds: StrategyKind[] = ["momentum", "dip", "dca", "threshold"];
 
 export interface ParamField {
 	name: string;
