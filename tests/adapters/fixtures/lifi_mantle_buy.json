@@ -1,0 +1,134 @@
+{
+ "action": {
+  "fromAmount": "1000000",
+  "fromToken": {
+   "address": "0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9",
+   "chainId": 5000,
+   "coinKey": "USDC",
+   "decimals": 6,
+   "logoURI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
+   "name": "USD Coin",
+   "priceUSD": "0.9986309265",
+   "symbol": "USDC",
+   "tags": [
+    "stablecoin"
+   ],
+   "verificationStatus": "verified",
+   "verificationStatusBreakdown": [
+    {
+     "provider": "hypernative",
+     "providerResult": "accept",
+     "result": "verified"
+    }
+   ]
+  },
+  "slippage": 0.005,
+  "toToken": {
+   "address": "0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111",
+   "chainId": 5000,
+   "coinKey": "WETH",
+   "decimals": 18,
+   "logoURI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png",
+   "name": "WETH",
+   "priceUSD": "2375.8962866945",
+   "symbol": "WETH",
+   "tags": [
+    "major_asset"
+   ],
+   "verificationStatus": "verified",
+   "verificationStatusBreakdown": [
+    {
+     "provider": "hypernative",
+     "providerResult": "accept",
+     "result": "verified"
+    }
+   ]
+  }
+ },
+ "estimate": {
+  "executionDuration": 0,
+  "feeCosts": [
+   {
+    "amount": "2500",
+    "amountUSD": "0.0025",
+    "description": "Fixed LIFI fee, independent of any other fee",
+    "feeSplit": {
+     "integratorFee": "0",
+     "lifiFee": "2500",
+     "recipients": [
+      {
+       "fee": "2500",
+       "name": "lifi",
+       "type": "FIXED"
+      }
+     ]
+    },
+    "included": true,
+    "name": "LIFI Fixed Fee",
+    "percentage": "0.0025",
+    "token": {
+     "address": "0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9",
+     "chainId": 5000,
+     "coinKey": "USDC",
+     "decimals": 6,
+     "logoURI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
+     "name": "USD Coin",
+     "priceUSD": "0.9986309265",
+     "symbol": "USDC",
+     "tags": [
+      "stablecoin"
+     ],
+     "verificationStatus": "verified",
+     "verificationStatusBreakdown": [
+      {
+       "provider": "hypernative",
+       "providerResult": "accept",
+       "result": "verified"
+      }
+     ]
+    }
+   }
+  ],
+  "fromAmount": "1000000",
+  "fromAmountUSD": "0.9986",
+  "gasCosts": [
+   {
+    "amount": "28851627703140000",
+    "amountUSD": "0.0154",
+    "estimate": "524574",
+    "limit": "681946",
+    "price": "55000110000",
+    "token": {
+     "address": "0x0000000000000000000000000000000000000000",
+     "chainId": 5000,
+     "coinKey": "MNT",
+     "decimals": 18,
+     "logoURI": "https://static.debank.com/image/mnt_token/logo_url/0x78c1b0c915c4faa5fffa6cabf0219da63d7f4cb8/a443c78c33704d48f06e5686bb87f85e.png",
+     "name": "MNT",
+     "priceUSD": "0.535397",
+     "symbol": "MNT",
+     "tags": [],
+     "verificationStatus": "verified",
+     "verificationStatusBreakdown": [
+      {
+       "provider": "hypernative",
+       "providerResult": "accept",
+       "result": "verified"
+      }
+     ]
+    },
+    "type": "SEND"
+   }
+  ],
+  "toAmount": "414267317972366",
+  "toAmountMin": "412195981382504",
+  "toAmountUSD": "0.9843"
+ },
+ "tool": "sushiswap",
+ "toolDetails": {
+  "key": "sushiswap",
+  "logoURI": "https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/exchanges/sushi.svg",
+  "name": "SushiSwap Aggregator"
+ },
+ "type": "lifi"
+}

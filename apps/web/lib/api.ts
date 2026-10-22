@@ -57,6 +57,9 @@ export interface ChainCapabilities {
 	paper_execute: boolean;
 	live_execute: boolean;
 	quote_kind: string;
+	quote_providers?: string[];
+	executable_quotes?: boolean;
+	candles?: boolean;
 }
 
 export interface Chain {

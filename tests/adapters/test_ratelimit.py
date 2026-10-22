@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import pytest
-from conftest import FakeClock
 
 from ezchain_adapters.ratelimit import (
     MAX_RETRY_AFTER_SECONDS,
     TokenBucket,
     parse_retry_after,
 )
+
+from .conftest import FakeClock
 
 
 async def test_burst_is_immediate_then_one_exact_sleep(clock: FakeClock) -> None:

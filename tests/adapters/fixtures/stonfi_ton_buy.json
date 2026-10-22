@@ -1,0 +1,34 @@
+{
+ "ask_address": "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+ "ask_jetton_wallet": "EQCSIMGBps_qzRG3uPYhON8bucyCtu0mYdL1-u4gSz77IBa3",
+ "ask_units": "752067442",
+ "fee_address": "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+ "fee_percent": "0.001000489",
+ "fee_units": "753189",
+ "gas_params": {
+  "estimated_gas_consumption": "60000000",
+  "forward_gas": "240000000",
+  "gas_budget": "300000000"
+ },
+ "min_ask_units": "744546767",
+ "offer_address": "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+ "offer_jetton_wallet": "EQCSLWJ9fY7b0A5OI72wxUp27l4fRlc6GvRBeFf6PiPpH4p3",
+ "offer_units": "1000000",
+ "pool_address": "EQCGScrZe1xbyWqWDvdI6mzP-GAcAWFv6ZXuaJOuSqemxku4",
+ "price_impact": "0.000000404",
+ "recommended_min_ask_units": "744546767",
+ "recommended_slippage_tolerance": "0.01",
+ "router": {
+  "address": "EQCS4UEa5UaJLzOyyKieqQOQ2P9M-7kXpkO5HnP3Bv250cN3",
+  "major_version": 2,
+  "minor_version": 2,
+  "pool_creation_enabled": true,
+  "pton_master_address": "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
+  "pton_version": "2.1",
+  "pton_wallet_address": "EQCSIMGBps_qzRG3uPYhON8bucyCtu0mYdL1-u4gSz77IBa3",
+  "router_type": "ConstantProduct"
+ },
+ "router_address": "EQCS4UEa5UaJLzOyyKieqQOQ2P9M-7kXpkO5HnP3Bv250cN3",
+ "slippage_tolerance": "0.01",
+ "swap_rate": "0.752067442"
+}

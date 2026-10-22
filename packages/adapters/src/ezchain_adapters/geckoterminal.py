@@ -1,12 +1,13 @@
-"""GeckoTerminal OHLCV adapter — token price history.
+"""GeckoTerminal adapter: OHLCV history and token metadata decimals.
 
-Public API, no key. The documented free budget is ~30 requests/minute; the shared client
-paces at 25/min (425 ms between requests) and caches one response for 30 seconds so a
-page render does not spend the whole budget. A ``429`` backs off instead of retrying in a
-storm: the shared client records the cooldown, and :meth:`GeckoTerminalClient.ohlcv`
-sleeps a doubling delay (1 s, 2 s, 4 s) before asking again.
+Two jobs share one public client because both are GeckoTerminal endpoints and both are
+rate-limited by the same free budget (30 requests/minute):
 
-The response is **newest first** and includes the *forming* bar. This adapter returns
+- :meth:`GeckoTerminalClient.ohlcv` returns closed-bar history for a pool, oldest first.
+- :meth:`GeckoTerminalClient.token_decimals` resolves the decimals a raw aggregator
+  amount must be scaled by.
+
+The OHLCV response is **newest first** and includes the *forming* bar. This adapter returns
 bars **oldest first** and leaves the forming bar in place: only the caller knows ``now``,
 so only the caller can decide which bar is closed. The API service is the one place that
 drops it (see ``apps/api/services/candles.py``).
@@ -14,6 +15,10 @@ drops it (see ``apps/api/services/candles.py``).
 ``token`` is passed as our token's address so the OHLCV prices belong to the token we
 asked about, not to the pool's base token. For a token quoted against USD this makes the
 series directly comparable with ``price_usd`` elsewhere in the platform.
+
+The cache is deliberately short (30 s) because OHLCV prices are time-sensitive. Decimals
+resolution does not depend on that cache: ``DecimalsResolver`` remembers each token for the
+process lifetime, so a short HTTP cache does not turn into a lookup per quote.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ CACHE_TTL_SECONDS = 30.0
 REQUESTS_PER_MINUTE = 25
 BURST = 5
 MAX_LIMIT = 1000
+MAX_TOKEN_DECIMALS = 36
 # A 429 is retried on these delays. The first is at least the shared client's default
 # Retry-After clamp, so the recorded cooldown has expired before the next attempt.
 RETRY_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 2.0, 4.0)
@@ -146,12 +152,31 @@ def pool_url(chain: ChainMeta, pool_address: str) -> str | None:
     )
 
 
+def _path_segment(value: str) -> str:
+    """Escape a token address; ``::`` in Move addresses stays readable."""
+    return quote(value, safe=":")
+
+
+def _attributes(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise UpstreamError("GeckoTerminal returned an unexpected token payload")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise NotFound("GeckoTerminal does not index that token")
+    attributes = data.get("attributes")
+    if not isinstance(attributes, dict):
+        raise UpstreamError("GeckoTerminal returned an unexpected token payload")
+    return attributes
+
+
 class GeckoTerminalClient(JsonApiClient):
     label: ClassVar[str] = "GeckoTerminal"
     base_url: ClassVar[str] = BASE
     cache_ttl_seconds: ClassVar[float] = CACHE_TTL_SECONDS
     rate_per_second: ClassVar[float] = REQUESTS_PER_MINUTE / 60.0
     burst: ClassVar[int] = BURST
+    not_found_statuses: ClassVar[frozenset[int]] = frozenset({404})
+    extra_headers: ClassVar[dict[str, str]] = {"Accept": "application/json"}
 
     def __init__(
         self,
@@ -245,6 +270,23 @@ class GeckoTerminalClient(JsonApiClient):
             limit=wanted,
             before=before,
         )
+
+    async def token_decimals(self, network: str, address: str) -> int:
+        """Decimals for one token, or an upstream error. Unknown is never guessed."""
+        payload = await self._get_with_backoff(
+            f"/networks/{_path_segment(network)}/tokens/{_path_segment(address)}", {}
+        )
+        attributes = _attributes(payload)
+        raw = attributes.get("decimals")
+        if isinstance(raw, bool) or raw is None:
+            raise UpstreamError("GeckoTerminal returned malformed token decimals")
+        try:
+            decimals = int(str(raw))
+        except (TypeError, ValueError):
+            raise UpstreamError("GeckoTerminal returned malformed token decimals") from None
+        if not 0 <= decimals <= MAX_TOKEN_DECIMALS:
+            raise UpstreamError("GeckoTerminal returned malformed token decimals")
+        return decimals
 
 
 __all__ = [

@@ -19,11 +19,14 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from ezchain_adapters import QuoteRequest, QuoteRouter
 from ezchain_api.config import Settings
 from ezchain_api.models import Base, PaperOrderRow
 from ezchain_core import OrderRequest, PairInfo, Quote, SourceRef, TokenSnapshot, utcnow
 
-CHAIN = "ethereum"
+# A chain whose ladder is a plain DexScreener mark (no keyless executable quote). The
+# executable path is covered by the Solana test below and by the adapter/API suites.
+CHAIN = "blast"
 TOKEN = "0x0000000000000000000000000000000000000abc"
 SYMBOL = "TEST"
 
@@ -173,6 +176,31 @@ def make_request(
     )
 
 
+class FakeJupiterProvider:
+    """Provider-protocol view of ``FakeJupiter`` so the router can dispatch to it."""
+
+    kind = "jupiter"
+
+    def __init__(self, client: FakeJupiter) -> None:
+        self._client = client
+
+    def supports(self, chain: Any) -> bool:
+        return chain.id == "solana"
+
+    async def quote(self, request: QuoteRequest) -> Quote:
+        quote, _, _ = await self._client.quote_paper(
+            token_address=request.token_address,
+            side=request.side,
+            amount_usd=request.amount_usd,
+            quantity=request.quantity,
+        )
+        return quote
+
+
+def make_router(dex: FakeDexScreener, jupiter: FakeJupiter) -> QuoteRouter:
+    return QuoteRouter(providers=[FakeJupiterProvider(jupiter)], dexscreener=dex)  # type: ignore[arg-type]
+
+
 def place(
     session: Session,
     settings: Settings,
@@ -182,7 +210,9 @@ def place(
 ) -> PaperOrderRow:
     from ezchain_api.services import paper
 
-    return asyncio.run(paper.place_order(session, request, settings, dex, jupiter))  # type: ignore[arg-type]
+    return asyncio.run(
+        paper.place_order(session, request, settings, dex, make_router(dex, jupiter))  # type: ignore[arg-type]
+    )
 
 
 @pytest.fixture

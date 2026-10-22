@@ -12,6 +12,8 @@ import math
 import time
 from collections.abc import Awaitable, Callable
 
+from .errors import RateLimited
+
 DEFAULT_RETRY_AFTER_SECONDS = 1.0
 MAX_RETRY_AFTER_SECONDS = 60.0
 
@@ -30,11 +32,16 @@ class TokenBucket:
         burst: int,
         clock: Callable[[], float] = time.monotonic,
         sleep: Sleeper = default_sleep,
+        max_wait_seconds: float | None = None,
     ) -> None:
         if rate_per_second <= 0:
             raise ValueError("rate_per_second must be positive")
         if burst < 1:
             raise ValueError("burst must be at least 1")
+        # A very low rate (LI.FI allows 75 requests per 2 hours) means the honest wait for
+        # the next token is minutes. Sleeping that long inside a request holds a connection
+        # and hides the budget from the caller, so an over-budget acquire fails fast instead.
+        self._max_wait = max_wait_seconds
         self._rate = float(rate_per_second)
         self._capacity = float(burst)
         self._tokens = float(burst)
@@ -56,6 +63,8 @@ class TokenBucket:
                     self._tokens -= tokens
                     return
                 wait = (tokens - self._tokens) / self._rate
+            if self._max_wait is not None and wait > self._max_wait:
+                raise RateLimited("request budget exhausted", detail=f"next slot in {wait:.0f}s")
             await self._sleep(max(wait, 0.001))
 
 

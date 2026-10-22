@@ -121,9 +121,7 @@ def scratch_postgres() -> Iterator[str]:
     try:
         yield created.render_as_string(hide_password=False)
     finally:
-        with psycopg.connect(
-            admin.render_as_string(hide_password=False), autocommit=True
-        ) as conn:
+        with psycopg.connect(admin.render_as_string(hide_password=False), autocommit=True) as conn:
             conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
 
 

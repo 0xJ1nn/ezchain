@@ -9,13 +9,21 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from ezchain_adapters import DexScreenerClient, GeckoTerminalClient, JupiterClient
+from ezchain_adapters import (
+    DecimalsResolver,
+    DexScreenerClient,
+    GeckoTerminalClient,
+    JupiterClient,
+    QuoteRequest,
+)
 from ezchain_adapters.ratelimit import TokenBucket
+from ezchain_adapters.registry import get_chain
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -70,3 +78,29 @@ def jupiter(clock: FakeClock, fast_limiter: TokenBucket) -> JupiterClient:
 def geckoterminal(clock: FakeClock, fast_limiter: TokenBucket) -> GeckoTerminalClient:
     return GeckoTerminalClient(limiter=fast_limiter, clock=clock, sleep=clock.sleep)
 
+
+@pytest.fixture
+def decimals() -> DecimalsResolver:
+    """A resolver with no metadata client: tests seed the decimals they need."""
+    return DecimalsResolver()
+
+
+def quote_request(
+    *,
+    chain: str,
+    token: str,
+    side: str = "buy",
+    amount_usd: str = "100",
+    quantity: str | None = None,
+    slippage_bps: int = 50,
+) -> QuoteRequest:
+    meta = get_chain(chain)
+    assert meta is not None, chain
+    return QuoteRequest(
+        chain=meta,
+        token_address=token,
+        side="buy" if side == "buy" else "sell",  # type: ignore[arg-type]
+        amount_usd=Decimal(amount_usd),
+        quantity=None if quantity is None else Decimal(quantity),
+        slippage_bps=slippage_bps,
+    )

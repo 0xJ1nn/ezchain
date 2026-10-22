@@ -216,7 +216,8 @@ async def test_all_chain_scan_persists_rows_and_probes_only_gaps(
     assert by_id["ethereum"]["status"] == "ok"
     assert by_id["solana"]["status"] == "ok"
     assert by_id["ethereum"]["rows"] == 1
-    assert by_id["ethereum"]["quote_kind"] == "paper_mark"
+    # Ethereum's ladder is executable now: the badge names the primary provider.
+    assert by_id["ethereum"]["quote_kind"] == "kyberswap"
     assert by_id["solana"]["quote_kind"] == "jupiter"
     assert overview["totals"]["covered"] == 3
     assert overview["totals"]["snapshots"] == 3

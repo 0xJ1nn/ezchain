@@ -6,15 +6,16 @@ import time
 from collections import OrderedDict
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
-from ezchain_core import Quote, SourceRef
+from ezchain_core import Quote, QuoteKind, SourceRef
 
 from .cache import BoundedTTLCache
 from .errors import NotFound, UpstreamError
-from .http import DEFAULT_TIMEOUT_SECONDS, Clock, JsonApiClient, Sleeper
+from .http import DEFAULT_TIMEOUT_SECONDS, Clock, Sleeper
+from .quotes import HttpQuoteProvider, QuoteRequest
 from .ratelimit import TokenBucket, default_sleep
 
 LITE_BASE = "https://lite-api.jup.ag"
@@ -68,13 +69,15 @@ def _route_labels(payload: dict[str, Any]) -> list[str]:
     return labels
 
 
-class JupiterClient(JsonApiClient):
+class JupiterClient(HttpQuoteProvider):
     label = "Jupiter"
+    kind: ClassVar[QuoteKind] = "jupiter"
     base_url = LITE_BASE
     cache_ttl_seconds = CACHE_TTL_SECONDS
     rate_per_second = 2.0
     burst = 4
     not_found_statuses = frozenset({400})
+    CHAINS = frozenset({"solana"})
 
     def __init__(
         self,
@@ -89,14 +92,15 @@ class JupiterClient(JsonApiClient):
         super().__init__(
             client, limiter=limiter, cache=cache, clock=clock, sleep=sleep, timeout=timeout
         )
-        self._decimals: OrderedDict[str, int] = OrderedDict(
+        # Jupiter resolves its own mints; this table is unrelated to the shared resolver.
+        self._mint_decimals: OrderedDict[str, int] = OrderedDict(
             {USDC_MINT: USDC_DECIMALS, SOL_MINT: SOL_DECIMALS}
         )
 
     async def token_decimals(self, mint: str) -> int:
-        cached = self._decimals.get(mint)
+        cached = self._mint_decimals.get(mint)
         if cached is not None:
-            self._decimals.move_to_end(mint)
+            self._mint_decimals.move_to_end(mint)
             return cached
         data = await self._get("/tokens/v2/search", {"query": mint})
         if not isinstance(data, list):
@@ -118,10 +122,10 @@ class JupiterClient(JsonApiClient):
         raise NotFound(f"unknown token decimals for {mint}")
 
     def _remember_decimals(self, mint: str, decimals: int) -> None:
-        self._decimals[mint] = decimals
-        self._decimals.move_to_end(mint)
-        while len(self._decimals) > DECIMALS_CACHE_MAX_ENTRIES:
-            self._decimals.popitem(last=False)
+        self._mint_decimals[mint] = decimals
+        self._mint_decimals.move_to_end(mint)
+        while len(self._mint_decimals) > DECIMALS_CACHE_MAX_ENTRIES:
+            self._mint_decimals.popitem(last=False)
 
     async def quote_exact_in(
         self,
@@ -144,6 +148,17 @@ class JupiterClient(JsonApiClient):
         if not isinstance(data, dict):
             raise UpstreamError("Jupiter returned an unexpected quote payload")
         return data
+
+    async def _quote(self, request: QuoteRequest) -> Quote:
+        """Provider-protocol entry point: one call, one Quote, same rules as Jupiter's."""
+        quote, _, _ = await self.quote_paper(
+            token_address=request.token_address,
+            side=request.side,
+            amount_usd=request.amount_usd,
+            quantity=request.quantity,
+            slippage_bps=request.slippage_bps,
+        )
+        return quote
 
     async def quote_paper(
         self,

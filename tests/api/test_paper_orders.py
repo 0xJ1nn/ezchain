@@ -9,12 +9,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ezchain_api.deps import get_dexscreener, get_jupiter
+from ezchain_adapters import QuoteRouter
+from ezchain_api.deps import get_dexscreener, get_quote_router
 from ezchain_api.models import PaperOrderRow
 from ezchain_api.routers import paper as paper_router
-from ezchain_core.types import PairInfo, Quote, SourceRef, TokenSnapshot
+from ezchain_core.types import PairInfo, SourceRef, TokenSnapshot
 
-CHAIN = "ethereum"
+# A chain with no keyless executable quote: this test is about attribution, not venue.
+CHAIN = "blast"
 TOKEN = "0x0000000000000000000000000000000000000abc"
 
 
@@ -49,15 +51,12 @@ class FakeDex:
         )
 
 
-class FakeJupiter:
-    async def quote_paper(self, **kwargs: object) -> tuple[Quote, int, int]:
-        raise AssertionError("paper_mark orders must not call Jupiter")
-
-
 def test_manual_order_with_strategy_id_is_ignored(client_for, session: Session) -> None:
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
     client: TestClient = client_for(
         paper_router.router,
-        {get_dexscreener: lambda: FakeDex(), get_jupiter: lambda: FakeJupiter()},
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
     )
 
     response = client.post(

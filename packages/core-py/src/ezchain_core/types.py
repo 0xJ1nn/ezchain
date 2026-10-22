@@ -13,7 +13,18 @@ from typing import Any, Literal
 
 Mode = Literal["paper", "live"]
 Side = Literal["buy", "sell"]
-QuoteKind = Literal["jupiter", "paper_mark"]
+# One literal per executable quote provider plus the non-executable DexScreener mark.
+# The registry's per-chain ladder decides which of these a chain may produce.
+QuoteKind = Literal[
+    "jupiter",
+    "kyberswap",
+    "velora",
+    "lifi",
+    "cetus",
+    "stonfi",
+    "osmosis_sqs",
+    "paper_mark",
+]
 StrategyKind = Literal["momentum", "dip", "dca", "threshold", "graph"]
 StrategyStatus = Literal["active", "paused"]
 

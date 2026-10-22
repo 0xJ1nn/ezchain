@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import PAPER_MARK, DexScreenerClient, QuoteRouter
 from ezchain_core import (
     LedgerEntry,
     OrderRequest,
@@ -41,7 +41,6 @@ from ezchain_core.ledger import (
 
 from ..config import Settings
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow, new_id
-from .quotes import get_quote
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -322,7 +321,23 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
         min_pair_age_minutes=settings.min_pair_age_minutes,
         min_liquidity_usd=settings.min_liquidity_usd,
         paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
+        max_price_impact_pct=settings.max_price_impact_pct,
     )
+
+
+def _fill_fee(notional: Decimal, quote: Quote, settings: Settings) -> Decimal:
+    """The fill's fee: the larger of the platform fee and the quote's own cost.
+
+    A ``paper_mark`` carries no venue cost, so the platform's flat paper fee is the whole
+    fee. An executable quote already pays a pool/aggregator fee and gas, reported as
+    ``quote.fee_usd``: charging the bps fee *on top* would bill the same liquidity twice,
+    and charging only the bps fee would hide a 0.25% LI.FI fee or three dollars of gas.
+    The maximum of the two is never less than either honest number and never their sum.
+    """
+    platform = bps_fee(notional, settings.paper_fee_bps)
+    if quote.kind == PAPER_MARK:
+        return platform
+    return max(platform, quote.fee_usd)
 
 
 def _find_order(session: Session, idempotency_key: str) -> PaperOrderRow | None:
@@ -410,7 +425,7 @@ async def place_order(
     payload: OrderRequest,
     settings: Settings,
     dexscreener: DexScreenerClient,
-    jupiter: JupiterClient,
+    quotes: QuoteRouter,
 ) -> PaperOrderRow:
     """Place a paper order: quote, risk, fill and journal in one transaction."""
     ensure_genesis(session, settings.paper_starting_cash_usd)
@@ -436,26 +451,20 @@ async def place_order(
         if quantity is None or quantity <= 0:
             return _reject_new(session, payload, "PRICE_UNKNOWN", snapshot=snapshot)
         assert snapshot.price_usd is not None
-        quote = await get_quote(
+        quote = await quotes.quote(
             chain=payload.chain,
             token_address=payload.token_address,
             side="sell",
             amount_usd=quantity * snapshot.price_usd,
             quantity=quantity,
-            dexscreener=dexscreener,
-            jupiter=jupiter,
-            settings=settings,
         )
     else:
-        quote = await get_quote(
+        quote = await quotes.quote(
             chain=payload.chain,
             token_address=payload.token_address,
             side="buy",
             amount_usd=payload.amount_usd,
             quantity=None,
-            dexscreener=dexscreener,
-            jupiter=jupiter,
-            settings=settings,
         )
 
     snapshot = _attach_quote_price(snapshot, quote)
@@ -496,7 +505,7 @@ async def place_order(
         daily_realized_pnl_usd=replay.daily_realized,
         limits=limits_from_settings(settings),
     )
-    fee = bps_fee(notional, settings.paper_fee_bps)
+    fee = _fill_fee(notional, quote, settings)
     if allowed and payload.side == "buy" and replay.cash < notional + fee:
         allowed = False
         reasons = ("INSUFFICIENT_CASH",)
@@ -515,6 +524,7 @@ async def place_order(
             price_usd=quote.price,
             fee_bps=settings.paper_fee_bps,
             notional_usd=notional,
+            fee_usd=fee,
         )
     else:
         avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
@@ -531,6 +541,7 @@ async def place_order(
             fee_bps=settings.paper_fee_bps,
             proceeds_usd=notional,
             cost_basis_usd=basis,
+            fee_usd=fee,
         )
 
     session.add(

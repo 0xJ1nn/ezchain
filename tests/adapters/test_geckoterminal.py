@@ -274,7 +274,9 @@ def test_registry_exposes_candle_capability() -> None:
         "browse": True,
         "paper_execute": True,
         "live_execute": False,
-        "quote_kind": "paper_mark",
+        "quote_kind": "kyberswap",
+        "quote_providers": ["kyberswap", "velora", "lifi"],
+        "executable_quotes": True,
         "candles": True,
     }
     assert osmosis.to_dict()["capabilities"]["candles"] is False  # type: ignore[index]

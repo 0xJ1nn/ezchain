@@ -19,6 +19,9 @@ class RiskLimits:
     min_liquidity_usd: Decimal = Decimal("10000")
     min_pair_age_minutes: int = 10
     paper_mark_max_order_usd: Decimal = Decimal("250")
+    # Execution-cost ceiling for new risk, as a ratio (0.05 = 5%). Only an executable
+    # quote reports an impact; a ``paper_mark`` reports none and is never gated by this.
+    max_price_impact_pct: Decimal = Decimal("0.05")
 
 
 def evaluate_order(
@@ -54,6 +57,15 @@ def evaluate_order(
         and request.amount_usd > limits.paper_mark_max_order_usd
     ):
         reasons.append("PAPER_MARK_LIMIT")
+    # Impact gates new risk only. Refusing an exit because the exit is expensive is how a
+    # paper position gets trapped, so a sell records the impact but is never blocked by it.
+    # An unknown impact (``paper_mark``) is not a breach: the mark is not an executable route.
+    if (
+        request.side == "buy"
+        and quote.price_impact_pct is not None
+        and abs(quote.price_impact_pct) > limits.max_price_impact_pct
+    ):
+        reasons.append("PRICE_IMPACT_TOO_HIGH")
 
     source = now_source or quote.source
     if source.is_stale(limits.max_quote_age_seconds):

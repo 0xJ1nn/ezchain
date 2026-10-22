@@ -145,9 +145,7 @@ async def test_forming_bar_is_never_returned_or_stored(session: Session) -> None
     # 30s into the 12:10 bar: the newest closed bar opened at 12:05 and closed at 12:10.
     now = datetime(2026, 10, 22, 12, 10, 30, tzinfo=UTC)
     provider = FakeCandles(series(3, end=datetime(2026, 10, 22, 12, 10, tzinfo=UTC)))
-    received = await get_candles(
-        session, provider, snapshot_source(), CHAIN, TOKEN, "5m", 3, now
-    )
+    received = await get_candles(session, provider, snapshot_source(), CHAIN, TOKEN, "5m", 3, now)
 
     assert [c.open_time for c in received.candles] == [
         datetime(2026, 10, 22, 12, 0, tzinfo=UTC),
@@ -278,9 +276,7 @@ async def test_unknown_liquidity_pools_are_ranked_last(session: Session) -> None
 
 async def test_no_pool_returns_an_empty_reasoned_series(session: Session) -> None:
     provider = FakeCandles()
-    received = await get_candles(
-        session, provider, FakeSnapshot(()), CHAIN, TOKEN, "5m", 5, BASE
-    )
+    received = await get_candles(session, provider, FakeSnapshot(()), CHAIN, TOKEN, "5m", 5, BASE)
 
     assert received.candles == ()
     assert received.reason == REASON_NO_POOL

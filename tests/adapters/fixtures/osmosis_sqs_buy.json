@@ -1,0 +1,53 @@
+{
+ "amount_in": {
+  "amount": "1000000",
+  "denom": "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2"
+ },
+ "amount_out": "34839716",
+ "effective_fee": "0.003497000000000000",
+ "in_base_out_quote_spot_price": "35.142779815056599714",
+ "liquidity_cap": "99270",
+ "liquidity_cap_overflow": false,
+ "price_impact": "-0.005144777269526796",
+ "route": [
+  {
+   "has-cw-pool": false,
+   "in_amount": "1000000",
+   "out_amount": "34839716",
+   "pools": [
+    {
+     "balances": [],
+     "id": 10,
+     "liquidity_cap": "32884",
+     "spread_factor": "0.003000000000000000",
+     "taker_fee": "0.001500000000000000",
+     "token_out_denom": "ibc/E6931F78057F7CC5DA0FD6CEF82FF39373A6E0452BF1FD76910B93292CF356C1",
+     "type": 0
+    },
+    {
+     "balances": [],
+     "id": 9,
+     "liquidity_cap": "66386",
+     "spread_factor": "0.002000000000000000",
+     "taker_fee": "0.002000000000000000",
+     "token_out_denom": "uosmo",
+     "type": 0
+    }
+   ]
+  }
+ ],
+ "tokens": [
+  {
+   "denom": "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2",
+   "liquidity_cap": "1782158"
+  },
+  {
+   "denom": "uosmo",
+   "liquidity_cap": "1701083"
+  },
+  {
+   "denom": "ibc/E6931F78057F7CC5DA0FD6CEF82FF39373A6E0452BF1FD76910B93292CF356C1",
+   "liquidity_cap": "63372"
+  }
+ ]
+}

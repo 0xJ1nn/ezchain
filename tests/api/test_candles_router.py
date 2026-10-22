@@ -205,9 +205,7 @@ def test_unknown_timeframe_is_rejected_before_the_provider(
 
 
 @pytest.mark.parametrize("limit", [0, -1, 1001])
-def test_limit_bounds_are_enforced(
-    client_for: Callable[..., TestClient], limit: int
-) -> None:
+def test_limit_bounds_are_enforced(client_for: Callable[..., TestClient], limit: int) -> None:
     client = build(client_for)
     response = client.get(f"/api/v1/tokens/{CHAIN}/{TOKEN}/candles?limit={limit}")
 
