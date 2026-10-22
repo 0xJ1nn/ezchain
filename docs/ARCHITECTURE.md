@@ -115,16 +115,18 @@ reordered; duplicate `(source, pair, observed_at)` is idempotent.
 
 **P0 inline observation.** `apps/api` also runs a bounded market monitor
 (`EZCHAIN_MARKET_SCAN_INLINE`, default on) so the platform knows what it can see even when
-no user has a token page open. One scan calls `DexScreenerClient.list_markets(chain="all")`
+no user has a token page open. One scan calls `DexScreenerClient.discover_markets(chain="all")`
 once; that adapter call fans out one token lookup per registered chain (seeds first, four
 in flight) because `/latest/dex/tokens` caps a response at 30 pairs, then round-robins the
-ranked per-chain rows. The monitor makes a second bounded per-chain attempt only for chains
-the all-chain pass returned no rows for. Each observed pair is projected onto its base
+ranked per-chain rows. The returned coverage tells the monitor which chains were already
+attempted, so it does not re-probe them; a second bounded per-chain pass runs only when the
+all-chain call raised or returned no coverage. Each observed pair is projected onto its base
 token and persisted through `paper.record_snapshot` before it can appear in
 `/api/v1/markets/overview` or `/api/v1/markets/stored`. A failed provider or chain records
-`error` for that chain and the scan continues. Row counts and ages are DB-derived, so the
-overview survives a restart; attempt times and error text are process-local. A chain with
-no rows is `no_data`, and an old row is `stale` — never zero.
+`error` (coverage reason `error`) and the scan continues. Row counts and ages are DB-derived,
+so the overview survives a restart; attempt times and error text are process-local. A chain
+with no rows is `no_data`, and an old row is `stale` after
+`max(60s, scan interval + last scan duration + 15s)` — never zero.
 
 ### 4.2 Order
 

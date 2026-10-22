@@ -7,12 +7,15 @@ status and persistence; HTTP adapters are covered by the adapter suite.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import httpx
 import pytest
+import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -20,13 +23,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
-from ezchain_adapters import CHAINS
+from ezchain_adapters import CHAINS, ChainCoverage, DexScreenerClient
+from ezchain_adapters.dexscreener import BASE
+from ezchain_adapters.ratelimit import TokenBucket
 from ezchain_api.config import Settings
 from ezchain_api.db import Base
 from ezchain_api.deps import get_market_monitor, get_session
 from ezchain_api.models import MarketSnapshotRow
 from ezchain_api.routers import markets
-from ezchain_api.services.market_monitor import MarketMonitor, build_overview
+from ezchain_api.services.market_monitor import (
+    MarketMonitor,
+    build_overview,
+    stale_after_seconds,
+)
 from ezchain_core import MarketRow, SourceRef
 
 ETH_TOKEN = "0x0000000000000000000000000000000000000abc"
@@ -78,16 +87,33 @@ def make_row(
 
 
 class FakeSource:
-    """Chain-addressable discovery stand-in. ``all`` unions the configured chains."""
+    """Chain-addressable discovery stand-in with optional coverage metadata.
 
-    def __init__(self, rows: dict[str, list[MarketRow]] | None = None) -> None:
+    By default it returns all-chain coverage, so the monitor must not re-probe chains.
+    Set ``coverage_available=False`` to model a source that cannot report which chains it
+    attempted; only then may the monitor fall back to one probe per chain.
+    """
+
+    def __init__(
+        self,
+        rows: dict[str, list[MarketRow]] | None = None,
+        *,
+        coverage_available: bool = True,
+    ) -> None:
         self.rows = rows or {}
         self.fail: dict[str, Exception] = {}
+        self.error_chains: set[str] = set()
+        self.coverage_available = coverage_available
         self.calls: list[tuple[str, int]] = []
 
-    async def list_markets(
-        self, *, chain: str | None = None, query: str | None = None, limit: int = 50
-    ) -> tuple[list[MarketRow], SourceRef]:
+    async def discover_markets(
+        self,
+        *,
+        chain: str | None = None,
+        query: str | None = None,
+        sort: str = "trending",
+        limit: int = 50,
+    ) -> tuple[list[MarketRow], SourceRef, list[ChainCoverage] | None]:
         key = chain or "all"
         self.calls.append((key, limit))
         failure = self.fail.get(key)
@@ -96,10 +122,33 @@ class FakeSource:
         now = datetime.now(UTC)
         if key == "all":
             rows = [row for chain_rows in self.rows.values() for row in chain_rows]
+            coverage = None
+            if self.coverage_available:
+                coverage = [
+                    ChainCoverage(
+                        meta.id,
+                        1,
+                        len(self.rows.get(meta.id, [])),
+                        "error"
+                        if meta.id in self.error_chains
+                        else ("pairs" if self.rows.get(meta.id) else "no_pairs"),
+                    )
+                    for meta in CHAINS
+                ]
         else:
             rows = list(self.rows.get(key, []))
-        rows.sort(key=lambda row: row.liquidity_usd, reverse=True)
-        return rows[:limit], SourceRef("dexscreener", "https://dexscreener.com", now)
+            coverage = None
+            if self.coverage_available:
+                coverage = [
+                    ChainCoverage(
+                        key,
+                        1,
+                        len(rows),
+                        "error" if key in self.error_chains else ("pairs" if rows else "no_pairs"),
+                    )
+                ]
+        rows.sort(key=lambda row: row.volume_24h_usd or Decimal(0), reverse=True)
+        return rows[:limit], SourceRef("dexscreener", "https://dexscreener.com", now), coverage
 
 
 @pytest.fixture
@@ -147,13 +196,9 @@ async def test_all_chain_scan_persists_rows_and_probes_only_gaps(
 
     assert result.persisted == 3
     assert _count(session) == 3
-    # One all-chain call, then one bounded probe for every chain the all-scan missed.
-    assert source.calls[0] == ("all", 50)
-    probed = [chain for chain, _ in source.calls[1:]]
-    assert "ethereum" not in probed
-    assert "solana" not in probed
-    assert len(probed) == len(CHAINS) - 3
-    assert all(limit <= 50 for _, limit in source.calls)
+    # The all-chain pass already attempted every registered chain: no gap re-probes.
+    assert source.calls == [("all", 50)]
+    assert result.attempted == tuple(chain.id for chain in CHAINS)
 
     overview = build_overview(session, monitor, settings)
     by_id = {chain["id"]: chain for chain in overview["chains"]}
@@ -196,39 +241,63 @@ async def test_chain_without_rows_is_no_data_not_zero(
     assert base["age_seconds"] is None
     assert base["last_attempt_at"] is not None
     assert base["last_error"] is None
-    assert "base" in [chain for chain, _ in source.calls]
+    # Coverage said no_pairs; the monitor must not spend a second request on it.
+    assert source.calls == [("all", 50)]
 
 
-async def test_per_chain_probe_recovers_a_chain_the_all_scan_missed(
+async def test_coverage_unavailable_falls_back_to_one_probe_per_chain(
     session: Session, session_factory: sessionmaker[Session], settings: Settings
 ) -> None:
     source = FakeSource(
         {
             "ethereum": [make_row()],
             "base": [make_row(chain="base", token=BASE_TOKEN, symbol="WETH")],
-        }
+        },
+        coverage_available=False,
     )
-    # The all-chain feed knows Ethereum only; Base is discovered by its own probe.
-    original = source.list_markets
-
-    async def list_markets(
-        *, chain: str | None = None, query: str | None = None, limit: int = 50
-    ) -> tuple[list[MarketRow], SourceRef]:
-        if chain == "all":
-            rows, ref = await original(chain=chain, query=query, limit=limit)
-            return [row for row in rows if row.chain == "ethereum"], ref
-        return await original(chain=chain, query=query, limit=limit)
-
-    source.list_markets = list_markets  # type: ignore[method-assign]
-
     monitor = MarketMonitor(session_factory, source, settings)
+
     result = await monitor.run_once()
 
+    assert source.calls[0] == ("all", 50)
+    assert len(source.calls) == 1 + len(CHAINS)
     assert result.rows_by_chain["base"] == 1
     overview = build_overview(session, monitor, settings)
     base = next(chain for chain in overview["chains"] if chain["id"] == "base")
     assert base["status"] == "ok"
     assert base["rows"] == 1
+
+
+async def test_failed_all_chain_scan_falls_back_to_at_most_one_probe_per_chain(
+    session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    source = FakeSource({})
+    source.fail["all"] = RuntimeError("all-chain down")
+    monitor = MarketMonitor(session_factory, source, settings)
+
+    result = await monitor.run_once()
+
+    assert source.calls[0] == ("all", 50)
+    assert len(source.calls) == 1 + len(CHAINS)
+    assert result.attempted == tuple(chain.id for chain in CHAINS)
+
+
+async def test_all_chain_coverage_error_is_reported(
+    session: Session, session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    source = FakeSource({"ethereum": [make_row()]})
+    source.error_chains.add("ethereum")
+    monitor = MarketMonitor(session_factory, source, settings)
+
+    await monitor.run_once()
+
+    overview = build_overview(session, monitor, settings)
+    ethereum = next(chain for chain in overview["chains"] if chain["id"] == "ethereum")
+    assert ethereum["status"] == "error"
+    assert ethereum["rows"] == 0
+    assert ethereum["last_error"] == "all-chain probe failed"
+    assert overview["totals"]["error"] == 1
+    assert source.calls == [("all", 50)]
 
 
 async def test_stale_row_is_stale_and_keeps_its_decimal_value(
@@ -270,6 +339,85 @@ async def test_stale_row_is_stale_and_keeps_its_decimal_value(
     assert rows[0].liquidity_usd == Decimal("1234.5")
 
 
+async def test_stale_threshold_includes_last_scan_duration(
+    session: Session, session_factory: sessionmaker[Session]
+) -> None:
+    settings = make_settings(market_scan_interval_seconds=90)
+    fixed_now = datetime.now(UTC)
+    observed = fixed_now - timedelta(seconds=200)
+    session.add(
+        MarketSnapshotRow(
+            chain="ethereum",
+            token_address=ETH_TOKEN,
+            symbol="WETH",
+            name="Wrapped Ether",
+            price_usd=Decimal("2000"),
+            liquidity_usd=Decimal("1234"),
+            volume_24h_usd=Decimal("0"),
+            price_change_m5=None,
+            price_change_h1=None,
+            price_change_h6=None,
+            price_change_h24=None,
+            source="dexscreener",
+            observed_at=observed,
+        )
+    )
+    session.commit()
+
+    times = iter([100.0, 220.0])  # a 120-second scan
+    monitor = MarketMonitor(session_factory, FakeSource(), settings, monotonic=lambda: next(times))
+    await monitor.run_once()
+
+    assert monitor.last_scan_duration_seconds == 120
+    # max(60, 90 + 120 + 15) = 225, so a 200-second-old row is not stale.
+    assert stale_after_seconds(settings, 120) == 225
+    assert stale_after_seconds(settings, 0) == 105
+    overview = build_overview(session, monitor, settings, now=fixed_now)
+    ethereum = next(chain for chain in overview["chains"] if chain["id"] == "ethereum")
+    assert ethereum["status"] == "ok"
+
+    short_scan = MarketMonitor(session_factory, FakeSource(), settings)
+    stale_overview = build_overview(session, short_scan, settings, now=fixed_now)
+    stale_ethereum = next(chain for chain in stale_overview["chains"] if chain["id"] == "ethereum")
+    assert stale_ethereum["status"] == "stale"
+
+
+async def test_error_with_existing_rows_does_not_double_count_totals(
+    session: Session, session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    session.add(
+        MarketSnapshotRow(
+            chain="ethereum",
+            token_address=ETH_TOKEN,
+            symbol="WETH",
+            name="Wrapped Ether",
+            price_usd=Decimal("2000"),
+            liquidity_usd=Decimal("1234"),
+            volume_24h_usd=Decimal("0"),
+            price_change_m5=None,
+            price_change_h1=None,
+            price_change_h6=None,
+            price_change_h24=None,
+            source="dexscreener",
+            observed_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+    source = FakeSource({"ethereum": []})
+    source.error_chains.add("ethereum")
+    monitor = MarketMonitor(session_factory, source, settings)
+
+    await monitor.run_once()
+
+    overview = build_overview(session, monitor, settings)
+    ethereum = next(chain for chain in overview["chains"] if chain["id"] == "ethereum")
+    assert ethereum["status"] == "error"
+    assert ethereum["rows"] == 1
+    assert overview["totals"]["covered"] == 1
+    assert overview["totals"]["error"] == 0
+    assert overview["totals"]["covered"] + overview["totals"]["error"] == 1
+
+
 async def test_provider_exception_records_error_and_scan_continues(
     session: Session, session_factory: sessionmaker[Session], settings: Settings
 ) -> None:
@@ -294,6 +442,34 @@ async def test_provider_exception_records_error_and_scan_continues(
     assert by_id["metis"]["status"] == "no_data"
     assert overview["totals"]["error"] == 1
     assert overview["totals"]["covered"] == 1
+
+
+@respx.mock
+async def test_successful_scan_stays_within_upstream_call_budget(
+    session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    respx.get(f"{BASE}/token-profiles/latest/v1").mock(return_value=httpx.Response(200, json=[]))
+    for path in ("/token-boosts/latest/v1", "/token-boosts/top/v1"):
+        respx.get(f"{BASE}{path}").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{BASE}/community-takeovers/latest/v1").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    token_route = respx.get(url__regex=rf"^{re.escape(BASE)}/latest/dex/tokens/.+$").mock(
+        return_value=httpx.Response(200, json={"pairs": []})
+    )
+    pairs_route = respx.get(url__regex=rf"^{re.escape(BASE)}/token-pairs/v1/.+$").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    client = DexScreenerClient(limiter=TokenBucket(rate_per_second=10_000, burst=10_000))
+    monitor = MarketMonitor(session_factory, client, settings)
+
+    async with client:
+        result = await monitor.run_once()
+
+    upstream_calls = 4 + token_route.call_count + pairs_route.call_count
+    assert token_route.call_count <= len(CHAINS)
+    assert upstream_calls <= 30
+    assert result.attempted == tuple(chain.id for chain in CHAINS)
 
 
 async def test_run_forever_stops_gracefully(

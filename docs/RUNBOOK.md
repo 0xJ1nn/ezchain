@@ -128,8 +128,8 @@ Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `er
 2. `error`: read `last_error`; a `RateLimited` message means the shared adapter cooldown
    is active. Do not restart in a loop — wait for `last_attempt_at` to advance.
 3. `stale`: rows exist but the newest observation is older than
-   `max(max_quote_age_seconds, 2 × scan interval)`. Check that scans are still succeeding
-   and that the provider is returning rows for that chain.
+   `max(60s, scan interval + last scan duration + 15s)`. Check that scans are still
+   succeeding and that the provider is returning rows for that chain.
 4. `no_data`: the scan succeeded and returned no pairs. Some chains are not indexed by
    DexScreener every day. A seed without a real pair is not a price; do not add one.
 5. Verify persistence directly:

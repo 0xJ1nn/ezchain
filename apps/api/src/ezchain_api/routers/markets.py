@@ -105,6 +105,11 @@ async def markets(
         coverage=None
         if coverage is None
         else [MarketCoverageOut.model_validate(item.to_dict()) for item in coverage],
+        ordered_by=(
+            "chain_round_robin"
+            if coverage is not None and q is None and chain == "all"
+            else "global_sort"
+        ),
     )
 
 

@@ -22,8 +22,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   at most 12 hints, four in flight) because `/latest/dex/tokens` caps each response at 30
   pairs. Rows are ranked within each chain and round-robined before the limit, so every
   data-bearing chain is represented instead of the global top few; the response carries
-  optional per-chain `coverage`. Verified seeds were added for Blast, Mantle, Linea, Scroll
-  and zkSync.
+  optional per-chain `coverage` and `ordered_by`. Verified seeds were added for Blast,
+  Mantle, Linea, Scroll and zkSync.
 - User-defined declarative strategies (momentum, dip, DCA, threshold), pause/resume,
   run-now, interval gate and an append-only run log.
 - Live web surfaces: markets, token page with paper ticket, positions and strategies;
@@ -56,6 +56,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Market sorting is None-safe for every `sort` mode: missing `volume`/`liquidity` stays
+  `null` on the row, sorts last, and is never displayed as zero.
+- Market coverage now distinguishes `error` from a successful empty `no_pairs`, and the
+  overview totals no longer count a chain as both covered and errored. Chains the all-chain
+  fan-out already attempted are not re-probed, keeping a successful monitor scan within its
+  request budget.
+- Chain staleness now includes the last scan duration, so a slow pass does not make every
+  chain look stale before the next pass.
 - Paper sells are no longer blocked by order-size, paper-mark-size or daily-loss limits;
   those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
   still apply to sells (#65, PR #66).

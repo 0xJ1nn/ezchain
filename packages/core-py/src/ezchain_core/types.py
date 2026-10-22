@@ -62,8 +62,8 @@ class MarketRow:
     symbol: str
     name: str
     price_usd: Decimal
-    liquidity_usd: Decimal
-    volume_24h_usd: Decimal
+    liquidity_usd: Decimal | None
+    volume_24h_usd: Decimal | None
     price_change_m5: Decimal | None
     price_change_h1: Decimal | None
     price_change_h6: Decimal | None
@@ -88,8 +88,8 @@ class MarketRow:
             "quote_name": self.quote_name,
             "price_native": None if self.price_native is None else str(self.price_native),
             "price_usd": str(self.price_usd),
-            "liquidity_usd": str(self.liquidity_usd),
-            "volume_24h_usd": str(self.volume_24h_usd),
+            "liquidity_usd": None if self.liquidity_usd is None else str(self.liquidity_usd),
+            "volume_24h_usd": None if self.volume_24h_usd is None else str(self.volume_24h_usd),
             "price_change_m5": None if self.price_change_m5 is None else str(self.price_change_m5),
             "price_change_h1": None if self.price_change_h1 is None else str(self.price_change_h1),
             "price_change_h6": None if self.price_change_h6 is None else str(self.price_change_h6),
@@ -110,8 +110,8 @@ class PairInfo:
     dex: str
     quote_token: str
     price_usd: Decimal
-    liquidity_usd: Decimal
-    volume_24h_usd: Decimal
+    liquidity_usd: Decimal | None
+    volume_24h_usd: Decimal | None
     url: str | None
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,8 +120,8 @@ class PairInfo:
             "dex": self.dex,
             "quote_token": self.quote_token,
             "price_usd": str(self.price_usd),
-            "liquidity_usd": str(self.liquidity_usd),
-            "volume_24h_usd": str(self.volume_24h_usd),
+            "liquidity_usd": None if self.liquidity_usd is None else str(self.liquidity_usd),
+            "volume_24h_usd": None if self.volume_24h_usd is None else str(self.volume_24h_usd),
             "url": self.url,
         }
 

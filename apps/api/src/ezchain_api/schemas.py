@@ -48,8 +48,8 @@ class MarketRowOut(BaseModel):
     symbol: str
     name: str
     price_usd: str
-    liquidity_usd: str
-    volume_24h_usd: str
+    liquidity_usd: str | None = None
+    volume_24h_usd: str | None = None
     price_change_m5: str | None = None
     price_change_h1: str | None = None
     price_change_h6: str | None = None
@@ -65,7 +65,7 @@ class MarketCoverageOut(BaseModel):
     chain: str
     requested: int
     returned: int
-    reason: Literal["pairs", "no_pairs"]
+    reason: Literal["pairs", "no_pairs", "error"]
 
 
 class MarketListOut(BaseModel):
@@ -73,6 +73,7 @@ class MarketListOut(BaseModel):
     source: SourceOut
     stale: bool
     coverage: list[MarketCoverageOut] | None = None
+    ordered_by: Literal["chain_round_robin", "global_sort"] = "global_sort"
 
 
 class MarketChainOut(BaseModel):
@@ -129,8 +130,8 @@ class PairOut(BaseModel):
     dex: str
     quote_token: str
     price_usd: str
-    liquidity_usd: str
-    volume_24h_usd: str
+    liquidity_usd: str | None = None
+    volume_24h_usd: str | None = None
     url: str | None = None
 
 

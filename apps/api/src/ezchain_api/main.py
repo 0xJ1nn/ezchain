@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,7 +61,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if monitor is not None:
             monitor.stop()
         if monitor_task is not None:
-            await monitor_task
+            try:
+                await asyncio.wait_for(monitor_task, timeout=5)
+            except TimeoutError:
+                monitor_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await monitor_task
         if scheduler is not None:
             scheduler.stop()
         if scheduler_task is not None:

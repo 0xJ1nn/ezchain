@@ -1,9 +1,9 @@
 """Observation-driven all-chain market monitoring ("market eyes").
 
 ezCHAIN must know what it can see, not only when a user opens a token. One bounded scan
-discoveries every registered chain with a single ``chain=all`` adapter call, then makes a
-per-chain attempt only for the chains that pass did not cover. The rate-limit budget is
-therefore proportional to observed gaps, not to the registry size.
+discoveries every registered chain with a single ``chain=all`` adapter call. The adapter's
+coverage tells this process which chains were attempted, so a second per-chain pass runs
+only when that coverage is unavailable; one provider failure never aborts the scan.
 
 Persisted observations are the source of truth for the overview: row counts and ages
 come from ``market_snapshots``, so the endpoint still works after a restart. Attempt times
@@ -15,15 +15,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import CHAINS
+from ezchain_adapters import CHAINS, ChainCoverage, SortMode
 from ezchain_core import MarketRow, SourceRef, TokenSnapshot, utcnow
 
 from ..config import Settings
@@ -34,17 +36,22 @@ logger = logging.getLogger(__name__)
 
 CHAIN_STATUSES = ("ok", "stale", "no_data", "error", "scanning")
 MIN_SCAN_INTERVAL_SECONDS = 30.0
-MIN_STALE_AFTER_SECONDS = 60.0
+STALE_MARGIN_SECONDS = 15.0
 MAX_ERROR_TEXT = 240
 
 
 @runtime_checkable
 class MarketSource(Protocol):
-    """The discovery call the monitor needs; ``DexScreenerClient`` satisfies it."""
+    """Discovery the monitor needs; ``DexScreenerClient`` satisfies it."""
 
-    async def list_markets(
-        self, *, chain: str | None = None, query: str | None = None, limit: int = 50
-    ) -> tuple[list[MarketRow], SourceRef]: ...
+    async def discover_markets(
+        self,
+        *,
+        chain: str | None = None,
+        query: str | None = None,
+        sort: SortMode = "trending",
+        limit: int = 50,
+    ) -> tuple[list[MarketRow], SourceRef, list[ChainCoverage] | None]: ...
 
 
 @dataclass
@@ -81,9 +88,19 @@ def _error_text(exc: BaseException) -> str:
     return text[:MAX_ERROR_TEXT]
 
 
-def stale_after_seconds(settings: Settings) -> float:
-    """A chain is stale after two scan intervals, never tighter than the quote mark age."""
-    return float(max(settings.max_quote_age_seconds, settings.market_scan_interval_seconds * 2))
+def stale_after_seconds(settings: Settings, last_scan_duration_seconds: float = 0.0) -> float:
+    """Staleness covers one interval plus the last scan's duration and a margin.
+
+    ``run_forever`` sleeps the interval *after* a scan, so a row can legitimately be
+    ``interval + scan_duration + margin`` old before the next pass observes it.
+    """
+    interval = float(settings.market_scan_interval_seconds)
+    return float(
+        max(
+            60.0,
+            interval + max(0.0, last_scan_duration_seconds) + STALE_MARGIN_SECONDS,
+        )
+    )
 
 
 def _snapshot(row: MarketRow) -> TokenSnapshot:
@@ -110,6 +127,16 @@ def _snapshot(row: MarketRow) -> TokenSnapshot:
     )
 
 
+def _depth(row: MarketRow) -> tuple[bool, Decimal, bool, Decimal]:
+    """Deepest first; unknown liquidity/volume sorts last without changing the row."""
+    return (
+        row.liquidity_usd is not None,
+        row.liquidity_usd or Decimal(0),
+        row.volume_24h_usd is not None,
+        row.volume_24h_usd or Decimal(0),
+    )
+
+
 def _best_rows(rows: list[MarketRow]) -> list[MarketRow]:
     """Keep the deepest pair per token so a shallow pool cannot overwrite the best mark."""
     best: dict[str, MarketRow] = {}
@@ -118,13 +145,7 @@ def _best_rows(rows: list[MarketRow]) -> list[MarketRow]:
             logger.debug("skipping market row without base token: %s", row.pair_address)
             continue
         current = best.get(row.base_token)
-        if current is None or (
-            row.liquidity_usd,
-            row.volume_24h_usd,
-        ) > (
-            current.liquidity_usd,
-            current.volume_24h_usd,
-        ):
+        if current is None or _depth(row) > _depth(current):
             best[row.base_token] = row
     return list(best.values())
 
@@ -143,6 +164,7 @@ class MarketMonitor:
         settings: Settings,
         *,
         now: Callable[[], datetime] = utcnow,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session_factory = session_factory
         self._source = source
@@ -151,10 +173,12 @@ class MarketMonitor:
         )
         self._limit = settings.market_scan_limit
         self._now = now
+        self._monotonic = monotonic
         self._stop = asyncio.Event()
         self._scan_lock = asyncio.Lock()
         self._states: dict[str, ChainState] = {chain.id: ChainState() for chain in CHAINS}
         self._scanning = False
+        self._last_scan_duration_seconds = 0.0
 
     @property
     def interval_seconds(self) -> float:
@@ -164,6 +188,10 @@ class MarketMonitor:
     def scanning(self) -> bool:
         return self._scanning
 
+    @property
+    def last_scan_duration_seconds(self) -> float:
+        return self._last_scan_duration_seconds
+
     def state(self, chain_id: str) -> ChainState | None:
         return self._states.get(chain_id)
 
@@ -171,9 +199,11 @@ class MarketMonitor:
         """Run one scan. The lock keeps a manual scan from overlapping the loop."""
         async with self._scan_lock:
             self._scanning = True
+            started = self._monotonic()
             try:
                 return await self._scan()
             finally:
+                self._last_scan_duration_seconds = max(0.0, self._monotonic() - started)
                 self._scanning = False
 
     async def _scan(self) -> ScanResult:
@@ -184,56 +214,28 @@ class MarketMonitor:
         attempted: list[str] = []
         persisted = 0
 
-        # The all-chain discovery covers every registered chain by definition. The attempt
-        # stamp is set once the call returns so a first scan reports `scanning`, not
-        # `no_data`, while discovery is still in flight.
+        coverage: list[ChainCoverage] | None = None
+        all_chain_failed = False
         try:
-            rows, _source = await self._source.list_markets(chain="all", limit=self._limit)
+            rows, _source, coverage = await self._source.discover_markets(
+                chain="all", sort="trending", limit=self._limit
+            )
         except Exception as exc:  # one provider failure must not stop the scan
+            all_chain_failed = True
             logger.warning("market scan all-chain discovery failed: %s", _error_text(exc))
         else:
             for row in rows:
                 if row.chain in self._states:
                     discovered.setdefault(row.chain, []).append(row)
 
-        for chain in CHAINS:
-            self._states[chain.id].last_attempt_at = started
-
-        for chain_id in sorted(discovered):
-            attempted.append(chain_id)
-            count = self._persist(chain_id, discovered[chain_id], started, errors)
-            persisted += count
-            rows_by_chain[chain_id] = count
-
-        for chain in CHAINS:
-            if chain.id in discovered:
-                continue
-            attempted.append(chain.id)
-            self._states[chain.id].last_attempt_at = self._now()
-            try:
-                rows, _source = await self._source.list_markets(
-                    chain=chain.id, limit=min(self._limit, 100)
-                )
-            except Exception as exc:
-                message = _error_text(exc)
-                state = self._states[chain.id]
-                state.rows = 0
-                state.last_error = message
-                errors[chain.id] = message
-                rows_by_chain[chain.id] = 0
-                logger.warning("market scan %s failed: %s", chain.id, message)
-                continue
-            chain_rows = [row for row in rows if row.chain == chain.id]
-            if not chain_rows:
-                state = self._states[chain.id]
-                state.rows = 0
-                state.last_success_at = self._now()
-                state.last_error = None
-                rows_by_chain[chain.id] = 0
-                continue
-            count = self._persist(chain.id, chain_rows, self._now(), errors)
-            persisted += count
-            rows_by_chain[chain.id] = count
+        if coverage is not None and not all_chain_failed:
+            persisted = self._use_all_chain_coverage(
+                coverage, discovered, started, attempted, rows_by_chain, errors
+            )
+        else:
+            # The all-chain pass raised or returned no coverage: this process cannot know
+            # which chains were attempted, so probe each one once, never more.
+            persisted = await self._probe_chains(attempted, rows_by_chain, errors)
 
         return ScanResult(
             observed_at=started,
@@ -242,6 +244,102 @@ class MarketMonitor:
             rows_by_chain=rows_by_chain,
             errors=dict(errors),
         )
+
+    def _use_all_chain_coverage(
+        self,
+        coverage: list[ChainCoverage],
+        discovered: dict[str, list[MarketRow]],
+        started: datetime,
+        attempted: list[str],
+        rows_by_chain: dict[str, int],
+        errors: dict[str, str],
+    ) -> int:
+        """Apply one fan-out result without any per-chain re-probe."""
+        persisted = 0
+        failed_chains: set[str] = set()
+        for item in coverage:
+            state = self._states.get(item.chain)
+            if state is None:
+                continue
+            attempted.append(item.chain)
+            state.last_attempt_at = started
+            if item.reason == "error":
+                message = "all-chain probe failed"
+                failed_chains.add(item.chain)
+                state.rows = 0
+                state.last_error = message
+                errors[item.chain] = message
+            elif item.reason == "no_pairs":
+                state.rows = 0
+                state.last_success_at = started
+                state.last_error = None
+            else:
+                state.last_error = None
+
+        for chain_id in sorted(discovered):
+            if chain_id in failed_chains:
+                rows_by_chain[chain_id] = 0
+                continue
+            count = self._persist(chain_id, discovered[chain_id], started, errors)
+            persisted += count
+            rows_by_chain[chain_id] = count
+
+        for item in coverage:
+            if item.chain in rows_by_chain:
+                continue
+            rows_by_chain[item.chain] = 0
+            if item.reason == "pairs":
+                state = self._states.get(item.chain)
+                if state is not None:
+                    state.last_success_at = started
+                    state.last_error = None
+        return persisted
+
+    async def _probe_chains(
+        self,
+        attempted: list[str],
+        rows_by_chain: dict[str, int],
+        errors: dict[str, str],
+    ) -> int:
+        """Bounded fallback: at most one probe per registered chain."""
+        persisted = 0
+        for chain in CHAINS:
+            attempted.append(chain.id)
+            state = self._states[chain.id]
+            state.last_attempt_at = self._now()
+            try:
+                rows, _source, coverage = await self._source.discover_markets(
+                    chain=chain.id, sort="trending", limit=min(self._limit, 100)
+                )
+            except Exception as exc:
+                message = _error_text(exc)
+                state.rows = 0
+                state.last_error = message
+                errors[chain.id] = message
+                rows_by_chain[chain.id] = 0
+                logger.warning("market scan %s failed: %s", chain.id, message)
+                continue
+            failed = any(
+                item.chain == chain.id and item.reason == "error" for item in coverage or []
+            )
+            chain_rows = [row for row in rows if row.chain == chain.id]
+            if failed:
+                message = "chain probe failed"
+                state.rows = 0
+                state.last_error = message
+                errors[chain.id] = message
+                rows_by_chain[chain.id] = 0
+                continue
+            if not chain_rows:
+                state.rows = 0
+                state.last_success_at = self._now()
+                state.last_error = None
+                rows_by_chain[chain.id] = 0
+                continue
+            count = self._persist(chain.id, chain_rows, self._now(), errors)
+            persisted += count
+            rows_by_chain[chain.id] = count
+        return persisted
 
     def _persist(
         self,
@@ -309,7 +407,9 @@ def build_overview(
             None if last_observed_at is None else _aware(last_observed_at),
         )
 
-    stale_after = stale_after_seconds(settings)
+    stale_after = stale_after_seconds(
+        settings, 0.0 if monitor is None else monitor.last_scan_duration_seconds
+    )
     chains: list[dict[str, Any]] = []
     totals: dict[str, int] = {
         "chains": len(CHAINS),
@@ -343,8 +443,14 @@ def build_overview(
         totals["snapshots"] += rows
         if rows > 0:
             totals["covered"] += 1
-        if status in ("stale", "no_data", "error"):
-            totals[status] += 1
+        # covered and error are disjoint: a chain with persisted rows is covered even if
+        # its latest attempt failed; error counts only failed attempts with no rows.
+        if status == "stale":
+            totals["stale"] += 1
+        elif status == "no_data":
+            totals["no_data"] += 1
+        elif status == "error" and rows == 0:
+            totals["error"] += 1
 
         chains.append(
             {

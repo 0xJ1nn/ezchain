@@ -104,6 +104,11 @@ detail}`.
 | POST | `/strategies/{id}/run` | evaluate now, return decision |
 | GET | `/strategies/{id}/runs` | decision log |
 
+Discovery responses carry per-chain `coverage` and `ordered_by`
+(`chain_round_robin` for `chain=all`, `global_sort` for search and single-chain queries).
+Rows still carry `source`, `observed_at` and decimal-string money; unknown liquidity or
+volume is `null`, never zero.
+
 Money fields are integer USD cents in the API and decimal strings at the boundary where
 token quantities need precision.
 

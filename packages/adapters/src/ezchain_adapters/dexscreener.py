@@ -29,10 +29,9 @@ from .seeds import SEED_TOKENS, seed_addresses
 
 BASE = "https://api.dexscreener.com"
 CACHE_TTL_SECONDS = 15.0
-# Addresses per /latest/dex/tokens request path. The response is separately capped at
-# MAX_RESPONSE_PAIRS pairs, which is why chain=all fans out per chain.
+# Addresses per /latest/dex/tokens request path. The response is separately capped at 30
+# pairs (see the module comment), which is why chain=all fans out per chain.
 MAX_BATCH = 30
-MAX_RESPONSE_PAIRS = 30
 # Seeds first, then at most this many hint addresses per chain. A per-chain lookup stays
 # inside one MAX_BATCH request in normal operation.
 MAX_CHAIN_HINTS = 12
@@ -41,6 +40,7 @@ MAX_CONCURRENT_CHAINS = 4
 MAX_DISCOVERY_ADDRESSES = MAX_BATCH * 4
 
 SortMode = Literal["trending", "liquidity", "new"]
+CoverageReason = Literal["pairs", "no_pairs", "error"]
 
 SAFETY_UNKNOWN = {"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"}
 
@@ -83,8 +83,19 @@ def _dt_ms(value: object) -> datetime | None:
         return None
 
 
-def _rank(row: MarketRow) -> tuple[Decimal, Decimal]:
-    return (row.liquidity_usd, row.volume_24h_usd)
+def _known(value: Decimal | None) -> Decimal:
+    """Sort sentinel only; the row keeps ``None`` so display can say unknown."""
+    return Decimal(0) if value is None else value
+
+
+def _rank(row: MarketRow) -> tuple[bool, Decimal, bool, Decimal]:
+    """Deepest first, unknown liquidity/volume last. Never coerces the row itself."""
+    return (
+        row.liquidity_usd is not None,
+        _known(row.liquidity_usd),
+        row.volume_24h_usd is not None,
+        _known(row.volume_24h_usd),
+    )
 
 
 def _path_segment(value: str) -> str:
@@ -126,8 +137,8 @@ def normalize_pair(pair: object, observed: datetime | None = None) -> MarketRow 
         symbol=symbol,
         name=_text(base_dict.get("name"), symbol),
         price_usd=price,
-        liquidity_usd=_field_dec(pair.get("liquidity"), "usd") or Decimal(0),
-        volume_24h_usd=_field_dec(pair.get("volume"), "h24") or Decimal(0),
+        liquidity_usd=_field_dec(pair.get("liquidity"), "usd"),
+        volume_24h_usd=_field_dec(pair.get("volume"), "h24"),
         price_change_m5=_field_dec(changes, "m5"),
         price_change_h1=_field_dec(changes, "h1"),
         price_change_h6=_field_dec(changes, "h6"),
@@ -292,7 +303,7 @@ class ChainCoverage:
     chain: str
     requested: int
     returned: int
-    reason: Literal["pairs", "no_pairs"]
+    reason: CoverageReason
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -337,18 +348,29 @@ def chain_addresses(chain_id: str, hints: list[dict[str, Any]]) -> list[str]:
 
 
 def _sort_rows(rows: list[MarketRow], sort: SortMode) -> list[MarketRow]:
+    """Sort within one chain. Unknown values sort last and stay ``None`` on the row."""
     if sort == "new":
         return sorted(
             rows,
             key=lambda row: (
                 (row.pair_created_at or row.source.observed_at).timestamp(),
-                row.liquidity_usd,
+                row.liquidity_usd is not None,
+                _known(row.liquidity_usd),
             ),
             reverse=True,
         )
     if sort == "liquidity":
         return sorted(rows, key=_rank, reverse=True)
-    return sorted(rows, key=lambda row: (row.volume_24h_usd, row.liquidity_usd), reverse=True)
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.volume_24h_usd is not None,
+            _known(row.volume_24h_usd),
+            row.liquidity_usd is not None,
+            _known(row.liquidity_usd),
+        ),
+        reverse=True,
+    )
 
 
 def _dedupe_rows(raw: list[dict[str, Any]], chain_id: str, observed: datetime) -> list[MarketRow]:
@@ -414,9 +436,9 @@ class DexScreenerClient(JsonApiClient):
     async def tokens(self, addresses: list[str]) -> list[dict[str, Any]]:
         """Fetch pairs for addresses, ``MAX_BATCH`` per request path.
 
-        The API caps each response at ``MAX_RESPONSE_PAIRS`` pairs; adding addresses does
-        not raise that cap. ``chain=all`` therefore calls this once per chain rather than
-        once for the whole registry.
+        The API caps each response at 30 pairs; adding addresses does not raise that cap.
+        ``chain=all`` therefore calls this once per chain rather than once for the whole
+        registry.
         """
         pairs: list[dict[str, Any]] = []
         for start in range(0, min(len(addresses), MAX_DISCOVERY_ADDRESSES), MAX_BATCH):
@@ -445,8 +467,8 @@ class DexScreenerClient(JsonApiClient):
 
     async def _rows_for_addresses(
         self, chain_id: str, addresses: list[str], observed: datetime, sort: SortMode
-    ) -> list[MarketRow]:
-        """Look up a chain's addresses, then fall back to the chain-filtered endpoint.
+    ) -> tuple[list[MarketRow], bool]:
+        """Return (rows, failed). ``failed`` means the chain probe itself raised.
 
         ``/latest/dex/tokens`` caps the response at 30 pairs. When a shared address (for
         example WETH on Base and Optimism) fills that cap with pairs on other chains, the
@@ -455,21 +477,21 @@ class DexScreenerClient(JsonApiClient):
         request when they genuinely have no pairs.
         """
         if not addresses:
-            return []
+            return [], False
         raw = await self.tokens(addresses)
         rows = _sort_rows(_dedupe_rows(raw, chain_id, observed), sort)
         if rows:
-            return rows
+            return rows, False
         shared = _shared_seed_addresses()
         for address in (item for item in addresses if item.lower() in shared):
             try:
                 raw = await self.token_pairs(chain_id, address)
-            except Exception:  # fallback is best-effort; unknown stays no_pairs
-                break
+            except Exception:  # cannot distinguish empty from failed after a cap
+                return [], True
             rows = _sort_rows(_dedupe_rows(raw, chain_id, observed), sort)
             if rows:
-                return rows
-        return []
+                return rows, False
+        return [], False
 
     async def _discover_all(
         self, observed: datetime, sort: SortMode
@@ -482,32 +504,47 @@ class DexScreenerClient(JsonApiClient):
         hints = await self._hint_items()
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHAINS)
 
-        async def probe(meta: ChainMeta) -> tuple[str, list[MarketRow], int]:
+        async def probe(meta: ChainMeta) -> tuple[str, list[MarketRow], int, bool]:
             addresses = chain_addresses(meta.id, hints)
             if not addresses:
-                return meta.id, [], 0
+                return meta.id, [], 0, False
             try:
                 async with semaphore:
-                    rows = await self._rows_for_addresses(meta.id, addresses, observed, sort)
+                    rows, failed = await self._rows_for_addresses(
+                        meta.id, addresses, observed, sort
+                    )
             except Exception:  # one chain/provider failure must not stop discovery
-                rows = []
-            return meta.id, rows, len(addresses)
+                rows, failed = [], True
+            return meta.id, rows, len(addresses), failed
 
         results = await asyncio.gather(*(probe(chain) for chain in CHAINS))
         coverage = [
-            ChainCoverage(chain, requested, len(rows), "pairs" if rows else "no_pairs")
-            for chain, rows, requested in results
+            ChainCoverage(
+                chain,
+                requested,
+                len(rows),
+                "error" if failed else ("pairs" if rows else "no_pairs"),
+            )
+            for chain, rows, requested, failed in results
         ]
-        return _round_robin([rows for _, rows, _ in results]), coverage
+        return _round_robin([rows for _, rows, _, _ in results]), coverage
 
     async def _discover_one(
         self, chain: str, observed: datetime, sort: SortMode
     ) -> tuple[list[MarketRow], list[ChainCoverage]]:
         hints = await self._hint_items()
         addresses = chain_addresses(chain, hints)
-        rows = await self._rows_for_addresses(chain, addresses, observed, sort)
+        try:
+            rows, failed = await self._rows_for_addresses(chain, addresses, observed, sort)
+        except Exception:
+            rows, failed = [], True
         coverage = [
-            ChainCoverage(chain, len(addresses), len(rows), "pairs" if rows else "no_pairs")
+            ChainCoverage(
+                chain,
+                len(addresses),
+                len(rows),
+                "error" if failed else ("pairs" if rows else "no_pairs"),
+            )
         ]
         return rows, coverage
 

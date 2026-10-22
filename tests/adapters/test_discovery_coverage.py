@@ -64,12 +64,27 @@ def _seed_address(chain: str) -> str:
     return SEED_TOKENS[chain][0]
 
 
+PAIRS_PER_TOKEN = 10
+
+
 def data_pairs(*, noise: int = 0) -> dict[str, list[dict[str, Any]]]:
-    """One registered pair per data-bearing chain, plus unregistered WETH noise."""
+    """Ten registered pairs per data chain, plus unregistered WETH noise.
+
+    Ten pairs per token is the point: one global 30-pair response can only cover three
+    chains, so the old global-batch algorithm cannot reach late-registry chains.
+    """
     by_address: dict[str, list[dict[str, Any]]] = {}
     for chain in DATA_CHAINS:
         address = _seed_address(chain)
-        by_address.setdefault(address.lower(), []).append(make_pair(chain, address))
+        by_address.setdefault(address.lower(), []).extend(
+            make_pair(
+                chain,
+                address,
+                pair_address=f"pair-{chain}-{index}",
+                liquidity=str(1_000_000 - index * 1000),
+            )
+            for index in range(PAIRS_PER_TOKEN)
+        )
     if noise:
         for index in range(noise):
             unregistered = ("pulsechain", "ink", "soneium", "worldchain")[index % 4]
@@ -143,6 +158,49 @@ async def test_all_chain_scan_covers_every_seeded_chain(
     assert len(batches) <= len(CHAINS)
     assert all(len(batch) <= MAX_BATCH for batch in batches)
     assert all(row.source.observed_at == source.observed_at for row in rows)
+
+
+@respx.mock
+async def test_failed_chain_probe_reports_error_not_no_pairs(
+    dexscreener: DexScreenerClient,
+) -> None:
+    mock_hint_feeds()
+    eth_seed = SEED_TOKENS["ethereum"][0].lower()
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        addresses = {address.lower() for address in _addresses(request)}
+        if eth_seed in addresses:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"pairs": []})
+
+    respx.get(url__regex=TOKENS_URL).mock(side_effect=respond)
+    respx.get(url__regex=TOKEN_PAIRS_URL).mock(return_value=httpx.Response(200, json=[]))
+
+    async with dexscreener as client:
+        _rows, _source, coverage = await client.discover_markets(chain="all", limit=100)
+
+    by_chain = {item.chain: item for item in coverage or []}
+    assert by_chain["ethereum"].reason == "error"
+    assert by_chain["ethereum"].returned == 0
+    assert by_chain["solana"].reason == "no_pairs"
+
+
+@respx.mock
+async def test_late_registry_chain_survives_the_30_pair_response_cap(
+    dexscreener: DexScreenerClient,
+) -> None:
+    # A single global response would hold 30 pairs: at 10 pairs per token that is at
+    # most three chains, so zksync (near the end of the registry) could never appear.
+    assert MAX_BATCH // PAIRS_PER_TOKEN < DATA_CHAINS.index("zksync")
+    mock_hint_feeds()
+    mock_tokens(data_pairs())
+
+    async with dexscreener as client:
+        rows, _source, coverage = await client.discover_markets(chain="all", limit=100)
+
+    assert "zksync" in {row.chain for row in rows}
+    by_chain = {item.chain: item for item in coverage or []}
+    assert by_chain["zksync"].returned >= 1
 
 
 @respx.mock
@@ -250,6 +308,43 @@ async def test_all_chain_token_lookups_stay_within_one_per_chain(
     # At most one token request per registered chain; the four hint feeds are extra.
     assert len(token_batches) <= len(CHAINS)
     assert 1 <= peak <= MAX_CONCURRENT_CHAINS
+
+
+@pytest.mark.parametrize("sort", ["trending", "liquidity", "new"])
+@respx.mock
+async def test_sort_modes_are_none_safe_and_keep_unknowns_null(
+    sort: str, dexscreener: DexScreenerClient
+) -> None:
+    pairs = [
+        make_pair("ethereum", "0xa", pair_address="a", liquidity="1000", volume="900"),
+        make_pair("ethereum", "0xb", pair_address="b", liquidity="50"),
+        make_pair("ethereum", "0xc", pair_address="c", volume="100"),
+        make_pair("ethereum", "0xd", pair_address="d"),
+    ]
+    pairs[1].pop("volume")
+    pairs[2].pop("liquidity")
+    pairs[3].pop("volume")
+    pairs[3].pop("liquidity")
+    respx.get(f"{BASE}/latest/dex/search").mock(
+        return_value=httpx.Response(200, json={"pairs": pairs})
+    )
+
+    async with dexscreener as client:
+        rows, _source, coverage = await client.discover_markets(
+            query="TEST", chain="ethereum", sort=sort, limit=10
+        )
+
+    assert coverage is None
+    by_address = {row.pair_address: row for row in rows}
+    assert by_address["b"].volume_24h_usd is None
+    assert by_address["c"].liquidity_usd is None
+    assert by_address["d"].volume_24h_usd is None
+    assert by_address["d"].liquidity_usd is None
+    if sort == "trending":
+        # Known volume first; missing volume never sorts as zero ahead of a known row.
+        assert [row.pair_address for row in rows] == ["a", "c", "b", "d"]
+    elif sort == "liquidity":
+        assert [row.pair_address for row in rows] == ["a", "b", "c", "d"]
 
 
 @respx.mock

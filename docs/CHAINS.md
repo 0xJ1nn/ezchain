@@ -130,8 +130,10 @@ unknown decimals is not tradeable.
 requested first, at most 12 hint addresses are added per chain, and four chains are in
 flight at a time. Rows are ranked within each chain, then round-robined in registry order
 before `limit`, so a low-liquidity chain is not dropped by a global ranking. The response
-carries `coverage: [{chain, requested, returned, reason}]`; `reason` is `pairs` or
-`no_pairs`, and coverage counts are pre-slice.
+carries `coverage: [{chain, requested, returned, reason}]`; `reason` is `pairs`,
+`no_pairs` (successful empty response) or `error` (the probe failed), and coverage counts
+are pre-slice. When `chain=all`, `ordered_by` is `chain_round_robin`; search and single-chain
+queries are `global_sort`.
 
 Live read-only smoke (`chain=all&limit=100`, 2026-10-22): **22 of 25** registered chains
 returned rows. Osmosis, Cosmos Hub and Moonbeam returned no indexed pairs and were reported

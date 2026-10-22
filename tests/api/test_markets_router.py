@@ -103,6 +103,7 @@ def test_router_keeps_adapter_order_and_passes_sort_limit() -> None:
         {"chain": "ethereum", "requested": 2, "returned": 1, "reason": "pairs"},
         {"chain": "base", "requested": 2, "returned": 1, "reason": "pairs"},
     ]
+    assert body["ordered_by"] == "chain_round_robin"
     assert body["source"]["observed_at"] == observed.isoformat()
     assert all(
         row["source"]["observed_at"] == body["source"]["observed_at"] for row in body["rows"]

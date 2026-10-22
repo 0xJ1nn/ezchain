@@ -23,7 +23,6 @@ from ezchain_adapters.dexscreener import (
     BASE,
     MAX_BATCH,
     MAX_DISCOVERY_ADDRESSES,
-    MAX_RESPONSE_PAIRS,
     normalize_pair,
     snapshot_from_pairs,
 )
@@ -80,7 +79,6 @@ def test_public_rate_budget_is_respected() -> None:
     assert DexScreenerClient.rate_per_second * 60 == 300
     assert 1 <= DexScreenerClient.burst <= 30
     assert MAX_BATCH == 30
-    assert MAX_RESPONSE_PAIRS == 30
     assert MAX_DISCOVERY_ADDRESSES == MAX_BATCH * 4
 
 
@@ -114,8 +112,8 @@ def test_normalize_pair_defaults_missing_optional_fields() -> None:
         del pair[key]
     row = normalize_pair(pair)
     assert row is not None
-    assert row.liquidity_usd == Decimal(0)
-    assert row.volume_24h_usd == Decimal(0)
+    assert row.liquidity_usd is None
+    assert row.volume_24h_usd is None
     assert row.price_change_m5 is None
     assert row.pair_created_at is None
     assert row.url is None
@@ -155,8 +153,8 @@ def test_normalize_pair_never_turns_non_finite_metrics_into_numbers() -> None:
     pair["priceChange"] = {"m5": "NaN"}
     row = normalize_pair(pair)
     assert row is not None
-    assert row.liquidity_usd == Decimal(0)
-    assert row.volume_24h_usd == Decimal(0)
+    assert row.liquidity_usd is None
+    assert row.volume_24h_usd is None
     assert row.price_change_m5 is None
 
 
