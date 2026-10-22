@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
-    "shots": "playwright test e2e/dashboard.spec.ts"
+    "shots": "playwright test e2e/dashboard.spec.ts e2e/positions.spec.ts"
   },
   "dependencies": {
     "@ezchain/ui": "workspace:*",

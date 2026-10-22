@@ -15,6 +15,7 @@ channel, and writes screenshots to `apps/web/.shots/` (gitignored):
 
 - `.shots/dashboard-1440.png` — desktop, full page
 - `.shots/dashboard-390.png` — mobile, full page
+- `.shots/positions-1440.png` — desktop, full page
 
 For a manual comparison, serve the wireframe and the app side by side:
 
