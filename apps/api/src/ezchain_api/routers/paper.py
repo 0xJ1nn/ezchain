@@ -118,7 +118,6 @@ async def create_order(
         side=payload.side,
         amount_usd=payload.amount_usd,
         idempotency_key=payload.idempotency_key,
-        strategy_id=payload.strategy_id,
     )
     try:
         row = await paper.place_order(session, request, settings, dexscreener, jupiter)

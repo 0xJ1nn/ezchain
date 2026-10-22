@@ -60,9 +60,10 @@ A strategy has **no** direct key or network access. It emits intents through the
 API; the host applies risk and execution.
 
 **Deletion vs retention (paper slice).** Deleting a strategy removes its `strategy_runs`
-decision log and the strategy row in one transaction. Orders keep `strategy_id` as an
-opaque historical string, so the execution trail survives but the reasoning that produced
-it does not. Pause instead of deleting when the decision log may be needed for an
+decision log and the strategy row in one transaction (ADR-0022). Orders keep
+`strategy_id` as an opaque historical string, so the execution trail survives but the
+reasoning that produced it does not, and the deleted strategy's decisions cannot be
+replayed. Pause instead of deleting when the decision log may be needed for an
 investigation or audit.
 
 ### Automation

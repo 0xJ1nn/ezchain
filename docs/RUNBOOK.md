@@ -125,11 +125,18 @@ curl -s -X POST localhost:8000/api/v1/system/kill-switch \
 
 - `POST` returns `{active, reason, updated_at, scope: "strategy"}`. `updated_at` is the
   audit timestamp; there is **no authentication yet**, so the actor is not recorded.
-  Keep the endpoint on a trusted network until ops adds auth.
-- The engine checks the flag on every strategy-originated order. When armed, the run log
-  records `hold` / `KILL_SWITCH_ACTIVE` with the attempted action and amount, and the
-  strategy's interval window is **not** consumed — releasing the switch retries on the
+  Keep the endpoint on a trusted network until ops adds auth. Releasing (`active: false`)
+  requires a non-empty reason and returns 422 otherwise; arming may omit it.
+- Two processes may boot together; the seed insert is idempotent and the loser of the
+  race reads the winner's row instead of failing startup.
+- The engine checks the flag on every strategy-originated order, and an armed switch makes
+  the scheduler skip its pass before any market read. When a manual run is attempted, the
+  run log records `hold` / `KILL_SWITCH_ACTIVE` with the attempted action and amount, and
+  the strategy's interval window is **not** consumed — releasing the switch retries on the
   next tick.
-- Manual paper orders have no `strategy_id` and remain allowed. Existing positions are
-  not sold by the switch; close them deliberately.
+- Manual paper orders stay allowed. The HTTP route does not accept `strategy_id`;
+  strategy attribution is internal to the engine. As defence in depth, the order service
+  also rejects any strategy-attributed order while the switch is armed
+  (`KILL_SWITCH_ACTIVE`) before it requests a quote. Existing positions are not sold by
+  the switch; close them deliberately.
 - Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.

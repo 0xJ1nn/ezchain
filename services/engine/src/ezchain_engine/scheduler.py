@@ -16,6 +16,7 @@ from decimal import Decimal
 from typing import Any, Protocol, cast, runtime_checkable
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ezchain_api.models import LedgerEntryRow, StrategyRow, StrategyRunRow
@@ -79,6 +80,11 @@ class KillSwitchExecutor:
     def __init__(self, inner: OrderExecutor, is_active: Callable[[], bool]) -> None:
         self._inner = inner
         self._is_active = is_active
+
+    @property
+    def active(self) -> bool:
+        """True while the operator switch is armed; read fresh from persistence."""
+        return self._is_active()
 
     async def place_order(self, request: OrderRequest) -> str:
         if request.strategy_id is not None and self._is_active():
@@ -166,7 +172,7 @@ def _record(
     now: datetime,
     touch_last_run: bool,
     order_id: str | None = None,
-) -> StrategyRunRow:
+) -> StrategyRunRow | None:
     row = StrategyRunRow(
         strategy_id=strategy.id,
         action=decision.action,
@@ -177,7 +183,14 @@ def _record(
     session.add(row)
     if touch_last_run:
         strategy.last_run_at = now
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # The strategy was deleted between load and insert. The decision cannot be
+        # attributed any more, so drop it instead of breaking the scheduler pass.
+        session.rollback()
+        logger.warning("strategy %s disappeared before its run was recorded", strategy.id)
+        return None
     session.refresh(row)
     return row
 
@@ -385,7 +398,12 @@ class StrategyScheduler:
 
         One failing strategy never stops the rest, and a strategy whose interval has not
         elapsed is not even opened: the run log records decisions, not scheduler ticks.
+        While the operator kill switch is armed the pass is skipped before any market
+        read, so an idle outage does not write a hold row per strategy per tick.
         """
+        if getattr(self._order_executor, "active", False):
+            logger.warning("strategy scheduler idle: operator kill switch is active")
+            return []
         now = self._now()
         with self._session_factory() as session:
             ids = list(

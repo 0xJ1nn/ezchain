@@ -27,15 +27,16 @@ def test_clean_genesis_account_is_ok(session: Session, settings) -> None:
     assert report["ok"] is True
     assert {check["id"] for check in report["checks"]} == {
         "ledger.groups_balanced",
-        "cash.replay_matches",
+        "cash.fills_match",
         "cash.non_negative",
         "positions.non_negative",
         "fills.orphaned",
         "orders.filled_single_fill",
     }
     totals = report["totals"]
+    assert totals["genesis_usd"] == "10000"
     assert totals["cash_usd"] == "10000"
-    assert totals["replay_cash_usd"] == "10000"
+    assert totals["fills_cash_usd"] == "10000"
     assert totals["open_positions"] == 0
     assert totals["fills"] == 0
     assert totals["quote_kinds"] == {}
@@ -66,8 +67,33 @@ def test_buy_and_sell_reconcile_and_counts_quote_kinds(
     assert totals["orphan_fills"] == 0
     assert totals["quote_kinds"] == {"paper_mark": 2}
     account = paper.account_snapshot(session)
-    assert totals["cash_usd"] == account["cash_usd"]
-    assert totals["replay_cash_usd"] == account["cash_usd"]
+    assert Decimal(totals["cash_usd"]) == Decimal(account["cash_usd"])
+    assert Decimal(totals["fills_cash_usd"]) == Decimal(account["cash_usd"])
+    assert totals["genesis_usd"] == "10000"
+
+
+def test_fill_cash_flow_mismatch_is_reported(session: Session, settings, dex, jupiter) -> None:
+    dex.set(make_snapshot(price=Decimal("2000")))
+    place(session, settings, dex, jupiter, make_request(amount_usd="100", key="recon-fill"))
+
+    # Corrupt only the fill notional: the journal and order/fill counts stay sound, so
+    # only the independent genesis+fills projection can catch the divergence.
+    fill = session.scalar(select(PaperFillRow))
+    assert fill is not None
+    fill.notional_usd = Decimal("101")
+    session.commit()
+
+    report = reconciliation(session)
+
+    checks = _checks(report)
+    assert report["ok"] is False
+    assert checks["cash.fills_match"]["ok"] is False
+    assert checks["ledger.groups_balanced"]["ok"] is True
+    assert checks["fills.orphaned"]["ok"] is True
+    assert checks["orders.filled_single_fill"]["ok"] is True
+    totals = report["totals"]
+    assert totals["cash_usd"] == "9899.7"
+    assert totals["fills_cash_usd"] == "9898.7"
 
 
 def test_unbalanced_group_orphan_fill_and_missing_fill_are_reported(

@@ -53,6 +53,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- The manual paper-order route no longer accepts strategy attribution; the order service
+  also rejects strategy-attributed orders while the kill switch is armed, before quoting.
+- Concurrent first boots no longer fail when both processes seed the kill-switch row; the
+  loser rolls back and reads the winner.
+- Reconciliation cash is checked against genesis plus persisted fill cash flow instead of
+  a tautological replay; disarming the kill switch now requires a reason (422).
 - Paper sells are no longer blocked by order-size, paper-mark-size or daily-loss limits;
   those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
   still apply to sells (#65, PR #66).

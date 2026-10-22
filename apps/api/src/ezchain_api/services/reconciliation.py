@@ -22,11 +22,14 @@ from ..models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 
 TOLERANCE = Decimal("0.000001")
 POSITION_PREFIX = "position:"
+GENESIS_ACCOUNT = "equity:genesis"
 
 
 def _money(value: Decimal) -> str:
-    """Decimal string with no exponent and no float round-trip."""
-    return format(value, "f")
+    """Canonical decimal string with no exponent and no float round-trip."""
+    if value == 0:
+        return "0"
+    return format(value.normalize(), "f")
 
 
 def _sample(items: list[str], limit: int = 5) -> str:
@@ -50,7 +53,7 @@ def reconciliation(session: Session) -> dict[str, Any]:
 
     group_totals: dict[str, Decimal] = defaultdict(Decimal)
     cash_total = Decimal(0)
-    replay_cash = Decimal(0)
+    genesis = Decimal(0)
     position_quantities: dict[str, Decimal] = defaultdict(Decimal)
 
     for row in ledger:
@@ -59,13 +62,22 @@ def reconciliation(session: Session) -> dict[str, Any]:
         group_totals[row.group_id] += value
         if row.account == cash_account():
             cash_total += value
+        elif row.account == GENESIS_ACCOUNT:
+            # The genesis equity leg is the negative of the starting cash.
+            genesis -= value
         if row.account.startswith(POSITION_PREFIX):
             position_quantities[row.account] += amount
 
-    # Replay the cash account in ledger order, separately from the group aggregation.
-    for row in ledger:
-        if row.account == cash_account():
-            replay_cash += Decimal(str(row.usd_value))
+    # Independently project cash from genesis plus the persisted fill cash flow:
+    # sells add proceeds, buys subtract notional, every fill pays its fee.
+    fills_cash = genesis
+    for fill in fills:
+        notional = Decimal(str(fill.notional_usd))
+        fee = Decimal(str(fill.fee_usd))
+        if fill.side == "sell":
+            fills_cash += notional - fee
+        else:
+            fills_cash -= notional + fee
 
     unbalanced = [group_id for group_id, total in group_totals.items() if abs(total) > TOLERANCE]
     negative_positions = sorted(
@@ -93,9 +105,9 @@ def reconciliation(session: Session) -> dict[str, Any]:
             ),
         ),
         _check(
-            "cash.replay_matches",
-            cash_total == replay_cash,
-            f"cash account sum {_money(cash_total)}; replayed cash {_money(replay_cash)}",
+            "cash.fills_match",
+            abs(cash_total - fills_cash) <= TOLERANCE,
+            f"ledger cash {_money(cash_total)}; genesis + fills {_money(fills_cash)}",
         ),
         _check(
             "cash.non_negative",
@@ -133,8 +145,9 @@ def reconciliation(session: Session) -> dict[str, Any]:
     ]
 
     totals = {
+        "genesis_usd": _money(genesis),
         "cash_usd": _money(cash_total),
-        "replay_cash_usd": _money(replay_cash),
+        "fills_cash_usd": _money(fills_cash),
         "open_positions": open_positions,
         "fills": len(fills),
         "filled_orders": len(filled_orders),

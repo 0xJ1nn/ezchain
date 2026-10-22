@@ -1,8 +1,14 @@
 """Concurrent run-now and scheduler evaluation share one idempotency window.
 
-Two evaluations of the same strategy reach the order service at the same time. The
-unique idempotency key in ``paper_orders`` is the mechanism of record: exactly one order
-and one fill may exist for the window, and no queue/lock is needed across processes.
+Two evaluations of the same strategy use independent sessions and connections and are
+released together at the order-execution boundary. The unique idempotency key in
+``paper_orders`` is the mechanism of record: at most one order and one fill may exist for
+the window.
+
+Scope of proof: this is same-process asyncio interleaving with two separate SQLite
+sessions/connections, not two OS processes and not byte-for-byte simultaneous DB work.
+It exercises the unique-key claim after both callers pass the pre-check; the production
+guarantee still comes from the database constraint, and Postgres was not driven here.
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
@@ -67,20 +74,30 @@ class StaticDex:
         return self.snapshot
 
 
-class BarrierExecutor:
-    """Hold both executions until each has made its decision, then let them race."""
+class Barrier:
+    """Release both callers together once each reaches the execution boundary."""
 
-    def __init__(self, inner: PaperOrderExecutor, parties: int = 2) -> None:
-        self._inner = inner
+    def __init__(self, parties: int = 2) -> None:
         self._parties = parties
         self._seen = 0
         self._release = asyncio.Event()
 
-    async def place_order(self, request: object) -> str:
+    async def wait(self) -> None:
         self._seen += 1
         if self._seen >= self._parties:
             self._release.set()
         await self._release.wait()
+
+
+class BarrierExecutor:
+    """Hold both executions until each has made its decision, then let them race."""
+
+    def __init__(self, inner: PaperOrderExecutor, barrier: Barrier) -> None:
+        self._inner = inner
+        self._barrier = barrier
+
+    async def place_order(self, request: object) -> str:
+        await self._barrier.wait()
         return await self._inner.place_order(request)  # type: ignore[arg-type]
 
 
@@ -99,18 +116,25 @@ async def _evaluate(
 
 async def test_concurrent_evaluation_places_one_order_for_the_window(tmp_path: Path) -> None:
     url = f"sqlite+pysqlite:///{tmp_path / 'concurrent.db'}"
-    eng = create_engine(url, connect_args={"check_same_thread": False})
 
-    @event.listens_for(eng, "connect")
-    def _wal(dbapi_connection, _record) -> None:  # type: ignore[no-untyped-def]
-        # WAL lets the evaluator's read transaction coexist with the order writer.
-        dbapi_connection.execute("PRAGMA journal_mode=WAL")
+    def _engine() -> Engine:
+        eng: Engine = create_engine(url, connect_args={"check_same_thread": False})
 
-    Base.metadata.create_all(eng)
-    factory = sessionmaker(bind=eng, expire_on_commit=False)
+        @event.listens_for(eng, "connect")
+        def _wal(dbapi_connection, _record) -> None:  # type: ignore[no-untyped-def]
+            # WAL lets the evaluator's read transaction coexist with the order writer.
+            dbapi_connection.execute("PRAGMA journal_mode=WAL")
+
+        return eng
+
+    eng_a = _engine()
+    eng_b = _engine()
+    Base.metadata.create_all(eng_a)
+    factory_a = sessionmaker(bind=eng_a, expire_on_commit=False)
+    factory_b = sessionmaker(bind=eng_b, expire_on_commit=False)
     settings = Settings(environment="test", database_url=url, data_mode="fixture")
 
-    with factory() as session:
+    with factory_a() as session:
         strategy = StrategyRow(
             id="strategy-race",
             name="race",
@@ -124,24 +148,35 @@ async def test_concurrent_evaluation_places_one_order_for_the_window(tmp_path: P
         session.add(strategy)
         session.commit()
 
-    source = StaticDex()
-    paper_executor = PaperOrderExecutor(
-        factory,
-        settings,
-        source,
-        None,  # type: ignore[arg-type]
+    source_a = StaticDex()
+    source_b = StaticDex()
+    barrier = Barrier()
+    executor_a = BarrierExecutor(
+        PaperOrderExecutor(factory_a, settings, source_a, None),  # type: ignore[arg-type]
+        barrier,
     )
-    executor = BarrierExecutor(paper_executor)
+    executor_b = BarrierExecutor(
+        PaperOrderExecutor(factory_b, settings, source_b, None),  # type: ignore[arg-type]
+        barrier,
+    )
     now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
 
     # No exception may escape: the loser of the race must resolve to the winning order.
     first, second = await asyncio.gather(
-        _evaluate(factory, "strategy-race", source, executor, now),
-        _evaluate(factory, "strategy-race", source, executor, now),
+        _evaluate(factory_a, "strategy-race", source_a, executor_a, now),
+        _evaluate(factory_b, "strategy-race", source_b, executor_b, now),
     )
 
-    with factory() as session:
+    with factory_a() as session:
         assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(PaperOrderRow)
+                .where(PaperOrderRow.status == "filled")
+            )
+            == 1
+        )
         assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
         order = session.scalar(select(PaperOrderRow))
         assert order is not None
@@ -150,5 +185,6 @@ async def test_concurrent_evaluation_places_one_order_for_the_window(tmp_path: P
 
     assert first.action == second.action == "buy"  # type: ignore[attr-defined]
     assert first.order_id == second.order_id == order_id  # type: ignore[attr-defined]
-    assert executor._seen == 2
-    eng.dispose()
+    assert barrier._seen == 2
+    eng_a.dispose()
+    eng_b.dispose()

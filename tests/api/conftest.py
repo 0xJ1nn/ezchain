@@ -7,11 +7,12 @@ not started: composition (network clients, scheduler) is out of scope here.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -39,6 +40,12 @@ def engine() -> Iterator[Engine]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(eng, "connect")
+    def _foreign_keys(dbapi_connection: Any, _record: Any) -> None:
+        # SQLite ignores foreign keys unless asked; Postgres enforces them.
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(eng)
     yield eng
     eng.dispose()
@@ -51,12 +58,14 @@ def session(engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def client_for(session: Session, settings: Settings) -> Callable[[APIRouter], TestClient]:
-    def _make(router: APIRouter) -> TestClient:
+def client_for(session: Session, settings: Settings) -> Callable[..., TestClient]:
+    def _make(router: APIRouter, overrides: dict[Any, Any] | None = None) -> TestClient:
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[get_session] = lambda: session
         app.dependency_overrides[get_settings] = lambda: settings
+        if overrides:
+            app.dependency_overrides.update(overrides)
         return TestClient(app)
 
     return _make

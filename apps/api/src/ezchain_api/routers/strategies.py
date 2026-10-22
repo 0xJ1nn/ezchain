@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -29,7 +29,10 @@ router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
 def _dt(value: object) -> str | None:
     if value is None:
         return None
-    return value.isoformat() if isinstance(value, datetime) else str(value)
+    if isinstance(value, datetime):
+        moment = value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return moment.isoformat()
+    return str(value)
 
 
 def _out(row: StrategyRow) -> StrategyOut:

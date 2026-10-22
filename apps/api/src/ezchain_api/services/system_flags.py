@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
@@ -66,11 +67,24 @@ def read_kill_switch(session: Session, settings: Settings) -> KillSwitch:
 
 
 def seed_kill_switch(session: Session, settings: Settings) -> KillSwitch:
-    """Persist the seed once so the state survives the next process restart."""
+    """Persist the seed once so the state survives the next process restart.
+
+    Two processes can boot together and both attempt the first insert. The primary key
+    makes that safe: the loser rolls back and reads the winner's row instead of failing
+    startup.
+    """
     row = session.get(SystemFlagRow, KILL_SWITCH_KEY)
     if row is not None:
         return _state(row)
-    return set_kill_switch(session, active=settings.engine_kill_switch, reason=None)
+    try:
+        return set_kill_switch(session, active=settings.engine_kill_switch, reason=None)
+    except IntegrityError:
+        session.rollback()
+        logger.info("kill switch seed lost an insert race; reading the winner row")
+        row = session.get(SystemFlagRow, KILL_SWITCH_KEY)
+        if row is None:  # pragma: no cover - the unique key guarantees a row exists
+            raise
+        return _state(row)
 
 
 def set_kill_switch(session: Session, *, active: bool, reason: str | None) -> KillSwitch:

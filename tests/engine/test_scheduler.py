@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from helpers import CHAIN, TOKEN, make_snapshot
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 import ezchain_api.models  # noqa: F401
@@ -392,6 +393,54 @@ async def test_kill_switch_raises_execution_blocked_for_strategy_orders(
     with pytest.raises(ExecutionBlocked) as raised:
         await guard.place_order(strategy_order)
     assert raised.value.code == "KILL_SWITCH_ACTIVE"
+
+
+async def test_scheduler_skips_the_pass_without_touching_market_data_while_armed(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    strategy_id = add_strategy(params={"interval_minutes": 60})
+    source = FakeSource()
+    inner = FakeExecutor()
+    guard = KillSwitchExecutor(inner, lambda: True)
+    scheduler = StrategyScheduler(session_factory, source, guard, interval_seconds=1)
+
+    assert guard.active is True
+    assert await scheduler.run_once() == []
+
+    assert source.calls == []
+    assert inner.requests == []
+    assert runs_for(session_factory, strategy_id) == []
+    assert get_strategy(session_factory, strategy_id).last_run_at is None
+
+
+async def test_run_log_insert_after_strategy_delete_is_dropped(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    strategy_id = add_strategy()
+    # Load the row, then let another actor delete it before the run is recorded.
+    with session_factory() as loaded:
+        strategy = loaded.get(StrategyRow, strategy_id)
+        assert strategy is not None
+    with session_factory() as deleter:
+        deleter.execute(delete(StrategyRunRow).where(StrategyRunRow.strategy_id == strategy_id))
+        row = deleter.get(StrategyRow, strategy_id)
+        assert row is not None
+        deleter.delete(row)
+        deleter.commit()
+
+    with session_factory() as session:
+        result = await evaluate_strategy(
+            session,
+            strategy,
+            FakeSource(),
+            FakeExecutor(order_id="order-orphaned"),
+            now=datetime(2026, 10, 22, 12, 0, tzinfo=UTC),
+        )
+
+    assert result.action == "buy"
+    assert result.run_id is None
+    with session_factory() as session:
+        assert session.get(StrategyRow, strategy_id) is None
 
 
 async def test_invalid_persisted_params_are_reported(

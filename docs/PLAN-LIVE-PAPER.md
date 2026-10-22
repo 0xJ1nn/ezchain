@@ -135,9 +135,11 @@ token quantities need precision.
 
 - **Reconciliation is a read model.** `GET /paper/reconciliation` derives everything
   from persisted `ledger_entries`, `paper_fills` and `paper_orders`: per-group
-  `SUM(usd_value)` within `0.000001`, cash account sum vs replayed cash, open positions,
+  `SUM(usd_value)` within `0.000001`, ledger cash against an independent
+  `genesis + Σ(sell notional − buy notional − fee)` projection, open positions,
   fill/order counts, orphan fills, filled orders without exactly one fill, negative cash
-  and negative position quantities, and fill counts by `quote_kind`. It never writes or
+  and negative position quantities, and fill counts by `quote_kind`. Genesis comes from
+  the `equity:genesis` ledger account, never from the cash sum. It never writes or
   repairs. `ok: false` means pause and investigate, not "retry until clean".
 - **Strategy-scoped kill switch.** The flag is persisted in `system_flags`
   (`engine_kill_switch`) so it survives a restart and is visible to every process. This is
@@ -145,14 +147,18 @@ token quantities need precision.
   engine wraps the order executor; a request with `strategy_id` is refused with
   `ExecutionBlocked` (`KILL_SWITCH_ACTIVE`) and the run log records a `hold` with the
   attempted action and amount. The strategy window is not consumed, so releasing the
-  switch takes effect on the next run. Manual paper orders (`strategy_id = null`) stay
-  allowed. There is no authentication yet; the endpoint is for a trusted network until
-  ops adds auth.
-- **Strategy deletion is a cascade with an audit trade-off.** Deleting a strategy removes
-  its `strategy_runs` decision log and the strategy in one transaction; historical
-  `paper_orders.strategy_id` stays as an opaque string. The execution trail is preserved,
-  but the reasoning that led to those orders is not. Operators who need the decision log
-  for an investigation should **pause** the strategy instead of deleting it.
+  switch takes effect on the next run. The scheduler skips its pass entirely while armed,
+  so an idle outage writes no hold row per strategy per tick; a manual run still records
+  one `KILL_SWITCH_ACTIVE` hold. Manual paper orders stay allowed but the HTTP request
+  schema has no `strategy_id`, and the service rejects any internal order that still
+  claims strategy attribution before a quote. There is no authentication yet; the
+  endpoint is for a trusted network until ops adds auth.
+- **Strategy deletion is a cascade with an audit trade-off** (ADR-0022). Deleting a
+  strategy removes its `strategy_runs` decision log and the strategy in one transaction;
+  historical `paper_orders.strategy_id` stays as an opaque string. The execution trail is
+  preserved, but the reasoning that led to those orders is not, and the deleted
+  strategy's decisions cannot be replayed. Operators who need the decision log for an
+  investigation should **pause** the strategy instead of deleting it.
 - **Concurrency is resolved by the idempotency key.** A manual run and the scheduler can
   evaluate the same strategy at once. Both may decide to buy, but the unique
   `paper_orders.idempotency_key` admits one order and one fill per window; the loser
