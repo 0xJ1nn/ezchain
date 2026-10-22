@@ -1,10 +1,152 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { PositionTile } from "@/components/position-tile";
-import { Badge, ButtonLink, Panel, Stat, TokenAvatar } from "@/components/ui";
-import { closedPositions, positionsSummary, positionTiles } from "@/lib/position-fixtures";
+import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
+import { positionTiles } from "@/lib/position-fixtures";
+import { usd, signedUsd, MINUS } from "@/lib/format";
+import {
+	getPaperSnapshot,
+	type PaperAccount,
+	type PaperPosition,
+	type PaperResult,
+	type PaperSnapshot,
+} from "@/lib/paper-api";
+import styles from "./page.module.css";
 
-export default function PositionsPage() {
+export const dynamic = "force-dynamic";
+
+const STALE_AFTER_SECONDS = 60;
+
+function money(value: string | null | undefined, signed = false) {
+	if (value === null || value === undefined || value === "") return "—";
+	const amount = Number(value);
+	if (!Number.isFinite(amount)) return "—";
+	if (amount !== 0 && Math.abs(amount) < 0.01) {
+		const decimal = Math.abs(amount).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+		return `${amount < 0 ? MINUS : ""}$${decimal}`;
+	}
+	if (amount === 0) return usd(0);
+	return signed ? signedUsd(amount) : usd(amount);
+}
+
+function quantity(value: string) {
+	const amount = Number(value);
+	if (!Number.isFinite(amount)) return "—";
+	return amount.toLocaleString("en-US", { maximumFractionDigits: 6 });
+}
+
+interface MarkAge {
+	label: string;
+	stale: boolean;
+	unknown: boolean;
+}
+
+function markAge(position: PaperPosition): MarkAge {
+	if (!position.source?.observed_at) {
+		return { label: "unknown mark", stale: false, unknown: true };
+	}
+	const observed = Date.parse(position.source.observed_at);
+	if (Number.isNaN(observed)) {
+		return { label: "unknown age", stale: false, unknown: true };
+	}
+	const seconds = Math.max(0, Math.round((Date.now() - observed) / 1000));
+	if (seconds <= STALE_AFTER_SECONDS) {
+		return { label: `${seconds}s`, stale: false, unknown: false };
+	}
+	const minutes = Math.round(seconds / 60);
+	return { label: `${minutes}m`, stale: true, unknown: false };
+}
+
+function chainCount(positions: PaperPosition[]) {
+	return new Set(positions.map((position) => position.chain)).size;
+}
+
+function needsAttention(positions: PaperPosition[]) {
+	return positions.filter((position) => {
+		const age = markAge(position);
+		return age.stale || age.unknown || position.mark_usd === null;
+	}).length;
+}
+
+function demoResult<T>(mode: PaperSnapshot["mode"], message: string): PaperResult<T> {
+	return {
+		ok: false,
+		mode,
+		error: { code: "FIXTURE_DEMO_ERROR", message },
+	};
+}
+
+export default async function PositionsPage({
+	searchParams,
+}: {
+	searchParams: Promise<{ state?: string }>;
+}) {
+	const { state } = await searchParams;
+	const snapshot = await getPaperSnapshot();
+	const mode = snapshot.mode;
+
+	// Deterministic state gallery in fixture mode only. Live mode always shows the API's
+	// answer, including an outage — a demo flag never masks real data.
+	const demo = mode === "fixture" ? state : undefined;
+	const accountResult =
+		demo === "error"
+			? demoResult<PaperAccount>(mode, "Fixture demo: the paper account request failed.")
+			: demo === "empty"
+				? {
+						ok: true as const,
+						mode,
+						data: {
+							cash_usd: "10000.00",
+							equity_usd: "10000.00",
+							realized_usd: "0.00",
+							unrealized_usd: "0.00",
+							positions: [],
+							mode: "paper" as const,
+						},
+					}
+				: snapshot.account;
+	const positionsResult =
+		demo === "error"
+			? demoResult<PaperPosition[]>(mode, "Fixture demo: the positions request failed.")
+			: demo === "empty"
+				? { ok: true as const, mode, data: [] as PaperPosition[] }
+				: demo === "stale"
+					? {
+							ok: true as const,
+							mode,
+							data: snapshot.positions.ok
+								? snapshot.positions.data.map((position) => ({
+										...position,
+										source: position.source
+											? {
+													...position.source,
+													observed_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+												}
+											: null,
+									}))
+								: [],
+						}
+					: snapshot.positions;
+
+	const account = accountResult.ok ? accountResult.data : null;
+	const positions = positionsResult.ok ? positionsResult.data : [];
+	const positionsFailed = !positionsResult.ok;
+	const failed = !accountResult.ok || positionsFailed;
+	const staleCount = positions.filter((position) => markAge(position).stale).length;
+	const unknownMarkCount = positions.filter((position) => position.mark_usd === null).length;
+	const attention = needsAttention(positions);
+
+	const errorMessage = !accountResult.ok
+		? accountResult.error.message
+		: !positionsResult.ok
+			? positionsResult.error.message
+			: null;
+	const errorCode = !accountResult.ok
+		? accountResult.error.code
+		: !positionsResult.ok
+			? positionsResult.error.code
+			: null;
+
 	return (
 		<AppShell active="positions">
 			<header className="page-head">
@@ -12,20 +154,17 @@ export default function PositionsPage() {
 					<div className="crumbs">Overview / Positions</div>
 					<h1>Positions</h1>
 					<p className="sub">
-						Every open position as one tile. PnL, mark freshness, ladder state and
-						executable value come from the server view model — the tile never recomputes
-						money. Actions are preview-only in M1.
+						Paper account and open positions read from{" "}
+						<span className="mono">GET /api/v1/paper/account</span> and{" "}
+						<span className="mono">/api/v1/paper/positions</span>. The page formats the
+						server view model; it never recomputes PnL, cost basis or executable value.
+						An unknown mark is <span className="mono">—</span>, never zero.
 					</p>
 				</div>
 				<div className="page-actions">
-					<div className="seg" role="group" aria-label="Density">
-						<button type="button" aria-pressed="true">
-							Comfortable
-						</button>
-						<button type="button" aria-pressed="false">
-							Compact
-						</button>
-					</div>
+					<Badge tone={mode === "fixture" ? "ghost" : "info"} title="Data source">
+						{mode === "fixture" ? "FIXTURE" : "LIVE API"}
+					</Badge>
 					<Link className="btn" href="/ledger">
 						Closed trades
 					</Link>
@@ -35,205 +174,299 @@ export default function PositionsPage() {
 				</div>
 			</header>
 
-			<section className="kpi-band mb-12">
-				<Stat label="Open positions" value={positionsSummary.open} meta={positionsSummary.openMeta} />
+			<section className="kpi-band mb-12" aria-label="Paper account">
 				<Stat
-					label="Executable value"
-					value={positionsSummary.executableValue}
-					meta={positionsSummary.executableMeta}
+					label={
+						<span>
+							Cash
+							<span className={styles.paperTag}>
+								<Badge tone="ghost">PAPER</Badge>
+							</span>
+						</span>
+					}
+					value={account ? money(account.cash_usd) : "—"}
+					meta={account ? "ledger cash · USD" : "account unavailable"}
 				/>
 				<Stat
-					label="Unrealized"
-					value={positionsSummary.unrealized}
-					tone="err"
-					meta={positionsSummary.unrealizedMeta}
+					label={
+						<span>
+							Equity
+							<span className={styles.paperTag}>
+								<Badge tone="ghost">PAPER</Badge>
+							</span>
+						</span>
+					}
+					value={account ? money(account.equity_usd) : "—"}
+					meta={account ? "cash + known marks" : "account unavailable"}
 				/>
-				<Stat label="Exposure" value={positionsSummary.exposure} meta={positionsSummary.exposureMeta} />
-				<Stat label="Realized today" value={positionsSummary.realizedToday} tone="ok" meta={positionsSummary.realizedMeta} />
 				<Stat
-					label="Needs attention"
-					value={positionsSummary.needsAttention}
-					tone="err"
-					meta={positionsSummary.needsAttentionMeta}
+					label={
+						<span>
+							Realized
+							<span className={styles.paperTag}>
+								<Badge tone="ghost">PAPER</Badge>
+							</span>
+						</span>
+					}
+					value={account ? money(account.realized_usd, true) : "—"}
+					tone={account && Number(account.realized_usd) < 0 ? "err" : "ok"}
+					meta="closed trades · fees included"
+				/>
+				<Stat
+					label={
+						<span>
+							Unrealized
+							<span className={styles.paperTag}>
+								<Badge tone="ghost">PAPER</Badge>
+							</span>
+						</span>
+					}
+					value={account ? money(account.unrealized_usd, true) : "—"}
+					tone={account && Number(account.unrealized_usd) < 0 ? "err" : "ok"}
+					meta="known marks · not executable"
+				/>
+				<Stat
+					label={
+						<span>
+							Open positions
+							<span className={styles.paperTag}>
+								<Badge tone="ghost">PAPER</Badge>
+							</span>
+						</span>
+					}
+					value={String(positions.length)}
+					meta={
+						positions.length > 0
+							? `${chainCount(positions)} chain${chainCount(positions) === 1 ? "" : "s"} · ${staleCount} stale`
+							: positionsFailed
+								? "positions unavailable"
+								: "flat"
+					}
+				/>
+				<Stat
+					label={
+						<span>
+							Needs attention
+							<span className={styles.paperTag}>
+								<Badge tone="ghost">PAPER</Badge>
+							</span>
+						</span>
+					}
+					value={String(attention)}
+					tone={attention > 0 ? "err" : undefined}
+					meta={
+						attention > 0
+							? `${unknownMarkCount} unknown mark · ${staleCount} stale`
+							: "every mark fresh"
+					}
 				/>
 			</section>
 
-			<div className="tabs mb-12" aria-label="Position views">
-				<button className="tab on" type="button" aria-pressed="true" title="Showing open positions">
-					Open <span className="count">4</span>
-				</button>
-				<button className="tab" type="button" aria-pressed="false" title="Filter not wired in M1">
-					Unsellable <span className="count">1</span>
-				</button>
-				<button className="tab" type="button" aria-pressed="false" title="Filter not wired in M1">
-					Closed <span className="count">28</span>
-				</button>
-				<button className="tab" type="button" aria-pressed="false" title="Filter not wired in M1">
-					Watchlist <span className="count">6</span>
-				</button>
-			</div>
-
-			<section className="panel mb-12">
-				<div className="table-toolbar">
-					<span className="field" style={{ minWidth: 120 }}>
-						<select className="select" aria-label="Filter by chain" defaultValue="All chains">
-							<option>All chains</option>
-							<option>Solana</option>
-							<option>Base</option>
-							<option>Ethereum</option>
-						</select>
-					</span>
-					<span className="field" style={{ minWidth: 150 }}>
-						<select className="select" aria-label="Filter by strategy" defaultValue="All strategies">
-							<option>All strategies</option>
-							<option>Momentum v1.2</option>
-							<option>DCA weekly</option>
-							<option>Manual</option>
-						</select>
-					</span>
-					<span className="field" style={{ minWidth: 130 }}>
-						<select className="select" aria-label="Filter by wallet" defaultValue="All wallets">
-							<option>All wallets</option>
-							<option>Main (hot)</option>
-							<option>Ledger (hw)</option>
-						</select>
-					</span>
-					<span className="field" style={{ minWidth: 130 }}>
-						<select className="select" aria-label="Sort positions" defaultValue="Sort: PnL %">
-							<option>Sort: PnL %</option>
-							<option>Sort: value</option>
-							<option>Sort: age</option>
-							<option>Sort: next level</option>
-						</select>
-					</span>
-					<span className="row" style={{ marginLeft: "auto" }}>
-						<span className="micro">Group by</span>
-						<div className="seg" role="group" aria-label="Group positions">
-							<button type="button" aria-pressed="true">
-								None
-							</button>
-							<button type="button" aria-pressed="false">
-								Strategy
-							</button>
-							<button type="button" aria-pressed="false">
-								Wallet
-							</button>
-							<button type="button" aria-pressed="false">
-								Chain
-							</button>
+			{errorMessage && (
+				<section className={`panel mb-12 ${styles.statePanel}`} role="alert">
+					<div className="panel-head">
+						<h2>Paper data unavailable</h2>
+						<div className="right">
+							<Badge tone="err">{errorCode ?? "ERROR"}</Badge>
 						</div>
-					</span>
-					<span className="badge ghost">fixture snapshot</span>
-				</div>
-				<div className="table-foot">
-					<span>4 open · 1 needs attention · sample marks</span>
-					<span>
-						USD totals use the sample SOL/USD mark <span className="mono">$147.62</span>
-					</span>
-				</div>
-			</section>
-
-			<section className="grid cols-2 tiles" id="open">
-				{positionTiles.map((position) => (
-					<PositionTile position={position} key={position.id} />
-				))}
-			</section>
-
-			<section className="panel mt-16" id="closed">
-				<div className="panel-head">
-					<h2>Recently closed</h2>
-					<span className="sub">28 in the last 7 days</span>
-					<div className="right">
-						<ButtonLink href="/ledger" size="sm">
-							Open ledger
-						</ButtonLink>
 					</div>
+					<div className="panel-body">
+						<div className={styles.stateTitle}>Nothing is being guessed.</div>
+						<p className={styles.stateBody}>
+							{errorMessage} Missing account and position values print{" "}
+							<span className="mono">—</span>; no tile or total is fabricated from a
+							failed request.
+						</p>
+						<div className="row mt-12">
+							<Link className="btn" href="/positions">
+								Retry
+							</Link>
+							{mode === "fixture" && (
+								<span className="small muted">
+									Fixture demo state <span className="mono">?state=error</span>
+								</span>
+							)}
+						</div>
+					</div>
+				</section>
+			)}
+
+			{!failed && staleCount > 0 && (
+				<div className="note warn mb-12">
+					<strong>{staleCount} stale mark{staleCount === 1 ? "" : "s"}.</strong> A mark older
+					than {STALE_AFTER_SECONDS}s is labelled stale and is not executable. Unrealized
+					values stay marked to that last known price.
 				</div>
-				<div className="table-wrap">
-					<table className="table">
-						<thead>
-							<tr>
-								<th>Closed</th>
-								<th>Token</th>
-								<th className="col-hide-sm">Chain</th>
-								<th className="col-hide-sm">Strategy</th>
-								<th className="num col-hide-sm">In</th>
-								<th className="num col-hide-sm">Out</th>
-								<th className="num">PnL</th>
-								<th className="num col-hide-sm">Hold</th>
-								<th>Exit reason</th>
-							</tr>
-						</thead>
-						<tbody>
-							{closedPositions.map((row) => (
-								<tr key={row.closed + row.symbol}>
-									<td className="mono">{row.closed}</td>
-									<td>
-										<Link className="row" href="/ledger">
-											<TokenAvatar size="sm">{row.symbol}</TokenAvatar>
-											{row.name}
-										</Link>
-									</td>
-									<td className="col-hide-sm">{row.chain}</td>
-									<td className="col-hide-sm">{row.strategy}</td>
-									<td className="num col-hide-sm">{row.inUsd}</td>
-									<td className="num col-hide-sm">{row.outUsd}</td>
-									<td className={`num ${row.pnlTone}`}>
-										{row.pnl} <span className="sub pnl-sub">{row.pnlPct}</span>
-									</td>
-									<td className="num col-hide-sm">{row.hold}</td>
-									<td>
-										<Badge tone={row.exitTone} title={`Exit reason: ${row.exit}`}>
-											{row.exit}
-										</Badge>
-									</td>
+			)}
+
+			<Panel
+				flush
+				title="Server positions"
+				sub={`${positions.length} from /api/v1/paper/positions`}
+				action={<Badge tone="ghost">PAPER</Badge>}
+				footer={
+					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
+						<span>
+							Server view model · mark age from <span className="mono">source.observed_at</span> ·{" "}
+							{STALE_AFTER_SECONDS}s stale threshold
+						</span>
+						<span>
+							{mode === "fixture"
+								? "EZCHAIN_WEB_MODE=fixture · sample account, no API call"
+								: "Live API · paper mode"}
+						</span>
+					</div>
+				}
+			>
+				{positions.length > 0 ? (
+					<div className="table-wrap">
+						<table className="table">
+							<thead>
+								<tr>
+									<th scope="col">Token</th>
+									<th scope="col" className="col-hide-sm">
+										Chain
+									</th>
+									<th scope="col" className="num">
+										Quantity
+									</th>
+									<th scope="col" className="num col-hide-sm">
+										Avg cost
+									</th>
+									<th scope="col" className="num">
+										Mark
+									</th>
+									<th scope="col" className="num col-hide-sm">
+										Value
+									</th>
+									<th scope="col" className="num">
+										Unrealized
+									</th>
+									<th scope="col" className="num col-hide-sm">
+										Realized
+									</th>
+									<th scope="col">Source · age</th>
+									<th scope="col">Mode</th>
 								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-				<div className="panel-foot between">
-					<span>Exit reasons are machine codes; hover for the rule that fired.</span>
-					<span className="row">
-						<Badge tone="ghost">PAPER</Badge>
-						<Badge tone="ghost">fees included</Badge>
-					</span>
-				</div>
-			</section>
-
-			<section className="grid cols-3 mt-16">
-				<Panel title="What the tile must never do">
-					<div className="stack-sm small muted">
-						<div>
-							• Show <span className="mono">0</span> for an unknown value. Unknown is{" "}
-							<span className="mono">—</span>.
+							</thead>
+							<tbody>
+								{positions.map((position) => {
+									const age = markAge(position);
+									const unrealized = position.unrealized_usd;
+									return (
+										<tr
+											key={`${position.chain}:${position.token_address}`}
+											className={age.stale ? styles.staleRow : undefined}
+										>
+											<td>
+												<div className={styles.tokenCell}>
+													<span className="token sm" aria-hidden="true">
+														{position.symbol.slice(0, 2).toUpperCase()}
+													</span>
+													<span>
+														<span className="strong">{position.symbol}</span>
+														<span
+															className={styles.tokenAddress}
+															style={{ display: "block" }}
+															title={position.token_address}
+														>
+															{position.token_address.slice(0, 6)}…
+															{position.token_address.slice(-4)}
+														</span>
+													</span>
+												</div>
+											</td>
+											<td className="col-hide-sm">{position.chain}</td>
+											<td className="num mono">{quantity(position.quantity)}</td>
+											<td className="num mono col-hide-sm">
+												{money(position.avg_cost_usd)}
+											</td>
+											<td className={`num ${styles.monoCell}`}>
+												{position.mark_usd === null ? (
+													<span className={styles.unknown}>—</span>
+												) : (
+													money(position.mark_usd)
+												)}
+											</td>
+											<td className="num mono col-hide-sm">
+												{money(position.market_value_usd)}
+											</td>
+											<td
+												className={`num ${styles.monoCell}${
+													unrealized && Number(unrealized) < 0 ? " err" : ""
+												}`}
+											>
+												{unrealized === null ? (
+													<span className={styles.unknown}>—</span>
+												) : (
+													money(unrealized, true)
+												)}
+											</td>
+											<td className="num mono col-hide-sm">
+												{money(position.realized_usd, true)}
+											</td>
+											<td>
+												{position.source ? (
+													<span className={styles.accountMeta}>
+														<Badge tone={age.stale ? "warn" : "ghost"}>
+															{age.stale ? `stale · ${age.label}` : `${position.source.name} · ${age.label}`}
+														</Badge>
+													</span>
+												) : (
+													<Badge tone="warn">unknown mark</Badge>
+												)}
+											</td>
+											<td>
+												<Badge tone="ghost">{position.mode}</Badge>
+											</td>
+										</tr>
+									);
+								})}
+							</tbody>
+						</table>
+					</div>
+				) : (
+					<div className="panel-body">
+						<div className={styles.stateTitle}>
+							{positionsFailed ? "No positions read" : "No open positions"}
 						</div>
-						<div>• Present an expired quote as a live mark.</div>
-						<div>• Recompute PnL on the client.</div>
-						<div>• Hide an unsellable position behind an unrealized number.</div>
+						<p className={styles.stateBody}>
+							{positionsFailed
+								? "The positions request failed. Nothing is rendered as a position; missing values stay —."
+								: "The paper account is flat. Open a market and place a paper order to create the first position. Unknown values are never shown as zero."}
+						</p>
+						{!positionsFailed && (
+							<div className="row mt-12">
+								<ButtonLink href="/markets" variant="primary">
+									Browse markets
+								</ButtonLink>
+								{mode === "fixture" && (
+									<span className="small muted">
+										Fixture demo state <span className="mono">?state=empty</span>
+									</span>
+								)}
+							</div>
+						)}
 					</div>
-				</Panel>
-				<Panel title="Tile states">
-					<div className="row small">
-						<Badge>entering</Badge>
-						<Badge>pre-bank</Badge>
-						<Badge>trail-armed</Badge>
-						<Badge tone="info">banked</Badge>
-						<Badge tone="info">riding</Badge>
-						<Badge>laddered</Badge>
-						<Badge tone="err">unsellable</Badge>
-						<Badge tone="warn">dust</Badge>
-						<Badge tone="ghost">closed</Badge>
+				)}
+			</Panel>
+
+			{mode === "fixture" && !failed && positions.length > 0 && (
+				<section className="mt-16" aria-label="Position tiles">
+					<div className={styles.tileHeading}>
+						<h2>Position tiles</h2>
+						<span className="small muted">
+							the existing tile component · fixture chart and ladder fixture
+						</span>
+						<Badge tone="ghost">FIXTURE TILES</Badge>
 					</div>
-				</Panel>
-				<Panel title="Reference">
-					<div className="stack-sm small">
-						<Link href="/components">Component anatomy →</Link>
-						<Link href="/states">All states →</Link>
-						<Link href="/positions/bonk">Position detail →</Link>
-					</div>
-				</Panel>
-			</section>
+					<section className="grid cols-2 tiles" id="open">
+						{positionTiles.map((position) => (
+							<PositionTile position={position} key={position.id} />
+						))}
+					</section>
+				</section>
+			)}
 		</AppShell>
 	);
 }
