@@ -19,6 +19,7 @@ from ezchain_core.types import OrderRequest, TokenSnapshot
 from ezchain_engine import (
     ExecutionBlocked,
     KillSwitchExecutor,
+    OrderRejected,
     StrategyScheduler,
     evaluate_strategy,
     idempotency_key,
@@ -299,6 +300,30 @@ async def test_executor_failure_is_logged_and_retried(
     retried = await run_once(session_factory, strategy_id, source, healthy, now=now)
     assert retried.action == "buy"
     assert retried.order_id == "ord-retry"
+
+
+async def test_rejected_order_is_logged_as_a_hold_not_a_trade(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    strategy_id = add_strategy()
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+    rejected = FakeExecutor(
+        error=OrderRejected("ORDER_LIMIT,PAPER_MARK_LIMIT", order_id="ord-rejected")
+    )
+
+    result = await run_once(session_factory, strategy_id, FakeSource(), rejected, now=now)
+
+    assert result.action == "hold"
+    assert result.reason == "ORDER_REJECTED"
+    assert result.order_id == "ord-rejected"
+    assert result.inputs["attempted_action"] == "buy"
+    assert result.inputs["order_reason"] == "ORDER_LIMIT,PAPER_MARK_LIMIT"
+    assert get_strategy(session_factory, strategy_id).last_run_at is None
+    rows = runs_for(session_factory, strategy_id)
+    assert len(rows) == 1
+    assert rows[0].action == "hold"
+    assert rows[0].reason == "ORDER_REJECTED"
+    assert rows[0].order_id == "ord-rejected"
 
 
 async def test_missing_executor_is_explicit(
