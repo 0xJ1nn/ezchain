@@ -46,8 +46,6 @@ export interface PositionTileView {
 	name: string;
 	sub: string;
 	tone: TileTone;
-	state: string;
-	stateTone: "default" | "ok" | "err" | "warn" | "info";
 	pnlPct: string;
 	pnlUsd: string;
 	pnlSol?: string;
@@ -81,7 +79,7 @@ export interface PositionTileView {
 	budget:
 		| { kind: "bar"; width: string; cap: string }
 		| { kind: "text"; cap: string };
-	actions: { label: string; className: string; disabled?: boolean }[];
+	actions: { label: string; className: string; disabled?: boolean; ariaLabel?: string }[];
 	note: string;
 }
 
@@ -171,8 +169,6 @@ export const positionTiles: PositionTileView[] = [
 		name: "Bonk",
 		sub: "BONK // jupiter // Solana ↗",
 		tone: "win",
-		state: "RIDING",
-		stateTone: "info",
 		pnlPct: "+42.6%",
 		pnlUsd: "+$38.12",
 		pnlSol: "+0.258 SOL",
@@ -224,7 +220,7 @@ export const positionTiles: PositionTileView[] = [
 		budget: { kind: "text", cap: "RIDING · NO MAX HOLD" },
 		actions: [
 			{ label: "Sell now", className: "btn danger sm", disabled: true },
-			{ label: "⋯", className: "btn sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for Bonk" },
 		],
 		note: "First bank at +69.6% (30.5% of bag); trailing the remainder at 8% giveback.",
 	},
@@ -234,8 +230,6 @@ export const positionTiles: PositionTileView[] = [
 		name: "Aerodrome",
 		sub: "AERO // uniswap v3 // Base ↗",
 		tone: "loss",
-		state: "PRE-BANK",
-		stateTone: "default",
 		pnlPct: "−8.3%",
 		pnlUsd: "−$6.12",
 		pnlSol: "−0.041 SOL",
@@ -287,7 +281,7 @@ export const positionTiles: PositionTileView[] = [
 		budget: { kind: "bar", width: "17%", cap: "3h 19m LEFT / 4h 0m" },
 		actions: [
 			{ label: "Sell now", className: "btn danger sm", disabled: true },
-			{ label: "⋯", className: "btn sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for Aerodrome" },
 		],
 		note: "Manual entry · hard stop −12% · no automation attached.",
 	},
@@ -297,8 +291,6 @@ export const positionTiles: PositionTileView[] = [
 		name: "Mochi",
 		sub: "MOCHI // jupiter // Solana ↗",
 		tone: "flat",
-		state: "ENTERING",
-		stateTone: "info",
 		pnlPct: "—",
 		pnlUsd: "awaiting fill",
 		pnlTone: "muted",
@@ -343,12 +335,12 @@ export const positionTiles: PositionTileView[] = [
 			{ label: "mark entry fallback · 6s", tone: "warn" },
 			{ label: "quote ttl 12s", tone: "ghost" },
 			{ label: "rule momentum_v1", tone: "ghost" },
-			{ label: "—", className: "net" },
+			{ label: "", className: "net" },
 		],
 		budget: { kind: "text", cap: "intent submitted · waiting for confirmation" },
 		actions: [
 			{ label: "Cancel intent", className: "btn sm", disabled: true },
-			{ label: "⋯", className: "btn sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for Mochi" },
 		],
 		note: "Entering is a state, not a spinner. Show the intent, its ttl and the last known quote.",
 	},
@@ -358,8 +350,6 @@ export const positionTiles: PositionTileView[] = [
 		name: "Scamcoin",
 		sub: "SCAM // raydium // Solana ↗",
 		tone: "error",
-		state: "UNSELLABLE",
-		stateTone: "err",
 		pnlPct: "−96.2%",
 		pnlUsd: "−$142.30",
 		pnlSol: "−0.964 SOL",
@@ -395,7 +385,7 @@ export const positionTiles: PositionTileView[] = [
 			stateTone: "err",
 			lastExecutable: "$0.0041",
 			note:
-				"Sell is unavailable. No route returned a full-size quote. Nothing was sent. Last exact quote: 2m ago. The position is not flat.",
+				"No route returned a full-size quote. Nothing was sent. Last exact quote: 2m ago. The position is not flat.",
 		},
 		prov: [
 			{ label: "mark no_sell_route · 2m", tone: "err" },
@@ -406,15 +396,15 @@ export const positionTiles: PositionTileView[] = [
 		budget: { kind: "text", cap: "max hold exceeded · exit blocked" },
 		actions: [
 			{ label: "Retry sell", className: "btn danger sm", disabled: true },
-			{ label: "SURE? WRITE OFF", className: "btn armed sm", disabled: true },
+			{ label: "SURE? WRITE OFF", className: "btn armed sm", disabled: true, ariaLabel: "Write off Scamcoin, paper only" },
 		],
-		note: "Write-off is paper-only, two-step, and writes an explicit ledger reason. It is not a sell.",
+		note: "Write-off is paper-only, two-step, and writes an explicit ledger reason. It is not a sell. The $5.70 mark value is not executable; the last full-size quote is $0.0041.",
 	},
 ];
 
 export const positionsSummary = {
 	open: "4",
-	openMeta: "3 strategies · 2 chains",
+	openMeta: "2 strategies · 2 chains",
 	executableValue: "$220.50",
 	executableMeta: "at current marks · 1.49 SOL",
 	unrealized: "−$129.20",

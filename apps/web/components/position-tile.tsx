@@ -5,7 +5,7 @@ import type { PositionTileView, TileChart } from "@/lib/position-fixtures";
 function Chart({ chart }: { chart: TileChart }) {
 	return (
 		<div className="chart">
-			<svg viewBox="0 0 600 112" role="img">
+			<svg viewBox="0 0 616 112" role="img">
 				<title>{chart.ariaLabel}</title>
 				{chart.gridY.map((y) => (
 					<line className="gridline" x1="0" y1={y} x2="560" y2={y} key={`g${y}`} />
@@ -92,10 +92,12 @@ export function PositionTile({ position }: { position: PositionTileView }) {
 			</div>
 
 			<div className="tile-chart">
-				<Chart chart={position.chart} />
+				<div className="chart-scroll">
+					<Chart chart={position.chart} />
+				</div>
 			</div>
 
-			<div className="tile-market" aria-label="Market data">
+			<div className="tile-market" role="group" aria-label="Market data">
 				{position.market.map((cell) => (
 					<div className="mcell" key={cell.k}>
 						<div className="k">{cell.k}</div>
@@ -158,7 +160,7 @@ export function PositionTile({ position }: { position: PositionTileView }) {
 
 			<div className="tile-prov">
 				{position.prov.map((item) =>
-					item.className ? (
+					item.label === "" ? null : item.className ? (
 						<span className={item.className} key={item.label}>
 							{item.label}
 						</span>
@@ -189,6 +191,7 @@ export function PositionTile({ position }: { position: PositionTileView }) {
 						type="button"
 						key={action.label}
 						disabled={action.disabled}
+						aria-label={action.ariaLabel}
 						title={action.disabled ? "Execution is not wired in M1" : undefined}
 					>
 						{action.label}

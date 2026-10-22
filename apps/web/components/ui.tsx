@@ -38,8 +38,20 @@ export function Panel({
 	);
 }
 
-export function Badge({ tone = "default", children }: { tone?: Tone; children: ReactNode }) {
-	return <span className={cx("badge", tone !== "default" && tone)}>{children}</span>;
+export function Badge({
+	tone = "default",
+	children,
+	title,
+}: {
+	tone?: Tone;
+	children: ReactNode;
+	title?: string;
+}) {
+	return (
+		<span className={cx("badge", tone !== "default" && tone)} title={title}>
+			{children}
+		</span>
+	);
 }
 
 export function Stat({

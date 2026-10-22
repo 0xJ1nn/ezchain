@@ -58,17 +58,17 @@ export default function PositionsPage() {
 				/>
 			</section>
 
-			<div className="tabs mb-12" role="tablist" aria-label="Position views">
-				<button className="tab on" type="button" role="tab" aria-selected="true">
+			<div className="tabs mb-12" aria-label="Position views">
+				<button className="tab on" type="button" aria-pressed="true" title="Showing open positions">
 					Open <span className="count">4</span>
 				</button>
-				<button className="tab" type="button" role="tab" aria-selected="false" title="Filter not wired in M1">
+				<button className="tab" type="button" aria-pressed="false" title="Filter not wired in M1">
 					Unsellable <span className="count">1</span>
 				</button>
-				<button className="tab" type="button" role="tab" aria-selected="false" title="Filter not wired in M1">
+				<button className="tab" type="button" aria-pressed="false" title="Filter not wired in M1">
 					Closed <span className="count">28</span>
 				</button>
-				<button className="tab" type="button" role="tab" aria-selected="false" title="Filter not wired in M1">
+				<button className="tab" type="button" aria-pressed="false" title="Filter not wired in M1">
 					Watchlist <span className="count">6</span>
 				</button>
 			</div>
@@ -106,22 +106,23 @@ export default function PositionsPage() {
 							<option>Sort: next level</option>
 						</select>
 					</span>
-					<span className="spacer" style={{ flex: 1 }} />
-					<span className="micro">Group by</span>
-					<div className="seg" role="group" aria-label="Group positions">
-						<button type="button" aria-pressed="true">
-							None
-						</button>
-						<button type="button" aria-pressed="false">
-							Strategy
-						</button>
-						<button type="button" aria-pressed="false">
-							Wallet
-						</button>
-						<button type="button" aria-pressed="false">
-							Chain
-						</button>
-					</div>
+					<span className="row" style={{ marginLeft: "auto" }}>
+						<span className="micro">Group by</span>
+						<div className="seg" role="group" aria-label="Group positions">
+							<button type="button" aria-pressed="true">
+								None
+							</button>
+							<button type="button" aria-pressed="false">
+								Strategy
+							</button>
+							<button type="button" aria-pressed="false">
+								Wallet
+							</button>
+							<button type="button" aria-pressed="false">
+								Chain
+							</button>
+						</div>
+					</span>
 					<span className="badge ghost">fixture snapshot</span>
 				</div>
 				<div className="table-foot">
@@ -165,24 +166,26 @@ export default function PositionsPage() {
 						</thead>
 						<tbody>
 							{closedPositions.map((row) => (
-								<tr className="rowlink" key={row.closed + row.symbol}>
+								<tr key={row.closed + row.symbol}>
 									<td className="mono">{row.closed}</td>
 									<td>
-										<span className="row">
+										<Link className="row" href="/ledger">
 											<TokenAvatar size="sm">{row.symbol}</TokenAvatar>
 											{row.name}
-										</span>
+										</Link>
 									</td>
 									<td className="col-hide-sm">{row.chain}</td>
 									<td className="col-hide-sm">{row.strategy}</td>
 									<td className="num col-hide-sm">{row.inUsd}</td>
 									<td className="num col-hide-sm">{row.outUsd}</td>
 									<td className={`num ${row.pnlTone}`}>
-										{row.pnl} <span className="sub">{row.pnlPct}</span>
+										{row.pnl} <span className="sub pnl-sub">{row.pnlPct}</span>
 									</td>
 									<td className="num col-hide-sm">{row.hold}</td>
 									<td>
-										<Badge tone={row.exitTone}>{row.exit}</Badge>
+										<Badge tone={row.exitTone} title={`Exit reason: ${row.exit}`}>
+											{row.exit}
+										</Badge>
 									</td>
 								</tr>
 							))}
