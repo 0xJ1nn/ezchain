@@ -27,7 +27,8 @@ export type MarketPosition =
 
 export interface MarketRow {
 	id: string;
-	tokenHref: string;
+	// Only tokens with a built route may link. Every other token cell stays plain text.
+	tokenHref?: string;
 	symbol: string;
 	symbolTone?: "err";
 	avatar: string;
@@ -98,7 +99,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "wif",
-		tokenHref: "/tokens/solana/wif",
 		symbol: "WIF",
 		avatar: "WI",
 		name: "dogwifhat",
@@ -115,11 +115,10 @@ const seeds: MarketSeed[] = [
 		safety: "pass",
 		safetyTone: "ok",
 		spark: [20, 19, 21, 20, 22, 24, 23, 25, 24, 26, 25, 27],
-		position: { kind: "closed", value: pct(15.0) },
+		position: { kind: "closed", value: pct(-11.0) },
 	},
 	{
 		id: "jup",
-		tokenHref: "/tokens/solana/jup",
 		symbol: "JUP",
 		avatar: "JU",
 		name: "Jupiter",
@@ -140,7 +139,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "mochi",
-		tokenHref: "/tokens/solana/mochi",
 		symbol: "MOCHI",
 		avatar: "MO",
 		name: "Mochi",
@@ -184,7 +182,7 @@ const seeds: MarketSeed[] = [
 		liq: "$212",
 		liqTone: "err",
 		vol: "$84.2K",
-		holders: "214",
+		holders: "—",
 		safety: "fail · honeypot",
 		safetyTone: "err",
 		spark: [30, 28, 26, 20, 14, 9, 6, 4, 3, 2, 2, 1],
@@ -198,7 +196,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "aerodrome",
-		tokenHref: "/tokens/base/aero",
 		symbol: "AERO",
 		avatar: "AE",
 		name: "Aerodrome",
@@ -226,7 +223,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "toshi",
-		tokenHref: "/tokens/base/toshi",
 		symbol: "TOSHI",
 		avatar: "TO",
 		name: "Toshi",
@@ -247,7 +243,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "degen",
-		tokenHref: "/tokens/base/degen",
 		symbol: "DEGEN",
 		avatar: "DE",
 		name: "Degen",
@@ -268,7 +263,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "brett",
-		tokenHref: "/tokens/base/brett",
 		symbol: "BRETT",
 		avatar: "BR",
 		name: "Brett",
@@ -289,7 +283,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "uni",
-		tokenHref: "/tokens/ethereum/uni",
 		symbol: "UNI",
 		avatar: "UN",
 		name: "Uniswap",
@@ -310,7 +303,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "pepe",
-		tokenHref: "/tokens/ethereum/pepe",
 		symbol: "PEPE",
 		avatar: "PE",
 		name: "Pepe",
@@ -331,7 +323,6 @@ const seeds: MarketSeed[] = [
 	},
 	{
 		id: "cake",
-		tokenHref: "/tokens/bnb/cake",
 		symbol: "CAKE",
 		avatar: "CA",
 		name: "PancakeSwap",
@@ -448,7 +439,7 @@ export const newPairs: NewPairRow[] = [
 		chain: "Base",
 		liq: "$1.24M",
 		mcap: "—",
-		mcapTitle: "mcap unknown · indexer has no pair snapshot",
+		mcapTitle: "mcap unknown in fixture",
 		gate: "pass",
 		gateTone: "ok",
 		call: { kind: "quote" },

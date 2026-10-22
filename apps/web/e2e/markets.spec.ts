@@ -18,15 +18,20 @@ test("markets renders the screener from fixtures with chain counts and position 
 	await expect(page.getByText("Fixture snapshot", { exact: true })).toBeVisible();
 	await expect(page.getByText("Last sweep")).toHaveCount(0);
 
-	// Chain tabs derive their counts from the 12 fixture rows.
-	await expect(page.getByRole("button", { name: /All chains\s+12/ })).toHaveAttribute(
-		"aria-pressed",
-		"true",
-	);
-	await expect(page.getByRole("button", { name: /Solana\s+5/ })).toBeVisible();
-	await expect(page.getByRole("button", { name: /Base\s+4/ })).toBeVisible();
-	await expect(page.getByRole("button", { name: /Ethereum\s+2/ })).toBeVisible();
-	await expect(page.getByRole("button", { name: /BNB\s+1/ })).toBeVisible();
+	// Chain tabs derive their counts from the 12 fixture rows. Only the active tab is
+	// interactive; the rest are disabled previews.
+	await expect(page.locator(".tabs .tab.on")).toHaveText(/All chains\s+12/);
+	for (const [chain, count] of [
+		["Solana", "5"],
+		["Base", "4"],
+		["Ethereum", "2"],
+		["BNB", "1"],
+	] as const) {
+		const tab = page.getByRole("button", { name: new RegExp(`${chain}\\s+${count}`) });
+		await expect(tab).toBeVisible();
+		await expect(tab).toBeDisabled();
+		await expect(tab).toHaveAttribute("title", "Filter not wired in M1");
+	}
 	await expect(page.getByRole("link", { name: /Tiers & RPC/ })).toHaveAttribute(
 		"href",
 		"/chains",
@@ -35,7 +40,9 @@ test("markets renders the screener from fixtures with chain counts and position 
 	const marketTable = page.locator("table").first();
 	await expect(marketTable.locator("tbody tr")).toHaveCount(12);
 
-	// Token cells route to the token screen.
+	// Only BONK and SCAM have a token route; every other token cell is plain text.
+	const tokenLinks = marketTable.locator("tbody tr td:first-child a");
+	await expect(tokenLinks).toHaveCount(2);
 	await expect(marketTable.getByRole("link", { name: /BONK/ })).toHaveAttribute(
 		"href",
 		"/tokens/solana/bonk",
@@ -44,6 +51,8 @@ test("markets renders the screener from fixtures with chain counts and position 
 		"href",
 		"/tokens/solana/scam",
 	);
+	const wifRow = marketTable.locator("tbody tr").filter({ hasText: "WIF" });
+	await expect(wifRow.locator("td").first().locator("a")).toHaveCount(0);
 
 	// Open positions link to their position; closed ones stay plain text.
 	await expect(marketTable.getByRole("link", { name: /RIDING/ })).toHaveAttribute(
@@ -62,11 +71,11 @@ test("markets renders the screener from fixtures with chain counts and position 
 		"href",
 		"/positions/scamcoin",
 	);
-	await expect(marketTable.getByText("closed · +15.0%", { exact: true })).toBeVisible();
+	await expect(marketTable.getByText("closed · −11.0%", { exact: true })).toBeVisible();
 	await expect(marketTable.getByText("closed · +15.3%", { exact: true })).toBeVisible();
 	await expect(marketTable.getByText("closed · 0.0%", { exact: true })).toBeVisible();
 	await expect(
-		marketTable.locator("a", { hasText: "closed · +15.0%" }),
+		marketTable.locator("a", { hasText: "closed · −11.0%" }),
 	).toHaveCount(0);
 
 	// A row with no position prints an em dash, never a fabricated zero.
@@ -77,6 +86,10 @@ test("markets renders the screener from fixtures with chain counts and position 
 	await expect(marketTable.getByText("fail · honeypot")).toBeVisible();
 	await expect(marketTable.getByText("thin liq")).toBeVisible();
 
+	// SCAM has no holder count in the fixture; unknown prints an em dash.
+	const scamRow = marketTable.locator("tbody tr").filter({ hasText: "SCAM" });
+	await expect(scamRow.locator("td").nth(8)).toHaveText("—");
+
 	// Page actions.
 	await expect(page.getByRole("link", { name: "Signal feed" })).toHaveAttribute(
 		"href",
@@ -86,26 +99,43 @@ test("markets renders the screener from fixtures with chain counts and position 
 		"href",
 		"/tokens/solana/bonk",
 	);
-	await expect(page.getByRole("link", { name: "Trade", exact: true })).toHaveAttribute(
+	await expect(page.getByRole("link", { name: "Trade BONK", exact: true })).toHaveAttribute(
 		"href",
 		"/tokens/solana/bonk",
 	);
 
-	// Filters are preview-only in M1.
-	await expect(page.locator("select")).toHaveCount(5);
+	// Filters are preview-only in M1: every control is disabled and says so.
+	await expect(page.getByText("Filters are preview-only in M1")).toBeVisible();
+	const selects = page.locator("select");
+	await expect(selects).toHaveCount(5);
+	for (let i = 0; i < 5; i += 1) {
+		await expect(selects.nth(i)).toBeDisabled();
+	}
 	await expect(page.getByRole("searchbox", { name: "Search symbol or mint" })).toBeDisabled();
 	await expect(page.getByRole("switch", { name: "Watchlist only" })).toHaveAttribute(
 		"aria-checked",
+		"false",
+	);
+	await expect(page.getByRole("switch", { name: "Watchlist only" })).toHaveAttribute(
+		"aria-disabled",
 		"true",
 	);
 	await expect(
 		page.getByRole("searchbox", { name: "Search symbol or mint" }),
 	).toHaveAttribute("title", "Search not wired in M1");
 
-	// Sources and freshness budgets carry the live-dot state.
-	await expect(page.getByText(/Sources: Jupiter v6/)).toBeVisible();
-	await expect(page.getByText(/Freshness: quotes/)).toBeVisible();
-	await expect(page.locator(".panel .dot-live").first()).toBeVisible();
+	// The footer states the fixture contract instead of claiming a live feed.
+	await expect(page.getByText(/no live feed in M1/)).toBeVisible();
+	await expect(page.getByText(/freshness not tracked/)).toBeVisible();
+	await expect(page.getByText(/Sources: Jupiter v6/)).toHaveCount(0);
+	await expect(page.getByText(/Freshness: quotes/)).toHaveCount(0);
+	await expect(page.locator(".panel .dot-live")).toHaveCount(0);
+
+	// The table foot counts fixture rows, not a market universe or pagination.
+	const tableFoot = page.locator(".table-foot");
+	await expect(tableFoot).toContainText("12 fixture rows · filters preview-only in M1");
+	await expect(tableFoot).toContainText("Fixture order · page 1/1");
+	await expect(page.getByText(/4,182 markets/)).toHaveCount(0);
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
@@ -131,8 +161,10 @@ test("markets new pairs show unknown values and honest gate badges", async ({ pa
 	await expect(basedRow.locator("td").nth(4)).toHaveText("—");
 	await expect(basedRow.locator("td").nth(4)).toHaveAttribute(
 		"title",
-		"mcap unknown · indexer has no pair snapshot",
+		"mcap unknown in fixture",
 	);
+	await expect(newPairsPanel.getByText("fixture snapshot", { exact: true })).toBeVisible();
+	await expect(newPairsPanel.getByText(/market\s+cap or holders prints/)).toBeVisible();
 
 	const definitionPanel = page.locator("section.panel").filter({
 		has: page.getByRole("heading", { name: "Screen definition" }),
@@ -143,6 +175,8 @@ test("markets new pairs show unknown values and honest gate badges", async ({ pa
 		"href",
 		"/chains",
 	);
+	await expect(definitionPanel.getByText("Watchlist: not wired in M1")).toBeVisible();
+	await expect(definitionPanel.getByText(/3 tokens/)).toHaveCount(0);
 });
 
 test("markets screenshot at desktop and mobile widths", async ({ page }) => {
@@ -152,5 +186,18 @@ test("markets screenshot at desktop and mobile widths", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/markets");
 	await expect(page.getByRole("navigation", { name: "Primary mobile navigation" })).toBeVisible();
+
+	// The mobile rule hides secondary columns instead of forcing a horizontal min-width.
+	const marketTable = page.locator("table").first();
+	const newPairsTable = page.locator("table").nth(1);
+	await expect(
+		marketTable.locator("thead th").filter({ hasText: "Vol 24h" }),
+	).toBeHidden();
+	await expect(marketTable.locator("thead th").filter({ hasText: "Holders" })).toBeHidden();
+	await expect(newPairsTable.locator("thead th").filter({ hasText: "Liq" })).toBeHidden();
+	await expect(newPairsTable.locator("thead th").filter({ hasText: "MCap" })).toBeHidden();
+	await expect(
+		marketTable.locator("thead th").filter({ hasText: "Token" }).first(),
+	).toBeVisible();
 	await page.screenshot({ path: ".shots/markets-390.png", fullPage: true });
 });

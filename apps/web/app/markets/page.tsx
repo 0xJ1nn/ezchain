@@ -1,8 +1,36 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { MarketSpark } from "@/components/market-spark";
-import { Badge, LiveDot, Panel } from "@/components/ui";
-import { chainTabs, marketRows, newPairs } from "@/lib/markets-fixtures";
+import { Badge, Panel } from "@/components/ui";
+import { chainTabs, marketRows, newPairs, type MarketRow } from "@/lib/markets-fixtures";
+import styles from "./markets.module.css";
+
+function TokenCell({ row }: { row: MarketRow }) {
+	const content = (
+		<>
+			<span className="token" style={{ width: 22, height: 22, fontSize: 8 }}>
+				{row.avatar}
+			</span>
+			<span>
+				<span className={`strong${row.symbolTone ? ` ${row.symbolTone}` : ""}`}>
+					{row.symbol}
+				</span>
+				<span className="sub" style={{ display: "block" }}>
+					{row.sub}
+				</span>
+			</span>
+		</>
+	);
+
+	// Only tokens with a built detail route render as links; everything else stays text.
+	return row.tokenHref ? (
+		<Link className="row" href={row.tokenHref}>
+			{content}
+		</Link>
+	) : (
+		<span className="row">{content}</span>
+	);
+}
 
 export default function MarketsPage() {
 	return (
@@ -12,9 +40,10 @@ export default function MarketsPage() {
 					<div className="crumbs">Overview / Markets</div>
 					<h1>Markets</h1>
 					<p className="sub">
-						Screen venues by what you can actually trade. Liquidity, safety and holder
-						counts carry their source and age; a token with no executable sell route is
-						labelled, not ranked.
+						Screen venues by what you can actually trade. This page renders the M1
+						fixture snapshot: market cap, liquidity and holder values are
+						pre-formatted fixture strings, not a live feed. A token with no executable
+						sell route is labelled, not ranked.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -29,17 +58,28 @@ export default function MarketsPage() {
 			</header>
 
 			<div className="tabs mb-12" aria-label="Market chains" style={{ whiteSpace: "nowrap" }}>
-				{chainTabs.map((tab) => (
-					<button
-						key={tab.id}
-						className={`tab${tab.active ? " on" : ""}`}
-						type="button"
-						aria-pressed={tab.active}
-						title={tab.active ? "Showing every chain" : "Filter not wired in M1"}
-					>
-						{tab.label} <span className="count">{tab.count}</span>
-					</button>
-				))}
+				{chainTabs.map((tab) =>
+					tab.active ? (
+						<span
+							key={tab.id}
+							className="tab on"
+							title="Showing every chain in the fixture snapshot"
+						>
+							{tab.label} <span className="count">{tab.count}</span>
+						</span>
+					) : (
+						<button
+							key={tab.id}
+							className={`tab ${styles.disabledTab}`}
+							type="button"
+							disabled
+							aria-disabled="true"
+							title="Filter not wired in M1"
+						>
+							{tab.label} <span className="count">{tab.count}</span>
+						</button>
+					),
+				)}
 				<Link className="tab" href="/chains">
 					Tiers &amp; RPC →
 				</Link>
@@ -48,17 +88,10 @@ export default function MarketsPage() {
 			<Panel
 				flush
 				footer={
-					<div className="between" style={{ flexWrap: "wrap" }}>
-						<span>
-							Sources: Jupiter v6 + Raydium pool reserves (Solana) · Uniswap v3 /
-							Aerodrome (Base, Ethereum, BNB) · dexscreener indexer for mcap/vol ·
-							Helius + Etherscan for holders.
-						</span>
-						<span className="small">
-							Freshness: quotes ≤ 3s · pools ≤ 9s · holders ≤ 2m · <LiveDot />
-							sweep ok
-						</span>
-					</div>
+					<span>
+						Fixture snapshot: no live feed in M1 · freshness not tracked · values are a
+						snapshot, not a quote.
+					</span>
 				}
 			>
 				<div
@@ -73,7 +106,8 @@ export default function MarketsPage() {
 				>
 					<span className="field" style={{ minWidth: 118 }}>
 						<select
-							className="select"
+							className={`select ${styles.disabledField}`}
+							disabled
 							aria-label="Minimum liquidity"
 							defaultValue="Liq ≥ $500K"
 							title="Filter not wired in M1"
@@ -86,7 +120,8 @@ export default function MarketsPage() {
 					</span>
 					<span className="field" style={{ minWidth: 112 }}>
 						<select
-							className="select"
+							className={`select ${styles.disabledField}`}
+							disabled
 							aria-label="Minimum market cap"
 							defaultValue="MCap ≥ $1M"
 							title="Filter not wired in M1"
@@ -99,7 +134,8 @@ export default function MarketsPage() {
 					</span>
 					<span className="field" style={{ minWidth: 100 }}>
 						<select
-							className="select"
+							className={`select ${styles.disabledField}`}
+							disabled
 							aria-label="Age"
 							defaultValue="Age: any"
 							title="Filter not wired in M1"
@@ -112,7 +148,8 @@ export default function MarketsPage() {
 					</span>
 					<span className="field" style={{ minWidth: 126 }}>
 						<select
-							className="select"
+							className={`select ${styles.disabledField}`}
+							disabled
 							aria-label="Safety"
 							defaultValue="Safety: pass only"
 							title="Filter not wired in M1"
@@ -124,7 +161,8 @@ export default function MarketsPage() {
 					</span>
 					<span className="field" style={{ minWidth: 132 }}>
 						<select
-							className="select"
+							className={`select ${styles.disabledField}`}
+							disabled
 							aria-label="Sort"
 							defaultValue="Sort: 24h volume"
 							title="Filter not wired in M1"
@@ -136,9 +174,10 @@ export default function MarketsPage() {
 							<option>Sort: holders</option>
 						</select>
 					</span>
+					<span className="small muted">Filters are preview-only in M1</span>
 					<span className="spacer" style={{ flex: 1 }} />
 					<input
-						className="input mono"
+						className={`input mono ${styles.disabledField}`}
 						type="search"
 						placeholder="Search symbol / mint"
 						aria-label="Search symbol or mint"
@@ -148,9 +187,9 @@ export default function MarketsPage() {
 					/>
 					<span className="row">
 						<span
-							className="toggle on"
+							className="toggle"
 							role="switch"
-							aria-checked="true"
+							aria-checked="false"
 							aria-disabled="true"
 							aria-label="Watchlist only"
 							title="Filter not wired in M1"
@@ -162,11 +201,11 @@ export default function MarketsPage() {
 						href="/tokens/solana/bonk"
 						title="Opens BONK; the trade ticket is not wired in M1"
 					>
-						Trade
+						Trade BONK
 					</Link>
 				</div>
 				<div className="table-wrap" style={{ maxHeight: 560 }}>
-					<table className="table" style={{ minWidth: 960 }}>
+					<table className="table">
 						<thead>
 							<tr>
 								<th>Token</th>
@@ -176,35 +215,18 @@ export default function MarketsPage() {
 								<th className="num">24h</th>
 								<th className="num">MCap</th>
 								<th className="num">Liq</th>
-								<th className="num">Vol 24h</th>
-								<th className="num">Holders</th>
+								<th className="num col-hide-sm">Vol 24h</th>
+								<th className="num col-hide-sm">Holders</th>
 								<th>Safety</th>
-								<th>7d</th>
-								<th>Your position</th>
+								<th className="col-hide-sm">7d</th>
+								<th className="col-hide-sm">Your position</th>
 							</tr>
 						</thead>
 						<tbody>
 							{marketRows.map((row) => (
 								<tr key={row.id}>
 									<td>
-										<Link className="row" href={row.tokenHref}>
-											<span
-												className="token"
-												style={{ width: 22, height: 22, fontSize: 8 }}
-											>
-												{row.avatar}
-											</span>
-											<span>
-												<span
-													className={`strong${row.symbolTone ? ` ${row.symbolTone}` : ""}`}
-												>
-													{row.symbol}
-												</span>
-												<span className="sub" style={{ display: "block" }}>
-													{row.sub}
-												</span>
-											</span>
-										</Link>
+										<TokenCell row={row} />
 									</td>
 									<td>
 										<span className="chain">
@@ -221,19 +243,19 @@ export default function MarketsPage() {
 									<td className={`num${row.liqTone ? ` ${row.liqTone}` : ""}`}>
 										{row.liq}
 									</td>
-									<td className="num">{row.vol}</td>
-									<td className="num">{row.holders}</td>
+									<td className="num col-hide-sm">{row.vol}</td>
+									<td className="num col-hide-sm">{row.holders}</td>
 									<td>
 										<Badge tone={row.safetyTone}>{row.safety}</Badge>
 									</td>
-									<td>
+									<td className="col-hide-sm">
 										<MarketSpark
 											values={row.spark}
 											tone={row.sparkTone}
 											label={row.sparkLabel}
 										/>
 									</td>
-									<td>
+									<td className="col-hide-sm">
 										{row.position.kind === "open" && (
 											<Link className="row" href={row.position.href}>
 												<Badge tone={row.position.badgeTone}>
@@ -263,11 +285,8 @@ export default function MarketsPage() {
 					</table>
 				</div>
 				<div className="table-foot">
-					<span>
-						12 of 4,182 markets · filters: liq ≥ $500K, mcap ≥ $1M, safety pass · your
-						positions and watchlist are pinned even when they fail a filter
-					</span>
-					<span>Sort: 24h volume ↓ · page 1/349</span>
+					<span>{marketRows.length} fixture rows · filters preview-only in M1</span>
+					<span>Fixture order · page 1/1</span>
 				</div>
 			</Panel>
 
@@ -275,24 +294,24 @@ export default function MarketsPage() {
 				<Panel
 					title="New pairs"
 					sub="last 60m · safety gate runs before a row is listed"
-					action={<Badge tone="ghost">auto-refresh 15s</Badge>}
+					action={<Badge tone="ghost">fixture snapshot</Badge>}
 					flush
 					footer={
 						<span>
-							A new pair is listed with whatever is known. Unknown liquidity or holders
-							prints <span className="mono">—</span>, never a guess.
+							A new pair is listed with whatever is known. Unknown liquidity, market
+							cap or holders prints <span className="mono">—</span>, never a guess.
 						</span>
 					}
 				>
 					<div className="table-wrap">
-						<table className="table compact" style={{ minWidth: 620 }}>
+						<table className="table compact">
 							<thead>
 								<tr>
 									<th>Age</th>
 									<th>Token</th>
 									<th>Chain</th>
-									<th className="num">Liq</th>
-									<th className="num">MCap</th>
+									<th className="num col-hide-sm">Liq</th>
+									<th className="num col-hide-sm">MCap</th>
 									<th>Gate</th>
 									<th>Your call</th>
 								</tr>
@@ -305,8 +324,8 @@ export default function MarketsPage() {
 											{pair.symbol} <span className="sub">{pair.sub}</span>
 										</td>
 										<td>{pair.chain}</td>
-										<td className="num">{pair.liq}</td>
-										<td className="num" title={pair.mcapTitle}>
+										<td className="num col-hide-sm">{pair.liq}</td>
+										<td className="num col-hide-sm" title={pair.mcapTitle}>
 											{pair.mcap}
 										</td>
 										<td>
@@ -338,7 +357,7 @@ export default function MarketsPage() {
 					sub="what the table is allowed to claim"
 					footer={
 						<div className="between" style={{ flexWrap: "wrap" }}>
-							<span>Watchlist: 3 tokens · 1 with an active position</span>
+							<span>Watchlist: not wired in M1</span>
 							<Link className="small" href="/alerts">
 								Price alerts →
 							</Link>
