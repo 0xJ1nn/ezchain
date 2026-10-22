@@ -7,14 +7,61 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    TypeDecorator,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeEngine
 
 from .db import Base
 
-MONEY = Numeric(38, 8)
-QUANTITY = Numeric(38, 18)
+
+class _ExactDecimal(TypeDecorator[Decimal]):
+    """Exact decimal storage: NUMERIC on Postgres, TEXT on SQLite.
+
+    SQLite has no native decimal type and would round-trip money through binary floats.
+    Paper tests run on SQLite, so storing the decimal string keeps every fill and ledger
+    entry exact and makes reconciliation assertions meaningful.
+    """
+
+    impl = Numeric
+    cache_ok = True
+
+    def __init__(self, precision: int, scale: int) -> None:
+        super().__init__()
+        self.precision = precision
+        self.scale = scale
+
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[Any]:
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(Text())
+        return dialect.type_descriptor(Numeric(self.precision, self.scale))
+
+    def process_bind_param(self, value: object, dialect: Dialect) -> object:
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            return str(value)
+        return Decimal(str(value))
+
+    def process_result_value(self, value: object, dialect: Dialect) -> Decimal | None:
+        if value is None:
+            return None
+        return Decimal(str(value))
+
+
+MONEY = _ExactDecimal(38, 8)
+QUANTITY = _ExactDecimal(38, 18)
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
@@ -60,6 +107,7 @@ class PaperOrderRow(Base):
 
 class PaperFillRow(Base):
     __tablename__ = "paper_fills"
+    __table_args__ = (UniqueConstraint("order_id", name="uq_paper_fill_order"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     order_id: Mapped[str] = mapped_column(ForeignKey("paper_orders.id"), index=True)

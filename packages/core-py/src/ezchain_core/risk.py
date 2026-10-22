@@ -59,11 +59,16 @@ def evaluate_order(
         reasons.append("NO_PAIR")
     if request.side == "sell" and quote.amount_out <= 0:
         reasons.append("NO_SELL_ROUTE")
+    if snapshot.stale:
+        reasons.append("SNAPSHOT_STALE")
 
-    if current_position_value_usd + request.amount_usd > limits.max_position_usd:
-        reasons.append("POSITION_LIMIT")
-    if open_positions >= limits.max_open_positions and current_position_value_usd == 0:
-        reasons.append("MAX_OPEN_POSITIONS")
+    # Position-size limits gate opening or adding risk, never reducing it: a sell must
+    # always be allowed when the only "problem" is that the position is large.
+    if request.side == "buy":
+        if current_position_value_usd + request.amount_usd > limits.max_position_usd:
+            reasons.append("POSITION_LIMIT")
+        if open_positions >= limits.max_open_positions and current_position_value_usd == 0:
+            reasons.append("MAX_OPEN_POSITIONS")
     if daily_realized_pnl_usd <= -limits.max_daily_loss_usd:
         reasons.append("DAILY_LOSS_LIMIT")
 

@@ -7,8 +7,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from ezchain_adapters import AdapterError, DexScreenerClient, JupiterClient, get_chain
+from ezchain_core import OrderRequest
+
 from ..config import Settings, get_settings
-from ..deps import get_session
+from ..deps import get_dexscreener, get_jupiter, get_session
+from ..errors import adapter_http_error
 from ..models import PaperFillRow, PaperOrderRow
 from ..schemas import FillOut, OrderOut, PaperAccountOut, PaperOrderIn, PositionOut
 from ..services import paper
@@ -56,14 +60,12 @@ def account(
     session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
 ) -> PaperAccountOut:
     paper.ensure_genesis(session, settings.paper_starting_cash_usd)
-    return PaperAccountOut.model_validate(
-        paper.account_snapshot(session, settings.paper_starting_cash_usd)
-    )
+    return PaperAccountOut.model_validate(paper.account_snapshot(session))
 
 
 @router.get("/positions", response_model=list[PositionOut])
 def positions(session: Session = Depends(get_session)) -> list[PositionOut]:
-    return []
+    return [PositionOut.model_validate(row) for row in paper.positions(session)]
 
 
 @router.get("/orders", response_model=list[OrderOut])
@@ -81,12 +83,28 @@ def fill_history(
 
 
 @router.post("/orders", response_model=OrderOut, status_code=201)
-def create_order(payload: PaperOrderIn) -> OrderOut:
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "code": "NOT_IMPLEMENTED",
-            "message": "paper order execution lands in P0.2",
-            "retryable": False,
-        },
+async def create_order(
+    payload: PaperOrderIn,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    dexscreener: DexScreenerClient = Depends(get_dexscreener),
+    jupiter: JupiterClient = Depends(get_jupiter),
+) -> OrderOut:
+    if get_chain(payload.chain) is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {payload.chain}"},
+        )
+    request = OrderRequest(
+        chain=payload.chain,
+        token_address=payload.token_address,
+        side=payload.side,
+        amount_usd=payload.amount_usd,
+        idempotency_key=payload.idempotency_key,
+        strategy_id=payload.strategy_id,
     )
+    try:
+        row = await paper.place_order(session, request, settings, dexscreener, jupiter)
+    except AdapterError as exc:
+        raise adapter_http_error(exc) from exc
+    return _order(row)
