@@ -62,6 +62,9 @@ class _ExactDecimal(TypeDecorator[Decimal]):
 
 
 MONEY = _ExactDecimal(38, 8)
+# Unit prices of long-tail tokens reach 1e-10 USD; eight decimals would round a mark (and
+# every position value derived from it) by tens of percent. Prices keep eighteen.
+PRICE = _ExactDecimal(38, 18)
 QUANTITY = _ExactDecimal(38, 18)
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
@@ -129,7 +132,7 @@ class PaperFillRow(Base):
     token_address: Mapped[str] = mapped_column(String(160), index=True)
     side: Mapped[str] = mapped_column(String(8))
     quantity: Mapped[Decimal] = mapped_column(QUANTITY)
-    price_usd: Mapped[Decimal] = mapped_column(MONEY)
+    price_usd: Mapped[Decimal] = mapped_column(PRICE)
     notional_usd: Mapped[Decimal] = mapped_column(MONEY)
     fee_usd: Mapped[Decimal] = mapped_column(MONEY)
     quote_kind: Mapped[str] = mapped_column(String(24))
@@ -185,7 +188,7 @@ class MarketSnapshotRow(Base):
     token_address: Mapped[str] = mapped_column(String(160))
     symbol: Mapped[str] = mapped_column(String(40))
     name: Mapped[str] = mapped_column(String(160))
-    price_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    price_usd: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
     liquidity_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     volume_24h_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     price_change_m5: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
@@ -223,10 +226,10 @@ class MarketCandleRow(Base):
     pool_address: Mapped[str] = mapped_column(String(160))
     timeframe: Mapped[str] = mapped_column(String(8))
     open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    open: Mapped[Decimal] = mapped_column(MONEY)
-    high: Mapped[Decimal] = mapped_column(MONEY)
-    low: Mapped[Decimal] = mapped_column(MONEY)
-    close: Mapped[Decimal] = mapped_column(MONEY)
+    open: Mapped[Decimal] = mapped_column(PRICE)
+    high: Mapped[Decimal] = mapped_column(PRICE)
+    low: Mapped[Decimal] = mapped_column(PRICE)
+    close: Mapped[Decimal] = mapped_column(PRICE)
     volume: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     source: Mapped[str] = mapped_column(String(40))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

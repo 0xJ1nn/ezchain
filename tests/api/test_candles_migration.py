@@ -22,7 +22,7 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ezchain_api.db import alembic_config, database_revision
+from ezchain_api.db import alembic_config, database_revision, head_revision
 
 CANDLE_COLUMNS = {
     "id",
@@ -96,7 +96,7 @@ def test_market_candles_upgrades_a_sqlite_database(tmp_path: Path) -> None:
         _assert_candle_table(engine)
         _assert_duplicate_bar_is_rejected(engine)
         with Session(engine) as session:
-            assert database_revision(session) == "0004_market_candles"
+            assert database_revision(session) == head_revision()
     finally:
         engine.dispose()
 
