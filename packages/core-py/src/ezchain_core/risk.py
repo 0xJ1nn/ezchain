@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 from decimal import Decimal
 
 from .types import OrderRequest, Quote, Side, SourceRef, TokenSnapshot
@@ -64,6 +65,26 @@ def evaluate_order(
         reasons.append("LIQUIDITY_UNKNOWN")
     elif snapshot.liquidity_usd < limits.min_liquidity_usd:
         reasons.append("LIQUIDITY_TOO_LOW")
+
+    # Pair age sizes new risk. A missing creation time is unknown, never "old"; sells
+    # stay exempt because reducing exposure must remain possible.
+    if request.side == "buy":
+        if snapshot.pair_created_at is None:
+            reasons.append("PAIR_AGE_UNKNOWN")
+        else:
+            created = (
+                snapshot.pair_created_at.astimezone(UTC)
+                if snapshot.pair_created_at.tzinfo is not None
+                else snapshot.pair_created_at.replace(tzinfo=UTC)
+            )
+            observed = (
+                source.observed_at.astimezone(UTC)
+                if source.observed_at.tzinfo is not None
+                else source.observed_at.replace(tzinfo=UTC)
+            )
+            age_minutes = (observed - created).total_seconds() / 60
+            if age_minutes < limits.min_pair_age_minutes:
+                reasons.append("PAIR_TOO_YOUNG")
 
     if not snapshot.pairs:
         reasons.append("NO_PAIR")

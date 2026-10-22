@@ -45,6 +45,7 @@ class FakeDex:
                 ),
             ),
             source=SourceRef("dexscreener", None, observed),
+            pair_created_at=datetime(2020, 1, 1, tzinfo=UTC),
         )
 
 

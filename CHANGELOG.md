@@ -70,6 +70,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   request budget.
 - Chain staleness now includes the last scan duration, so a slow pass does not make every
   chain look stale before the next pass.
+- The documented pair-age gate is enforced for paper buys: `PAIR_AGE_UNKNOWN` when the
+  source omits creation time and `PAIR_TOO_YOUNG` below `EZCHAIN_MIN_PAIR_AGE_MINUTES`
+  (default 10). Sells stay exempt so an exit is never blocked (#67).
 - Strategy runs now record `hold` / `ORDER_REJECTED` when the paper order service rejects
   an order, instead of claiming a buy or sell that never filled. The rejected order id and
   reason stay in the run inputs for diagnosis (#71).

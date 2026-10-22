@@ -135,6 +135,8 @@ token quantities need precision.
 - Max daily realized loss `$500`, enforced as a new-entry block (sells stay available);
   max strategy budget `$2,500`.
 - Quote age `<= 60s`; liquidity `>= $10,000`; pair age `>= 10 minutes`.
+- The deepest pair decides pair age. If the source omits `pairCreatedAt`, a buy is denied
+  `PAIR_AGE_UNKNOWN` (fail closed); sells stay available. Some DEX pairs omit it.
 - Solana buy requires a sell route; non-Solana buy requires `paper_mark` and the $250 cap.
 - Order-size, paper-mark-size, position-size, open-position and daily-loss limits gate
   **new risk only (buys)**. A sell is always allowed to reduce exposure; the fail-closed
