@@ -12,7 +12,7 @@ chain:
 
 design:
   - changed-files:
-      - any-glob-to-any-file: ["design/**", "docs/WIREFRAME.md"]
+      - any-glob-to-any-file: ["design/**", "docs/WIREFRAME.md", "apps/web/**", "packages/ui/**"]
 
 docs:
   - changed-files:

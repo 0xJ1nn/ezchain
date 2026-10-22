@@ -11,6 +11,11 @@
 # Design source of truth.
 /design/                                      @0xJ1nn
 /docs/WIREFRAME.md                            @0xJ1nn
+/docs/VISUAL-TESTING.md                       @0xJ1nn
+
+# Web UI and shared design tokens.
+/apps/web/                                    @0xJ1nn
+/packages/ui/                                 @0xJ1nn
 
 # CI, licensing and release plumbing.
 /.github/                                     @0xJ1nn

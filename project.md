@@ -20,10 +20,11 @@ architecture changes. Only the domain examples differ.
 - CI: GitHub Actions is not available on this account (billing lock, 2026-10-20). The
   gate is local and mandatory: `bash tools/ci.sh`.
 - Active milestone: **M1 — runtime scaffold**
-- Current focus: project governance, then the web UI against `design/wireframe/`
+- Current focus: web UI against `design/wireframe/`; API/engine/executor/ingest next
 - Architecture status: specified in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
   deviations require an ADR in [`docs/DECISIONS.md`](docs/DECISIONS.md)
-- Runtime code: not yet shipped. Do not describe it as shipped.
+- Runtime code: web UI scaffold only. API, engine, executor and ingest are not built.
+  Do not describe them as shipped.
 
 ---
 

@@ -7,6 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- `apps/web` M1 scaffold: Next.js shell, dashboard, typed fixtures, responsive bottom nav.
+- Generated design tokens (`design/tokens.json` → `design/tokens.css` and
+  `packages/ui/src/tokens.css`) and the `tools/build-tokens.mjs` gate.
+- Playwright smoke/screenshot checks for the dashboard at 1440 and 390 px.
 - Project scaffold: product, architecture, domain model, chain adapter contract,
   strategy SDK, security, infra and PR workflow docs.
 - 31-page low-fidelity wireframe in `design/wireframe/` with a manifest and gates.

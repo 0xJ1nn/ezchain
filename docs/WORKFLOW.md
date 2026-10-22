@@ -55,19 +55,21 @@ workflow — do not add a workflow that cannot run.
 
 | # | Gate | Command |
 |---|---|---|
-| 1 | Generated artifacts fresh | `node tools/sync-agent-stubs.mjs --check` |
-| 2 | Wireframe integrity | `node tools/check-wireframe.mjs` |
-| 3 | Docs links | `node tools/check-links.mjs` |
-| 4 | Format/lint | `ruff format --check`, `ruff check`, `eslint`, `prettier --check` |
-| 5 | Types | `mypy --strict packages services apps/api`, `tsc --noEmit` |
-| 6 | Unit + property | `pytest`, `vitest` |
-| 7 | Invariants | ledger/risk/adapter contract suites |
-| 8 | OpenAPI diff | generated client vs committed schema |
-| 9 | Security | `gitleaks`, dependency audit, no-key-material scan |
-| 10 | Compose | `docker compose config -q` (when Docker is available) |
+| 1 | Generated agent stubs fresh | `node tools/sync-agent-stubs.mjs --check` |
+| 2 | Generated tokens fresh | `node tools/build-tokens.mjs --check` |
+| 3 | Wireframe integrity | `node tools/check-wireframe.mjs` |
+| 4 | Docs links | `node tools/check-links.mjs` |
+| 5 | Security | `node tools/check-secrets.mjs`; `gitleaks` when available |
+| 6 | Web lint / types | `pnpm -r lint`, `pnpm -r typecheck` |
+| 7 | Web smoke + screenshots | `pnpm -r test` (Playwright, Chrome channel) |
+| 8 | Python format/lint/types | `ruff`, `mypy` when `pyproject.toml` exists |
+| 9 | Python unit + property | `pytest` when `tests/` exists |
+| 10 | Invariants | ledger/risk/adapter contract suites (M2+) |
+| 11 | OpenAPI diff | generated client vs committed schema (M2+) |
+| 12 | Compose | `docker compose config -q` (when Docker is available) |
 
-Until runtime code exists, gates 1–3 and 9 (docs/wireframe subset) run. Every gate that is
-committed must be runnable on this machine.
+Gates 1–7 run today. Gates 8–12 activate as the artifacts they check land. Every gate
+that is committed must be runnable on this machine.
 
 ## 5. Merge
 
@@ -84,7 +86,9 @@ committed must be runnable on this machine.
    in `design/visual/`.
 3. Implementation consumes tokens/components; deviations go in
    `design/OWNER-APPROVED-DELTAS.md` with a reason.
-4. Screenshots/verification are committed only for release evidence, not per PR.
+4. Render the implementation and compare it with the design; source comparison is not
+   evidence. See [`docs/VISUAL-TESTING.md`](VISUAL-TESTING.md).
+5. Screenshots/verification are committed only for release evidence, not per PR.
 
 ## 7. Releases
 

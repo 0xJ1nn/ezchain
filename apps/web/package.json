@@ -1,0 +1,30 @@
+{
+  "name": "@ezchain/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "start": "NEXT_TELEMETRY_DISABLED=1 next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "shots": "playwright test e2e/dashboard.spec.ts"
+  },
+  "dependencies": {
+    "@ezchain/ui": "workspace:*",
+    "next": "15.5.28",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "15.5.28",
+    "typescript": "5.9.3"
+  }
+}

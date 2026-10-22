@@ -15,16 +15,21 @@ reference) and [`docs/CONTRACT.md`](docs/CONTRACT.md) (invariants) before your f
 
 ## Setup
 
+Prerequisites: Node.js 22+, pnpm 9 (`npm install -g pnpm@9`), and Chrome for the
+Playwright smoke test.
+
 ```bash
 git clone https://github.com/0xJ1nn/ezchain.git
 cd ezchain
 node tools/sync-agent-stubs.mjs
+pnpm install
+pnpm dev                       # web UI at http://localhost:3000
 bash tools/ci.sh
 ```
 
-Runtime setup lands with M1. Exact commands are documented in the README when they are
-verified to work on a clean clone. Until the Python services exist, the repository is
-docs + design + web UI + infra, and the local gates are the whole contract.
+The Python services do not exist yet. Until they do, the repository is docs + design +
+web UI + infra, and the local gates are the whole contract. Playwright uses the installed
+Chrome channel; install Chrome if the UI test cannot find it.
 
 ## PRs
 
