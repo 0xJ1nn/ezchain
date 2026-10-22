@@ -51,32 +51,37 @@ test("token page renders the bonk wireframe from fixtures", async ({ page }) => 
 	await expect(page.locator("#mine .note")).toHaveText(/\$164\.20 \(4\.7% of equity\)/);
 
 	// Recent trades: 6 rows, two own fills, banked sale is $46.20 (not the wireframe's $46.28).
+	// Scoped to #main so recent-trades rows cannot be confused with quote-panel rows.
 	await expect(page.locator("#main .badge", { hasText: "you · Main" })).toHaveCount(2);
-	await expect(page.locator("tr", { hasText: "10:53:44" })).toHaveText(/\$46\.20/);
+	await expect(page.locator("#main tr", { hasText: "10:53:44" })).toHaveText(/\$46\.20/);
 	await expect(page.getByText("$46.28")).toHaveCount(0);
 
 	// Quote panel: route, out amounts and source freshness.
-	await expect(page.locator("tr", { hasText: "Route" })).toHaveText(/Jupiter v6 → Raydium CLMM/);
-	await expect(page.locator("tr", { hasText: "Expected out" })).toHaveText(/1,403,571 BONK/);
-	await expect(page.locator("tr", { hasText: "Minimum out" })).toHaveText(/1,389,535/);
-	await expect(page.locator("tr", { hasText: "Minimum out" })).toHaveText(/1\.00% slip/);
-	await expect(page.locator("tr", { hasText: "Quote source · age" })).toHaveText(/jupiter · 1s/);
+	// The panel holds two tables — route/out details, then the risk preview — scope each
+	// to its own table so values like "no route" in a risk row can't shadow a route row.
+	const routeRows = page.locator("#quote > section > .panel-body > table > tbody > tr");
+	const riskRows = page.locator("#quote .table-wrap > table > tbody > tr");
+	await expect(routeRows.filter({ hasText: "Route" })).toHaveText(/Jupiter v6 → Raydium CLMM/);
+	await expect(routeRows.filter({ hasText: "Expected out" })).toHaveText(/1,403,571 BONK/);
+	await expect(routeRows.filter({ hasText: "Minimum out" })).toHaveText(/1,389,535/);
+	await expect(routeRows.filter({ hasText: "Minimum out" })).toHaveText(/1\.00% slip/);
+	await expect(routeRows.filter({ hasText: "Quote source · age" })).toHaveText(/jupiter · 1s/);
 	await expect(page.getByText("ttl 12s")).toBeVisible();
 
 	// Risk preview reconciles with the shared position fixtures.
-	await expect(page.locator("tr", { hasText: "Size after caps" })).toHaveText(/\$36\.60/);
-	await expect(page.locator("tr", { hasText: "Size after caps" })).toHaveText(/from \$44\.29/);
-	await expect(page.locator("tr", { hasText: "Daily used after" })).toHaveText(
+	await expect(riskRows.filter({ hasText: "Size after caps" })).toHaveText(/\$36\.60/);
+	await expect(riskRows.filter({ hasText: "Size after caps" })).toHaveText(/from \$44\.29/);
+	await expect(riskRows.filter({ hasText: "Daily used after" })).toHaveText(
 		/\$250\.00 \/ \$250\.00/,
 	);
-	await expect(page.locator("tr", { hasText: "Daily used after" }).locator(".badge")).toHaveText(
+	await expect(riskRows.filter({ hasText: "Daily used after" }).locator(".badge")).toHaveText(
 		"at cap",
 	);
-	await expect(page.locator("tr", { hasText: "Position after fill" })).toHaveText(
+	await expect(riskRows.filter({ hasText: "Position after fill" })).toHaveText(
 		/\$164\.20 · 4\.7% equity/,
 	);
-	await expect(page.locator("tr", { hasText: "Worst case (stop −35%)" })).toHaveText(/−\$12\.81/);
-	await expect(page.locator("tr", { hasText: "Full-size sell check" })).toHaveText(
+	await expect(riskRows.filter({ hasText: "Worst case (stop −35%)" })).toHaveText(/−\$12\.81/);
+	await expect(riskRows.filter({ hasText: "Full-size sell check" })).toHaveText(
 		/OK · 0\.42% impact/,
 	);
 
@@ -104,10 +109,14 @@ test("scamcoin token page fails closed with no fabricated route", async ({ page 
 	// Same layout, fail-closed values: safety fails, route rows stay unknown.
 	await expect(page.locator("#safety .panel-head .badge.err")).toHaveText("fail");
 	await expect(page.locator("#safety tbody tr")).toHaveCount(7);
-	await expect(page.locator("tr", { hasText: "Route" })).toHaveText(/no route/);
-	await expect(page.locator("tr", { hasText: "Expected out" })).toHaveText(/—/);
-	await expect(page.locator("tr", { hasText: "Full-size sell check" })).toHaveText(/FAIL · no route/);
-	await expect(page.locator("tr", { hasText: "Quote source · age" }).locator(".dot-live.dead")).toBeVisible();
+	const routeRows = page.locator("#quote > section > .panel-body > table > tbody > tr");
+	const riskRows = page.locator("#quote .table-wrap > table > tbody > tr");
+	await expect(routeRows.filter({ hasText: "Route" })).toHaveText(/no route/);
+	await expect(routeRows.filter({ hasText: "Expected out" })).toHaveText(/—/);
+	await expect(riskRows.filter({ hasText: "Full-size sell check" })).toHaveText(/FAIL · no route/);
+	await expect(
+		routeRows.filter({ hasText: "Quote source · age" }).locator(".dot-live.dead"),
+	).toBeVisible();
 
 	// No fabricated route, no confirmable order.
 	await expect(page.getByText("Jupiter v6")).toHaveCount(0);

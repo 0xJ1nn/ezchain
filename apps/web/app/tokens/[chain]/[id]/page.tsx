@@ -353,91 +353,94 @@ export default async function TokenPage({
 				</div>
 
 				<div className="stack">
-					<Panel title="Quote" action={<Badge tone="ghost">{token.quote.ttl}</Badge>}>
-						<div className="seg mb-12" style={{ display: "flex" }}>
-							<button type="button" style={{ flex: 1 }} aria-pressed={token.quote.side === "buy"}>
-								Buy
-							</button>
-							<button type="button" style={{ flex: 1 }} aria-pressed={token.quote.side === "sell"}>
-								Sell
-							</button>
-						</div>
+					{/* id="quote" exists so e2e tests can scope quote-panel row assertions uniquely. */}
+					<div id="quote">
+						<Panel title="Quote" action={<Badge tone="ghost">{token.quote.ttl}</Badge>}>
+							<div className="seg mb-12" style={{ display: "flex" }}>
+								<button type="button" style={{ flex: 1 }} aria-pressed={token.quote.side === "buy"}>
+									Buy
+								</button>
+								<button type="button" style={{ flex: 1 }} aria-pressed={token.quote.side === "sell"}>
+									Sell
+								</button>
+							</div>
 
-						{token.quote.payWith && (
-							<label className="field mb-12">
-								<span>Pay with</span>
-								<div className="row">
-									<input
-										className="input mono"
-										defaultValue={token.quote.payWith.amount}
-										style={{ flex: 1 }}
-										aria-label="Amount in SOL"
-									/>
-									<span className="tag">SOL</span>
-									<button className="btn sm" type="button">
-										MAX
-									</button>
-								</div>
-								<span className="hint">{token.quote.payWith.hint}</span>
-							</label>
-						)}
+							{token.quote.payWith && (
+								<label className="field mb-12">
+									<span>Pay with</span>
+									<div className="row">
+										<input
+											className="input mono"
+											defaultValue={token.quote.payWith.amount}
+											style={{ flex: 1 }}
+											aria-label="Amount in SOL"
+										/>
+										<span className="tag">SOL</span>
+										<button className="btn sm" type="button">
+											MAX
+										</button>
+									</div>
+									<span className="hint">{token.quote.payWith.hint}</span>
+								</label>
+							)}
 
-						<table className="table compact mb-12">
-							<tbody>
-								{token.quote.rows.map((row) => (
-									<DetailTableRow row={row} key={row.k} />
-								))}
-							</tbody>
-						</table>
-
-						<div className="row mb-8">
-							<span className="micro">Risk preview</span>
-							<span style={{ flex: 1 }} />
-							<Badge tone={token.quote.riskBadgeTone}>{token.quote.riskBadge}</Badge>
-						</div>
-						<div
-							className="table-wrap"
-							style={{ border: "1px solid var(--line)", borderRadius: "var(--r-sm)" }}
-						>
-							<table className="table compact">
+							<table className="table compact mb-12">
 								<tbody>
-									{token.quote.riskRows.map((row) => (
+									{token.quote.rows.map((row) => (
 										<DetailTableRow row={row} key={row.k} />
 									))}
 								</tbody>
 							</table>
-						</div>
 
-						<div className={`note ${token.quote.note.tone} mt-12`}>
-							{token.quote.note.parts.map((part, index) =>
-								part.href ? (
-									<Link href={part.href} key={index}>
-										{part.text}
-									</Link>
-								) : (
-									<span className={part.mono ? "mono" : undefined} key={index}>
-										{part.text}
-									</span>
-								),
-							)}
-						</div>
-
-						<div className="row mt-12">
-							<button
-								className="btn primary lg"
-								style={{ flex: 1 }}
-								type="button"
-								disabled
-								title="Execution is not wired in M1"
+							<div className="row mb-8">
+								<span className="micro">Risk preview</span>
+								<span style={{ flex: 1 }} />
+								<Badge tone={token.quote.riskBadgeTone}>{token.quote.riskBadge}</Badge>
+							</div>
+							<div
+								className="table-wrap"
+								style={{ border: "1px solid var(--line)", borderRadius: "var(--r-sm)" }}
 							>
-								{token.quote.confirmLabel}
-							</button>
-							<Link className="btn lg" href={token.quote.limitsHref}>
-								Limits
-							</Link>
-						</div>
-						<div className="small muted mt-8">{token.quote.foot}</div>
-					</Panel>
+								<table className="table compact">
+									<tbody>
+										{token.quote.riskRows.map((row) => (
+											<DetailTableRow row={row} key={row.k} />
+										))}
+									</tbody>
+								</table>
+							</div>
+
+							<div className={`note ${token.quote.note.tone} mt-12`}>
+								{token.quote.note.parts.map((part, index) =>
+									part.href ? (
+										<Link href={part.href} key={index}>
+											{part.text}
+										</Link>
+									) : (
+										<span className={part.mono ? "mono" : undefined} key={index}>
+											{part.text}
+										</span>
+									),
+								)}
+							</div>
+
+							<div className="row mt-12">
+								<button
+									className="btn primary lg"
+									style={{ flex: 1 }}
+									type="button"
+									disabled
+									title="Execution is not wired in M1"
+								>
+									{token.quote.confirmLabel}
+								</button>
+								<Link className="btn lg" href={token.quote.limitsHref}>
+									Limits
+								</Link>
+							</div>
+							<div className="small muted mt-8">{token.quote.foot}</div>
+						</Panel>
+					</div>
 
 					<Panel title="Market facts" flush footer={token.facts.foot}>
 						<div className="table-wrap">
