@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import DexScreenerClient, GeckoTerminalClient, JupiterClient
 from ezchain_engine import KillSwitchExecutor, StrategyScheduler
 
 from .auth import BearerAuthMiddleware
@@ -34,10 +34,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     dexscreener = DexScreenerClient()
     jupiter = JupiterClient()
+    geckoterminal = GeckoTerminalClient()
     await dexscreener.__aenter__()
     await jupiter.__aenter__()
+    await geckoterminal.__aenter__()
     app.state.dexscreener = dexscreener
     app.state.jupiter = jupiter
+    app.state.geckoterminal = geckoterminal
 
     def kill_switch_active() -> bool:
         """Read the persisted flag per order so arming applies across processes."""
@@ -86,6 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await scheduler_task
         await dexscreener.__aexit__(None, None, None)
         await jupiter.__aexit__(None, None, None)
+        await geckoterminal.__aexit__(None, None, None)
 
 
 def create_app() -> FastAPI:

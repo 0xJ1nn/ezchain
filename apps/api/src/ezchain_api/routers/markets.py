@@ -9,13 +9,20 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import AdapterError, DexScreenerClient, JupiterClient, get_chain
+from ezchain_adapters import (
+    AdapterError,
+    DexScreenerClient,
+    GeckoTerminalClient,
+    JupiterClient,
+    get_chain,
+)
 
 from ..config import Settings, get_settings
-from ..deps import get_dexscreener, get_jupiter, get_market_monitor, get_session
-from ..errors import adapter_http_error
+from ..deps import get_dexscreener, get_geckoterminal, get_jupiter, get_market_monitor, get_session
+from ..errors import adapter_http_error, candles_http_error
 from ..models import MarketSnapshotRow
 from ..schemas import (
+    CandlesOut,
     MarketCoverageOut,
     MarketListOut,
     MarketOverviewOut,
@@ -25,10 +32,13 @@ from ..schemas import (
     StoredSnapshotOut,
     TokenOut,
 )
+from ..services.candles import get_candles
 from ..services.market_monitor import MarketMonitor, build_overview, stored_snapshots
 from ..services.quotes import get_quote
 
 router = APIRouter(tags=["markets"])
+
+CandleTimeframe = Literal["1m", "5m", "15m", "1h", "4h", "1d"]
 
 
 @router.get("/api/v1/markets/overview", response_model=MarketOverviewOut)
@@ -128,6 +138,43 @@ async def token(
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
     return TokenOut.model_validate(snapshot.to_dict())
+
+
+@router.get("/api/v1/tokens/{chain}/{address}/candles", response_model=CandlesOut)
+async def token_candles(
+    chain: str,
+    address: str,
+    timeframe: CandleTimeframe = Query(default="5m"),
+    limit: int = Query(default=300, ge=1, le=1000),
+    session: Session = Depends(get_session),
+    snapshot_source: DexScreenerClient = Depends(get_dexscreener),
+    candle_source: GeckoTerminalClient = Depends(get_geckoterminal),
+    settings: Settings = Depends(get_settings),
+) -> CandlesOut:
+    """Closed OHLCV history for one token, oldest bar first.
+
+    Read-only and unauthenticated like every other GET. The series is served from
+    ``market_candles`` when it is current; only a missing range reaches the provider.
+    """
+    if get_chain(chain) is None:
+        raise HTTPException(
+            status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
+        )
+    try:
+        series = await get_candles(
+            session,
+            candle_source,
+            snapshot_source,
+            chain,
+            address,
+            timeframe,
+            limit,
+            datetime.now(UTC),
+            data_mode=settings.data_mode,
+        )
+    except AdapterError as exc:
+        raise candles_http_error(exc) from exc
+    return CandlesOut.model_validate(series.to_dict())
 
 
 @router.get("/api/v1/quotes", response_model=QuoteOut)

@@ -195,3 +195,38 @@ class MarketSnapshotRow(Base):
     source: Mapped[str] = mapped_column(String(40))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+
+
+class MarketCandleRow(Base):
+    """One closed OHLCV bar per (chain, token, timeframe, open_time).
+
+    History, not a snapshot: bars are additive and a re-fetch of the same bar updates it
+    in place (the venue may revise a just-closed bar). Prices use the exact decimal type so
+    an indicator never sees a float, and ``volume`` stays nullable because unknown is not
+    zero. The forming bar is never stored — the service drops it before writing.
+    """
+
+    __tablename__ = "market_candles"
+    __table_args__ = (
+        UniqueConstraint(
+            "chain",
+            "token_address",
+            "timeframe",
+            "open_time",
+            name="uq_market_candle_bar",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    chain: Mapped[str] = mapped_column(String(40))
+    token_address: Mapped[str] = mapped_column(String(160))
+    pool_address: Mapped[str] = mapped_column(String(160))
+    timeframe: Mapped[str] = mapped_column(String(8))
+    open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    open: Mapped[Decimal] = mapped_column(MONEY)
+    high: Mapped[Decimal] = mapped_column(MONEY)
+    low: Mapped[Decimal] = mapped_column(MONEY)
+    close: Mapped[Decimal] = mapped_column(MONEY)
+    volume: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    source: Mapped[str] = mapped_column(String(40))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
