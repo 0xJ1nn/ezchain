@@ -1,18 +1,26 @@
-"""Strategy CRUD. Evaluation lands with P0.3."""
+"""Strategy CRUD and manual run."""
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import get_chain
+from ezchain_adapters import DexScreenerClient, get_chain
+from ezchain_core.strategy import StrategyValidationError
+from ezchain_engine import OrderExecutor
 
-from ..deps import get_session
+from ..deps import get_dexscreener, get_session
 from ..models import StrategyRow, StrategyRunRow
 from ..schemas import StrategyIn, StrategyOut, StrategyPatch, StrategyRunOut
+from ..services.strategies import (
+    MissingOrderExecutor,
+    run_strategy_once,
+    validate_strategy_params,
+)
 
 router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
 
@@ -48,6 +56,22 @@ def get_or_404(session: Session, strategy_id: str) -> StrategyRow:
     return row
 
 
+def _validate_params(kind: str, params: dict[str, object] | None) -> None:
+    try:
+        validate_strategy_params(kind, params)
+    except StrategyValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": exc.message, "retryable": False},
+        ) from exc
+
+
+def _order_executor(request: Request) -> OrderExecutor:
+    """The composition root sets ``app.state.order_executor``; until then, fail closed."""
+    executor = getattr(request.app.state, "order_executor", None)
+    return cast(OrderExecutor, executor if executor is not None else MissingOrderExecutor())
+
+
 @router.get("", response_model=list[StrategyOut])
 def list_strategies(session: Session = Depends(get_session)) -> list[StrategyOut]:
     rows = session.scalars(select(StrategyRow).order_by(StrategyRow.created_at.desc())).all()
@@ -61,6 +85,7 @@ def create_strategy(payload: StrategyIn, session: Session = Depends(get_session)
             status_code=404,
             detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {payload.chain}"},
         )
+    _validate_params(payload.kind, payload.params)
     row = StrategyRow(
         name=payload.name,
         chain=payload.chain,
@@ -89,6 +114,7 @@ def patch_strategy(
     if payload.name is not None:
         row.name = payload.name
     if payload.params is not None:
+        _validate_params(row.kind, payload.params)
         row.params = payload.params
     if payload.status is not None:
         row.status = payload.status
@@ -105,15 +131,40 @@ def delete_strategy(strategy_id: str, session: Session = Depends(get_session)) -
 
 
 @router.post("/{strategy_id}/run", response_model=StrategyRunOut)
-def run_strategy(strategy_id: str, session: Session = Depends(get_session)) -> StrategyRunOut:
-    get_or_404(session, strategy_id)
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "code": "NOT_IMPLEMENTED",
-            "message": "strategy evaluation lands in P0.3",
-            "retryable": False,
-        },
+async def run_strategy(
+    strategy_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+    dexscreener: DexScreenerClient = Depends(get_dexscreener),
+) -> StrategyRunOut:
+    row = get_or_404(session, strategy_id)
+    if row.status != "active":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "STRATEGY_PAUSED",
+                "message": "paused strategies never run; resume first",
+                "retryable": False,
+            },
+        )
+    result = await run_strategy_once(session, row, dexscreener, _order_executor(request))
+    if result.run_id is None or result.created_at is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "STRATEGY_RUN_NOT_LOGGED",
+                "message": "the run produced no decision record",
+                "retryable": True,
+            },
+        )
+    return StrategyRunOut(
+        id=result.run_id,
+        strategy_id=result.strategy_id,
+        action=result.action,
+        reason=result.reason,
+        inputs=result.inputs,
+        order_id=result.order_id,
+        created_at=_dt(result.created_at) or "",
     )
 
 
