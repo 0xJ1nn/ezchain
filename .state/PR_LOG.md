@@ -14,3 +14,4 @@
 | 2026-10-22 | #23 | mobile overflow fix for the position tile | `tools/ci.sh` green |
 | 2026-10-22 | #24 | markets render evidence (wireframe comparison + mobile) | docs-only; links gate green |
 | 2026-10-22 | #37 | docs: target capability matrix, roadmap and ADR draft; M1 status claims | `tools/ci.sh` green (14 tests) |
+| 2026-10-22 | #38 | cross-page BONK constants and overdue PR log | `tools/ci.sh` green (15 tests) |

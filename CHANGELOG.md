@@ -34,6 +34,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 ### Fixed
 
 - Position-tile charts no longer widen the page at 390 px (#23).
+- Dashboard bank activity and the position-tile peak now agree with the token fixture;
+  a cross-page test guards the constants (#38).
 
 ### Removed
 
