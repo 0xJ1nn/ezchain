@@ -17,7 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /build
 
 # Runtime and migration dependencies (fastapi, uvicorn, sqlalchemy, psycopg,
-# pydantic, alembic, ...). The repository has one requirements file today.
+# pydantic, alembic, ...). The test/lint toolchain is not installed here.
 COPY requirements-runtime.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install --prefix=/install -r requirements-runtime.txt
