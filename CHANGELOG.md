@@ -79,6 +79,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   loser rolls back and reads the winner.
 - Reconciliation cash is checked against genesis plus persisted fill cash flow instead of
   a tautological replay; disarming the kill switch now requires a reason (422).
+- The dashboard labels every fixture-driven panel `FIXTURE` in live mode; the Risk panel
+  no longer says "live checks" (#76).
 - The web strategy builder's DCA and dip vocabularies now match the server validator:
   DCA no longer offers take-profit/stop-loss and dip no longer offers `exit_change_pct`.
   Creating either strategy no longer returns `STRATEGY_PARAM_UNKNOWN` (#73).

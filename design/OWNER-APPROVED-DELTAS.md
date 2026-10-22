@@ -14,6 +14,7 @@ with a reason. Format:
 | 2026-10-22 | Markets | Table footer says "Fixture order · page 1/1" and the page carries a fixture banner | The page must not imply a live feed or server-side pagination before the API exists. | maintainer instruction (M1 scope) |
 | 2026-10-22 | Token | Bonk quote panel uses $164.20 · 4.7% after fill; banked $46.20; safety count 7; RUNG +200% | The wireframe contradicted itself ($118.00/$125.69, $46.28, safety 6, +125%). One model per number (I10). | maintainer instruction (M1 scope) |
 | 2026-10-22 | Token | SCAM is a new fail-closed variant with NO SELL ROUTE, last exact quote $0.0041 retained, mark-based PnL labelled not executable | Demonstrates I3 without fabricating a route or a zero. | maintainer instruction (M1 scope) |
+| 2026-10-22 | Dashboard | Every fixture-driven panel carries a `FIXTURE` badge; the Risk subheading reads "fixture preview" | The KPI band is live, so an unlabelled fixture panel implied live data (CONTRACT I12). Badges are honesty labels, not a structural change. | maintainer instruction (P0 production-readiness) |
 
 Rules:
 
