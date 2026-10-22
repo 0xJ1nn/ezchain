@@ -16,10 +16,10 @@ green; screenshot comparisons are attached to the PR.
 `node tools/build-tokens.mjs --check`, `bash tools/ci.sh`.
 
 **State:** shell + dashboard #16; positions #18; markets #21; token #22; mobile overflow
-#23; evidence #24; docs capability audit #37; cross-page constants #38. Issue #9 is
+#23; evidence #24; docs audit #37; cross-page constants #38; shots #41. Issue #9 is
 closed; #8 stays open until all tile states exist. The M1 gate is green (15 tests).
+See `.state/HANDOFF.md` for the next-chat handoff and `docs/TODO.md` for the checklist.
 
-**Next:** M1 close-out — wallets (#10), automations (#11), strategies/signals (#12),
-risk/alerts (#13), system pages (#14), remaining tile states (#8), then a deterministic
-gate (#36). M2 starts with `services/ingest`, the `MarketEvent` contract and persistence
-(#25–#28). Do not start M3 execution before M2 data and reason codes exist.
+**Next:** wallets (#10), then automations (#11), strategies/signals (#12), risk/alerts
+(#13), system pages (#14), remaining tile states (#8), deterministic gate (#36). M2
+starts with `services/ingest`, the `MarketEvent` contract and persistence (#25–#28).

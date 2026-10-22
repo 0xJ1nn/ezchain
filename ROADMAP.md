@@ -10,10 +10,26 @@ The current code is a **fixture-driven web UI only**. Nothing in M2–M5 exists 
 
 Finish the fixture-driven surfaces and make the gate trustworthy.
 
-- Finish the remaining position-tile states (#8).
-- Strategies, automations, wallets, risk/alerts and system pages (#10–#14).
+**Done:** shell/dashboard (#16), positions + four tile states (#18), markets (#21),
+token + fail-closed SCAM (#22), render harness (#15), mobile overflow (#23), cross-page
+constants (#38), evidence (#24). `docs/TODO.md` is the working checklist.
+
+**Next:**
+
+- Wallets + wallet detail (#10) — next.
+- Automations + builder (#11).
+- Strategies/strategy detail/signals (#12).
+- Risk + alerts (#13).
+- Remaining system pages + component gallery (#14).
+- Remaining tile states: trail-armed, banked, laddered, dust, stale, closed, quarantined
+  (#8).
 - Make `tools/ci.sh` deterministic; the same commit must not pass and fail (#36).
 - Keep every fixture labelled and every unimplemented route explicit.
+
+**Known M1 gaps:** responsive tables still scroll instead of becoming cards; markets
+filters/watchlist are preview-only (#33); position detail links to the generic placeholder;
+the dark “Instrument” visual pass is still pending; ADR-0014–0019 and this roadmap need
+maintainer review (#39).
 
 Exit: `main` renders the full M1 surface at 1440 and 390 px with no external requests,
 `bash tools/ci.sh` is green on five consecutive runs, and no screen implies live data.
