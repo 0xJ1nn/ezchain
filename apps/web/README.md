@@ -1,8 +1,9 @@
 # apps/web — ezCHAIN UI
 
 Next.js 15 App Router UI for the ezCHAIN workstation. This is the M1 scaffold: the
-shell, dashboard and positions page are implemented against the wireframe; every other
-route renders an honest "not implemented yet" page until its scoped PR lands.
+shell, dashboard, positions page, markets screener and token page are implemented
+against the wireframe. Every other route renders an honest "not implemented yet" page
+until its scoped PR lands.
 
 ## Run
 

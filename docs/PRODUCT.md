@@ -41,9 +41,13 @@ A self-hostable, open-source crypto trading workstation. One place for:
    per-wallet, per-strategy limits one click away.
 5. **No lock-in.** CSV/Parquet export, open API, plugin SDK, standard Postgres.
 
-## 5. Scope for v1 (M0–M3)
+## 5. Scope for v1 (M0–M3) — target, not shipped
 
-| Area | v1 scope |
+Nothing in this table is implemented yet. It is the v1 target; the current code is a
+fixture-driven web UI only (see `README.md`). A row may not be described as supported
+until it has an adapter, contract tests and a paper-gate record.
+
+| Area | v1 target |
 |---|---|
 | Chains | Solana, Ethereum, Base, Arbitrum, Polygon, BSC (T1); Sui, Aptos, TON, Bitcoin watch-only (T2) |
 | Venues | Jupiter, Uniswap v3/v4, 1inch, PancakeSwap, CEX read-only (Binance/Coinbase/Bybit) |
@@ -56,7 +60,8 @@ A self-hostable, open-source crypto trading workstation. One place for:
 | Ops | single-node compose, Postgres backups, metrics, audit log |
 
 Out of scope for v1: derivatives execution, fiat on-ramp, lending, copy-trading
-marketplace, mobile native apps (responsive web first), managed hosting.
+marketplace, mobile native apps (responsive web first), managed hosting, and any
+subscription/payment billing surface.
 
 ## 6. Success metrics
 

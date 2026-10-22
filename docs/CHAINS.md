@@ -61,9 +61,14 @@ is not an entry. This is the v3 lesson (`_ENTRY_MIN_SELL_BUY_RATIO`,
 Paper mode uses the same venue adapter with a simulated broadcaster that fills at the
 quoted effective price. If a venue cannot quote, paper rejects too. No synthetic price.
 
-## 3. Support matrix
+## 3. Target support matrix
 
 Tier = verification level, not ambition.
+
+**Verified today: none.** Every row below is a target. No adapter package exists yet;
+`packages/` contains only `ui`, and there is no `services/ingest` or `services/executor`.
+A row may only be promoted when its adapter contract suite passes against live mainnet
+and the recorded fixtures (§5). Until then the UI must not present it as tradeable.
 
 - **T1** — adapter contract tests pass against live mainnet and recorded fixtures; swaps,
   balances, transfers, confirmations, reorg handling; used in paper and live.
@@ -71,31 +76,32 @@ Tier = verification level, not ambition.
 - **T3** — read-only balances/positions; no execution.
 - **Planned** — interface designed, no adapter.
 
-| Chain | Family | Tier | Execution | Notes |
-|---|---|---|---|---|
-| Solana | SVM | T1 | Jupiter, Raydium, PumpSwap | first-class; rent/ATA accounting |
-| Ethereum | EVM | T1 | Uniswap v3/v4, 1inch | L1 gas model, EIP-1559 |
-| Base | EVM | T1 | Uniswap, Aerodrome | OP-stack finality |
-| Arbitrum One | EVM | T1 | Uniswap, Camelot | L2 sequencer feed |
-| Polygon PoS | EVM | T1 | Uniswap, QuickSwap | |
-| BNB Chain | EVM | T1 | PancakeSwap | |
-| Optimism | EVM | T2 | Uniswap, Velodrome | |
-| Avalanche C | EVM | T2 | Trader Joe | |
-| Linea / Scroll / zkSync / Mantle / Blast | EVM | T2 | Uniswap/1inch | shared EVM adapter, per-chain config |
-| Berachain / Sonic | EVM | Planned | — | EVM adapter |
-| Sui | Move | T2 | Cetus, Bluefin | object model, sponsored tx |
-| Aptos | Move | T2 | Pancake/Aptos | |
-| TON | TVM | T2 | STON.fi, DeDust | wallet v5, jetton |
-| Tron | TVM | T2 | SunSwap | energy/bandwidth fees |
-| Bitcoin | UTXO | T2 read/transfer | — (no native swap) | xpub watch, PSBT via hardware |
-| Cosmos Hub / Osmosis / Injective / Neutron | Cosmos SDK | T3 | Osmosis (T2 planned) | IBC awareness |
-| NEAR | NEAR | T3 | Ref Finance (planned) | |
-| Starknet | Cairo | T3 | JediSwap (planned) | |
-| Cardano | UTXO/eUTXO | Planned | — | |
-| Lightning | LN | Planned | — | |
+| Chain | Family | Target tier | Verified today | Target execution | Notes |
+|---|---|---|---|---|---|
+| Solana | SVM | T1 | — | Jupiter, Raydium, PumpSwap | first-class; rent/ATA accounting |
+| Ethereum | EVM | T1 | — | Uniswap v3/v4, 1inch | L1 gas model, EIP-1559 |
+| Base | EVM | T1 | — | Uniswap, Aerodrome | OP-stack finality |
+| Arbitrum One | EVM | T1 | — | Uniswap, Camelot | L2 sequencer feed |
+| Polygon PoS | EVM | T1 | — | Uniswap, QuickSwap | |
+| BNB Chain | EVM | T1 | — | PancakeSwap | |
+| Optimism | EVM | T2 | — | Uniswap, Velodrome | |
+| Avalanche C | EVM | T2 | — | Trader Joe | |
+| Linea / Scroll / zkSync / Mantle / Blast | EVM | T2 | — | Uniswap/1inch | shared EVM adapter, per-chain config |
+| Berachain / Sonic | EVM | Planned | — | — | EVM adapter |
+| Sui | Move | T2 | — | Cetus, Bluefin | object model, sponsored tx |
+| Aptos | Move | T2 | — | Pancake/Aptos | |
+| TON | TVM | T2 | — | STON.fi, DeDust | wallet v5, jetton |
+| Tron | TVM | T2 | — | SunSwap | energy/bandwidth fees |
+| Bitcoin | UTXO | T2 read/transfer | — | — (no native swap) | xpub watch, PSBT via hardware |
+| Cosmos Hub / Osmosis / Injective / Neutron | Cosmos SDK | T3 | — | Osmosis (T2 planned) | IBC awareness |
+| NEAR | NEAR | T3 | — | Ref Finance (planned) | |
+| Starknet | Cairo | T3 | — | JediSwap (planned) | |
+| Cardano | UTXO/eUTXO | Planned | — | — | |
+| Lightning | LN | Planned | — | — | |
 
-**Honesty rule:** the UI reads the matrix from the registry. A chain shown as T2 says
-"beta" next to execution; T3 disables the trade button with the reason.
+**Honesty rule:** once adapters exist, the UI reads the matrix from the registry. A chain
+shown as T2 says "beta" next to execution; T3 disables the trade button with the reason.
+A chain with no adapter says "not implemented", not "T1".
 
 ## 4. Per-chain data requirements
 

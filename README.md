@@ -6,10 +6,12 @@ ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledg
 positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
-> Status: **M1 — web UI scaffold**. The shell, dashboard and positions page are
-> implemented from the wireframe. The API, engine, executor and ingest services are not built yet; routes
-> without an implementation say so instead of pretending. The product spec, architecture,
-> infra contract and 31-page wireframe remain the source of truth.
+> Status: **M1 — fixture-driven web UI**. The shell, dashboard, positions page, markets
+> screener and token page are implemented from the wireframe. The API, engine, executor
+> and ingest services are **not built yet**: there is no live market data, no order
+> execution and no key handling. Routes without an implementation say so instead of
+> pretending. The product spec, architecture, infra contract and 31-page wireframe remain
+> the source of truth.
 
 ## Why this exists
 
@@ -19,15 +21,16 @@ disagreed with themselves, strategies hard-wired into the engine, and one chain 
 ezCHAIN inverts that: a small, boring, modular platform with hard invariants, where a
 strategy is a removable plugin and a chain is an adapter.
 
-Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence and the
-[ADR log](docs/DECISIONS.md) for the decisions that follow from it.
+Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
+[ADR log](docs/DECISIONS.md) for the decisions that follow from it, and
+[ROADMAP.md](ROADMAP.md) for what is current, next and explicitly out of scope.
 
 ## What is in this repo
 
 | Path | What |
 |---|---|
 | `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
-| `apps/web/` | Next.js UI: shell, dashboard, positions (M1), fixture-driven |
+| `apps/web/` | Next.js UI: shell, dashboard, positions, markets, token page (M1), fixture-driven |
 | `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain model, chains, SDK, infra, security, workflow |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
@@ -57,8 +60,8 @@ pnpm dev
 open http://localhost:3000
 ```
 
-The UI is fixture-driven: no API, no keys, no chain calls. Every route without an
-implementation renders an explicit "not implemented yet" page.
+The UI is fixture-driven: no API, no keys, no chain calls and no live market data. Every
+route without an implementation renders an explicit "not implemented yet" page.
 
 ## Wireframe
 
@@ -66,9 +69,12 @@ implementation renders an explicit "not implemented yet" page.
 npx serve design/wireframe      # or any static file server
 ```
 
-The full stack quick start (compose, API, executor) lands when those services exist:
+The full stack quick start (compose, API, executor) lands when those services exist. It is
+**not runnable today**: `infra/compose.yaml` references images and Dockerfiles that do not
+exist in this repository.
 
 ```bash
+# not runnable yet — kept as the deployment contract
 cp infra/.env.example infra/.env
 docker compose -f infra/compose.yaml up -d
 open http://localhost:8080
