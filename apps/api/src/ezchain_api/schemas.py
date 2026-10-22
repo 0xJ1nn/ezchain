@@ -48,8 +48,8 @@ class MarketRowOut(BaseModel):
     symbol: str
     name: str
     price_usd: str
-    liquidity_usd: str
-    volume_24h_usd: str
+    liquidity_usd: str | None = None
+    volume_24h_usd: str | None = None
     price_change_m5: str | None = None
     price_change_h1: str | None = None
     price_change_h6: str | None = None
@@ -59,10 +59,70 @@ class MarketRowOut(BaseModel):
     source: SourceOut
 
 
+class MarketCoverageOut(BaseModel):
+    """One chain's contribution to a discovery pass; counts are pre-slice."""
+
+    chain: str
+    requested: int
+    returned: int
+    reason: Literal["pairs", "no_pairs", "error"]
+
+
 class MarketListOut(BaseModel):
     rows: list[MarketRowOut]
     source: SourceOut
     stale: bool
+    coverage: list[MarketCoverageOut] | None = None
+    ordered_by: Literal["chain_round_robin", "global_sort"] = "global_sort"
+
+
+class MarketChainOut(BaseModel):
+    """One registered chain as the market monitor currently sees it."""
+
+    id: str
+    name: str
+    family: str
+    quote_kind: str
+    status: Literal["ok", "stale", "no_data", "error", "scanning"]
+    rows: int
+    last_observed_at: str | None = None
+    age_seconds: int | None = None
+    last_attempt_at: str | None = None
+    last_error: str | None = None
+
+
+class MarketTotalsOut(BaseModel):
+    chains: int
+    covered: int
+    stale: int
+    no_data: int
+    error: int
+    snapshots: int
+
+
+class MarketOverviewOut(BaseModel):
+    as_of: str
+    chains: list[MarketChainOut]
+    totals: MarketTotalsOut
+
+
+class StoredSnapshotOut(BaseModel):
+    """A persisted token observation. Fields mirror the snapshot table; no pair/dex/url."""
+
+    chain: str
+    token_address: str
+    symbol: str
+    name: str
+    price_usd: str | None = None
+    liquidity_usd: str | None = None
+    volume_24h_usd: str | None = None
+    price_change_m5: str | None = None
+    price_change_h1: str | None = None
+    price_change_h6: str | None = None
+    price_change_h24: str | None = None
+    source: str
+    observed_at: str
+    age_seconds: int | None = None
 
 
 class PairOut(BaseModel):
@@ -70,8 +130,8 @@ class PairOut(BaseModel):
     dex: str
     quote_token: str
     price_usd: str
-    liquidity_usd: str
-    volume_24h_usd: str
+    liquidity_usd: str | None = None
+    volume_24h_usd: str | None = None
     url: str | None = None
 
 

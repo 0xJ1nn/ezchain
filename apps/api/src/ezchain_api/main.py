@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,7 @@ from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .routers import markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
+from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
 from .services.system_flags import read_kill_switch, seed_kill_switch
 
@@ -58,9 +59,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
 
+    monitor: MarketMonitor | None = None
+    monitor_task: asyncio.Task[None] | None = None
+    if settings.market_scan_inline:
+        monitor = MarketMonitor(session_factory(), dexscreener, settings)
+        monitor_task = asyncio.create_task(monitor.run_forever())
+    app.state.market_monitor = monitor
+
     try:
         yield
     finally:
+        if monitor is not None:
+            monitor.stop()
+        if monitor_task is not None:
+            try:
+                await asyncio.wait_for(monitor_task, timeout=5)
+            except TimeoutError:
+                monitor_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await monitor_task
         if scheduler is not None:
             scheduler.stop()
         if scheduler_task is not None:

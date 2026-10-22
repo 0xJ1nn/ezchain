@@ -26,7 +26,7 @@ from ezchain_adapters.dexscreener import (
     normalize_pair,
     snapshot_from_pairs,
 )
-from ezchain_adapters.registry import get_chain
+from ezchain_adapters.registry import CHAINS, get_chain
 from ezchain_adapters.seeds import SEED_TOKENS
 
 ETH_WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
@@ -112,8 +112,8 @@ def test_normalize_pair_defaults_missing_optional_fields() -> None:
         del pair[key]
     row = normalize_pair(pair)
     assert row is not None
-    assert row.liquidity_usd == Decimal(0)
-    assert row.volume_24h_usd == Decimal(0)
+    assert row.liquidity_usd is None
+    assert row.volume_24h_usd is None
     assert row.price_change_m5 is None
     assert row.pair_created_at is None
     assert row.url is None
@@ -153,8 +153,8 @@ def test_normalize_pair_never_turns_non_finite_metrics_into_numbers() -> None:
     pair["priceChange"] = {"m5": "NaN"}
     row = normalize_pair(pair)
     assert row is not None
-    assert row.liquidity_usd == Decimal(0)
-    assert row.volume_24h_usd == Decimal(0)
+    assert row.liquidity_usd is None
+    assert row.volume_24h_usd is None
     assert row.price_change_m5 is None
 
 
@@ -250,7 +250,9 @@ async def test_list_markets_dedupes_filters_and_limits(
         return_value=httpx.Response(200, json={"pairs": [*pairs, duplicate, foreign, unindexed]})
     )
     async with dexscreener as client:
-        rows, source = await client.list_markets(query="WETH", chain="ethereum", limit=2)
+        rows, source = await client.list_markets(
+            query="WETH", chain="ethereum", sort="liquidity", limit=2
+        )
         all_rows, _ = await client.list_markets(query="WETH", chain="all", limit=50)
     assert len(rows) == 2
     assert all(row.chain == "ethereum" for row in rows)
@@ -366,7 +368,8 @@ async def test_chain_all_discovery_is_not_solana_only(
     requested = [address for batch in batches for address in batch]
     assert requested
     assert all(len(batch) <= MAX_BATCH for batch in batches)
-    assert len(requested) <= MAX_DISCOVERY_ADDRESSES
+    # One token lookup per registered chain; the hint feeds are four more requests.
+    assert len(batches) <= len(CHAINS)
     assert any(address.lower() == ETH_WETH.lower() for address in requested)
     chains = {row.chain for row in rows}
     assert len(chains) >= 12

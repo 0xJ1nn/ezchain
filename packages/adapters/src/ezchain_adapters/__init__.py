@@ -1,6 +1,12 @@
 """ezCHAIN adapters."""
 
-from .dexscreener import DexScreenerClient, normalize_pair, snapshot_from_pairs
+from .dexscreener import (
+    ChainCoverage,
+    DexScreenerClient,
+    SortMode,
+    normalize_pair,
+    snapshot_from_pairs,
+)
 from .errors import AdapterError, NoRoute, NotFound, RateLimited, UpstreamError
 from .jupiter import SOL_MINT, USDC_MINT, JupiterClient
 from .registry import BY_ID, CHAINS, ChainMeta, get_chain
@@ -11,6 +17,7 @@ __all__ = [
     "BY_ID",
     "CHAINS",
     "ChainMeta",
+    "ChainCoverage",
     "DexScreenerClient",
     "JupiterClient",
     "NoRoute",
@@ -18,6 +25,7 @@ __all__ = [
     "RateLimited",
     "SEED_TOKENS",
     "SOL_MINT",
+    "SortMode",
     "USDC_MINT",
     "UpstreamError",
     "get_chain",

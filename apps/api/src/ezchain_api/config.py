@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Seed for the persisted operator kill switch when ``system_flags`` has no row yet.
     engine_kill_switch: bool = False
 
+    market_scan_inline: bool = True
+    market_scan_interval_seconds: int = Field(default=90, ge=30)
+    market_scan_limit: int = Field(default=200, ge=1, le=500)
+
     paper_starting_cash_usd: Decimal = Field(default=Decimal("10000"))
     paper_fee_bps: int = 30
     paper_mark_fee_bps: int = 30
