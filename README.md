@@ -127,10 +127,11 @@ runs `alembic upgrade head`, then starts the API, web and Caddy. The API does **
 create tables itself (`EZCHAIN_AUTO_CREATE_SCHEMA=false`); a failed migration stops the
 rollout before the API starts.
 
-**Verification status:** the Dockerfiles, Compose file, Caddyfile and YAML were reviewed
-statically; a Docker image build/`compose up` was not run in this environment (no Docker
-runtime). Treat the first deployment as a maintainer-supervised smoke test, not as
-already-observed behavior.
+**Verification status (2026-10-22):** the Dockerfiles, Compose file, Caddyfile and YAML were
+built and run on Docker 29.9.2 / Compose v5.6.1. `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d`
+succeeded; all five services healthy; migration exited 0 at head `0003_paper_fill_order`;
+`/healthz` and `/readyz` 200; paper BUY filled through the edge; restart and backup drills passed.
+See [docs/evidence/p0-production/docker-up.md](docs/evidence/p0-production/docker-up.md).
 
 | URL | What |
 |---|---|

@@ -16,12 +16,12 @@ when code in this repository uses it, it has a health signal and a resource budg
 | Local API + Next web + local Postgres (`tools/dev.sh`) | runnable |
 | Alembic baseline and `ezchain-api migrate` | runnable and verified against a fresh Postgres database |
 | `/healthz`, `/readyz`, `/metrics`, JSON request logs | runnable |
-| Docker Compose, Caddy edge, images, Prometheus/Grafana | **implemented** in this repository; image build/`compose up` not verified in the authoring environment (no Docker runtime) |
+| Docker Compose, Caddy edge, images, Prometheus/Grafana | **verified** on 2026-10-22 (Docker 29.9.2 / Compose v5.6.1): image build + `compose up` succeeded, all services healthy, migration at head. See [docs/evidence/p0-production/docker-up.md](evidence/p0-production/docker-up.md) |
 
 The Compose/Caddy files and YAML are reviewed statically and the app-side contracts
-(`/healthz`, `/readyz`, `/metrics`, migrations, auth, `/api/[...path]`) are tested. A
-maintainer must run the first `docker compose up --build` as a supervised smoke test;
-this document is not evidence that the containers already ran.
+(`/healthz`, `/readyz`, `/metrics`, migrations, auth, `/api/[...path]`) are tested. The first
+`docker compose up --build` has now been run successfully on 2026-10-22; see
+[docs/evidence/p0-production/docker-up.md](evidence/p0-production/docker-up.md).
 
 ## 1. Topologies
 

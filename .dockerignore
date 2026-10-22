@@ -34,6 +34,7 @@
 **/playwright-report
 **/.shots
 apps/web/e2e
+apps/web/playwright.config.ts
 
 # Docs, design source and CI-only material are not needed to build either image
 design
