@@ -132,6 +132,8 @@ export const totals = {
 	equityUsd: 3482.16,
 	realizedUsd: 126.4,
 	feesUsd: 18.22,
+	// Mochi has no fill, so it has no unrealized mark yet; it contributes zero to the
+	// known sum. Displayed unknowns stay — at the tile boundary.
 	unrealizedUsd: positionFixtures.reduce((sum, p) => sum + (p.unrealizedUsd ?? 0), 0),
 	openPositionValueUsd: positionFixtures.reduce((sum, p) => sum + p.valueUsd, 0),
 	// Exposure includes wallet balances, not only open positions. The cap is a risk limit.
@@ -244,7 +246,7 @@ export interface ActivityRow {
 
 export const activity: ActivityRow[] = [
 	{ action: "BUY", actionTone: "ok", title: "25.00 USDC → 5,928.4 MOCHI", sub: "Momentum v1.2 · Solana · 6s ago", amount: "−$25.00" },
-	{ action: "SELL", actionTone: "err", title: "0.5 BONK → 46.20 USDC", sub: "bank at +125% · 19m ago", amount: "+$46.20", amountTone: "ok" },
+	{ action: "SELL", actionTone: "err", title: "1,137,000 BONK → 46.20 USDC", sub: "bank at +69.6% · 7m ago", amount: "+$46.20", amountTone: "ok" },
 	{ action: "FEE", actionTone: "ghost", title: "Priority fee · Solana", sub: "intent 8f2a… · 19m ago", amount: "−$0.09" },
 	{ action: "ADJ", actionTone: "warn", title: "Chain reconcile · Base", sub: "wallet Main · +0.0004 ETH dust", amount: "—" },
 ];
