@@ -125,9 +125,7 @@ class JsonApiClient:
         if response.status_code == 429:
             retry_after = parse_retry_after(response.headers.get("Retry-After"))
             self._cooldown_until = max(self._cooldown_until, self._clock() + retry_after)
-            raise RateLimited(
-                f"{self.label} rate limit", detail=f"retry_after={retry_after:g}s"
-            )
+            raise RateLimited(f"{self.label} rate limit", detail=f"retry_after={retry_after:g}s")
         if response.status_code in self.not_found_statuses:
             raise NotFound(f"{self.label} has no route")
         if response.status_code >= 400:

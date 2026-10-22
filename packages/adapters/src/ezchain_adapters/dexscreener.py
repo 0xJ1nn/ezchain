@@ -123,55 +123,129 @@ def normalize_pair(pair: object) -> MarketRow | None:
         pair_created_at=_dt_ms(pair.get("pairCreatedAt")),
         url=_optional_text(pair.get("url")),
         source=SourceRef("dexscreener", "https://dexscreener.com", datetime.now(UTC)),
+        quote_symbol=_text(quote_dict.get("symbol"), "?"),
+        quote_name=_text(quote_dict.get("name"), _text(quote_dict.get("symbol"), "Unknown")),
+        price_native=_dec(pair.get("priceNative")),
     )
+
+
+def _resolve_side(
+    row: MarketRow, address: str
+) -> (
+    tuple[str, str, Decimal, Decimal | None, Decimal | None, Decimal | None, Decimal | None] | None
+):
+    """Resolve the requested token's symbol, name, price and changes from a pair.
+
+    DexScreener's ``priceUsd`` is for the base token. When the requested token is the
+    quote side, derive its USD price from ``priceNative`` (quote per base) as
+    ``priceUsd / priceNative``. If that field is missing, fail closed instead of showing
+    the base token's symbol or a guessed stablecoin price.
+    """
+    if row.base_token == address:
+        return (
+            row.symbol,
+            row.name,
+            row.price_usd,
+            row.price_change_m5,
+            row.price_change_h1,
+            row.price_change_h6,
+            row.price_change_h24,
+        )
+    if row.quote_token == address:
+        native = row.price_native
+        if native is None or native <= 0:
+            return None
+        return (
+            row.quote_symbol,
+            row.quote_name,
+            row.price_usd / native,
+            None,
+            None,
+            None,
+            None,
+        )
+    return None
 
 
 def snapshot_from_pairs(
     chain: ChainMeta, address: str, pairs: list[dict[str, Any]]
 ) -> TokenSnapshot:
-    """Build a token snapshot from its pairs, using the deepest pair as the mark."""
-    rows: list[MarketRow] = []
+    """Build a token snapshot for the requested side of its deepest pair."""
+    candidates: list[
+        tuple[
+            MarketRow,
+            tuple[
+                str,
+                str,
+                Decimal,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+            ],
+        ]
+    ] = []
+    quote_fallback: list[
+        tuple[
+            MarketRow,
+            tuple[
+                str,
+                str,
+                Decimal,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+            ],
+        ]
+    ] = []
     for pair in pairs:
         row = normalize_pair(pair)
-        if row is not None and row.chain == chain.id:
-            rows.append(row)
-    if not rows:
-        raise NotFound(f"no pairs for {chain.id}:{address}")
+        if row is None or row.chain != chain.id:
+            continue
+        resolved = _resolve_side(row, address)
+        if resolved is None:
+            continue
+        target = candidates if row.base_token == address else quote_fallback
+        target.append((row, resolved))
+    selected = candidates or quote_fallback
+    if not selected:
+        raise NotFound(f"no priced pair for {chain.id}:{address}")
 
-    unique: dict[str, MarketRow] = {}
-    for row in rows:
+    unique: dict[str, tuple[MarketRow, tuple[Any, ...]]] = {}
+    for row, resolved in selected:
         current = unique.get(row.pair_address)
-        if current is None or _rank(row) > _rank(current):
-            unique[row.pair_address] = row
-    candidates = list(unique.values())
-    best = max(candidates, key=_rank)
+        if current is None or _rank(row) > _rank(current[0]):
+            unique[row.pair_address] = (row, resolved)
+    ranked = sorted(unique.values(), key=lambda item: _rank(item[0]), reverse=True)
+    best_row, best = ranked[0]
     pair_infos = tuple(
         PairInfo(
             pair_address=row.pair_address,
             dex=row.dex,
             quote_token=row.quote_token,
-            price_usd=row.price_usd,
+            price_usd=resolved[2],
             liquidity_usd=row.liquidity_usd,
             volume_24h_usd=row.volume_24h_usd,
             url=row.url,
         )
-        for row in candidates
+        for row, resolved in ranked
     )
     return TokenSnapshot(
         chain=chain.id,
         address=address,
-        symbol=best.symbol,
-        name=best.name,
-        price_usd=best.price_usd,
-        liquidity_usd=best.liquidity_usd,
-        volume_24h_usd=best.volume_24h_usd,
-        price_change_m5=best.price_change_m5,
-        price_change_h1=best.price_change_h1,
-        price_change_h6=best.price_change_h6,
-        price_change_h24=best.price_change_h24,
+        symbol=best[0],
+        name=best[1],
+        price_usd=best[2],
+        liquidity_usd=best_row.liquidity_usd,
+        volume_24h_usd=best_row.volume_24h_usd,
+        price_change_m5=best[3],
+        price_change_h1=best[4],
+        price_change_h6=best[5],
+        price_change_h24=best[6],
         pairs=pair_infos,
         safety=dict(SAFETY_UNKNOWN),
-        source=best.source,
+        source=best_row.source,
         stale=False,
     )
 

@@ -184,9 +184,7 @@ def test_snapshot_best_pair_uses_liquidity_and_filters_foreign_chains(
     assert snapshot.address == ETH_WETH
     assert snapshot.safety == {"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"}
     assert snapshot.stale is False
-    assert {pair.pair_address for pair in snapshot.pairs} == {
-        pair["pairAddress"] for pair in pairs
-    }
+    assert {pair.pair_address for pair in snapshot.pairs} == {pair["pairAddress"] for pair in pairs}
 
 
 def test_snapshot_ignores_pairs_from_other_chains() -> None:
@@ -249,9 +247,7 @@ async def test_list_markets_dedupes_filters_and_limits(
     unindexed["chainId"] = "not-indexed"
     unindexed["pairAddress"] = "unindexed-pair"
     respx.get(f"{BASE}/latest/dex/search").mock(
-        return_value=httpx.Response(
-            200, json={"pairs": [*pairs, duplicate, foreign, unindexed]}
-        )
+        return_value=httpx.Response(200, json={"pairs": [*pairs, duplicate, foreign, unindexed]})
     )
     async with dexscreener as client:
         rows, source = await client.list_markets(query="WETH", chain="ethereum", limit=2)
@@ -361,9 +357,7 @@ async def test_chain_all_discovery_is_not_solana_only(
         ("/token-boosts/top/v1", "boosts_top_solana.json"),
         ("/community-takeovers/latest/v1", "takeovers_solana.json"),
     ]:
-        respx.get(f"{BASE}{path}").mock(
-            return_value=httpx.Response(200, json=load_fixture(name))
-        )
+        respx.get(f"{BASE}{path}").mock(return_value=httpx.Response(200, json=load_fixture(name)))
     respx.get(url__regex=TOKENS_URL).mock(side_effect=respond)
 
     async with dexscreener as client:
@@ -394,9 +388,7 @@ async def test_discovery_aggregates_profiles_boosts_and_takeovers(
     routes = {}
     for path, name in feeds.items():
         items = load_fixture(name)
-        routes[path] = respx.get(f"{BASE}{path}").mock(
-            return_value=httpx.Response(200, json=items)
-        )
+        routes[path] = respx.get(f"{BASE}{path}").mock(return_value=httpx.Response(200, json=items))
         for item in items:
             hint_tokens[item["tokenAddress"].lower()] = item
 
@@ -421,17 +413,13 @@ async def test_discovery_aggregates_profiles_boosts_and_takeovers(
 async def test_discovery_survives_a_failing_hint_feed(
     dexscreener: DexScreenerClient, load_fixture: Callable[[str], Any]
 ) -> None:
-    profiles = respx.get(f"{BASE}/token-profiles/latest/v1").mock(
-        return_value=httpx.Response(503)
-    )
+    profiles = respx.get(f"{BASE}/token-profiles/latest/v1").mock(return_value=httpx.Response(503))
     for path, name in [
         ("/token-boosts/latest/v1", "boosts_latest_solana.json"),
         ("/token-boosts/top/v1", "boosts_top_solana.json"),
         ("/community-takeovers/latest/v1", "takeovers_solana.json"),
     ]:
-        respx.get(f"{BASE}{path}").mock(
-            return_value=httpx.Response(200, json=load_fixture(name))
-        )
+        respx.get(f"{BASE}{path}").mock(return_value=httpx.Response(200, json=load_fixture(name)))
     recorded = load_fixture("discovery_pairs.json")
 
     async def respond(request: httpx.Request) -> httpx.Response:
@@ -546,3 +534,23 @@ async def test_malformed_pairs_payload_is_an_upstream_error(
     async with dexscreener as client:
         with pytest.raises(UpstreamError):
             await client.search("WETH")
+
+
+def test_snapshot_resolves_the_requested_quote_side() -> None:
+    pair = _valid_pair()
+    pair["priceNative"] = "2000.5"
+    meta = get_chain("ethereum")
+    assert meta is not None
+    snapshot = snapshot_from_pairs(meta, "0xquote", [pair])
+    assert snapshot.symbol == "USDC"
+    assert snapshot.name == "USD Coin"
+    assert snapshot.price_usd == Decimal(1)
+    assert snapshot.address == "0xquote"
+
+
+def test_snapshot_fails_closed_when_quote_side_has_no_native_price() -> None:
+    pair = _valid_pair()
+    meta = get_chain("ethereum")
+    assert meta is not None
+    with pytest.raises(NotFound):
+        snapshot_from_pairs(meta, "0xquote", [pair])

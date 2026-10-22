@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -21,7 +21,11 @@ router = APIRouter(prefix="/api/v1/paper", tags=["paper"])
 
 
 def _dt(value: object) -> str:
-    return value.isoformat() if isinstance(value, datetime) else str(value)
+    if isinstance(value, datetime):
+        return (
+            value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        ).isoformat()
+    return str(value)
 
 
 def _order(row: PaperOrderRow) -> OrderOut:

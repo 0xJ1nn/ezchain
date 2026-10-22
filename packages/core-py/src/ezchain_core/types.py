@@ -29,16 +29,26 @@ class SourceRef:
     observed_at: datetime
 
     def age_seconds(self, now: datetime | None = None) -> float:
-        return max(0.0, ((now or utcnow()) - self.observed_at).total_seconds())
+        observed = (
+            self.observed_at.astimezone(UTC)
+            if self.observed_at.tzinfo is not None
+            else self.observed_at.replace(tzinfo=UTC)
+        )
+        return max(0.0, ((now or utcnow()) - observed).total_seconds())
 
     def is_stale(self, max_age_seconds: float = 60.0, now: datetime | None = None) -> bool:
         return self.age_seconds(now) > max_age_seconds
 
     def to_dict(self) -> dict[str, Any]:
+        observed = (
+            self.observed_at.astimezone(UTC)
+            if self.observed_at.tzinfo is not None
+            else self.observed_at.replace(tzinfo=UTC)
+        )
         return {
             "name": self.name,
             "url": self.url,
-            "observed_at": self.observed_at.isoformat(),
+            "observed_at": observed.isoformat(),
         }
 
 
@@ -61,6 +71,9 @@ class MarketRow:
     pair_created_at: datetime | None
     url: str | None
     source: SourceRef
+    quote_symbol: str = "?"
+    quote_name: str = "Unknown"
+    price_native: Decimal | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -71,6 +84,9 @@ class MarketRow:
             "quote_token": self.quote_token,
             "symbol": self.symbol,
             "name": self.name,
+            "quote_symbol": self.quote_symbol,
+            "quote_name": self.quote_name,
+            "price_native": None if self.price_native is None else str(self.price_native),
             "price_usd": str(self.price_usd),
             "liquidity_usd": str(self.liquidity_usd),
             "volume_24h_usd": str(self.volume_24h_usd),

@@ -44,9 +44,7 @@ class MissingOrderExecutor:
     """
 
     async def place_order(self, request: OrderRequest) -> str:
-        raise ExecutorUnavailable(
-            "paper order executor is not wired; set app.state.order_executor"
-        )
+        raise ExecutorUnavailable("paper order executor is not wired; set app.state.order_executor")
 
 
 async def run_strategy_once(

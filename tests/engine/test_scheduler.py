@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from helpers import CHAIN, TOKEN, make_snapshot
 from sqlalchemy.orm import Session, sessionmaker
 
 import ezchain_api.models  # noqa: F401
@@ -15,7 +16,6 @@ from ezchain_core.ledger import position_account
 from ezchain_core.types import OrderRequest, TokenSnapshot
 from ezchain_engine import StrategyScheduler, evaluate_strategy, idempotency_key, position_state
 from ezchain_engine.engine import should_run
-from helpers import CHAIN, TOKEN, make_snapshot
 
 
 class FakeSource:
@@ -355,9 +355,7 @@ async def test_scheduler_run_once_with_no_active_strategies(
     session_factory: sessionmaker[Session], add_strategy: Any
 ) -> None:
     add_strategy(status="paused")
-    scheduler = StrategyScheduler(
-        session_factory, FakeSource(), FakeExecutor(), interval_seconds=1
-    )
+    scheduler = StrategyScheduler(session_factory, FakeSource(), FakeExecutor(), interval_seconds=1)
     assert await scheduler.run_once() == []
 
 

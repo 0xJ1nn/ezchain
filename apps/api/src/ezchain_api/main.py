@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -9,10 +10,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_engine import StrategyScheduler
 
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .routers import markets, paper, strategies, system
+from .services.executor import PaperOrderExecutor
 from .services.paper import ensure_genesis
 
 
@@ -30,11 +33,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await jupiter.__aenter__()
     app.state.dexscreener = dexscreener
     app.state.jupiter = jupiter
+    executor = PaperOrderExecutor(session_factory(), settings, dexscreener, jupiter)
+    app.state.order_executor = executor
 
-    yield
+    scheduler: StrategyScheduler | None = None
+    scheduler_task: asyncio.Task[None] | None = None
+    if settings.engine_inline:
+        scheduler = StrategyScheduler(
+            session_factory(),
+            dexscreener,
+            executor,
+            interval_seconds=settings.engine_interval_seconds,
+        )
+        scheduler_task = asyncio.create_task(scheduler.run_forever())
 
-    await dexscreener.__aexit__(None, None, None)
-    await jupiter.__aexit__(None, None, None)
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.stop()
+        if scheduler_task is not None:
+            await scheduler_task
+        await dexscreener.__aexit__(None, None, None)
+        await jupiter.__aexit__(None, None, None)
 
 
 def create_app() -> FastAPI:

@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from helpers import make_snapshot
+from helpers import make_spec as spec
 
 from ezchain_core.strategy import (
     StrategyValidationError,
@@ -14,7 +16,6 @@ from ezchain_core.strategy import (
     interval_minutes,
     validate_params,
 )
-from helpers import make_snapshot, make_spec as spec
 
 
 def test_momentum_buys_when_lookback_change_crosses_entry() -> None:
@@ -185,7 +186,11 @@ def test_params_are_typed_and_defaulted() -> None:
         ("dca", {"max_position_usd": "abc"}, "STRATEGY_PARAM_TYPE"),
         ("threshold", {}, "STRATEGY_PARAM_MISSING"),
         ("threshold", {"buy_below_usd": 2, "sell_above_usd": 2}, "STRATEGY_PARAM_RANGE"),
-        ("threshold", {"buy_below_usd": 1, "sell_above_usd": 2, "timeout": 5}, "STRATEGY_PARAM_UNKNOWN"),
+        (
+            "threshold",
+            {"buy_below_usd": 1, "sell_above_usd": 2, "timeout": 5},
+            "STRATEGY_PARAM_UNKNOWN",
+        ),
     ],
 )
 def test_invalid_params_are_rejected(kind: str, params: dict[str, object], code: str) -> None:

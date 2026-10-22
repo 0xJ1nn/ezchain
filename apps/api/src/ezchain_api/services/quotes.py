@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from ezchain_adapters import DexScreenerClient, JupiterClient, NoRoute
+from ezchain_adapters import DexScreenerClient, JupiterClient, NoRoute, NotFound
 from ezchain_core import Quote, SourceRef, utcnow
 
 from ..config import Settings
@@ -37,7 +37,7 @@ async def get_quote(
                     amount_usd=Decimal(0),
                     quantity=quote.amount_out,
                 )
-            except NoRoute as exc:
+            except (NoRoute, NotFound) as exc:
                 raise NoRoute("buy has no full-size sell route") from exc
         return quote
 

@@ -228,9 +228,7 @@ async def evaluate_strategy(
     try:
         snapshot = await dexscreener.get_token(strategy.chain, strategy.token_address)
     except Exception as exc:  # fail closed: no snapshot, no order
-        logger.warning(
-            "strategy %s market data unavailable: %s", strategy.id, type(exc).__name__
-        )
+        logger.warning("strategy %s market data unavailable: %s", strategy.id, type(exc).__name__)
         decision = StrategyDecision(
             "hold",
             Decimal(0),
@@ -312,9 +310,7 @@ async def evaluate_strategy(
 def _due(strategy: StrategyRow, now: datetime) -> bool:
     """Invalid params fall back to the default cooldown instead of a hot retry loop."""
     try:
-        interval = interval_minutes(
-            cast(StrategyKind, strategy.kind), dict(strategy.params or {})
-        )
+        interval = interval_minutes(cast(StrategyKind, strategy.kind), dict(strategy.params or {}))
     except StrategyValidationError:
         # Throttle legacy invalid rows instead of retrying on every scheduler tick.
         return should_run(strategy.last_run_at, now, DEFAULT_INTERVAL_MINUTES)
@@ -323,6 +319,7 @@ def _due(strategy: StrategyRow, now: datetime) -> bool:
 
 class StrategyScheduler:
     """Bounded asyncio loop. One session per strategy; one decision per interval."""
+
     def __init__(
         self,
         session_factory: Callable[[], Session],

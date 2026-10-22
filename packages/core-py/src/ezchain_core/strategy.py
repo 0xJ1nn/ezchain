@@ -53,9 +53,7 @@ def _decimal(params: Mapping[str, Any], key: str, default: Decimal | None = None
     try:
         value = Decimal(str(raw))
     except (InvalidOperation, ValueError) as exc:
-        raise StrategyValidationError(
-            "STRATEGY_PARAM_TYPE", f"{key} must be a number"
-        ) from exc
+        raise StrategyValidationError("STRATEGY_PARAM_TYPE", f"{key} must be a number") from exc
     if not value.is_finite():
         raise StrategyValidationError("STRATEGY_PARAM_TYPE", f"{key} must be finite")
     return value
@@ -85,8 +83,7 @@ def _interval(params: Mapping[str, Any]) -> int:
     if not MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES:
         raise StrategyValidationError(
             "STRATEGY_PARAM_RANGE",
-            f"interval_minutes must be between {MIN_INTERVAL_MINUTES} and "
-            f"{MAX_INTERVAL_MINUTES}",
+            f"interval_minutes must be between {MIN_INTERVAL_MINUTES} and {MAX_INTERVAL_MINUTES}",
         )
     return minutes
 
