@@ -12,6 +12,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   append-only ledger into UI-facing read models (cash, equity, realized/unrealized PnL,
   per-token attribution, risk limits, derived operator alerts and CSV exports). Every
   number is server-computed; an unknown mark is `null`, and no endpoint mutates state.
+- **Graph strategies are live on the PAPER path**: `GET /api/v1/graph/catalogue`,
+  `POST /api/v1/graph/validate`, `POST /api/v1/graph/dry-run`,
+  `POST /api/v1/backtests` (+ list/read), and
+  `GET /api/v1/strategies/{id}/performance`. The scheduler builds a real `EvalContext`
+  (live snapshot, closed candles, ledger position/account, run-log variables) and maps
+  `GraphDecision` onto the existing order path; buy uses `amount_usd`, sell uses
+  `sell_fraction × position value` and never oversells. Backtests are immutable rows in
+  the new `backtests` table (`0006_backtests`, forward-only). Validation and dry-run
+  keep unknown values `null`; the dry run never places an order. Live signing/execution
+  still does not exist.
 - `docs/evidence/p0-production/`: live market/paper/strategy/auth/API-down/restart and
   stress evidence for the PAPER production operations.
 - `docs/PRODUCTION-READINESS.md`: verified vs unverified matrix, operator checklist and the

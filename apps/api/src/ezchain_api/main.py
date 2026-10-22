@@ -30,8 +30,9 @@ from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .observability import ObservabilityMiddleware, configure_logging
-from .routers import account, markets, paper, strategies, system
+from .routers import account, backtests, graph, markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
+from .services.graph import PaperGraphRuntime
 from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
 from .services.system_flags import read_kill_switch, seed_kill_switch
@@ -80,6 +81,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.order_executor = executor
 
+    # One context builder for the scheduler and the HTTP dry run. It owns candle and
+    # ledger reads; the engine only sees the frozen EvalContext contract.
+    graph_runtime = PaperGraphRuntime(gecko, dexscreener, settings.data_mode)
+    app.state.graph_runtime = graph_runtime
+
     scheduler: StrategyScheduler | None = None
     scheduler_task: asyncio.Task[None] | None = None
     if settings.engine_inline:
@@ -87,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             session_factory(),
             dexscreener,
             executor,
+            graph_runtime=graph_runtime,
             interval_seconds=settings.engine_interval_seconds,
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
@@ -143,6 +150,8 @@ def create_app() -> FastAPI:
     app.include_router(paper.router)
     app.include_router(account.router)
     app.include_router(strategies.router)
+    app.include_router(graph.router)
+    app.include_router(backtests.router)
     return app
 
 

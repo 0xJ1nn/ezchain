@@ -167,6 +167,22 @@ class StrategyRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
+class BacktestRow(Base):
+    """An immutable backtest artifact: the request and the result it produced.
+
+    ``strategy_id`` is an opaque historical string, not a foreign key: deleting a
+    strategy must never delete or rewrite the measurements that were made from it.
+    """
+
+    __tablename__ = "backtests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    request: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
 class SystemFlagRow(Base):
     """Small persisted operator switches. Values are JSON so a flag can grow fields."""
 

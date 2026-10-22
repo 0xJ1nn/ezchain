@@ -4,10 +4,11 @@ Status: **PAPER stack with production operations**. The web UI (`apps/web`), Fas
 (`apps/api`), strategy runtime (`services/engine`, inline), domain/ledger
 (`packages/core-py`) and DexScreener / Jupiter adapters (`packages/adapters`) are built,
 with Alembic migrations, bearer auth, `/healthz`/`/readyz`/`/metrics`, structured logs and a
-stress harness. Market observation is a bounded inline loop in the API. The **executor**,
-key custody and a separate ingest worker are not built; live execution is disabled on
-every chain, and Timescale/tick retention is deferred. This document is the contract every
-later PR implements; deviations require an ADR.
+stress harness. Market observation is a bounded inline loop in the API. Graph strategies
+are live on the PAPER path (`/api/v1/graph/*`, `/api/v1/backtests`). The **executor**, key
+custody and a separate ingest worker are not built; live execution is disabled on every
+chain, and Timescale/tick retention is deferred. This document is the contract every later
+PR implements; deviations require an ADR.
 
 ## 1. Shape
 
@@ -154,7 +155,19 @@ history is served from `market_candles` rather than recomputed per request:
 - `EZCHAIN_DATA_MODE=fixture` synthesizes a deterministic series labelled `fixture` and does
   not write to the table, so a demo cannot be mistaken for market data.
 
-### 4.3 Order
+### 4.3 Graph strategy evaluation
+
+A `kind = "graph"` strategy is typed JSON evaluated by `ezchain_core.graph.evaluate_graph`.
+The API composition root supplies a `GraphContextBuilder` to the engine: it takes the live
+token snapshot, closed candles from `market_candles`, the ledger-replayed position and the
+paper account, and freezes them into one `EvalContext`. The scheduler maps the resulting
+`GraphDecision` onto the existing `OrderRequest` path; there is no second execution path.
+A buy uses `amount_usd`, a sell uses `sell_fraction × position value` capped at that value,
+and a hold is logged with its reason. The dry-run endpoint uses the same builder and
+evaluator but has no executor handle. Variables are carried in the run log
+(`inputs.graph_vars`), not a mutable balance.
+
+### 4.4 Order
 
 ```mermaid
 sequenceDiagram
@@ -185,7 +198,7 @@ Idempotency: `intent_id` is unique; executor dedupes by it; a retry after a time
 queries the chain before re-signing. Every state change is an event, every event is
 persisted before side effects (outbox).
 
-### 4.4 Valuation
+### 4.5 Valuation
 
 `PositionView` is assembled by one projector from ledger + market events. It carries
 `mark_status`, `mark_age`, `source`, and `paper|live`. The UI formats, never computes.
@@ -198,6 +211,10 @@ Stale mark → label, not a stale number presented as live.
   timeframe, open_time, ohlcv, source, fetched_at`, unique on
   `(chain, token_address, timeframe, open_time)`). It is a plain table for the PAPER slice;
   moving it to the Timescale hypertable above is a later, forward-only migration.
+- **`backtests`** stores immutable graph replays (`id, strategy_id nullable, request,
+  result, created_at`). `strategy_id` is an opaque historical string, not a foreign key:
+  deleting a strategy never deletes its measurements. The API reads it; only the API
+  writes it.
 - **TimescaleDB** hypertables for ticks/candles with retention (raw 7–30 d, 1m 1 y).
 - **Outbox** table written in the same tx as domain state; a relay publishes to NATS.
 - **NATS JetStream** for fan-out, durable consumers, dead-letter queue; not a database.

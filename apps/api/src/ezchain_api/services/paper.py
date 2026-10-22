@@ -314,6 +314,11 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
     }
 
 
+def daily_realized_pnl(session: Session) -> Decimal:
+    """Net realized PnL booked since UTC midnight, from the ledger only."""
+    return _replay(_ledger_rows(session), day_start=_day_start()).daily_realized
+
+
 def orders(session: Session, limit: int = 50) -> list[PaperOrderRow]:
     return list(
         session.scalars(
