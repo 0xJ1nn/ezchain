@@ -30,7 +30,7 @@ export interface TokenChartSpec {
 	ariaTitle: string;
 	ariaDesc: string;
 	gridY: number[];
-	axisLabels: { x: number; y: number; text: string }[];
+	axisLabels?: { x: number; y: number; text: string }[];
 	levels: TokenChartLevel[];
 	points: string;
 	peak?: TokenChartMarker;
@@ -152,6 +152,10 @@ export interface TokenPageView {
 	quote: {
 		ttl: string;
 		side: "buy" | "sell";
+		// Fail-closed confirm gate: the page renders disabled={!canConfirm} and shows
+		// blockedReason as visible text (aria-describedby), never title-only.
+		canConfirm: boolean;
+		blockedReason: string;
 		payWith?: { amount: string; hint: string };
 		rows: DetailRow[];
 		riskBadge: string;
@@ -205,11 +209,10 @@ const scamChart: TokenChartSpec = {
 		"Scamcoin last trade $0.00000041. Entry $0.00001080; the stop could not execute because " +
 		"no route returned a full-size quote. Last exact quote $0.0041, 2m old. The position is not flat.",
 	gridY: [56, 142, 228],
-	axisLabels: [
-		{ x: 848, y: 59, text: "0.0000080" },
-		{ x: 848, y: 145, text: "0.0000040" },
-		{ x: 848, y: 231, text: "0.0000000" },
-	],
+	// SCAM variant drops the numeric axis: the last mark sits on the floor of the plot and a
+	// "0.0000000" label next to it would read as a below-zero price, which is impossible.
+	// numeric labels are given in the panel sub ("last trade · not executable") and the legend.
+	axisLabels: [],
 	levels: [
 		{ y: 64, label: "ENTRY $0.00001080", className: "level level-entry" },
 		{ y: 266, label: "STOP · COULD NOT EXECUTE", className: "level level-stop", labelClass: "level-label err" },
@@ -217,7 +220,7 @@ const scamChart: TokenChartSpec = {
 	points:
 		"0,70 40,72 80,68 120,74 160,78 200,82 240,90 280,102 320,120 360,150 400,190 440,226 " +
 		"480,252 520,266 560,272 600,276 640,278 680,279 720,280 760,280 800,281 840,281",
-	last: { cx: 840, cy: 281, r: 3.5, label: "$0.00000041", labelX: 742, labelY: 262 },
+	last: { cx: 840, cy: 280, r: 3.5, label: "$0.00000041", labelX: 742, labelY: 258 },
 	foot: [
 		{ x: 2, y: 294, text: "10:20" },
 		{ x: 270, y: 294, text: "10:40" },
@@ -229,7 +232,7 @@ const scamChart: TokenChartSpec = {
 const bonkSafetyRows: SafetyRow[] = [
 	{ check: "Mint authority", result: "revoked", resultTone: "ok", detail: "—", detailMono: true, source: "RPC · 4s" },
 	{ check: "Freeze authority", result: "revoked", resultTone: "ok", detail: "—", detailMono: true, source: "RPC · 4s" },
-	{ check: "Top-10 concentration", result: "18.0%", resultTone: "ok", detail: "threshold 25% · excl. pools", source: "Helius · 2m" },
+	{ check: "Top-10 concentration", result: "18.0%", resultTone: "ok", detail: "threshold 25% · pools included", source: "Helius · 2m" },
 	{ check: "Honeypot simulation", result: "pass", resultTone: "ok", detail: "sell 1 SOL simulated, 0 errors", source: "sim · 11:00" },
 	{ check: "Transfer tax", result: "0.0%", resultTone: "ok", detail: "buy and sell", source: "sim · 11:00" },
 	{ check: "LP custody", result: "burned / locked", resultTone: "ok", detail: "3 pools · 100%", source: "indexer · 6m" },
@@ -245,7 +248,7 @@ const scamSafetyRows: SafetyRow[] = [
 		detail: "query timed out · not assumed safe",
 		source: "RPC · 3m",
 	},
-	{ check: "Top-10 concentration", result: "86.4%", resultTone: "err", detail: "threshold 25% · excl. pools", source: "Helius · 4m" },
+	{ check: "Top-10 concentration", result: "86.4%", resultTone: "err", detail: "threshold 25% · pools included", source: "Helius · 4m" },
 	{ check: "Honeypot simulation", result: "fail", resultTone: "err", detail: "sell 1 SOL simulated, 2 errors", source: "sim · 10:58" },
 	{
 		check: "Transfer tax",
@@ -262,13 +265,13 @@ const bonkHolders: HolderRow[] = [
 	{ rank: "1", address: "9WzDXw…2fLp", label: "Raydium AMM", supply: "6.42%", balance: "4.92T", type: "pool", typeTone: "ghost" },
 	{ rank: "2", address: "JUP6Lk…3vQa", label: "Jupiter vault", supply: "2.18%", balance: "1.67T", type: "router", typeTone: "ghost" },
 	{ rank: "3", address: "5Q544f…9mTz", label: "Binance hot", supply: "1.94%", balance: "1.49T", type: "exchange", typeTone: "ghost" },
-	{ rank: "4", address: "whirLb…4Kd2", label: "Orca whirlpool", supply: "1.42%", balance: "1.09T", type: "pool", typeTone: "ghost" },
-	{ rank: "5", address: "FWznbc…8pYe", label: "Kraken", supply: "1.21%", balance: "0.93T", type: "exchange", typeTone: "ghost" },
-	{ rank: "6", address: "H8sMJn…1cVr", label: "Coinbase", supply: "1.08%", balance: "0.83T", type: "exchange", typeTone: "ghost" },
-	{ rank: "7", address: "pAMMBa…7tKq", label: "PumpSwap pool", supply: "0.91%", balance: "0.70T", type: "pool", typeTone: "ghost" },
-	{ rank: "8", address: "2xT9vd…5nWm", label: "Wintermute", supply: "0.72%", balance: "0.55T", type: "market maker", typeTone: "warn" },
-	{ rank: "9", address: "Bybit1…7hQz", label: "Bybit", supply: "0.61%", balance: "0.47T", type: "exchange", typeTone: "ghost" },
-	{ rank: "10", address: "8LmT3k…4xQd", label: "Treasury (locked)", supply: "1.51%", balance: "1.16T", type: "locked 2028", typeTone: "info" },
+	{ rank: "4", address: "8LmT3k…4xQd", label: "Treasury (locked)", supply: "1.51%", balance: "1.16T", type: "locked 2028", typeTone: "info" },
+	{ rank: "5", address: "whirLb…4Kd2", label: "Orca whirlpool", supply: "1.42%", balance: "1.09T", type: "pool", typeTone: "ghost" },
+	{ rank: "6", address: "FWznbc…8pYe", label: "Kraken", supply: "1.21%", balance: "0.93T", type: "exchange", typeTone: "ghost" },
+	{ rank: "7", address: "H8sMJn…1cVr", label: "Coinbase", supply: "1.08%", balance: "0.83T", type: "exchange", typeTone: "ghost" },
+	{ rank: "8", address: "pAMMBa…7tKq", label: "PumpSwap pool", supply: "0.91%", balance: "0.70T", type: "pool", typeTone: "ghost" },
+	{ rank: "9", address: "2xT9vd…5nWm", label: "Wintermute", supply: "0.72%", balance: "0.55T", type: "market maker", typeTone: "warn" },
+	{ rank: "10", address: "Bybit1…7hQz", label: "Bybit", supply: "0.61%", balance: "0.47T", type: "exchange", typeTone: "ghost" },
 ];
 
 const scamHolders: HolderRow[] = [
@@ -348,7 +351,7 @@ const bonk: TokenPageView = {
 	],
 	solscan: {
 		url: "https://solscan.io/token/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-		label: "solscan.io/token/DezX…W1u",
+		label: "solscan.io/token/DezX…B263",
 	},
 	chartSub: "executable mid · venue quotes, not indexer candles",
 	chart: bonkChart,
@@ -373,7 +376,7 @@ const bonk: TokenPageView = {
 		badgeTone: "ghost",
 		rows: bonkHolders,
 		foot: {
-			left: "Your wallets: 2,591,333 BONK · 0.0034% · Main (hot)",
+			left: "Your wallets: 2,591,333 BONK · 0.0000034% of supply · Main (hot)",
 			right: "Unknown labels stay unlabelled; no heuristics are presented as facts.",
 		},
 	},
@@ -399,6 +402,8 @@ const bonk: TokenPageView = {
 	quote: {
 		ttl: "ttl 12s",
 		side: "buy",
+		canConfirm: false,
+		blockedReason: "Execution is not wired in M1",
 		payWith: {
 			amount: "0.30",
 			hint: "≈ $44.29 at SOL/USD $147.62 · wallet Main (hot)",
@@ -410,16 +415,19 @@ const bonk: TokenPageView = {
 			{ k: "Price impact", v: "0.42%" },
 			{ k: "Venue fee", v: "0.0009 SOL", sub: "$0.13" },
 			{ k: "Account rent", v: "0.00204 SOL", sub: "$0.30 · refundable" },
-			{ k: "Quote source · age", v: "jupiter · 1s", live: true, plain: true },
+			{ k: "Quote source · age", v: "jupiter · 1s · fixture", plain: true },
 		],
 		riskBadge: "cap reduces size",
 		riskBadgeTone: "warn",
 		riskRows: [
 			{ k: "Size after caps", v: "$36.60", sub: "from $44.29" },
-			{ k: "Daily used after", v: "$250.00 / $250.00", badge: "at cap", badgeTone: "warn" },
+			{ k: "Daily spend after", v: "$250.00 / $250.00", badge: "at cap", badgeTone: "warn" },
 			{ k: "Position after fill", v: "$164.20 · 4.7% equity" },
 			{ k: "Worst case (stop −35%)", v: "−$12.81", err: true },
-			{ k: "Full-size sell check", v: "OK · 0.42% impact" },
+			{
+				k: "Full-size sell check",
+				v: "OK · 1 SOL sell quote −0.3% (covers the 0.248 SOL clip) · Raydium · fixture",
+			},
 		],
 		note: {
 			tone: "warn",
@@ -505,13 +513,13 @@ const scam: TokenPageView = {
 			"not force an exit. Unknown checks stay unknown.",
 	},
 	holders: {
-		sub: "holder count unknown — snapshot unavailable",
-		badge: "no snapshot",
+		sub: "holder count unknown · stale snapshot · 2m",
+		badge: "stale snapshot · 2m",
 		badgeTone: "warn",
 		rows: scamHolders,
 		foot: {
 			left: "Your wallets: 13.7M SCAM · Main (hot)",
-			right: "No snapshot: counts and labels are —, not guesses.",
+			right: "Stale snapshot: unverified labels are —, not guesses.",
 		},
 	},
 	liquidity: {
@@ -525,19 +533,22 @@ const scam: TokenPageView = {
 		sub: "Manual · paper",
 		detailHref: "/positions/scamcoin",
 		cells: [
-			{ k: "PnL", v: "−96.2%", vTone: "err", sub: "−$142.30" },
-			{ k: "Value", v: "$0.0041", sub: "last exact quote · 2m" },
+			{ k: "PnL", v: "−96.2%", vTone: "err", sub: "at mark · not executable · −$142.30" },
+			{ k: "Value", v: "$0.0041", sub: "executable · last exact quote · 2m" },
 			{ k: "In", v: "$148.00", sub: "no banked" },
 			{ k: "State", badge: "UNSELLABLE", badgeTone: "err", sub: "no sell route" },
 		],
 		note:
 			"this position cannot be exited at size. The last full-size sell quote failed 2m ago " +
-			"($0.0041); the current mark is not executable. Nothing was sent and the position is not flat.",
+			"($0.0041); the current mark is not executable. At the executable basis the position " +
+			"is −100.0% (−$148.00). Nothing was sent and the position is not flat.",
 	},
 	recentTrades: { rows: scamTrades },
 	quote: {
 		ttl: "no quote",
 		side: "sell",
+		canConfirm: false,
+		blockedReason: "No sell route — nothing can be sent",
 		rows: [
 			{ k: "Route", v: "no route", sub: "last full-size quote failed 2m ago", err: true, plain: true },
 			{ k: "Expected out", v: "—" },
@@ -551,7 +562,7 @@ const scam: TokenPageView = {
 		riskBadgeTone: "err",
 		riskRows: [
 			{ k: "Size after caps", v: "—" },
-			{ k: "Daily used after", v: "—" },
+			{ k: "Daily spend after", v: "—" },
 			{ k: "Position after fill", v: "—" },
 			{ k: "Worst case (stop −35%)", v: "—" },
 			{ k: "Full-size sell check", v: "FAIL · no route", err: true },

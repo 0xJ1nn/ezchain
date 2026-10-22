@@ -128,7 +128,13 @@ export default async function TokenPage({
 							action={
 								<div className="seg">
 									{CHART_RANGES.map((range) => (
-										<button key={range} type="button" aria-pressed={range === "1h"}>
+										<button
+											key={range}
+											type="button"
+											disabled
+											title="Preview only — ranges are fixed in M1"
+											aria-pressed={range === "1h"}
+										>
 											{range}
 										</button>
 									))}
@@ -357,10 +363,24 @@ export default async function TokenPage({
 					<div id="quote">
 						<Panel title="Quote" action={<Badge tone="ghost">{token.quote.ttl}</Badge>}>
 							<div className="seg mb-12" style={{ display: "flex" }}>
-								<button type="button" style={{ flex: 1 }} aria-pressed={token.quote.side === "buy"}>
+								{/* Preview-only toggle in M1: the gate lives on Confirm, so the side
+								    cannot be switched into a state the fixtures do not quote. */}
+								<button
+									type="button"
+									style={{ flex: 1 }}
+									disabled
+									title={token.quote.blockedReason}
+									aria-pressed={token.quote.side === "buy"}
+								>
 									Buy
 								</button>
-								<button type="button" style={{ flex: 1 }} aria-pressed={token.quote.side === "sell"}>
+								<button
+									type="button"
+									style={{ flex: 1 }}
+									disabled
+									title={token.quote.blockedReason}
+									aria-pressed={token.quote.side === "sell"}
+								>
 									Sell
 								</button>
 							</div>
@@ -373,7 +393,8 @@ export default async function TokenPage({
 											className="input mono"
 											defaultValue={token.quote.payWith.amount}
 											style={{ flex: 1 }}
-											aria-label="Amount in SOL"
+											readOnly
+											aria-label="Amount in SOL (preview only)"
 										/>
 										<span className="tag">SOL</span>
 										<button className="btn sm" type="button">
@@ -429,14 +450,18 @@ export default async function TokenPage({
 									className="btn primary lg"
 									style={{ flex: 1 }}
 									type="button"
-									disabled
-									title="Execution is not wired in M1"
+									disabled={!token.quote.canConfirm}
+									aria-describedby="confirm-block"
 								>
 									{token.quote.confirmLabel}
 								</button>
 								<Link className="btn lg" href={token.quote.limitsHref}>
 									Limits
 								</Link>
+							</div>
+							{/* Visible gate reason; the button is described by it, not only titled. */}
+							<div className="small muted mt-8" id="confirm-block">
+								{token.quote.blockedReason}
 							</div>
 							<div className="small muted mt-8">{token.quote.foot}</div>
 						</Panel>

@@ -12,7 +12,7 @@ export function TokenChart({ chart }: { chart: TokenChartSpec }) {
 					<line className="gridline" x1="0" y1={y} x2="840" y2={y} key={y} />
 				))}
 				<line className="axis" x1="840" y1="10" x2="840" y2="280" />
-				{chart.axisLabels.map((a) => (
+				{(chart.axisLabels ?? []).map((a) => (
 					<text className="axis-text" x={a.x} y={a.y} key={`${a.text}${a.x}`}>
 						{a.text}
 					</text>
