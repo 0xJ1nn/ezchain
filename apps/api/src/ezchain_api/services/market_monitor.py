@@ -73,6 +73,7 @@ class ScanResult:
     persisted: int
     rows_by_chain: dict[str, int]
     errors: dict[str, str]
+    positions_refreshed: int = 0
 
 
 def _aware(value: datetime) -> datetime:
@@ -175,6 +176,7 @@ class MarketMonitor:
             MIN_SCAN_INTERVAL_SECONDS, float(settings.market_scan_interval_seconds)
         )
         self._limit = settings.market_scan_limit
+        self._max_positions = settings.max_open_positions
         self._now = now
         self._monotonic = monotonic
         self._stop = asyncio.Event()
@@ -240,13 +242,42 @@ class MarketMonitor:
             # which chains were attempted, so probe each one once, never more.
             persisted = await self._probe_chains(attempted, rows_by_chain, errors)
 
+        refreshed = await self._refresh_positions()
         return ScanResult(
             observed_at=started,
             attempted=tuple(attempted),
             persisted=persisted,
             rows_by_chain=rows_by_chain,
             errors=dict(errors),
+            positions_refreshed=refreshed,
         )
+
+    async def _refresh_positions(self) -> int:
+        """Refresh marks for open paper positions, including quote-side tokens.
+
+        The market fan-out stores base tokens. A position can be the quote side of its
+        deepest pair, so it needs its own token lookup. Bounded by the open-position
+        limit; one failing token never stops the scan.
+        """
+        getter = getattr(self._source, "get_token", None)
+        if getter is None:
+            return 0
+        with self._session_factory() as session:
+            views = paper.positions(session)
+        refreshed = 0
+        for view in views[: self._max_positions]:
+            chain = str(view["chain"])
+            token = str(view["token_address"])
+            try:
+                snapshot = await getter(chain, token)
+            except Exception as exc:
+                logger.warning("mark refresh %s:%s failed: %s", chain, token, _error_text(exc))
+                continue
+            with self._session_factory() as session:
+                paper.record_snapshot(session, snapshot)
+                session.commit()
+            refreshed += 1
+        return refreshed
 
     def _use_all_chain_coverage(
         self,

@@ -29,14 +29,15 @@ from ezchain_adapters.ratelimit import TokenBucket
 from ezchain_api.config import Settings
 from ezchain_api.db import Base
 from ezchain_api.deps import get_market_monitor, get_session
-from ezchain_api.models import MarketSnapshotRow
+from ezchain_api.models import LedgerEntryRow, MarketSnapshotRow
 from ezchain_api.routers import markets
 from ezchain_api.services.market_monitor import (
     MarketMonitor,
     build_overview,
     stale_after_seconds,
 )
-from ezchain_core import MarketRow, SourceRef
+from ezchain_core import MarketRow, SourceRef, TokenSnapshot
+from ezchain_core.ledger import position_account
 
 ETH_TOKEN = "0x0000000000000000000000000000000000000abc"
 SOL_TOKEN = "So11111111111111111111111111111111111111112"
@@ -105,6 +106,15 @@ class FakeSource:
         self.error_chains: set[str] = set()
         self.coverage_available = coverage_available
         self.calls: list[tuple[str, int]] = []
+        self.token_snapshots: dict[tuple[str, str], TokenSnapshot] = {}
+        self.token_calls: list[tuple[str, str]] = []
+
+    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+        self.token_calls.append((chain, address))
+        snapshot = self.token_snapshots.get((chain, address))
+        if snapshot is None:
+            raise RuntimeError("no token snapshot")
+        return snapshot
 
     async def discover_markets(
         self,
@@ -266,6 +276,49 @@ async def test_coverage_unavailable_falls_back_to_one_probe_per_chain(
     base = next(chain for chain in overview["chains"] if chain["id"] == "base")
     assert base["status"] == "ok"
     assert base["rows"] == 1
+
+
+async def test_open_positions_get_a_fresh_mark(
+    session: Session, session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    session.add(
+        LedgerEntryRow(
+            group_id="position-seed",
+            account=position_account("base", BASE_TOKEN),
+            asset=BASE_TOKEN,
+            amount=Decimal("2"),
+            usd_value=Decimal("4000"),
+            kind="buy",
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+    source = FakeSource({"base": [make_row(chain="base", token=BASE_TOKEN, symbol="WETH")]})
+    source.token_snapshots[("base", BASE_TOKEN)] = TokenSnapshot(
+        chain="base",
+        address=BASE_TOKEN,
+        symbol="WETH",
+        name="Wrapped Ether",
+        price_usd=Decimal("2500"),
+        liquidity_usd=Decimal("1000000"),
+        volume_24h_usd=Decimal("500000"),
+        price_change_m5=None,
+        price_change_h1=None,
+        price_change_h6=None,
+        price_change_h24=None,
+        source=SourceRef("dexscreener", None, datetime.now(UTC)),
+    )
+    monitor = MarketMonitor(session_factory, source, settings)
+
+    result = await monitor.run_once()
+
+    assert result.positions_refreshed == 1
+    assert source.token_calls == [("base", BASE_TOKEN)]
+    stored = session.scalar(
+        select(MarketSnapshotRow).where(MarketSnapshotRow.token_address == BASE_TOKEN)
+    )
+    assert stored is not None
+    assert stored.price_usd == Decimal("2500.00000000")
 
 
 async def test_failed_all_chain_scan_falls_back_to_at_most_one_probe_per_chain(
