@@ -7,33 +7,56 @@ differ only in how they generate load:
 * ``soak`` — concurrent buy/sell/read workers for the duration.
 * ``idempotency`` — the same key twice, sequentially and concurrently.
 * ``chaos`` — retry/backoff against an invalid path and an unreachable loopback port.
+* ``matrix`` — one buy/sell round trip on every chain that advertises paper execution.
+* ``fuzz`` — invalid mutations must be refused, never 5xx and never a fill.
+* ``race`` — concurrent full-size sells may never oversell a position.
+* ``killswitch`` — the operator switch blocks strategies, spares manual orders, and is
+  restored to its previous state.
+* ``all`` — smoke, idempotency, fuzz, race, killswitch and matrix in one run. ``soak`` and
+  ``chaos`` stay explicit because they are long and deliberately degrade.
 
-Nothing here kills a process, injects a server fault or talks to a live venue.
+Nothing here kills a process, injects a server fault or talks to a live venue. Every run
+also recomputes its own ledger effect from its own fills (:mod:`tools.stress.ledger`).
 """
 
 from __future__ import annotations
 
 import random
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from pathlib import Path
 from typing import cast
 from urllib.parse import quote as urlquote
 
+import httpx
+
 from .checks import (
+    AUTH_INVARIANTS,
+    FUZZ_INVARIANTS,
     IDEMPOTENCY_INVARIANTS,
+    KILLSWITCH_INVARIANTS,
+    LEDGER_INVARIANTS,
     MARKET_INVARIANTS,
+    MATRIX_INVARIANTS,
+    QUANTITY_TOLERANCE,
+    RACE_INVARIANTS,
     STRATEGY_INVARIANTS,
     Finding,
     check_account,
     check_chains,
     check_idempotency,
+    check_killswitch_allows_manual_order,
+    check_killswitch_run,
+    check_killswitch_state,
     check_markets,
     check_order,
+    check_oversell,
+    check_position_closed,
     check_quote,
     check_strategy,
     check_strategy_run,
@@ -41,13 +64,52 @@ from .checks import (
     check_token,
 )
 from .config import RunConfig
-from .http import Harness
+from .fuzz import (
+    FuzzCase,
+    check_auth_control,
+    check_auth_response,
+    check_delete_twice,
+    check_fuzz_response,
+    order_fuzz_cases,
+    parse_error_payload,
+    strategy_fuzz_cases,
+)
+from .http import AuthMode, Harness
+from .ledger import (
+    SKIP_CONCURRENT_WRITER,
+    PositionKey,
+    check_ledger_recompute,
+    position_quantities,
+)
+from .ledger import (
+    summarize as summarize_ledger,
+)
+from .matrix import (
+    STATUS_FAILED,
+    STATUS_NO_DATA,
+    STATUS_OK,
+    ChainRow,
+    documented_rejection,
+    order_outcome,
+    paper_chain_ids,
+    pick_most_liquid,
+    quote_kind_for,
+    rejected_skip_status,
+)
 from .report import build_report, write_reports
 
 CHAOS_SCENARIO_NOTE = (
     "chaos never injects a 5xx or kills a process; it only retries an invalid path and an "
     "unreachable loopback port, then proves the paper account is still readable"
 )
+
+# ``--mode all``. Order matters: the cheap deterministic checks run before the matrix,
+# which is the slowest because it talks to every chain's market data.
+ALL_MODE_SEQUENCE = ("smoke", "idempotency", "fuzz", "race", "killswitch", "matrix")
+STRATEGY_KIND_SEQUENCE = ("momentum", "dip", "dca", "threshold")
+# Backoff for an upstream 429 (venue adapter throttle). Three attempts, ~3.5s total, then
+# the throttle is reported instead of being retried forever.
+THROTTLE_BACKOFF_S = (0.5, 1.0, 2.0)
 
 
 class PreflightError(RuntimeError):
@@ -132,8 +194,32 @@ def preflight(harness: Harness) -> None:
             f"REFUSING_NON_PAPER: /api/v1/paper/account reported mode={mode!r}; "
             "the stress harness only runs against mode='paper'"
         )
-    harness.register_invariants("preflight.health", "preflight.paper_mode")
+    harness.register_invariants(
+        "preflight.health", "preflight.paper_mode", "preflight.state_readable"
+    )
     harness.add_findings(check_account(account_payload, scenario="preflight"))
+
+    # Fail closed on an unreadable paper state: a corrupted account (for example a negative
+    # position left by an earlier oversell) makes every later read a 5xx, which would drown
+    # the run in cascade findings instead of naming the real problem.
+    for path, label in (
+        ("/api/v1/paper/positions", "positions"),
+        ("/api/v1/paper/fills", "fills"),
+    ):
+        response = harness.request(
+            "GET",
+            path,
+            scenario="preflight",
+            params={"limit": 200} if label == "fills" else None,
+        )
+        rows = harness.json_list(response, scenario="preflight", label=f"paper {label}")
+        if rows is None:
+            harness.skip_invariant("preflight.state_readable")
+            raise PreflightError(
+                f"PREFLIGHT_FAILED: GET {path} did not return a readable JSON list; the "
+                "paper account is inconsistent (see GET /api/v1/paper/reconciliation) and "
+                "no stress run can be trusted against it"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -334,9 +420,30 @@ def _post_order(
         scenario=scenario,
         json_body=body,
         expected=(201,),
-        allow_status=(409,),
+        allow_status=(409, 429),
     )
+    # 429 here is the venue adapter reporting an upstream throttle, not a rejected order.
+    # The same idempotency key is retried with backoff so a throttle is not reported as a
+    # product defect. A throttle that outlives the backoff is left in the metrics.
+    for delay in THROTTLE_BACKOFF_S:
+        if response is None or response.status_code != 429:
+            break
+        harness.note(f"paper {side} throttled upstream (HTTP 429); retrying in {delay}s")
+        time.sleep(delay)
+        response = harness.request(
+            "POST",
+            "/api/v1/paper/orders",
+            scenario=scenario,
+            json_body=body,
+            expected=(201,),
+            allow_status=(409, 429),
+        )
     if response is None:
+        return None
+    if response.status_code == 429:
+        harness.note(
+            f"paper {side} still throttled upstream after {len(THROTTLE_BACKOFF_S)} retries"
+        )
         return None
     if response.status_code == 409:
         harness.note(f"{side} order refused with HTTP 409 (fail-closed route/size)")
@@ -379,6 +486,53 @@ def _maybe_sell(
         amount_usd=amount,
         idempotency_key=harness.next_id(f"{scenario}-sell"),
         scenario=scenario,
+    )
+
+
+def _sell_full_quantity_amount(position: Mapping[str, object]) -> Decimal | None:
+    """The notional that closes a position: its mark value, rounded *up* to cents.
+
+    ``PaperOrderIn`` quantizes ``amount_usd`` to cents, so rounding down would leave dust
+    behind and the position would never close. Ceiling is the only safe direction.
+    """
+    quantity = _dec(position.get("quantity"))
+    if quantity is None or quantity <= 0:
+        return None
+    value = _dec(position.get("market_value_usd"))
+    if value is None or value <= 0:
+        mark = _dec(position.get("mark_usd"))
+        if mark is None or mark <= 0:
+            return None
+        value = quantity * mark
+    cents = value.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+    return max(Decimal("0.01"), cents)
+
+
+def _sell_full_position(
+    harness: Harness,
+    token: ResolvedToken,
+    *,
+    scenario: str,
+    idempotency_key: str,
+    reserve_slot: bool = True,
+) -> dict[str, object] | None:
+    """Sell the whole position observed for ``token``, or return ``None``."""
+    position = _position_for(harness, token, scenario=scenario)
+    if position is None:
+        harness.note(f"sell skipped: no open position in {token.chain}:{token.address}")
+        return None
+    amount = _sell_full_quantity_amount(position)
+    if amount is None:
+        harness.note(f"sell skipped: position {token.chain}:{token.address} has no usable mark")
+        return None
+    return _post_order(
+        harness,
+        token,
+        side="sell",
+        amount_usd=amount,
+        idempotency_key=idempotency_key,
+        scenario=scenario,
+        reserve_slot=reserve_slot,
     )
 
 
@@ -454,6 +608,38 @@ def _strategy_params(kind: str, price: Decimal | None, order_usd: Decimal) -> di
     }
 
 
+def killswitch_params(
+    price: Decimal | None,
+    order_usd: Decimal,
+    *,
+    holding: bool,
+) -> dict[str, object]:
+    """Threshold params that make the strategy *want* to trade, so the switch is exercised.
+
+    The engine only reaches the kill-switch guard when the strategy decides ``buy`` or
+    ``sell``; a threshold strategy with no signal holds with ``THRESHOLD_WAIT`` and proves
+    nothing. With a position open the strategy must want to sell (``sell_above_usd`` below
+    the mark), with no position it must want to buy (``buy_below_usd`` above the mark).
+    ``sell_above_usd`` is always greater than ``buy_below_usd`` because the API rejects
+    anything else.
+    """
+    reference = price if price is not None and price > 0 else Decimal("1")
+    quantum = Decimal("0.00000001")
+    if holding:
+        buy_below = max(quantum, (reference / 4).quantize(quantum))
+        sell_above = max(buy_below * 2, (reference / 2).quantize(quantum))
+    else:
+        buy_below = max(quantum, (reference * 2).quantize(quantum))
+        sell_above = max(buy_below * 2, (reference * 4).quantize(quantum))
+    return {
+        "order_usd": str(order_usd),
+        "interval_minutes": 1,
+        "max_position_usd": str(max(order_usd * 10, Decimal("10"))),
+        "buy_below_usd": str(buy_below),
+        "sell_above_usd": str(sell_above),
+    }
+
+
 def _delete_strategy(harness: Harness, strategy_id: str, *, scenario: str) -> bool:
     response = harness.request(
         "DELETE",
@@ -470,18 +656,18 @@ def _delete_strategy(harness: Harness, strategy_id: str, *, scenario: str) -> bo
     return False
 
 
-def _strategy_lifecycle(harness: Harness, token: ResolvedToken, *, scenario: str) -> None:
+def _strategy_lifecycle(
+    harness: Harness, token: ResolvedToken, *, scenario: str, kind: str
+) -> None:
     harness.register_invariants(*STRATEGY_INVARIANTS)
-    name = f"stress-{harness.config.mode}-{harness.config.seed}-{harness.run_tag}"[:120]
+    name = f"stress-{scenario}-{kind}-{harness.config.seed}-{harness.run_tag}"[:120]
     body: dict[str, object] = {
         "name": name,
         "chain": token.chain,
         "token_address": token.address,
         "token_symbol": token.symbol or "STRESS",
-        "kind": harness.config.strategy_kind,
-        "params": _strategy_params(
-            harness.config.strategy_kind, token.price_usd, harness.config.strategy_order_usd
-        ),
+        "kind": kind,
+        "params": _strategy_params(kind, token.price_usd, harness.config.strategy_order_usd),
         "status": "active",
     }
     created = harness.request(
@@ -603,6 +789,7 @@ def _strategy_lifecycle(harness: Harness, token: ResolvedToken, *, scenario: str
         runs_response = harness.request("GET", f"{path}/runs", scenario=scenario)
         runs = harness.json_list(runs_response, scenario=scenario, label="strategy runs") or []
         harness.add_findings(check_strategy_run(runs, scenario=scenario))
+        _note_strategy_order_ids(harness, runs)
         orders_response = harness.request(
             "GET", "/api/v1/paper/orders?limit=200", scenario=scenario
         )
@@ -630,11 +817,32 @@ def _strategy_lifecycle(harness: Harness, token: ResolvedToken, *, scenario: str
             )
 
 
+def _note_strategy_order_ids(harness: Harness, runs: Sequence[Mapping[str, object]]) -> None:
+    """Attribute strategy-originated orders to this run.
+
+    A strategy run places its order *inside* the API, so the harness never sees that order
+    id in a response to a request it made itself. The run log carries it, and the ledger
+    recompute needs it to tell this run's fills apart from a stranger's.
+    """
+    for run in runs:
+        order_id = _str(run.get("order_id"))
+        if order_id is not None:
+            harness.note_order(order_id)
+
+
 def cleanup_strategies(harness: Harness, *, scenario: str) -> None:
     """Best-effort cleanup for anything a crash left behind."""
     for strategy_id in harness.created_strategy_ids:
         if strategy_id in harness.deleted_strategy_ids:
             continue
+        # Attribute any order the strategy placed (run-now or the inline scheduler) before
+        # the row is gone: the run log is the only place its order id is visible.
+        path = f"/api/v1/strategies/{urlquote(strategy_id, safe='')}/runs"
+        runs_response = harness.request(
+            "GET", path, scenario=scenario, allow_status=(404,), allow_error=True
+        )
+        runs = harness.json_list(runs_response, scenario=scenario, label="strategy runs") or []
+        _note_strategy_order_ids(harness, runs)
         if not _delete_strategy(harness, strategy_id, scenario=scenario):
             harness.add_finding(
                 Finding(
@@ -646,6 +854,163 @@ def cleanup_strategies(harness: Harness, *, scenario: str) -> None:
                     actual=strategy_id,
                 )
             )
+
+
+def strategy_kinds(harness: Harness) -> tuple[str, ...]:
+    """``--strategy-kind all`` covers every rule kind in one run."""
+    configured = harness.config.strategy_kind
+    return STRATEGY_KIND_SEQUENCE if configured == "all" else (configured,)
+
+
+def _strategy_lifecycles(harness: Harness, token: ResolvedToken, *, scenario: str) -> None:
+    for kind in strategy_kinds(harness):
+        _strategy_lifecycle(harness, token, scenario=scenario, kind=kind)
+
+
+# ---------------------------------------------------------------------------
+# Ledger window: an independent recompute from this run's own fills
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Observation:
+    positions: dict[PositionKey, Decimal] = field(default_factory=dict)
+    fills: list[dict[str, object]] = field(default_factory=list)
+    fill_ids: set[str] = field(default_factory=set)
+    filled_order_ids: set[str] = field(default_factory=set)
+    cash: Decimal | None = None
+
+
+class LedgerWindow:
+    """Observe paper state before and after the run, then reconcile it independently.
+
+    ``open`` records the position quantities, the fills and the cash balance. ``close``
+    reads them again, attributes the difference to this run's fills and fails the run when
+    the arithmetic does not hold. When another writer is visible in the window the
+    recompute is skipped explicitly instead of reporting someone else's money as a bug.
+    """
+
+    def __init__(self, harness: Harness, *, scenario: str) -> None:
+        self.harness = harness
+        self.scenario = scenario
+        self._before: _Observation | None = None
+
+    def _observe(self) -> _Observation:
+        harness = self.harness
+        observation = _Observation()
+        positions_response = harness.request(
+            "GET", "/api/v1/paper/positions", scenario=self.scenario
+        )
+        positions = harness.json_list(
+            positions_response, scenario=self.scenario, label="paper positions"
+        )
+        observation.positions = position_quantities(positions or [])
+
+        fills_response = harness.request(
+            "GET", "/api/v1/paper/fills", scenario=self.scenario, params={"limit": 200}
+        )
+        observation.fills = (
+            harness.json_list(fills_response, scenario=self.scenario, label="paper fills") or []
+        )
+        observation.fill_ids = {
+            fill_id for fill in observation.fills if (fill_id := _str(fill.get("id"))) is not None
+        }
+
+        orders_response = harness.request(
+            "GET", "/api/v1/paper/orders", scenario=self.scenario, params={"limit": 200}
+        )
+        orders = (
+            harness.json_list(orders_response, scenario=self.scenario, label="paper orders") or []
+        )
+        observation.filled_order_ids = {
+            order_id
+            for order in orders
+            if _str(order.get("status")) == "filled"
+            and (order_id := _str(order.get("id"))) is not None
+        }
+
+        account_response = harness.request("GET", "/api/v1/paper/account", scenario=self.scenario)
+        account = harness.json_object(
+            account_response, scenario=self.scenario, label="paper account"
+        )
+        if account is not None:
+            observation.cash = _dec(account.get("cash_usd"))
+        return observation
+
+    def open(self) -> None:
+        self._before = self._observe()
+
+    def close(self) -> None:
+        if self._before is None:  # pragma: no cover - close() always follows open()
+            return
+        harness = self.harness
+        broken = harness.paper_state_broken
+        if broken is not None:
+            harness.register_invariants(*LEDGER_INVARIANTS)
+            for identifier in LEDGER_INVARIANTS:
+                harness.skip_invariant(identifier, f"paper state is inconsistent: {broken}")
+            harness.note(f"ledger recompute skipped: paper state is inconsistent — {broken}")
+            harness.record_row(
+                "ledger",
+                {
+                    "skip": "paper_state_broken",
+                    "detail": broken,
+                    "before": {
+                        f"{chain}:{token}": str(q)
+                        for (chain, token), q in self._before.positions.items()
+                    },
+                },
+            )
+            return
+        before = self._before
+        after = self._observe()
+        run_order_ids = self.harness.created_order_ids
+        missing_fill = {
+            order_id
+            for order_id in after.filled_order_ids & run_order_ids
+            if not any(fill.get("order_id") == order_id for fill in after.fills)
+        }
+        verdict = check_ledger_recompute(
+            scenario=self.scenario,
+            before=before.positions,
+            after=after.positions,
+            fills=after.fills,
+            run_order_ids=run_order_ids,
+            cash_before=before.cash,
+            cash_after=after.cash,
+            new_fill_ids=after.fill_ids - before.fill_ids,
+            filled_orders_missing_fill=missing_fill,
+        )
+        self.harness.register_invariants(*LEDGER_INVARIANTS)
+        self.harness.add_findings(verdict.findings)
+        if verdict.skip is not None:
+            for identifier in LEDGER_INVARIANTS:
+                harness.skip_invariant(identifier, f"ledger recompute skipped: {verdict.skip}")
+            hint = ""
+            if verdict.skip == SKIP_CONCURRENT_WRITER:
+                hint = (
+                    "; if the API runs its engine inline (EZCHAIN_ENGINE_INLINE=true), "
+                    "strategies created by this run can place their own orders and the "
+                    "harness cannot attribute them — rerun with the inline scheduler "
+                    "disabled for an isolated recompute"
+                )
+            harness.note(f"ledger recompute skipped: {verdict.skip} — {verdict.detail}{hint}")
+        self.harness.record_row(
+            "ledger",
+            {
+                "skip": verdict.skip,
+                "detail": verdict.detail,
+                "before": {
+                    f"{chain}:{token}": str(q) for (chain, token), q in before.positions.items()
+                },
+                "after": {
+                    f"{chain}:{token}": str(q) for (chain, token), q in after.positions.items()
+                },
+                "cash_before": None if before.cash is None else str(before.cash),
+                "cash_after": None if after.cash is None else str(after.cash),
+                **summarize_ledger(verdict),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -665,14 +1030,14 @@ def _full_flow(harness: Harness, token: ResolvedToken, *, scenario: str) -> None
     )
     if order is not None:
         _maybe_sell(harness, token, scenario=scenario)
-    _strategy_lifecycle(harness, token, scenario=scenario)
+    _strategy_lifecycles(harness, token, scenario=scenario)
     harness.check_paper_snapshot(scenario=scenario)
 
 
 def _smoke(harness: Harness, token: ResolvedToken) -> None:
     scenario = "smoke"
     _full_flow(harness, token, scenario=scenario)
-    deadline = harness.started_monotonic + harness.config.duration
+    deadline = time.monotonic() + harness.config.duration
     while time.monotonic() < deadline:
         _read_markets(harness, chain="all", limit=5, scenario=scenario)
         _read_quote(
@@ -906,8 +1271,8 @@ def _run_workers(
 
 def _soak(harness: Harness, token: ResolvedToken) -> None:
     _market_checks(harness, token, scenario="soak")
-    _strategy_lifecycle(harness, token, scenario="soak")
-    deadline = harness.started_monotonic + harness.config.duration
+    _strategy_lifecycles(harness, token, scenario="soak")
+    deadline = time.monotonic() + harness.config.duration
     _run_workers(
         harness,
         lambda h, worker, until: _soak_worker(h, token, worker, until),
@@ -921,8 +1286,8 @@ def _soak(harness: Harness, token: ResolvedToken) -> None:
 def _idempotency(harness: Harness, token: ResolvedToken) -> None:
     harness.register_invariants(*IDEMPOTENCY_INVARIANTS)
     _market_checks(harness, token, scenario="idempotency")
-    _strategy_lifecycle(harness, token, scenario="idempotency")
-    deadline = harness.started_monotonic + harness.config.duration
+    _strategy_lifecycles(harness, token, scenario="idempotency")
+    deadline = time.monotonic() + harness.config.duration
     _run_workers(
         harness,
         lambda h, worker, until: _idempotency_worker(h, token, worker, until),
@@ -945,7 +1310,7 @@ def _chaos(harness: Harness, token: ResolvedToken) -> None:
         idempotency_key=harness.next_id("chaos-buy"),
         scenario="chaos",
     )
-    deadline = harness.started_monotonic + harness.config.duration
+    deadline = time.monotonic() + harness.config.duration
     _run_workers(
         harness,
         lambda h, worker, until: _chaos_worker(h, worker, until),
@@ -969,6 +1334,858 @@ def _chaos(harness: Harness, token: ResolvedToken) -> None:
                 actual=repr(account.get("mode")),
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Fuzz: invalid mutations must be refused, never 5xx and never a fill
+# ---------------------------------------------------------------------------
+
+KILL_SWITCH_PATH = "/api/v1/system/kill-switch"
+KILL_SWITCH_ARM_REASON = "stress harness: killswitch scenario (arming to prove the block)"
+KILL_SWITCH_RESTORE_REASON = "stress harness: restoring the state observed before the run"
+
+
+def _order_count(harness: Harness, *, scenario: str) -> int:
+    """How many order rows the newest-200 window currently holds."""
+    response = harness.request(
+        "GET", "/api/v1/paper/orders", scenario=scenario, params={"limit": 200}
+    )
+    rows = harness.json_list(response, scenario=scenario, label="paper orders") or []
+    return len(rows)
+
+
+def _send_fuzz_case(harness: Harness, case: FuzzCase, *, scenario: str) -> httpx.Response | None:
+    """Issue one fuzz request without letting the generic status check double-report."""
+    return harness.request(
+        case.method,
+        case.path,
+        scenario=scenario,
+        json_body=case.body,
+        content=case.raw_body,
+        content_type=case.content_type if case.raw_body is not None else None,
+        expected=(200, 201, 204),
+        allow_status=tuple(range(400, 500)),
+    )
+
+
+def _fuzz_delete_twice(harness: Harness, token: ResolvedToken, *, scenario: str) -> None:
+    """Create, delete, delete again: the second delete must be a clean 404."""
+    body: dict[str, object] = {
+        "name": f"stress-fuzz-delete-{harness.run_tag}"[:120],
+        "chain": token.chain,
+        "token_address": token.address,
+        "token_symbol": token.symbol or "STRESS",
+        "kind": "dca",
+        "params": {"order_usd": "1", "interval_minutes": 1},
+        "status": "active",
+    }
+    created = harness.request(
+        "POST", "/api/v1/strategies", scenario=scenario, json_body=body, expected=(201,)
+    )
+    strategy = harness.json_object(created, scenario=scenario, label="strategy")
+    strategy_id = None if strategy is None else _str(strategy.get("id"))
+    if strategy_id is None:
+        harness.note("fuzz delete-twice skipped: the throwaway strategy was not created")
+        harness.skip_invariant("fuzz.delete_twice")
+        return
+    harness.note_strategy(strategy_id)
+    path = f"/api/v1/strategies/{urlquote(strategy_id, safe='')}"
+    first = harness.request("DELETE", path, scenario=scenario, expected=(204,), allow_status=(404,))
+    second = harness.request(
+        "DELETE", path, scenario=scenario, expected=(404,), allow_status=(404,)
+    )
+    if first is not None and first.status_code in {200, 204}:
+        harness.note_strategy_deleted(strategy_id)
+    first_status = None if first is None else first.status_code
+    second_status = None if second is None else second.status_code
+    harness.add_findings(check_delete_twice(first_status, second_status, scenario=scenario))
+    harness.record_row(
+        "fuzz",
+        {
+            "case_id": "strategy_delete_twice",
+            "description": "DELETE the same strategy twice",
+            "expected": "204 then 404",
+            "status": first_status,
+            "ok": first_status in {200, 204} and second_status == 404,
+            "detail": f"first HTTP {first_status}, second HTTP {second_status}",
+        },
+    )
+
+
+def _fuzz(harness: Harness, token: ResolvedToken, *, scenario: str = "fuzz") -> None:
+    harness.register_invariants(*FUZZ_INVARIANTS)
+    key_prefix = f"stress-{harness.run_tag}"
+    cases: list[FuzzCase] = [
+        *order_fuzz_cases(chain=token.chain, token=token.address, key_prefix=key_prefix),
+        *strategy_fuzz_cases(
+            chain=token.chain,
+            token=token.address,
+            symbol=token.symbol or "STRESS",
+            key_prefix=key_prefix,
+        ),
+    ]
+    for case in cases:
+        before = _order_count(harness, scenario=scenario)
+        response = _send_fuzz_case(harness, case, scenario=scenario)
+        after = _order_count(harness, scenario=scenario)
+        status = None if response is None else response.status_code
+        raw = "" if response is None else response.text
+        payload = parse_error_payload(raw) if raw else None
+        outcome, findings = check_fuzz_response(
+            case,
+            status=status,
+            payload=payload,
+            raw_text=raw,
+            orders_before=before,
+            orders_after=after,
+            scenario=scenario,
+        )
+        harness.add_findings(findings)
+        harness.record_row("fuzz", outcome.to_dict())
+    _fuzz_delete_twice(harness, token, scenario=scenario)
+    _auth_negatives(harness, token, scenario=scenario)
+
+
+def _auth_negatives(harness: Harness, token: ResolvedToken, *, scenario: str) -> None:
+    """The same valid mutation without/with a wrong token must be refused."""
+    harness.register_invariants(*AUTH_INVARIANTS)
+    if not harness.api_token_configured:
+        for identifier in AUTH_INVARIANTS:
+            harness.skip_invariant(identifier, "EZCHAIN_STRESS_API_TOKEN is not configured")
+        harness.note(
+            "auth negatives skipped: EZCHAIN_STRESS_API_TOKEN is not configured, so the "
+            "harness cannot claim the API requires authentication"
+        )
+        harness.record_row(
+            "auth",
+            {
+                "case": "missing",
+                "status": None,
+                "ok": True,
+                "detail": "skipped: no EZCHAIN_STRESS_API_TOKEN configured",
+            },
+        )
+        return
+
+    def body(name: str) -> dict[str, object]:
+        return {
+            "chain": token.chain,
+            "token_address": token.address,
+            "side": "buy",
+            "amount_usd": str(max(Decimal("0.01"), harness.config.order_usd)),
+            "idempotency_key": harness.next_id(f"auth-{name}"),
+        }
+
+    attempts: tuple[tuple[str, AuthMode], ...] = (("missing", "omit"), ("wrong", "wrong"))
+    for kind, auth in attempts:
+        before = _order_count(harness, scenario=scenario)
+        response = harness.request(
+            "POST",
+            "/api/v1/paper/orders",
+            scenario=scenario,
+            json_body=body(kind),
+            expected=(401,),
+            allow_status=(401, 403),
+            auth=auth,
+        )
+        after = _order_count(harness, scenario=scenario)
+        status = None if response is None else response.status_code
+        raw = "" if response is None else response.text
+        harness.add_findings(
+            check_auth_response(
+                kind,
+                status=status,
+                payload=parse_error_payload(raw) if raw else None,
+                raw_text=raw,
+                orders_before=before,
+                orders_after=after,
+                scenario=scenario,
+            )
+        )
+        harness.record_row(
+            "auth",
+            {
+                "case": kind,
+                "status": status,
+                "ok": status == 401 if kind == "missing" else status in {401, 403},
+                "detail": f"HTTP {status}",
+            },
+        )
+
+    # The control proves the body itself was valid, so a 401 was about the header. An
+    # upstream throttle (429) says nothing about auth, so it is retried and then skipped
+    # rather than reported as an auth failure.
+    control = harness.request(
+        "POST",
+        "/api/v1/paper/orders",
+        scenario=scenario,
+        json_body=body("control"),
+        expected=(201,),
+        allow_status=(409, 429),
+    )
+    for delay in THROTTLE_BACKOFF_S:
+        if control is None or control.status_code != 429:
+            break
+        harness.note(f"auth control throttled upstream (HTTP 429); retrying in {delay}s")
+        time.sleep(delay)
+        control = harness.request(
+            "POST",
+            "/api/v1/paper/orders",
+            scenario=scenario,
+            json_body=body("control"),
+            expected=(201,),
+            allow_status=(409, 429),
+        )
+    control_status = None if control is None else control.status_code
+    if control_status == 429:
+        harness.skip_invariant("auth.control_valid")
+        harness.note(
+            "auth control skipped: the API kept returning 429 (upstream throttle) after "
+            "backoff, which cannot distinguish a valid token from a broken one"
+        )
+        harness.record_row(
+            "auth",
+            {
+                "case": "control",
+                "status": control_status,
+                "ok": True,
+                "detail": "skipped: upstream 429 after backoff",
+            },
+        )
+        return
+    harness.add_findings(check_auth_control(control_status, scenario=scenario))
+    if control_status is not None and 200 <= control_status <= 299:
+        control_payload = harness.json_object(control, scenario=scenario, label="control order")
+        control_id = None if control_payload is None else _str(control_payload.get("id"))
+        if control_id is not None:
+            harness.note_order(control_id)
+    harness.record_row(
+        "auth",
+        {
+            "case": "control",
+            "status": control_status,
+            "ok": control_status is not None and 200 <= control_status <= 299,
+            "detail": "same body with the configured token",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Race: concurrent full-size sells may not oversell
+# ---------------------------------------------------------------------------
+
+
+def _paper_fills(harness: Harness, *, scenario: str) -> list[dict[str, object]]:
+    response = harness.request(
+        "GET", "/api/v1/paper/fills", scenario=scenario, params={"limit": 200}
+    )
+    return harness.json_list(response, scenario=scenario, label="paper fills") or []
+
+
+def _race(harness: Harness, token: ResolvedToken, *, scenario: str = "race") -> None:
+    harness.register_invariants(*RACE_INVARIANTS)
+    position = _position_for(harness, token, scenario=scenario)
+    if position is None:
+        if not harness.reserve_race_slot():
+            for identifier in RACE_INVARIANTS:
+                harness.skip_invariant(identifier, "race order allowance exhausted")
+            harness.note("race skipped: the race order allowance is exhausted")
+            return
+        _post_order(
+            harness,
+            token,
+            side="buy",
+            amount_usd=harness.config.order_usd,
+            idempotency_key=harness.next_id("race-seed-buy"),
+            scenario=scenario,
+            reserve_slot=False,
+        )
+        position = _position_for(harness, token, scenario=scenario)
+    held = None if position is None else _dec(position.get("quantity"))
+    amount = None if position is None else _sell_full_quantity_amount(position)
+    if position is None or held is None or held <= 0 or amount is None:
+        for identifier in RACE_INVARIANTS:
+            harness.skip_invariant(identifier, "no open position could be established")
+        harness.note("race skipped: no open position could be established to sell")
+        harness.record_row(
+            "race",
+            {"held_quantity": None, "sold_quantity": None, "ok": True, "detail": "skipped"},
+        )
+        return
+
+    workers = max(2, min(harness.config.concurrency, 8))
+    keys = [harness.next_id(f"race-sell-{index}") for index in range(workers)]
+    # A race test that only sometimes lines its requests up is not a test. Every worker
+    # opens its own connection first, then waits at a barrier so all sells are in flight
+    # at the same instant.
+    barrier = threading.Barrier(workers)
+
+    def sell(index: int) -> dict[str, object] | None:
+        harness.request("GET", "/api/v1/paper/account", scenario=scenario)
+        try:
+            barrier.wait(timeout=10)
+        except threading.BrokenBarrierError:  # pragma: no cover - a worker died first
+            harness.note("race: barrier broke; sells were not perfectly aligned")
+        if not harness.reserve_race_slot():
+            return None
+        return _post_order(
+            harness,
+            token,
+            side="sell",
+            amount_usd=amount,
+            idempotency_key=keys[index],
+            scenario=scenario,
+            reserve_slot=False,
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(sell, index) for index in range(workers)]
+        responses = [future.result() for future in futures]
+    sell_order_ids = {
+        order_id
+        for order in responses
+        if order is not None and (order_id := _str(order.get("id"))) is not None
+    }
+    if not sell_order_ids:
+        # Nothing was even accepted: passing "no oversell" here would be a false green.
+        for identifier in RACE_INVARIANTS:
+            harness.skip_invariant(identifier, "no concurrent sell produced an order row")
+        harness.note(
+            "race skipped: none of the concurrent sells produced an order row (API refusal "
+            "or harness allowance), so oversell was not actually exercised"
+        )
+        harness.record_row(
+            "race",
+            {
+                "held_quantity": str(held),
+                "concurrent_sells": workers,
+                "filled_sell_orders": 0,
+                "ok": True,
+                "detail": "skipped: no sell order was created",
+            },
+        )
+        harness.check_paper_snapshot(scenario=scenario)
+        return
+    sold = Decimal(0)
+    for fill in _paper_fills(harness, scenario=scenario):
+        if _str(fill.get("order_id")) in sell_order_ids:
+            quantity = _dec(fill.get("quantity"))
+            if quantity is not None:
+                sold += quantity
+
+    after_position = _position_for(harness, token, scenario=scenario)
+    final_quantity = None if after_position is None else _dec(after_position.get("quantity"))
+    account_response = harness.request("GET", "/api/v1/paper/account", scenario=scenario)
+    account = harness.json_object(
+        account_response, scenario=scenario, label="paper account after race"
+    )
+    cash = None if account is None else _dec(account.get("cash_usd"))
+
+    harness.add_findings(
+        check_oversell(
+            scenario=scenario,
+            held_quantity=held,
+            sold_quantity=sold,
+            final_quantity=final_quantity,
+            cash_usd=cash,
+        )
+    )
+    if (
+        (final_quantity is not None and final_quantity < 0)
+        or (cash is not None and cash < 0)
+        or sold - held > QUANTITY_TOLERANCE
+    ):
+        # More was sold than was ever held, so the ledger now replays a negative position
+        # and the API answers every later read with a 5xx. Further scenarios are skipped
+        # with this reason instead of piling cascade findings on top of the real one.
+        harness.mark_paper_state_broken(
+            "the oversell race sold more than the held quantity; the paper ledger now "
+            "contains a negative position and cannot be read consistently"
+        )
+    harness.record_row(
+        "race",
+        {
+            "held_quantity": str(held),
+            "attempted_sell_notional": str(amount),
+            "concurrent_sells": workers,
+            "filled_sell_orders": len(sell_order_ids),
+            "sold_quantity": str(sold),
+            "final_quantity": None if final_quantity is None else str(final_quantity),
+            "cash_usd": None if cash is None else str(cash),
+            "ok": sold - held <= Decimal("0.00000001"),
+        },
+    )
+    harness.check_paper_snapshot(scenario=scenario)
+
+
+# ---------------------------------------------------------------------------
+# Kill switch: strategy blocked, manual order allowed, previous state restored
+# ---------------------------------------------------------------------------
+
+
+def _kill_switch_state(harness: Harness, *, scenario: str) -> dict[str, object] | None:
+    response = harness.request("GET", KILL_SWITCH_PATH, scenario=scenario, expected=(200,))
+    return harness.json_object(response, scenario=scenario, label="kill switch")
+
+
+def _set_kill_switch(
+    harness: Harness, *, active: bool, reason: str, scenario: str
+) -> dict[str, object] | None:
+    response = harness.request(
+        "POST",
+        KILL_SWITCH_PATH,
+        scenario=scenario,
+        json_body={"active": active, "reason": reason},
+        expected=(200,),
+    )
+    return harness.json_object(response, scenario=scenario, label="kill switch update")
+
+
+def _restore_kill_switch(
+    harness: Harness,
+    *,
+    previous: Mapping[str, object],
+    scenario: str,
+) -> None:
+    """Put the switch back exactly where it was, then prove it."""
+    was_active = previous.get("active") is True
+    previous_reason = _str(previous.get("reason")) or KILL_SWITCH_RESTORE_REASON
+    state = _set_kill_switch(harness, active=was_active, reason=previous_reason, scenario=scenario)
+    harness.add_findings(
+        check_killswitch_state(state, expected_active=was_active, scenario=scenario, restored=True)
+    )
+    harness.record_row(
+        "killswitch",
+        {
+            "step": "restored",
+            "previous_active": was_active,
+            "previous_reason": previous_reason,
+            "restored_active": None if state is None else state.get("active"),
+        },
+    )
+
+
+def _killswitch(harness: Harness, token: ResolvedToken, *, scenario: str = "killswitch") -> None:
+    harness.register_invariants(*KILLSWITCH_INVARIANTS)
+    previous = _kill_switch_state(harness, scenario=scenario)
+    if previous is None:
+        for identifier in KILLSWITCH_INVARIANTS:
+            harness.skip_invariant(identifier, "kill switch state was unreadable")
+        harness.note(
+            "killswitch scenario skipped: GET /api/v1/system/kill-switch was unreadable, "
+            "so the previous state could not be restored safely"
+        )
+        return
+
+    previous_active = previous.get("active") is True
+    previous_reason = _str(previous.get("reason"))
+    harness.record_row(
+        "killswitch",
+        {
+            "step": "observed",
+            "previous_active": previous_active,
+            "previous_reason": previous_reason,
+        },
+    )
+
+    strategy_id: str | None = None
+    try:
+        armed = _set_kill_switch(
+            harness, active=True, reason=KILL_SWITCH_ARM_REASON, scenario=scenario
+        )
+        harness.add_findings(check_killswitch_state(armed, expected_active=True, scenario=scenario))
+
+        # The guard is only reached when the strategy decides to trade, so derive
+        # thresholds from the live mark and the observed position: sell if we hold, buy if
+        # we do not. Anything else logs THRESHOLD_WAIT and proves nothing about the switch.
+        position = _position_for(harness, token, scenario=scenario)
+        held_before = None if position is None else _dec(position.get("quantity"))
+        holding = held_before is not None and held_before > 0
+        body: dict[str, object] = {
+            "name": f"stress-killswitch-{harness.run_tag}"[:120],
+            "chain": token.chain,
+            "token_address": token.address,
+            "token_symbol": token.symbol or "STRESS",
+            "kind": "threshold",
+            "params": killswitch_params(
+                token.price_usd, harness.config.strategy_order_usd, holding=holding
+            ),
+            "status": "active",
+        }
+        created = harness.request(
+            "POST", "/api/v1/strategies", scenario=scenario, json_body=body, expected=(201,)
+        )
+        strategy = harness.json_object(created, scenario=scenario, label="strategy")
+        strategy_id = None if strategy is None else _str(strategy.get("id"))
+        if strategy_id is None:
+            harness.add_finding(
+                Finding(
+                    code="KILLSWITCH_STRATEGY_MISSING",
+                    scenario=scenario,
+                    invariant="killswitch.blocks_strategy",
+                    summary="the killswitch scenario could not create a strategy to block",
+                    expected="HTTP 201 with a strategy id",
+                    actual=f"HTTP {None if created is None else created.status_code}",
+                )
+            )
+            return
+        harness.note_strategy(strategy_id)
+        path = f"/api/v1/strategies/{urlquote(strategy_id, safe='')}"
+
+        orders_before = _order_count(harness, scenario=scenario)
+        run_response = harness.request("POST", f"{path}/run", scenario=scenario)
+        run_payload = harness.json_object(
+            run_response, scenario=scenario, label="strategy run while armed"
+        )
+        runs_response = harness.request("GET", f"{path}/runs", scenario=scenario)
+        persisted = harness.json_list(runs_response, scenario=scenario, label="strategy runs") or []
+        orders_after = _order_count(harness, scenario=scenario)
+        harness.add_findings(
+            check_killswitch_run(
+                run_payload,
+                persisted_runs=persisted,
+                orders_created=max(0, orders_after - orders_before),
+                scenario=scenario,
+            )
+        )
+        harness.record_row(
+            "killswitch",
+            {
+                "step": "blocked",
+                "action": None if run_payload is None else run_payload.get("action"),
+                "reason": None if run_payload is None else run_payload.get("reason"),
+                "attempted_action": None
+                if run_payload is None
+                else (_mapping(run_payload.get("inputs")) or {}).get("attempted_action"),
+                "holding_before": None if held_before is None else str(held_before),
+                "orders_created": max(0, orders_after - orders_before),
+            },
+        )
+
+        manual_key = harness.next_id("killswitch-manual-buy")
+        manual_amount = max(Decimal("0.01"), harness.config.order_usd).quantize(Decimal("0.01"))
+        manual_response = harness.request(
+            "POST",
+            "/api/v1/paper/orders",
+            scenario=scenario,
+            json_body={
+                "chain": token.chain,
+                "token_address": token.address,
+                "side": "buy",
+                "amount_usd": str(manual_amount),
+                "idempotency_key": manual_key,
+            },
+            expected=(201,),
+            allow_status=(409,),
+        )
+        manual_status = None if manual_response is None else manual_response.status_code
+        manual_order = (
+            harness.json_object(manual_response, scenario=scenario, label="manual paper order")
+            if manual_status == 201
+            else None
+        )
+        if manual_order is not None:
+            manual_order_id = _str(manual_order.get("id"))
+            if manual_order_id is not None:
+                harness.note_order(manual_order_id)
+            harness.note_order_summary(manual_order)
+            harness.add_findings(check_order(manual_order, scenario=scenario))
+        harness.add_findings(
+            check_killswitch_allows_manual_order(
+                manual_order, status_code=manual_status, scenario=scenario
+            )
+        )
+        harness.record_row(
+            "killswitch",
+            {
+                "step": "manual_order",
+                "status": None if manual_order is None else manual_order.get("status"),
+                "reason": None if manual_order is None else manual_order.get("reason"),
+                "status_code": manual_status,
+                "detail": "manual orders are outside the strategy-scoped switch",
+            },
+        )
+        harness.check_paper_snapshot(scenario=scenario)
+    finally:
+        if strategy_id is not None:
+            _delete_strategy(harness, strategy_id, scenario=scenario)
+        _restore_kill_switch(harness, previous=previous, scenario=scenario)
+
+
+# ---------------------------------------------------------------------------
+# Matrix: one buy/sell round trip per paper-capable chain
+# ---------------------------------------------------------------------------
+
+
+def _matrix_chain(
+    harness: Harness,
+    chain: str,
+    chains: Sequence[Mapping[str, object]],
+    *,
+    scenario: str,
+) -> ChainRow:
+    quote_kind = quote_kind_for(chains, chain)
+    payload = _read_markets(harness, chain=chain, limit=5, scenario=scenario)
+    if payload is None:
+        harness.note(f"matrix: markets unavailable for chain={chain} (recorded as no_data)")
+        return ChainRow(
+            chain=chain,
+            status=STATUS_NO_DATA,
+            quote_kind=quote_kind,
+            reason="markets unavailable",
+        )
+    rows = [row for item in _rows(payload.get("rows")) if (row := _mapping(item))]
+    if not rows:
+        harness.note(f"matrix: no market rows for chain={chain} (recorded as no_data)")
+        return ChainRow(
+            chain=chain,
+            status=STATUS_NO_DATA,
+            quote_kind=quote_kind,
+            reason="no market rows",
+        )
+    chosen = pick_most_liquid(rows)
+    address = "" if chosen is None else (_str(chosen.get("base_token")) or "")
+    if not address:
+        return ChainRow(
+            chain=chain,
+            status=STATUS_NO_DATA,
+            quote_kind=quote_kind,
+            reason="no usable market row",
+        )
+    symbol = _str(chosen.get("symbol")) if chosen is not None else None
+    resolved = ResolvedToken(
+        chain=chain,
+        address=address,
+        symbol=symbol or "STRESS",
+        price_usd=None if chosen is None else _dec(chosen.get("price_usd")),
+    )
+    label = f"{chain}:{address}"
+
+    if _read_token(harness, resolved, scenario=scenario) is None:
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            reason="token read failed",
+        )
+    if (
+        _read_quote(
+            harness,
+            resolved,
+            side="buy",
+            amount_usd=harness.config.order_usd,
+            quantity=None,
+            scenario=scenario,
+        )
+        is None
+    ):
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            reason="no buy quote",
+        )
+
+    if not harness.reserve_matrix_slot():
+        harness.note(f"matrix: matrix order allowance exhausted before chain={chain}")
+        return ChainRow(
+            chain=chain,
+            status=STATUS_NO_DATA,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            reason="matrix allowance exhausted",
+        )
+    buy = _post_order(
+        harness,
+        resolved,
+        side="buy",
+        amount_usd=harness.config.order_usd,
+        idempotency_key=harness.next_id(f"matrix-{chain}-buy"),
+        scenario=scenario,
+        reserve_slot=False,
+    )
+    buy_status, buy_reason = order_outcome(buy)
+    if buy is None:
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            buy=buy_status,
+            sell="not_attempted",
+            reason="buy request failed",
+        )
+    if buy_status == "rejected":
+        if documented_rejection(buy_reason):
+            harness.note(f"matrix: buy on {label} rejected (documented): {buy_reason}")
+            return ChainRow(
+                chain=chain,
+                status=rejected_skip_status(buy_reason),
+                token=address,
+                symbol=resolved.symbol,
+                quote_kind=quote_kind,
+                buy="rejected",
+                sell="skipped",
+                reason=buy_reason,
+            )
+        harness.add_finding(
+            Finding(
+                code="MATRIX_UNEXPLAINED_REJECTION",
+                scenario=scenario,
+                invariant="matrix.chain_flow",
+                summary=f"the buy on {label} was rejected for an undocumented reason",
+                expected="a filled order, or a documented risk reason",
+                actual=f"reason={buy_reason!r}",
+            )
+        )
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            buy="rejected",
+            sell="skipped",
+            reason=buy_reason,
+        )
+    if buy_status != "filled":
+        harness.add_finding(
+            Finding(
+                code="MATRIX_BUY_NOT_FILLED",
+                scenario=scenario,
+                invariant="matrix.chain_flow",
+                summary=f"the buy on {label} did not fill",
+                expected="status=filled",
+                actual=f"status={buy_status!r} reason={buy_reason!r}",
+            )
+        )
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            buy=buy_status,
+            sell="not_attempted",
+            reason=buy_reason,
+        )
+
+    position = _position_for(harness, resolved, scenario=scenario)
+    quantity = None if position is None else _dec(position.get("quantity"))
+    if position is None or quantity is None or quantity <= 0:
+        harness.add_finding(
+            Finding(
+                code="MATRIX_POSITION_MISSING",
+                scenario=scenario,
+                invariant="matrix.chain_flow",
+                summary=f"the fill on {label} did not produce a position",
+                expected="a position with quantity > 0 after a filled buy",
+                actual="no position row",
+            )
+        )
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            buy="filled",
+            sell="not_attempted",
+            reason="no position after fill",
+        )
+
+    quote_amount = _sell_full_quantity_amount(position)
+    if quote_amount is not None:
+        _read_quote(
+            harness,
+            resolved,
+            side="sell",
+            amount_usd=quote_amount,
+            quantity=quantity,
+            scenario=scenario,
+        )
+
+    sell = _sell_full_position(
+        harness,
+        resolved,
+        scenario=scenario,
+        idempotency_key=harness.next_id(f"matrix-{chain}-sell"),
+        reserve_slot=False,
+    )
+    sell_status, sell_reason = order_outcome(sell)
+    if sell_status == "rejected" and documented_rejection(sell_reason):
+        harness.note(f"matrix: sell on {label} rejected (documented): {sell_reason}")
+        return ChainRow(
+            chain=chain,
+            status=rejected_skip_status(sell_reason),
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            buy="filled",
+            sell="rejected",
+            reason=sell_reason,
+        )
+    if sell_status != "filled":
+        harness.add_finding(
+            Finding(
+                code="MATRIX_SELL_NOT_FILLED",
+                scenario=scenario,
+                invariant="matrix.chain_flow",
+                summary=f"the full-size sell on {label} did not fill",
+                expected="status=filled (a held position must always be exitable)",
+                actual=f"status={sell_status!r} reason={sell_reason!r}",
+            )
+        )
+        return ChainRow(
+            chain=chain,
+            status=STATUS_FAILED,
+            token=address,
+            symbol=resolved.symbol,
+            quote_kind=quote_kind,
+            buy="filled",
+            sell=sell_status,
+            reason=sell_reason or "sell did not fill",
+        )
+
+    after = _position_for(harness, resolved, scenario=scenario)
+    final_quantity = None if after is None else _dec(after.get("quantity"))
+    closed = check_position_closed(final_quantity, scenario=scenario, label=label)
+    harness.add_findings(closed)
+    return ChainRow(
+        chain=chain,
+        status=STATUS_OK if not closed else STATUS_FAILED,
+        token=address,
+        symbol=resolved.symbol,
+        quote_kind=quote_kind,
+        buy="filled",
+        sell="filled",
+        reason="" if not closed else f"position still holds {final_quantity}",
+    )
+
+
+def _matrix(harness: Harness, token: ResolvedToken | None, *, scenario: str = "matrix") -> None:
+    harness.register_invariants(*MATRIX_INVARIANTS)
+    chains = [_mapping(row) for row in _read_chains(harness, scenario=scenario)]
+    chain_ids = paper_chain_ids(chains)
+    if not chain_ids:
+        harness.skip_invariant("matrix.chain_flow", "no chain advertises paper_execute")
+        harness.note("matrix skipped: no chain advertises capabilities.paper_execute")
+        return
+    harness.note(f"matrix: {len(chain_ids)} paper-capable chain(s); one buy/sell round trip each")
+    for chain in chain_ids:
+        row = _matrix_chain(harness, chain, chains, scenario=scenario)
+        harness.note(
+            f"matrix {chain}: {row.status} buy={row.buy} sell={row.sell}"
+            + (f" reason={row.reason}" if row.reason else "")
+        )
+        harness.record_row("matrix", row.to_dict())
+    harness.check_paper_snapshot(scenario=scenario)
 
 
 # ---------------------------------------------------------------------------
@@ -1035,6 +2252,32 @@ def resolve_token(harness: Harness) -> ResolvedToken | None:
     return ResolvedToken(chain=chain, address=address, symbol=token_symbol, price_usd=price)
 
 
+MODE_RUNNERS: dict[str, Callable[[Harness, ResolvedToken], None]] = {
+    "smoke": _smoke,
+    "soak": _soak,
+    "idempotency": _idempotency,
+    "chaos": _chaos,
+    "fuzz": _fuzz,
+    "race": _race,
+    "killswitch": _killswitch,
+}
+
+
+def _mode_sequence(mode: str) -> tuple[str, ...]:
+    """``--mode all`` is a fixed sequence; every other mode is itself."""
+    return ALL_MODE_SEQUENCE if mode == "all" else (mode,)
+
+
+def _dispatch(harness: Harness, token: ResolvedToken, mode: str) -> None:
+    if mode == "matrix":
+        _matrix(harness, token)
+        return
+    runner = MODE_RUNNERS.get(mode)
+    if runner is None:  # pragma: no cover - RunConfig rejects unknown modes
+        raise ValueError(f"unknown mode {mode}")
+    runner(harness, token)
+
+
 def execute(config: RunConfig, *, command: str) -> ExecutionResult:
     """Run one scenario, write evidence, and return the report and its artifacts."""
     harness = Harness(config)
@@ -1048,20 +2291,19 @@ def execute(config: RunConfig, *, command: str) -> ExecutionResult:
         harness.close_thread_clients()
         raise
 
+    window = LedgerWindow(harness, scenario=config.mode)
     try:
         token = resolve_token(harness)
-        if token is None:
-            pass
-        elif config.mode == "smoke":
-            _smoke(harness, token)
-        elif config.mode == "soak":
-            _soak(harness, token)
-        elif config.mode == "idempotency":
-            _idempotency(harness, token)
-        elif config.mode == "chaos":
-            _chaos(harness, token)
-        else:  # pragma: no cover - RunConfig rejects unknown modes
-            raise ValueError(f"unknown mode {config.mode}")
+        if token is not None:
+            window.open()
+            for mode in _mode_sequence(config.mode):
+                broken = harness.paper_state_broken
+                if broken is not None:
+                    # A later scenario cannot read paper state, so it is skipped with the
+                    # reason instead of adding cascade findings.
+                    harness.note(f"{mode} skipped: {broken}")
+                    continue
+                _dispatch(harness, token, mode)
     except Exception as exc:  # noqa: BLE001 - the report is the evidence, keep going
         error = f"{type(exc).__name__}: {exc}"
         harness.add_finding(
@@ -1085,6 +2327,19 @@ def execute(config: RunConfig, *, command: str) -> ExecutionResult:
                     invariant="strategies.crud",
                     summary="cleanup raised an exception",
                     expected="cleanup completes",
+                    actual=f"{type(exc).__name__}: {exc}",
+                )
+            )
+        try:
+            window.close()
+        except Exception as exc:  # noqa: BLE001 - the ledger verdict must not mask errors
+            harness.add_finding(
+                Finding(
+                    code="LEDGER_WINDOW_FAILED",
+                    scenario=config.mode,
+                    invariant="ledger.positions_match_fills",
+                    summary="the independent ledger recompute could not complete",
+                    expected="the before/after observations are comparable",
                     actual=f"{type(exc).__name__}: {exc}",
                 )
             )

@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -47,10 +47,21 @@ ALLOWED_PATH_PREFIXES = (
     "/api/v1/quotes",
     "/api/v1/paper",
     "/api/v1/strategies",
+    # The operator kill switch. Scoped to the exact path: the rest of /api/v1/system is
+    # not something a load harness has any business touching.
+    "/api/v1/system/kill-switch",
 )
 _STRATEGY_PATH_RE = re.compile(r"(/api/v1/strategies/)[^/]+")
 _TOKEN_PATH_RE = re.compile(r"(/api/v1/tokens/[^/]+/)[^/]+")
 _GROUP_ORDER = ("reads", "paper_mutations", "chaos")
+
+# One retry only, and only for GET: a reset pooled connection is noise, a down API is not.
+_TRANSPORT_ATTEMPTS = 2
+_TRANSPORT_RETRY_DELAY_S = 0.05
+
+# How a request authenticates. ``default`` uses EZCHAIN_STRESS_API_TOKEN when set,
+# ``omit`` sends no Authorization header and ``wrong`` sends a deliberately invalid one.
+AuthMode = Literal["default", "omit", "wrong"]
 
 
 def is_allowed_path(path: str) -> bool:
@@ -165,6 +176,11 @@ class Harness:
     """Shared run state plus a per-thread HTTP client."""
 
     max_orders = 180
+    # The matrix walks every paper chain and needs its own room: it runs last in
+    # ``--mode all`` and must not be starved by the load modes that filled the shared cap.
+    max_matrix_orders = 60
+    # The race needs a handful of orders of its own for the same reason.
+    max_race_orders = 16
 
     def __init__(self, config: RunConfig) -> None:
         self.config = config
@@ -174,13 +190,19 @@ class Harness:
         self._finding_counts: dict[str, int] = {}
         self._expected_invariants: set[str] = set()
         self._skipped_invariants: set[str] = set()
+        self._skip_details: dict[str, str] = {}
         self._created_order_ids: list[str] = []
         self._order_summaries: list[dict[str, object]] = []
         self._created_strategy_ids: list[str] = []
         self._deleted_strategy_ids: list[str] = []
         self._notes: list[str] = []
+        self._sections: dict[str, list[dict[str, object]]] = {}
         self._order_slots = 0
+        self._matrix_slots = 0
+        self._race_slots = 0
         self._sequence = 0
+        self._transport_retries = 0
+        self._paper_state_broken: str | None = None
         self._threads = _ThreadClients()
         self._api_token = os.environ.get("EZCHAIN_STRESS_API_TOKEN") or None
         if self._api_token is not None:
@@ -196,30 +218,76 @@ class Harness:
 
     # -- lifecycle -----------------------------------------------------
 
-    def _client(self, origin: str) -> httpx.Client:
-        client = self._threads.clients.get(origin)
+    @property
+    def api_token_configured(self) -> bool:
+        """True when a bearer token came from ``EZCHAIN_STRESS_API_TOKEN``."""
+        return self._api_token is not None
+
+    def _authorization(self, auth: AuthMode) -> str | None:
+        if auth == "omit":
+            return None
+        if auth == "wrong":
+            # Not a credential: a fixed, obviously invalid value.
+            return "Bearer stress-wrong-token-0000000000000000"
+        if self._api_token is None:
+            return None
+        return f"Bearer {self._api_token}"
+
+    def _client(self, origin: str, auth: AuthMode = "default") -> httpx.Client:
+        key = f"{auth}|{origin}"
+        client = self._threads.clients.get(key)
         if client is None:
             timeout = httpx.Timeout(self.config.timeout_s, connect=min(3.0, self.config.timeout_s))
+            authorization = self._authorization(auth)
             client = httpx.Client(
                 timeout=timeout,
                 follow_redirects=False,
                 headers={
-                    "User-Agent": "ezchain-stress/0.1 (paper-only)",
+                    "User-Agent": "ezchain-stress/0.2 (paper-only)",
                     "Accept": "application/json",
-                    **(
-                        {"Authorization": f"Bearer {self._api_token}"}
-                        if self._api_token is not None
-                        else {}
-                    ),
+                    **({"Authorization": authorization} if authorization is not None else {}),
                 },
             )
-            self._threads.clients[origin] = client
+            self._threads.clients[key] = client
         return client
 
     def close_thread_clients(self) -> None:
         for client in self._threads.clients.values():
             client.close()
         self._threads.clients.clear()
+
+    def _drop_client(self, origin: str, auth: AuthMode) -> None:
+        """Discard one pooled client so the retry dials a fresh connection."""
+        client = self._threads.clients.pop(f"{auth}|{origin}", None)
+        if client is not None:
+            client.close()
+
+    def _note_transport_retry(self, path: str, error: str) -> None:
+        with self._lock:
+            self._transport_retries += 1
+            if self._transport_retries <= 5:
+                self._notes.append(f"retried a reset connection on GET {path} ({error})")
+
+    @property
+    def transport_retries(self) -> int:
+        with self._lock:
+            return self._transport_retries
+
+    def mark_paper_state_broken(self, reason: str) -> None:
+        """Remember that the paper account can no longer be read consistently.
+
+        An oversell leaves a negative position, and every later read replays it back as a
+        5xx. Remaining scenarios are skipped with this reason instead of adding a hundred
+        cascade findings on top of the one that matters.
+        """
+        with self._lock:
+            if self._paper_state_broken is None:
+                self._paper_state_broken = reason
+
+    @property
+    def paper_state_broken(self) -> str | None:
+        with self._lock:
+            return self._paper_state_broken
 
     def redact(self, text: str) -> str:
         """Never let the deployment token reach a report or issue payload."""
@@ -238,6 +306,20 @@ class Harness:
             if self._order_slots >= self.max_orders:
                 return False
             self._order_slots += 1
+            return True
+
+    def reserve_matrix_slot(self) -> bool:
+        with self._lock:
+            if self._matrix_slots >= self.max_matrix_orders:
+                return False
+            self._matrix_slots += 1
+            return True
+
+    def reserve_race_slot(self) -> bool:
+        with self._lock:
+            if self._race_slots >= self.max_race_orders:
+                return False
+            self._race_slots += 1
             return True
 
     def note_order(self, order_id: str) -> None:
@@ -296,6 +378,18 @@ class Harness:
         with self._lock:
             return list(self._notes)
 
+    def record_row(self, section: str, row: Mapping[str, object]) -> None:
+        """Append one evidence row (matrix/fuzz/auth/race) to a named report section."""
+        with self._lock:
+            rows = self._sections.setdefault(section, [])
+            if len(rows) < 200:
+                rows.append(dict(row))
+
+    @property
+    def sections(self) -> dict[str, list[dict[str, object]]]:
+        with self._lock:
+            return {name: [dict(row) for row in rows] for name, rows in self._sections.items()}
+
     # -- findings and invariants --------------------------------------
 
     def add_finding(self, finding: Finding) -> None:
@@ -326,14 +420,17 @@ class Harness:
         with self._lock:
             self._expected_invariants.update(identifiers)
 
-    def skip_invariant(self, identifier: str) -> None:
+    def skip_invariant(self, identifier: str, detail: str | None = None) -> None:
         with self._lock:
             self._expected_invariants.add(identifier)
             self._skipped_invariants.add(identifier)
+            if detail is not None:
+                self._skip_details[identifier] = detail
 
     def unskip_invariant(self, identifier: str) -> None:
         with self._lock:
             self._skipped_invariants.discard(identifier)
+            self._skip_details.pop(identifier, None)
 
     def invariant_report(self) -> list[dict[str, object]]:
         findings = self.findings
@@ -345,6 +442,7 @@ class Harness:
         with self._lock:
             expected = set(self._expected_invariants)
             skipped = set(self._skipped_invariants)
+            skip_details = dict(self._skip_details)
         identifiers = sorted(expected | set(failed))
         rows: list[dict[str, object]] = []
         for identifier in identifiers:
@@ -353,7 +451,7 @@ class Harness:
                 detail = f"{failed[identifier]} occurrence(s)"
             elif identifier in skipped:
                 status = "skip"
-                detail = "endpoint absent or not applicable"
+                detail = skip_details.get(identifier, "endpoint absent or not applicable")
             else:
                 status = "pass"
                 detail = "ok"
@@ -370,6 +468,8 @@ class Harness:
         scenario: str,
         params: Params | None = None,
         json_body: Mapping[str, object] | None = None,
+        content: str | bytes | None = None,
+        content_type: str | None = None,
         expected: Sequence[int] = (200,),
         allow_status: Sequence[int] = (),
         allow_error: bool = False,
@@ -377,11 +477,13 @@ class Harness:
         origin: str | None = None,
         timeout_s: float | None = None,
         path_ok: bool = False,
+        auth: AuthMode = "default",
     ) -> httpx.Response | None:
         """Perform one request, recording latency/status and unexpected failures.
 
         ``path_ok`` and ``allow_error`` exist only for the chaos scenario. They are never
-        wired to a CLI flag.
+        wired to a CLI flag. ``content`` sends a raw body (used by the fuzz matrix for
+        bodies that are not valid JSON); ``auth`` selects the bearer token behaviour.
         """
         if not path_ok and not is_allowed_path(path):
             raise ValueError(f"refusing non-allowlisted path: {path!r}")
@@ -390,26 +492,47 @@ class Harness:
         target_origin = (origin or self.config.origin).rstrip("/")
         url = f"{target_origin}{path}"
         started = time.perf_counter()
-        client = self._client(target_origin)
-        try:
-            if timeout_s is None:
-                response = client.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json_body,
-                )
-            else:
-                response = client.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json_body,
-                    timeout=timeout_s,
-                )
-        except httpx.HTTPError as exc:
+        headers = {"Content-Type": content_type} if content_type is not None else None
+        # A keep-alive socket reset by the server is not proof that the API is down, so an
+        # idempotent read is retried exactly once on a fresh connection. A real outage
+        # fails both attempts and is reported as before.
+        attempts = _TRANSPORT_ATTEMPTS if method.upper() == "GET" else 1
+        response: httpx.Response | None = None
+        transport_error: httpx.HTTPError | None = None
+        for attempt in range(attempts):
+            client = self._client(target_origin, auth)
+            try:
+                if timeout_s is None:
+                    response = client.request(
+                        method,
+                        url,
+                        params=params,
+                        json=json_body,
+                        content=content,
+                        headers=headers,
+                    )
+                else:
+                    response = client.request(
+                        method,
+                        url,
+                        params=params,
+                        json=json_body,
+                        content=content,
+                        headers=headers,
+                        timeout=timeout_s,
+                    )
+                break
+            except httpx.HTTPError as exc:
+                transport_error = exc
+                if attempt + 1 < attempts:
+                    self._drop_client(target_origin, auth)
+                    self._note_transport_retry(path, type(exc).__name__)
+                    time.sleep(_TRANSPORT_RETRY_DELAY_S)
+
+        if response is None:
+            assert transport_error is not None
             latency = (time.perf_counter() - started) * 1000
-            error = type(exc).__name__
+            error = type(transport_error).__name__
             self.metrics.record(
                 RequestRecord(
                     method=method.upper(),
@@ -431,7 +554,7 @@ class Harness:
                         summary="a request could not reach the API",
                         expected=f"{method.upper()} {path} succeeds",
                         actual=error,
-                        evidence=self.redact(str(exc)[:500]),
+                        evidence=self.redact(str(transport_error)[:500]),
                     )
                 )
             return None
@@ -601,7 +724,7 @@ class Harness:
             "GET",
             "/api/v1/paper/reconciliation",
             scenario=scenario,
-            expected=(200, 404),
+            expected=(200,),
             allow_status=(404,),
         )
         reconciliation_status = None if reconciliation is None else reconciliation.status_code
@@ -618,8 +741,6 @@ class Harness:
             )
         )
         self.register_invariants(*RECONCILIATION_INVARIANTS)
-        if reconciliation_status == 404:
-            self.skip_invariant("reconciliation.ok")
 
     def finish_checks(self, *, scenario: str) -> None:
         """HTTP and latency checks over the whole run."""

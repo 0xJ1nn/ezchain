@@ -14,13 +14,22 @@ class FakeResponse:
 
 
 class FakeHarness:
-    def __init__(self, account_mode: object) -> None:
+    def __init__(self, account_mode: object, *, state_readable: bool = True) -> None:
         self.account_mode = account_mode
+        self.state_readable = state_readable
         self.requests: list[str] = []
         self.invariants: list[str] = []
+        self.skipped: list[str] = []
         self.findings: list[Any] = []
 
-    def request(self, method: str, path: str, *, scenario: str) -> FakeResponse:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        scenario: str,
+        params: object = None,
+    ) -> FakeResponse:
         self.requests.append(path)
         return FakeResponse(200)
 
@@ -38,8 +47,18 @@ class FakeHarness:
             "mode": self.account_mode,
         }
 
+    def json_list(
+        self, response: FakeResponse | None, *, scenario: str, label: str
+    ) -> list[dict[str, object]] | None:
+        if not self.state_readable:
+            return None
+        return []
+
     def register_invariants(self, *identifiers: str) -> None:
         self.invariants.extend(identifiers)
+
+    def skip_invariant(self, identifier: str) -> None:
+        self.skipped.append(identifier)
 
     def add_findings(self, findings: object) -> None:
         self.findings.append(findings)
@@ -61,5 +80,23 @@ def test_refuses_missing_mode() -> None:
 def test_accepts_exact_paper_mode() -> None:
     harness = FakeHarness("paper")
     preflight(harness)  # type: ignore[arg-type]
-    assert harness.invariants == ["preflight.health", "preflight.paper_mode"]
-    assert harness.requests == ["/health", "/api/v1/paper/account"]
+    assert harness.invariants == [
+        "preflight.health",
+        "preflight.paper_mode",
+        "preflight.state_readable",
+    ]
+    assert harness.requests == [
+        "/health",
+        "/api/v1/paper/account",
+        "/api/v1/paper/positions",
+        "/api/v1/paper/fills",
+    ]
+    assert harness.skipped == []
+
+
+def test_refuses_an_unreadable_paper_state() -> None:
+    """A corrupted account (e.g. a negative position) must fail closed, not cascade."""
+    harness = FakeHarness("paper", state_readable=False)
+    with pytest.raises(PreflightError, match="PREFLIGHT_FAILED"):
+        preflight(harness)  # type: ignore[arg-type]
+    assert harness.skipped == ["preflight.state_readable"]
