@@ -1,93 +1,127 @@
 """DexScreener market data adapter.
 
-Public API, no key. Rate limit: 300 requests/minute; this client stays at 5 req/s and
-caches responses for 15 seconds. Every market row carries the source and observation time.
+Public API, no key. Rate limit: 300 requests/minute; the shared client paces at 5 req/s
+(5 burst) and caches responses for 15 seconds. Every market row carries its source and
+observation time.
+
+The public API has no "top markets across chains" endpoint. Discovery therefore combines
+the profile/boost/takeover feeds with per-chain seed tokens (:mod:`seeds`), so browsing
+``chain=all`` is not a Solana-only board.
 """
 
 from __future__ import annotations
 
 import asyncio
-import time
-from collections import deque
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
-
-import httpx
+from urllib.parse import quote
 
 from ezchain_core import MarketRow, PairInfo, SourceRef, TokenSnapshot
 
-from .errors import NotFound, RateLimited, UpstreamError
+from .errors import NotFound, UpstreamError
+from .http import JsonApiClient
 from .registry import ChainMeta, chain_for_dexscreener
+from .seeds import seed_addresses
 
 BASE = "https://api.dexscreener.com"
 CACHE_TTL_SECONDS = 15.0
 MAX_BATCH = 30
+# Four batches of 30 = 120 addresses. With the four hint endpoints that is at most eight
+# requests per discovery, comfortably inside the 300/minute budget at 5 req/s.
+MAX_DISCOVERY_ADDRESSES = MAX_BATCH * 4
+
+SAFETY_UNKNOWN = {"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"}
 
 
-class _RateLimiter:
-    def __init__(self, rate_per_second: float = 5.0, burst: int = 5) -> None:
-        self.rate = rate_per_second
-        self.burst = burst
-        self._times: deque[float] = deque()
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self._lock:
-            now = time.monotonic()
-            while self._times and now - self._times[0] > 1.0:
-                self._times.popleft()
-            if len(self._times) >= self.burst:
-                wait = 1.0 - (now - self._times[0])
-                if wait > 0:
-                    await asyncio.sleep(wait)
-            self._times.append(time.monotonic())
-
-
-def _dec(value: Any) -> Decimal | None:
-    if value is None or value == "":
+def _dec(value: object) -> Decimal | None:
+    """Parse a finite Decimal or return ``None``. Unknown is never zero."""
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
-        return Decimal(str(value))
+        parsed = Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+    return parsed if parsed.is_finite() else None
 
 
-def _dt_ms(value: Any) -> datetime | None:
-    if not isinstance(value, (int, float)):
+def _field_dec(container: object, key: str) -> Decimal | None:
+    if isinstance(container, dict):
+        return _dec(container.get(key))
+    return None
+
+
+def _text(value: object, default: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value
+    return default
+
+
+def _optional_text(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _dt_ms(value: object) -> datetime | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return datetime.fromtimestamp(value / 1000, tz=UTC)
+    try:
+        return datetime.fromtimestamp(value / 1000, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
-def normalize_pair(pair: dict[str, Any]) -> MarketRow | None:
-    chain_meta = chain_for_dexscreener(str(pair.get("chainId", "")))
+def _rank(row: MarketRow) -> tuple[Decimal, Decimal]:
+    return (row.liquidity_usd, row.volume_24h_usd)
+
+
+def _path_segment(value: str) -> str:
+    """Keep ``::`` addresses readable while escaping slashes in Cosmos denoms."""
+    return quote(value, safe=":")
+
+
+def normalize_pair(pair: object) -> MarketRow | None:
+    """Normalize one DexScreener pair into a market row.
+
+    Rows whose chain is not registered or whose price/address is missing are dropped:
+    showing a fabricated zero would violate the fail-closed rule.
+    """
+    if not isinstance(pair, dict):
+        return None
+    chain_meta = chain_for_dexscreener(_text(pair.get("chainId"), ""))
     if chain_meta is None:
         return None
-    base = pair.get("baseToken") or {}
-    quote = pair.get("quoteToken") or {}
-    price = _dec(pair.get("priceUsd"))
-    if price is None:
+    pair_address = _text(pair.get("pairAddress"), "")
+    if not pair_address:
         return None
-    liquidity = _dec((pair.get("liquidity") or {}).get("usd")) or Decimal(0)
-    volume = _dec((pair.get("volume") or {}).get("h24")) or Decimal(0)
-    changes = pair.get("priceChange") or {}
+    price = _dec(pair.get("priceUsd"))
+    if price is None or price <= 0:
+        return None
+
+    base = pair.get("baseToken")
+    quote_token = pair.get("quoteToken")
+    base_dict = base if isinstance(base, dict) else {}
+    quote_dict = quote_token if isinstance(quote_token, dict) else {}
+    changes = pair.get("priceChange")
+    symbol = _text(base_dict.get("symbol"), "?")
     return MarketRow(
         chain=chain_meta.id,
-        pair_address=str(pair.get("pairAddress", "")),
-        dex=str(pair.get("dexId", "unknown")),
-        base_token=str(base.get("address", "")),
-        quote_token=str(quote.get("address", "")),
-        symbol=str(base.get("symbol", "?")),
-        name=str(base.get("name", base.get("symbol", "Unknown"))),
+        pair_address=pair_address,
+        dex=_text(pair.get("dexId"), "unknown"),
+        base_token=_text(base_dict.get("address"), ""),
+        quote_token=_text(quote_dict.get("address"), ""),
+        symbol=symbol,
+        name=_text(base_dict.get("name"), symbol),
         price_usd=price,
-        liquidity_usd=liquidity,
-        volume_24h_usd=volume,
-        price_change_m5=_dec(changes.get("m5")),
-        price_change_h1=_dec(changes.get("h1")),
-        price_change_h6=_dec(changes.get("h6")),
-        price_change_h24=_dec(changes.get("h24")),
+        liquidity_usd=_field_dec(pair.get("liquidity"), "usd") or Decimal(0),
+        volume_24h_usd=_field_dec(pair.get("volume"), "h24") or Decimal(0),
+        price_change_m5=_field_dec(changes, "m5"),
+        price_change_h1=_field_dec(changes, "h1"),
+        price_change_h6=_field_dec(changes, "h6"),
+        price_change_h24=_field_dec(changes, "h24"),
         pair_created_at=_dt_ms(pair.get("pairCreatedAt")),
-        url=pair.get("url"),
+        url=_optional_text(pair.get("url")),
         source=SourceRef("dexscreener", "https://dexscreener.com", datetime.now(UTC)),
     )
 
@@ -95,21 +129,33 @@ def normalize_pair(pair: dict[str, Any]) -> MarketRow | None:
 def snapshot_from_pairs(
     chain: ChainMeta, address: str, pairs: list[dict[str, Any]]
 ) -> TokenSnapshot:
-    rows = [r for r in (normalize_pair(p) for p in pairs) if r is not None]
+    """Build a token snapshot from its pairs, using the deepest pair as the mark."""
+    rows: list[MarketRow] = []
+    for pair in pairs:
+        row = normalize_pair(pair)
+        if row is not None and row.chain == chain.id:
+            rows.append(row)
     if not rows:
         raise NotFound(f"no pairs for {chain.id}:{address}")
-    best = max(rows, key=lambda r: (r.liquidity_usd, r.volume_24h_usd))
+
+    unique: dict[str, MarketRow] = {}
+    for row in rows:
+        current = unique.get(row.pair_address)
+        if current is None or _rank(row) > _rank(current):
+            unique[row.pair_address] = row
+    candidates = list(unique.values())
+    best = max(candidates, key=_rank)
     pair_infos = tuple(
         PairInfo(
-            pair_address=r.pair_address,
-            dex=r.dex,
-            quote_token=r.quote_token,
-            price_usd=r.price_usd,
-            liquidity_usd=r.liquidity_usd,
-            volume_24h_usd=r.volume_24h_usd,
-            url=r.url,
+            pair_address=row.pair_address,
+            dex=row.dex,
+            quote_token=row.quote_token,
+            price_usd=row.price_usd,
+            liquidity_usd=row.liquidity_usd,
+            volume_24h_usd=row.volume_24h_usd,
+            url=row.url,
         )
-        for r in rows
+        for row in candidates
     )
     return TokenSnapshot(
         chain=chain.id,
@@ -124,128 +170,125 @@ def snapshot_from_pairs(
         price_change_h6=best.price_change_h6,
         price_change_h24=best.price_change_h24,
         pairs=pair_infos,
-        safety={"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"},
+        safety=dict(SAFETY_UNKNOWN),
         source=best.source,
         stale=False,
     )
 
 
-class DexScreenerClient:
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
-        self._client = client
-        self._owns_client = client is None
-        self._limiter = _RateLimiter()
-        self._cache: dict[str, tuple[float, Any]] = {}
-        self._cache_lock = asyncio.Lock()
+def _pairs_payload(data: object) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        raise UpstreamError("DexScreener returned an unexpected payload")
+    pairs = data.get("pairs")
+    if pairs is None:
+        return []
+    if not isinstance(pairs, list):
+        raise UpstreamError("DexScreener returned a malformed pairs payload")
+    return [pair for pair in pairs if isinstance(pair, dict)]
 
-    async def __aenter__(self) -> DexScreenerClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=BASE,
-                timeout=httpx.Timeout(15.0),
-                headers={"User-Agent": "ezCHAIN/0.1 (+https://github.com/0xJ1nn/ezchain)"},
-            )
-        return self
 
-    async def __aexit__(self, *args: object) -> None:
-        if self._owns_client and self._client is not None:
-            await self._client.aclose()
+def _list_payload(data: object) -> list[dict[str, Any]]:
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
 
-    async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        key = f"{path}?{sorted((params or {}).items())}"
-        now = time.monotonic()
-        async with self._cache_lock:
-            hit = self._cache.get(key)
-            if hit and hit[0] > now:
-                return hit[1]
-        await self._limiter.acquire()
-        assert self._client is not None
-        try:
-            response = await self._client.get(path, params=params)
-        except httpx.HTTPError as exc:
-            raise UpstreamError(f"DexScreener request failed: {exc}") from exc
-        if response.status_code == 429:
-            raise RateLimited("DexScreener rate limit")
-        if response.status_code >= 400:
-            raise UpstreamError(f"DexScreener returned {response.status_code}")
-        data = response.json()
-        async with self._cache_lock:
-            self._cache[key] = (time.monotonic() + CACHE_TTL_SECONDS, data)
-        return data
+
+def _pair_list_payload(data: object) -> list[dict[str, Any]]:
+    if not isinstance(data, list):
+        raise UpstreamError("DexScreener returned an unexpected pairs payload")
+    return [item for item in data if isinstance(item, dict)]
+
+
+class DexScreenerClient(JsonApiClient):
+    label = "DexScreener"
+    base_url = BASE
+    cache_ttl_seconds = CACHE_TTL_SECONDS
+    rate_per_second = 5.0  # 300 requests/minute, the documented ceiling
+    burst = 5
 
     async def latest_profiles(self) -> list[dict[str, Any]]:
-        data = await self._get("/token-profiles/latest/v1")
-        return list(data) if isinstance(data, list) else []
+        return _list_payload(await self._get("/token-profiles/latest/v1"))
 
     async def latest_boosts(self) -> list[dict[str, Any]]:
-        data = await self._get("/token-boosts/latest/v1")
-        return list(data) if isinstance(data, list) else []
+        return _list_payload(await self._get("/token-boosts/latest/v1"))
 
     async def top_boosts(self) -> list[dict[str, Any]]:
-        data = await self._get("/token-boosts/top/v1")
-        return list(data) if isinstance(data, list) else []
+        return _list_payload(await self._get("/token-boosts/top/v1"))
 
     async def latest_takeovers(self) -> list[dict[str, Any]]:
-        data = await self._get("/community-takeovers/latest/v1")
-        return list(data) if isinstance(data, list) else []
+        return _list_payload(await self._get("/community-takeovers/latest/v1"))
 
     async def token_pairs(self, chain: str, address: str) -> list[dict[str, Any]]:
-        data = await self._get(f"/token-pairs/v1/{chain}/{address}")
-        return list(data) if isinstance(data, list) else []
+        path = f"/token-pairs/v1/{_path_segment(chain)}/{_path_segment(address)}"
+        return _pair_list_payload(await self._get(path))
 
     async def tokens(self, addresses: list[str]) -> list[dict[str, Any]]:
+        """Fetch pairs for up to ``MAX_DISCOVERY_ADDRESSES`` tokens, 30 per request."""
         pairs: list[dict[str, Any]] = []
-        for start in range(0, len(addresses), MAX_BATCH):
+        for start in range(0, min(len(addresses), MAX_DISCOVERY_ADDRESSES), MAX_BATCH):
             batch = addresses[start : start + MAX_BATCH]
-            data = await self._get(f"/latest/dex/tokens/{','.join(batch)}")
-            pairs.extend(data.get("pairs") or [])
+            path = "/latest/dex/tokens/" + ",".join(_path_segment(item) for item in batch)
+            pairs.extend(_pairs_payload(await self._get(path)))
         return pairs
 
     async def search(self, query: str) -> list[dict[str, Any]]:
-        data = await self._get("/latest/dex/search", {"q": query})
-        return list(data.get("pairs") or [])
+        return _pairs_payload(await self._get("/latest/dex/search", {"q": query}))
+
+    async def _discover(self, chain: str | None) -> list[dict[str, Any]]:
+        hints = await asyncio.gather(
+            self.latest_profiles(),
+            self.latest_boosts(),
+            self.top_boosts(),
+            self.latest_takeovers(),
+            return_exceptions=True,
+        )
+        addresses: list[str] = []
+        seen: set[str] = set()
+
+        def add(address: object) -> None:
+            if not isinstance(address, str) or not address or address in seen:
+                return
+            seen.add(address)
+            addresses.append(address)
+
+        # Seeds first so a flood of Solana hint addresses cannot starve other chains.
+        for address in seed_addresses(chain):
+            add(address)
+        for result in hints:
+            if isinstance(result, BaseException):
+                continue
+            for item in result:
+                item_chain = item.get("chainId")
+                if not isinstance(item_chain, str):
+                    continue
+                if chain and chain != "all" and item_chain != chain:
+                    continue
+                if (not chain or chain == "all") and chain_for_dexscreener(item_chain) is None:
+                    continue
+                add(item.get("tokenAddress"))
+        if not addresses:
+            return []
+        return await self.tokens(addresses[:MAX_DISCOVERY_ADDRESSES])
 
     async def list_markets(
         self, *, chain: str | None = None, query: str | None = None, limit: int = 50
     ) -> tuple[list[MarketRow], SourceRef]:
         observed = datetime.now(UTC)
-        if query:
-            raw = await self.search(query)
-        else:
-            hints = await asyncio.gather(
-                self.latest_profiles(),
-                self.latest_boosts(),
-                self.top_boosts(),
-                self.latest_takeovers(),
-                return_exceptions=True,
-            )
-            addresses: list[str] = []
-            for result in hints:
-                if isinstance(result, BaseException):
-                    continue
-                for item in result:
-                    address = item.get("tokenAddress")
-                    item_chain = item.get("chainId")
-                    if not address:
-                        continue
-                    if chain and chain != "all" and item_chain != chain:
-                        continue
-                    if address not in addresses:
-                        addresses.append(address)
-            raw = await self.tokens(addresses[: MAX_BATCH * 2]) if addresses else []
-        rows = [r for r in (normalize_pair(p) for p in raw) if r is not None]
+        source = SourceRef("dexscreener", "https://dexscreener.com", observed)
+        if limit <= 0:
+            return [], source
+        raw = await self.search(query) if query else await self._discover(chain)
+        rows = [row for row in (normalize_pair(pair) for pair in raw) if row is not None]
         if chain and chain != "all":
-            rows = [r for r in rows if r.chain == chain]
+            rows = [row for row in rows if row.chain == chain]
         deduped: dict[str, MarketRow] = {}
         for row in rows:
             key = f"{row.chain}:{row.pair_address}"
             current = deduped.get(key)
-            if current is None or row.liquidity_usd > current.liquidity_usd:
+            if current is None or _rank(row) > _rank(current):
                 deduped[key] = row
-        ordered = sorted(
-            deduped.values(), key=lambda r: (r.liquidity_usd, r.volume_24h_usd), reverse=True
-        )
-        return ordered[:limit], SourceRef("dexscreener", "https://dexscreener.com", observed)
+        ordered = sorted(deduped.values(), key=_rank, reverse=True)
+        return ordered[:limit], source
 
     async def get_token(self, chain: str, address: str) -> TokenSnapshot:
         meta = chain_for_dexscreener(chain)

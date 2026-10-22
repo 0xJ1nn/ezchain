@@ -1,0 +1,322 @@
+[
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0x4e68ccd3e89f51c3074ca5072bbac773960dfa36",
+    "pairAddress": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "2403.7715",
+    "priceUsd": "2403.77",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 6,
+        "sells": 14
+      },
+      "h6": {
+        "buys": 50,
+        "sells": 75
+      },
+      "h24": {
+        "buys": 294,
+        "sells": 342
+      }
+    },
+    "volume": {
+      "h24": 33888664.01,
+      "h6": 5231882.56,
+      "h1": 1245126.74,
+      "m5": 9.58
+    },
+    "priceChange": {
+      "h1": -0.4,
+      "h6": -1.55,
+      "h24": -2.26
+    },
+    "liquidity": {
+      "usd": 90438437.29,
+      "base": 25594,
+      "quote": 28915264
+    },
+    "fdv": 5314419337,
+    "marketCap": 5314419337,
+    "pairCreatedAt": 1620232628000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+    "pairAddress": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "2399.7466",
+    "priceUsd": "2399.74",
+    "txns": {
+      "m5": {
+        "buys": 7,
+        "sells": 3
+      },
+      "h1": {
+        "buys": 109,
+        "sells": 82
+      },
+      "h6": {
+        "buys": 520,
+        "sells": 425
+      },
+      "h24": {
+        "buys": 2140,
+        "sells": 1982
+      }
+    },
+    "volume": {
+      "h24": 35901119.33,
+      "h6": 6302073.11,
+      "h1": 1468896.47,
+      "m5": 34648.86
+    },
+    "priceChange": {
+      "m5": 0.04,
+      "h1": -0.24,
+      "h6": -1.51,
+      "h24": -2.54
+    },
+    "liquidity": {
+      "usd": 81795174.77,
+      "base": 9120.8314,
+      "quote": 59907490
+    },
+    "fdv": 5305520726,
+    "marketCap": 5305520726,
+    "pairCreatedAt": 1620250931000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8",
+    "pairAddress": "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "2401.1065",
+    "priceUsd": "2401.10",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 2,
+        "sells": 12
+      },
+      "h6": {
+        "buys": 14,
+        "sells": 74
+      },
+      "h24": {
+        "buys": 238,
+        "sells": 332
+      }
+    },
+    "volume": {
+      "h24": 12354628.5,
+      "h6": 1898046.2,
+      "h1": 471310.03,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.41,
+      "h6": -1.58,
+      "h24": -2.27
+    },
+    "liquidity": {
+      "usd": 55136945.97,
+      "base": 14674,
+      "quote": 19901631
+    },
+    "fdv": 5308527404,
+    "marketCap": 5308527404,
+    "pairCreatedAt": 1620169800000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc",
+    "pairAddress": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+    "labels": [
+      "v2"
+    ],
+    "baseToken": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "2401.2756",
+    "priceUsd": "2401.27",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 5,
+        "sells": 12
+      },
+      "h6": {
+        "buys": 35,
+        "sells": 67
+      },
+      "h24": {
+        "buys": 276,
+        "sells": 336
+      }
+    },
+    "volume": {
+      "h24": 524083,
+      "h6": 85037.16,
+      "h1": 20280.9,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.4,
+      "h6": -1.57,
+      "h24": -2.26
+    },
+    "liquidity": {
+      "usd": 19820160.33,
+      "base": 4127.006514,
+      "quote": 9910080
+    },
+    "fdv": 5308901165,
+    "marketCap": 5308901165,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0x0d4a11d5eeaac28ec3f61d100daf4d40471f1852",
+    "pairAddress": "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
+    "labels": [
+      "v2"
+    ],
+    "baseToken": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "2403.8043",
+    "priceUsd": "2403.80",
+    "txns": {
+      "m5": {
+        "buys": 3,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 14,
+        "sells": 11
+      },
+      "h6": {
+        "buys": 53,
+        "sells": 46
+      },
+      "h24": {
+        "buys": 335,
+        "sells": 283
+      }
+    },
+    "volume": {
+      "h24": 439139.63,
+      "h6": 60197.4,
+      "h1": 15119.94,
+      "m5": 227.51
+    },
+    "priceChange": {
+      "h1": -0.4,
+      "h6": -1.55,
+      "h24": -2.26
+    },
+    "liquidity": {
+      "usd": 14306837.85,
+      "base": 2975.874,
+      "quote": 7153418
+    },
+    "fdv": 5314491850,
+    "marketCap": 5314491850,
+    "pairCreatedAt": 1589850429000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  }
+]

@@ -1,0 +1,1761 @@
+[
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0x4e68ccd3e89f51c3074ca5072bbac773960dfa36",
+    "pairAddress": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "2403.7715",
+    "priceUsd": "2403.77",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 6,
+        "sells": 14
+      },
+      "h6": {
+        "buys": 50,
+        "sells": 75
+      },
+      "h24": {
+        "buys": 294,
+        "sells": 342
+      }
+    },
+    "volume": {
+      "h24": 33888664.01,
+      "h6": 5231882.56,
+      "h1": 1245126.74,
+      "m5": 9.58
+    },
+    "priceChange": {
+      "h1": -0.4,
+      "h6": -1.55,
+      "h24": -2.26
+    },
+    "liquidity": {
+      "usd": 90438437.29,
+      "base": 25594,
+      "quote": 28915264
+    },
+    "fdv": 5314419337,
+    "marketCap": 5314419337,
+    "pairCreatedAt": 1620232628000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "ethereum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/ethereum/0x2b21c65d9a7dc6926ee330a1c6e5a8037fd81774f3dc066536f800128e39f634",
+    "pairAddress": "0x2b21c65d9a7dc6926ee330a1c6e5a8037fd81774f3dc066536f800128e39f634",
+    "labels": [
+      "v4"
+    ],
+    "baseToken": {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "1.001071",
+    "priceUsd": "1.0010",
+    "txns": {
+      "m5": {
+        "buys": 5,
+        "sells": 7
+      },
+      "h1": {
+        "buys": 56,
+        "sells": 54
+      },
+      "h6": {
+        "buys": 297,
+        "sells": 285
+      },
+      "h24": {
+        "buys": 1326,
+        "sells": 1229
+      }
+    },
+    "volume": {
+      "h24": 105829933.16,
+      "h6": 18078253.45,
+      "h1": 1668055.34,
+      "m5": 46621.84
+    },
+    "priceChange": {
+      "h6": 0.03
+    },
+    "liquidity": {
+      "usd": 5407825.33,
+      "base": 647042,
+      "quote": 4760088
+    },
+    "fdv": 48191084418,
+    "marketCap": 72212381375,
+    "pairCreatedAt": 1789051187000
+  },
+  {
+    "chainId": "base",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/base/0x6c561b446416e1a00e8e93e221854d6ea4171372",
+    "pairAddress": "0x6c561B446416E1A00E8E93E221854d6eA4171372",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0x4200000000000000000000000000000000000006",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "2400.9390",
+    "priceUsd": "2400.93",
+    "txns": {
+      "m5": {
+        "buys": 16,
+        "sells": 13
+      },
+      "h1": {
+        "buys": 376,
+        "sells": 453
+      },
+      "h6": {
+        "buys": 743,
+        "sells": 904
+      },
+      "h24": {
+        "buys": 9107,
+        "sells": 4292
+      }
+    },
+    "volume": {
+      "h24": 95933156.86,
+      "h6": 14815044.34,
+      "h1": 3552045.65,
+      "m5": 21462.81
+    },
+    "priceChange": {
+      "h1": -0.39,
+      "h6": -1.58,
+      "h24": -2.27
+    },
+    "liquidity": {
+      "usd": 155062831.99,
+      "base": 43649,
+      "quote": 50262280
+    },
+    "fdv": 676005613,
+    "marketCap": 676005613,
+    "pairCreatedAt": 1700287149000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/e7ad3f643e8706e541538413f2afad46f18cafb430606caae3c70c0f7425c16e?width=800&height=800&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/base/0x4200000000000000000000000000000000000006?timestamp=1792661700000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "base",
+    "dexId": "aerodrome",
+    "url": "https://dexscreener.com/base/0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d",
+    "pairAddress": "0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d",
+    "baseToken": {
+      "address": "0x940181a94A35A4569E4529A3CDfB74e38FD98631",
+      "name": "Aerodrome",
+      "symbol": "AERO"
+    },
+    "quoteToken": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.7983",
+    "priceUsd": "0.7983",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 6
+      },
+      "h1": {
+        "buys": 12,
+        "sells": 35
+      },
+      "h6": {
+        "buys": 149,
+        "sells": 279
+      },
+      "h24": {
+        "buys": 735,
+        "sells": 4843
+      }
+    },
+    "volume": {
+      "h24": 3461984.45,
+      "h6": 559077.67,
+      "h1": 49414.79,
+      "m5": 5677.27
+    },
+    "priceChange": {
+      "m5": -0.1,
+      "h1": -0.18,
+      "h6": -2.67,
+      "h24": -5.54
+    },
+    "liquidity": {
+      "usd": 23151588.81,
+      "base": 14498879,
+      "quote": 11575794
+    },
+    "fdv": 1602271497,
+    "marketCap": 784739273,
+    "pairCreatedAt": 1694127045000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/f950c4e0a9ded4f6b5c811cf33570a65c6f7ea8630d937cd69065269e9dc3a03?width=800&height=800&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/c16c2e02ffddde41226e2f5aeea4ac76f3e0a6234c362fef88572f5169772504?width=1500&height=500&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/base/0x940181a94a35a4569e4529a3cdfb74e38fd98631?timestamp=1792661700000",
+      "websites": [
+        {
+          "url": "https://aerodrome.finance/docs",
+          "label": "Website"
+        },
+        {
+          "url": "https://aerodrome.finance/docs",
+          "label": "Docs"
+        }
+      ],
+      "socials": [
+        {
+          "url": "https://x.com/aerodromefi",
+          "type": "twitter"
+        },
+        {
+          "url": "https://discord.gg/aerodrome",
+          "type": "discord"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": "arbitrum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/arbitrum/0x641c00a822e8b671738d32a431a4fb6074e5c79d",
+    "pairAddress": "0x641C00A822e8b671738d32a431a4Fb6074E5c79d",
+    "baseToken": {
+      "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+      "name": "USD\u20ae0",
+      "symbol": "USD\u20ae0"
+    },
+    "priceNative": "2402.2575",
+    "priceUsd": "2402.25",
+    "txns": {
+      "m5": {
+        "buys": 5,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 198,
+        "sells": 184
+      },
+      "h6": {
+        "buys": 771,
+        "sells": 850
+      },
+      "h24": {
+        "buys": 4596,
+        "sells": 4876
+      }
+    },
+    "volume": {
+      "h24": 4037585.48,
+      "h6": 654961.24,
+      "h1": 142613.13,
+      "m5": 3537.28
+    },
+    "priceChange": {
+      "m5": 0.03,
+      "h1": -0.26,
+      "h6": -1.48,
+      "h24": -2.54
+    },
+    "liquidity": {
+      "usd": 5722849.64,
+      "base": 1706.732,
+      "quote": 1622839
+    },
+    "fdv": 279044175,
+    "marketCap": 279044175
+  },
+  {
+    "chainId": "arbitrum",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/arbitrum/0xc6962004f452be9203591991d15f6b388e09e8d0",
+    "pairAddress": "0xC6962004f452bE9203591991D15f6b388e09E8D0",
+    "baseToken": {
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "priceNative": "0.0004166",
+    "priceUsd": "1.0010",
+    "txns": {
+      "m5": {
+        "buys": 6,
+        "sells": 23
+      },
+      "h1": {
+        "buys": 313,
+        "sells": 419
+      },
+      "h6": {
+        "buys": 1605,
+        "sells": 1933
+      },
+      "h24": {
+        "buys": 9422,
+        "sells": 9419
+      }
+    },
+    "volume": {
+      "h24": 63603601.75,
+      "h6": 10993735.64,
+      "h1": 2494343.27,
+      "m5": 74711.53
+    },
+    "priceChange": {
+      "h1": 0.01,
+      "h6": 0.03
+    },
+    "liquidity": {
+      "usd": 39195613.99,
+      "base": 14959088,
+      "quote": 10081
+    },
+    "fdv": 2609127227,
+    "marketCap": 72141243013,
+    "pairCreatedAt": 1686259704000
+  },
+  {
+    "chainId": "polygon",
+    "dexId": "quickswap",
+    "url": "https://dexscreener.com/polygon/0x853ee4b2a13f8a742d64c8f088be7ba2131f670d",
+    "pairAddress": "0x853Ee4b2A13f8a742d64C8F088bE7bA2131f670d",
+    "labels": [
+      "v2"
+    ],
+    "baseToken": {
+      "address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "quoteToken": {
+      "address": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+      "name": "USD Coin (PoS)",
+      "symbol": "USDC"
+    },
+    "priceNative": "2402.3337",
+    "priceUsd": "2402.33",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 2,
+        "sells": 11
+      },
+      "h6": {
+        "buys": 7,
+        "sells": 45
+      },
+      "h24": {
+        "buys": 167,
+        "sells": 263
+      }
+    },
+    "volume": {
+      "h24": 62086.43,
+      "h6": 10869.77,
+      "h1": 2000.47,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.35,
+      "h6": -1.55,
+      "h24": -2.18
+    },
+    "liquidity": {
+      "usd": 2230689.68,
+      "base": 464.2755,
+      "quote": 1115344
+    },
+    "fdv": 214418500,
+    "marketCap": 214418500
+  },
+  {
+    "chainId": "polygon",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/polygon/0x31083a78e11b18e450fd139f9abea98cd53181b7",
+    "pairAddress": "0x31083a78E11B18e450fd139F9ABEa98CD53181B7",
+    "baseToken": {
+      "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+      "name": "USDT0",
+      "symbol": "USDT0"
+    },
+    "priceNative": "1.001029",
+    "priceUsd": "1.0010",
+    "txns": {
+      "m5": {
+        "buys": 3,
+        "sells": 2
+      },
+      "h1": {
+        "buys": 32,
+        "sells": 10
+      },
+      "h6": {
+        "buys": 223,
+        "sells": 37
+      },
+      "h24": {
+        "buys": 583,
+        "sells": 307
+      }
+    },
+    "volume": {
+      "h24": 1196001.32,
+      "h6": 114341.23,
+      "h1": 7124.86,
+      "m5": 1540.45
+    },
+    "priceChange": {
+      "h6": 0.03,
+      "h24": 0.01
+    },
+    "liquidity": {
+      "usd": 725935.49,
+      "base": 55022,
+      "quote": 670855
+    },
+    "fdv": 582416078,
+    "marketCap": 60963928091,
+    "pairCreatedAt": 1699668365000
+  },
+  {
+    "chainId": "optimism",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/optimism/0xc1738d90e2e26c35784a0d3e3d8a9f795074bca4",
+    "pairAddress": "0xc1738D90E2E26C35784A0d3E3d8A9f795074bcA4",
+    "baseToken": {
+      "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0x4200000000000000000000000000000000000006",
+      "name": "Wrapped Ether",
+      "symbol": "WETH"
+    },
+    "priceNative": "0.0004163",
+    "priceUsd": "0.9985",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 25,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 188,
+        "sells": 4
+      },
+      "h24": {
+        "buys": 1286,
+        "sells": 683
+      }
+    },
+    "volume": {
+      "h24": 2557521.6,
+      "h6": 388626.27,
+      "h1": 76134.5,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.04,
+      "h6": 0.03
+    },
+    "liquidity": {
+      "usd": 5246650.15,
+      "base": 2197981,
+      "quote": 1272.4653
+    },
+    "fdv": 145660354,
+    "marketCap": 72573554512,
+    "pairCreatedAt": 1694059479000
+  },
+  {
+    "chainId": "bsc",
+    "dexId": "pancakeswap",
+    "url": "https://dexscreener.com/bsc/0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae",
+    "pairAddress": "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE",
+    "labels": [
+      "v2"
+    ],
+    "baseToken": {
+      "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+      "name": "Wrapped BNB",
+      "symbol": "WBNB"
+    },
+    "quoteToken": {
+      "address": "0x55d398326f99059fF775485246999027B3197955",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "733.5233",
+    "priceUsd": "733.52",
+    "txns": {
+      "m5": {
+        "buys": 46,
+        "sells": 49
+      },
+      "h1": {
+        "buys": 661,
+        "sells": 759
+      },
+      "h6": {
+        "buys": 4288,
+        "sells": 4434
+      },
+      "h24": {
+        "buys": 18455,
+        "sells": 16601
+      }
+    },
+    "volume": {
+      "h24": 2517248.34,
+      "h6": 656260.87,
+      "h1": 108706.68,
+      "m5": 4655.04
+    },
+    "priceChange": {
+      "m5": -0.01,
+      "h1": -0.17,
+      "h6": -1.05,
+      "h24": -1.96
+    },
+    "liquidity": {
+      "usd": 47652312.2,
+      "base": 32481,
+      "quote": 23826156
+    },
+    "fdv": 1135557711,
+    "marketCap": 1135557711
+  },
+  {
+    "chainId": "bsc",
+    "dexId": "pancakeswap",
+    "url": "https://dexscreener.com/bsc/0x4f31fa980a675570939b737ebdde0471a4be40eb",
+    "pairAddress": "0x4f31Fa980a675570939B737Ebdde0471a4Be40Eb",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0x55d398326f99059fF775485246999027B3197955",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "quoteToken": {
+      "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.9988",
+    "priceUsd": "0.9988",
+    "txns": {
+      "m5": {
+        "buys": 9,
+        "sells": 5
+      },
+      "h1": {
+        "buys": 108,
+        "sells": 90
+      },
+      "h6": {
+        "buys": 551,
+        "sells": 615
+      },
+      "h24": {
+        "buys": 2472,
+        "sells": 1696
+      }
+    },
+    "volume": {
+      "h24": 1199669.05,
+      "h6": 306601.43,
+      "h1": 27834.66,
+      "m5": 2642.95
+    },
+    "priceChange": {
+      "h6": -0.01,
+      "h24": 0.02
+    },
+    "liquidity": {
+      "usd": 39991358.68,
+      "base": 23954130,
+      "quote": 16063955
+    },
+    "fdv": 9174315389,
+    "marketCap": 9174315389,
+    "pairCreatedAt": 1683112489000
+  },
+  {
+    "chainId": "avalanche",
+    "dexId": "pharaoh",
+    "url": "https://dexscreener.com/avalanche/0xf01449c0ba930b6e2caca3def3ccbd7a3e589534",
+    "pairAddress": "0xf01449C0bA930B6e2CaCA3DEF3CCBd7a3E589534",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+      "name": "Wrapped AVAX",
+      "symbol": "WAVAX"
+    },
+    "quoteToken": {
+      "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "9.2120",
+    "priceUsd": "9.21",
+    "txns": {
+      "m5": {
+        "buys": 7,
+        "sells": 3
+      },
+      "h1": {
+        "buys": 248,
+        "sells": 233
+      },
+      "h6": {
+        "buys": 1415,
+        "sells": 1582
+      },
+      "h24": {
+        "buys": 5539,
+        "sells": 6418
+      }
+    },
+    "volume": {
+      "h24": 37477237.61,
+      "h6": 7291246.88,
+      "h1": 1070297.44,
+      "m5": 21050.02
+    },
+    "priceChange": {
+      "m5": 0.06,
+      "h1": 0.23,
+      "h6": -1.35,
+      "h24": -5.45
+    },
+    "liquidity": {
+      "usd": 4850178.52,
+      "base": 499250,
+      "quote": 251066
+    },
+    "fdv": 163922365,
+    "marketCap": 163922365,
+    "pairCreatedAt": 1757813137000
+  },
+  {
+    "chainId": "avalanche",
+    "dexId": "pharaoh",
+    "url": "https://dexscreener.com/avalanche/0xca7bd86983a2474f3c7cb45207bc16760cee07cf",
+    "pairAddress": "0xca7Bd86983a2474f3c7cB45207Bc16760CEe07cF",
+    "baseToken": {
+      "address": "0xDBc5192A6B6FfEe7451301bb4ec312f844F02B4A",
+      "name": "Unity",
+      "symbol": "UTY"
+    },
+    "quoteToken": {
+      "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.9995",
+    "priceUsd": "0.9995",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 1,
+        "sells": 0
+      },
+      "h24": {
+        "buys": 2,
+        "sells": 2
+      }
+    },
+    "volume": {
+      "h24": 309.33,
+      "h6": 0.24,
+      "h1": 0,
+      "m5": 0
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 3393744.77,
+      "base": 3389283,
+      "quote": 6125.5751
+    },
+    "fdv": 20978965,
+    "marketCap": 20978965,
+    "pairCreatedAt": 1746462908000
+  },
+  {
+    "chainId": "sui",
+    "dexId": "momentum",
+    "url": "https://dexscreener.com/sui/0x455cf8d2ac91e7cb883f515874af750ed3cd18195c970b7a2d46235ac2b0c388",
+    "pairAddress": "0x455cf8d2ac91e7cb883f515874af750ed3cd18195c970b7a2d46235ac2b0c388",
+    "baseToken": {
+      "address": "0x2::sui::SUI",
+      "name": "Sui",
+      "symbol": "SUI"
+    },
+    "quoteToken": {
+      "address": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+      "name": "USDC",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.9789",
+    "priceUsd": "0.9789",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 30,
+        "sells": 43
+      },
+      "h6": {
+        "buys": 319,
+        "sells": 423
+      },
+      "h24": {
+        "buys": 1882,
+        "sells": 2066
+      }
+    },
+    "volume": {
+      "h24": 458946.04,
+      "h6": 41347.33,
+      "h1": 5773.17,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.19,
+      "h6": -2.43,
+      "h24": -5.06
+    },
+    "liquidity": {
+      "usd": 1766175.84,
+      "base": 771357,
+      "quote": 1011035
+    },
+    "fdv": 9789761078,
+    "marketCap": 3944487452,
+    "pairCreatedAt": 1753839885000
+  },
+  {
+    "chainId": "sui",
+    "dexId": "bluefin",
+    "url": "https://dexscreener.com/sui/0x3fe620cd2b94ed7bc333f46e984cdea6cf42cfd9ddd54f15016d61c2f8149a90",
+    "pairAddress": "0x3fe620cd2b94ed7bc333f46e984cdea6cf42cfd9ddd54f15016d61c2f8149a90",
+    "baseToken": {
+      "address": "0x44f838219cf67b058f3b37907b655f226153c18e33dfcd0da559a844fea9b1c1::usdsui::USDSUI",
+      "name": "Sui Dollar",
+      "symbol": "USDSUI"
+    },
+    "quoteToken": {
+      "address": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+      "name": "USDC",
+      "symbol": "USDC"
+    },
+    "priceNative": "1.00002637",
+    "priceUsd": "1.000026",
+    "txns": {
+      "m5": {
+        "buys": 1,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 45,
+        "sells": 26
+      },
+      "h6": {
+        "buys": 162,
+        "sells": 142
+      },
+      "h24": {
+        "buys": 496,
+        "sells": 1183
+      }
+    },
+    "volume": {
+      "h24": 1497920.78,
+      "h6": 251083.95,
+      "h1": 127228.48,
+      "m5": 2703.49
+    },
+    "priceChange": {
+      "h24": -0.01
+    },
+    "liquidity": {
+      "usd": 1684764.89,
+      "base": 1369225,
+      "quote": 315503
+    },
+    "fdv": 78596311,
+    "marketCap": 80051036,
+    "pairCreatedAt": 1772580202000
+  },
+  {
+    "chainId": "aptos",
+    "dexId": "pancakeswap",
+    "url": "https://dexscreener.com/aptos/pcs-1",
+    "pairAddress": "pcs-1",
+    "baseToken": {
+      "address": "0x1::aptos_coin::AptosCoin",
+      "name": "Aptos Coin",
+      "symbol": "APT"
+    },
+    "quoteToken": {
+      "address": "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDC",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.7771",
+    "priceUsd": "0.7771",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 16,
+        "sells": 8
+      },
+      "h6": {
+        "buys": 104,
+        "sells": 145
+      },
+      "h24": {
+        "buys": 528,
+        "sells": 548
+      }
+    },
+    "volume": {
+      "h24": 26543.65,
+      "h6": 6821.93,
+      "h1": 456.84,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.07,
+      "h6": -2.38,
+      "h24": -6.33
+    },
+    "liquidity": {
+      "usd": 407921.79,
+      "base": 262459,
+      "quote": 203960
+    },
+    "pairCreatedAt": 1666643975000
+  },
+  {
+    "chainId": "aptos",
+    "dexId": "thala",
+    "url": "https://dexscreener.com/aptos/0xf0f717f660d36bb0f0f76dcbe30737baf54fab5404691f7086f2e88d3822d8b9-0x94ed76d3d66cb0b6e7a3ab81acf830e3a50b8ae3cfb9edc0abea635a11185ff4-0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
+    "pairAddress": "0xf0f717f660d36bb0f0f76dcbe30737baf54fab5404691f7086f2e88d3822d8b9-0x94ed76d3d66cb0b6e7a3ab81acf830e3a50b8ae3cfb9edc0abea635a11185ff4-0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
+    "labels": [
+      "v2"
+    ],
+    "baseToken": {
+      "address": "0x94ed76d3d66cb0b6e7a3ab81acf830e3a50b8ae3cfb9edc0abea635a11185ff4",
+      "name": "Move Dollar",
+      "symbol": "MOD"
+    },
+    "quoteToken": {
+      "address": "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
+      "name": "USDC",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.9967",
+    "priceUsd": "1.095",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 2,
+        "sells": 1
+      },
+      "h6": {
+        "buys": 13,
+        "sells": 155
+      },
+      "h24": {
+        "buys": 434,
+        "sells": 829
+      }
+    },
+    "volume": {
+      "h24": 23515.91,
+      "h6": 4805.18,
+      "h1": 96.75,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.26,
+      "h6": -0.12,
+      "h24": -0.29
+    },
+    "liquidity": {
+      "usd": 66910.4,
+      "base": 48462,
+      "quote": 12561
+    },
+    "pairCreatedAt": 1738206895000
+  },
+  {
+    "chainId": "ton",
+    "dexId": "stonfi",
+    "url": "https://dexscreener.com/ton/eqco9ndt4il25_4zphiogmaubrjvpsi9plzqhd8x7etvb7x_",
+    "pairAddress": "EQCO9NDT4Il25_4ZpHIOgMAUbRJvpsI9pLzqhD8X7eTVB7X_",
+    "baseToken": {
+      "address": "EQBaCgUwOoc6gHCNln_oJzb0mVs79YG7wYoavh-o1ItaneLA",
+      "name": "Utya",
+      "symbol": "UTYA"
+    },
+    "quoteToken": {
+      "address": "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+      "name": "Gram",
+      "symbol": "GRAM"
+    },
+    "priceNative": "0.01560",
+    "priceUsd": "0.02086",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 2
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 8
+      },
+      "h24": {
+        "buys": 20,
+        "sells": 47
+      }
+    },
+    "volume": {
+      "h24": 18657.72,
+      "h6": 1178.14,
+      "h1": 42.87,
+      "m5": 16.25
+    },
+    "priceChange": {
+      "m5": 0.28,
+      "h1": -0.04,
+      "h6": -1.5,
+      "h24": -0.45
+    },
+    "liquidity": {
+      "usd": 390535.21,
+      "base": 9404172,
+      "quote": 145316
+    },
+    "fdv": 20868054,
+    "marketCap": 20868054,
+    "pairCreatedAt": 1712855861000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/7ec9939bd49d2e0fc45ce358b6791378521ccfdfc3d9ca0e26f66091158a5e14?width=800&height=800&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/37cbb1d85c96dd39d7c7b8c2dd590c6294231d4b747f948dc7103f8273225f3e?width=1500&height=500&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/ton/eqbacguwooc6ghcnln_ojzb0mvs79yg7wyoavh-o1itanela?timestamp=1792661700000",
+      "websites": [
+        {
+          "url": "https://tonutya.com/",
+          "label": "Website"
+        }
+      ],
+      "socials": [
+        {
+          "url": "https://x.com/TonUtyacoin",
+          "type": "twitter"
+        },
+        {
+          "url": "https://t.me/utyaduck",
+          "type": "telegram"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": "ton",
+    "dexId": "stonfi",
+    "url": "https://dexscreener.com/ton/eqd8tj8xewb1spnre4d89yo3jl0w0eibnns4ibahaumdfize",
+    "pairAddress": "EQD8TJ8xEWB1SpnRE4d89YO3jl0W0EiBnNS4IBaHaUmdfizE",
+    "baseToken": {
+      "address": "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+      "name": "Tether USD",
+      "symbol": "USD\u20ae"
+    },
+    "quoteToken": {
+      "address": "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+      "name": "Gram",
+      "symbol": "GRAM"
+    },
+    "priceNative": "0.7497",
+    "priceUsd": "1.0031",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 3
+      },
+      "h6": {
+        "buys": 41,
+        "sells": 32
+      },
+      "h24": {
+        "buys": 193,
+        "sells": 262
+      }
+    },
+    "volume": {
+      "h24": 152395.81,
+      "h6": 17154.94,
+      "h1": 377.33,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": 0.05,
+      "h6": -0.08,
+      "h24": 0.25
+    },
+    "liquidity": {
+      "usd": 5091959.63,
+      "base": 2541739,
+      "quote": 1899968
+    },
+    "fdv": 1434512041,
+    "marketCap": 184741730614,
+    "pairCreatedAt": 1713530301000
+  },
+  {
+    "chainId": "tron",
+    "dexId": "sunswap",
+    "url": "https://dexscreener.com/tron/tfgdbuyp8xez44c76fin3bn3ss6jugouwj",
+    "pairAddress": "TFGDbUyP8xez44C76fin3bn3Ss6jugoUwJ",
+    "baseToken": {
+      "address": "TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR",
+      "name": "Wrapped TRX",
+      "symbol": "WTRX"
+    },
+    "quoteToken": {
+      "address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "0.3317",
+    "priceUsd": "0.3317",
+    "txns": {
+      "m5": {
+        "buys": 2,
+        "sells": 2
+      },
+      "h1": {
+        "buys": 9,
+        "sells": 42
+      },
+      "h6": {
+        "buys": 31,
+        "sells": 155
+      },
+      "h24": {
+        "buys": 184,
+        "sells": 426
+      }
+    },
+    "volume": {
+      "h24": 1041356.54,
+      "h6": 206098.26,
+      "h1": 14337.12,
+      "m5": 769.18
+    },
+    "priceChange": {
+      "h6": 0.09,
+      "h24": -0.11
+    },
+    "liquidity": {
+      "usd": 93548969.85,
+      "base": 140982006,
+      "quote": 46774523
+    },
+    "fdv": 1380457432,
+    "marketCap": 1380457432,
+    "pairCreatedAt": 1639475946000
+  },
+  {
+    "chainId": "tron",
+    "dexId": "sunswap",
+    "url": "https://dexscreener.com/tron/tfgdbuyp8xez44c76fin3bn3ss6jugouwj",
+    "pairAddress": "TFGDbUyP8xez44C76fin3bn3Ss6jugoUwJ",
+    "baseToken": {
+      "address": "TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR",
+      "name": "Wrapped TRX",
+      "symbol": "WTRX"
+    },
+    "quoteToken": {
+      "address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "priceNative": "0.3317",
+    "priceUsd": "0.3317",
+    "txns": {
+      "m5": {
+        "buys": 2,
+        "sells": 2
+      },
+      "h1": {
+        "buys": 9,
+        "sells": 42
+      },
+      "h6": {
+        "buys": 31,
+        "sells": 155
+      },
+      "h24": {
+        "buys": 184,
+        "sells": 426
+      }
+    },
+    "volume": {
+      "h24": 1041356.54,
+      "h6": 206098.26,
+      "h1": 14337.12,
+      "m5": 769.18
+    },
+    "priceChange": {
+      "h6": 0.09,
+      "h24": -0.11
+    },
+    "liquidity": {
+      "usd": 93548969.85,
+      "base": 140982006,
+      "quote": 46774523
+    },
+    "fdv": 1380457432,
+    "marketCap": 1380457432,
+    "pairCreatedAt": 1639475946000
+  },
+  {
+    "chainId": "near",
+    "dexId": "rhea-finance",
+    "url": "https://dexscreener.com/near/refv1-4512",
+    "pairAddress": "refv1-4512",
+    "baseToken": {
+      "address": "wrap.near",
+      "name": "Wrapped NEAR fungible token",
+      "symbol": "wNEAR"
+    },
+    "quoteToken": {
+      "address": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "name": "USDC",
+      "symbol": "USDC"
+    },
+    "priceNative": "4.9169",
+    "priceUsd": "4.91",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 25,
+        "sells": 33
+      },
+      "h6": {
+        "buys": 175,
+        "sells": 143
+      },
+      "h24": {
+        "buys": 1248,
+        "sells": 1370
+      }
+    },
+    "volume": {
+      "h24": 398527.5,
+      "h6": 58779.7,
+      "h1": 11904.84,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.73,
+      "h6": -3.58,
+      "h24": -5.78
+    },
+    "liquidity": {
+      "usd": 2266308.77,
+      "base": 230097,
+      "quote": 1134926
+    },
+    "fdv": 34682971,
+    "marketCap": 34682971,
+    "pairCreatedAt": 1717641365000
+  },
+  {
+    "chainId": "near",
+    "dexId": "rhea-finance",
+    "url": "https://dexscreener.com/near/refv2-17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1:qtc.omft.near:2000",
+    "pairAddress": "refv2-17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1:qtc.omft.near:2000",
+    "baseToken": {
+      "address": "qtc.omft.near",
+      "name": "Quantus",
+      "symbol": "QTC"
+    },
+    "quoteToken": {
+      "address": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "name": "USDC",
+      "symbol": "USDC"
+    },
+    "priceNative": "87.8802",
+    "priceUsd": "87.88",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 5
+      },
+      "h1": {
+        "buys": 7,
+        "sells": 58
+      },
+      "h6": {
+        "buys": 48,
+        "sells": 425
+      },
+      "h24": {
+        "buys": 563,
+        "sells": 1325
+      }
+    },
+    "volume": {
+      "h24": 705180.16,
+      "h6": 190744.19,
+      "h1": 7757.19,
+      "m5": 66.81
+    },
+    "priceChange": {
+      "h1": -0.53,
+      "h6": -2.48,
+      "h24": -2.2
+    },
+    "liquidity": {
+      "usd": 11293572.36,
+      "base": 99398,
+      "quote": 2558384
+    },
+    "fdv": 272,
+    "marketCap": 272,
+    "pairCreatedAt": 1791250413000
+  },
+  {
+    "chainId": "fantom",
+    "dexId": "spookyswap",
+    "url": "https://dexscreener.com/fantom/0x2b4c76d0dc16be1c31d4c1dc53bf9b45987fc75c",
+    "pairAddress": "0x2b4C76d0dc16BE1C31D4C1DC53bF9B45987Fc75c",
+    "baseToken": {
+      "address": "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83",
+      "name": "Wrapped Fantom",
+      "symbol": "WFTM"
+    },
+    "priceNative": "1.7218",
+    "priceUsd": "0.09084",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 2,
+        "sells": 13
+      },
+      "h6": {
+        "buys": 2,
+        "sells": 20
+      },
+      "h24": {
+        "buys": 50,
+        "sells": 263
+      }
+    },
+    "volume": {
+      "h24": 1085.47,
+      "h6": 22.91,
+      "h1": 17.04,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.77,
+      "h6": -2.58,
+      "h24": -5.56
+    },
+    "liquidity": {
+      "usd": 187506.63,
+      "base": 1032004,
+      "quote": 1776977
+    },
+    "fdv": 16451900,
+    "marketCap": 16451900
+  },
+  {
+    "chainId": "fantom",
+    "dexId": "spookyswap",
+    "url": "https://dexscreener.com/fantom/0x2b4c76d0dc16be1c31d4c1dc53bf9b45987fc75c",
+    "pairAddress": "0x2b4C76d0dc16BE1C31D4C1DC53bF9B45987Fc75c",
+    "baseToken": {
+      "address": "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83",
+      "name": "Wrapped Fantom",
+      "symbol": "WFTM"
+    },
+    "priceNative": "1.7218",
+    "priceUsd": "0.09084",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 2,
+        "sells": 13
+      },
+      "h6": {
+        "buys": 2,
+        "sells": 20
+      },
+      "h24": {
+        "buys": 50,
+        "sells": 263
+      }
+    },
+    "volume": {
+      "h24": 1085.47,
+      "h6": 22.91,
+      "h1": 17.04,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.77,
+      "h6": -2.58,
+      "h24": -5.56
+    },
+    "liquidity": {
+      "usd": 187506.63,
+      "base": 1032004,
+      "quote": 1776977
+    },
+    "fdv": 16451900,
+    "marketCap": 16451900
+  },
+  {
+    "chainId": "cronos",
+    "dexId": "vvsfinance",
+    "url": "https://dexscreener.com/cronos/0xe61db569e231b3f5530168aa2c9d50246525b6d6",
+    "pairAddress": "0xe61Db569E231B3f5530168Aa2C9D50246525b6d6",
+    "baseToken": {
+      "address": "0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23",
+      "name": "Wrapped CRO",
+      "symbol": "WCRO"
+    },
+    "quoteToken": {
+      "address": "0xc21223249CA28397B4B6541dfFaEcC539BfF0c59",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.05673",
+    "priceUsd": "0.05673",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 49,
+        "sells": 9
+      },
+      "h6": {
+        "buys": 83,
+        "sells": 81
+      },
+      "h24": {
+        "buys": 293,
+        "sells": 261
+      }
+    },
+    "volume": {
+      "h24": 235249.21,
+      "h6": 56973.18,
+      "h1": 16067.69,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.43,
+      "h6": -2.33,
+      "h24": -2.66
+    },
+    "liquidity": {
+      "usd": 5791268.84,
+      "base": 51039131,
+      "quote": 2895634
+    },
+    "fdv": 40571018,
+    "marketCap": 40571018
+  },
+  {
+    "chainId": "cronos",
+    "dexId": "vvsfinance",
+    "url": "https://dexscreener.com/cronos/0x39cc0e14795a8e6e9d02a21091b81fe0d61d82f9",
+    "pairAddress": "0x39cC0E14795A8e6e9D02A21091b81FE0d61D82f9",
+    "baseToken": {
+      "address": "0x66e428c3f67a68878562e79A0234c1F83c208770",
+      "name": "Tether USD",
+      "symbol": "USDT"
+    },
+    "quoteToken": {
+      "address": "0xc21223249CA28397B4B6541dfFaEcC539BfF0c59",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.9968",
+    "priceUsd": "0.9968",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h24": {
+        "buys": 2,
+        "sells": 1
+      }
+    },
+    "volume": {
+      "h24": 13.46,
+      "h6": 0,
+      "h1": 0,
+      "m5": 0
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 10334115.53,
+      "base": 5183306,
+      "quote": 5167057
+    },
+    "fdv": 113665245,
+    "marketCap": 113665245,
+    "pairCreatedAt": 1637137674000
+  },
+  {
+    "chainId": "celo",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/celo/0x60ac25da2ada3be14a2a8c04e45b072bed965966",
+    "pairAddress": "0x60Ac25Da2ADA3be14a2a8C04e45b072BEd965966",
+    "baseToken": {
+      "address": "0xC668583dcbDc9ae6FA3CE46462758188adfdfC24",
+      "name": "Staked CELO",
+      "symbol": "stCELO"
+    },
+    "quoteToken": {
+      "address": "0x471EcE3750Da237f93B8E339c536989b8978a438",
+      "name": "Celo native asset",
+      "symbol": "CELO"
+    },
+    "priceNative": "1.1190",
+    "priceUsd": "0.09507",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h24": {
+        "buys": 2,
+        "sells": 0
+      }
+    },
+    "volume": {
+      "h24": 8649.25,
+      "h6": 0,
+      "h1": 0,
+      "m5": 0
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 821181.71,
+      "base": 574711,
+      "quote": 9021894
+    },
+    "fdv": 1414392,
+    "marketCap": 1414392,
+    "pairCreatedAt": 1682534261000
+  },
+  {
+    "chainId": "celo",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/celo/0x1a810e0b6c2dd5629afa2f0c898b9512c6f78846",
+    "pairAddress": "0x1a810e0B6c2dd5629AFa2f0c898b9512C6F78846",
+    "baseToken": {
+      "address": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+      "name": "USDC",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+      "name": "Tether USD",
+      "symbol": "USD\u20ae"
+    },
+    "priceNative": "1.0008194",
+    "priceUsd": "0.9999",
+    "txns": {
+      "m5": {
+        "buys": 1,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 13,
+        "sells": 10
+      },
+      "h6": {
+        "buys": 68,
+        "sells": 64
+      },
+      "h24": {
+        "buys": 278,
+        "sells": 351
+      }
+    },
+    "volume": {
+      "h24": 234081.95,
+      "h6": 12619.22,
+      "h1": 4266,
+      "m5": 2.99
+    },
+    "priceChange": {
+      "h1": 0.01,
+      "h6": 0.03,
+      "h24": 0.03
+    },
+    "liquidity": {
+      "usd": 187727.4,
+      "base": 29338,
+      "quote": 158534
+    },
+    "fdv": 17268502,
+    "marketCap": 72676927133,
+    "pairCreatedAt": 1711646998000
+  },
+  {
+    "chainId": "metis",
+    "dexId": "netswap",
+    "url": "https://dexscreener.com/metis/0x3d60afecf67e6ba950b499137a72478b2ca7c5a1",
+    "pairAddress": "0x3D60aFEcf67e6ba950b499137A72478B2CA7c5A1",
+    "baseToken": {
+      "address": "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+      "name": "Metis Token",
+      "symbol": "Metis"
+    },
+    "quoteToken": {
+      "address": "0xbB06DCA3AE6887fAbF931640f67cab3e3a16F4dC",
+      "name": "USDT Token",
+      "symbol": "m.USDT"
+    },
+    "priceNative": "3.8703",
+    "priceUsd": "3.87",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 7,
+        "sells": 9
+      },
+      "h6": {
+        "buys": 48,
+        "sells": 45
+      },
+      "h24": {
+        "buys": 199,
+        "sells": 293
+      }
+    },
+    "volume": {
+      "h24": 44325.56,
+      "h6": 11880.15,
+      "h1": 1535.8,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -1.54,
+      "h6": -3.78,
+      "h24": -2.94
+    },
+    "liquidity": {
+      "usd": 255323.4,
+      "base": 32984,
+      "quote": 127661
+    },
+    "fdv": 25025438,
+    "marketCap": 25025438
+  },
+  {
+    "chainId": "metis",
+    "dexId": "netswap",
+    "url": "https://dexscreener.com/metis/0x948f9614628d761f86b672f134fc273076c4d623",
+    "pairAddress": "0x948f9614628d761f86B672F134Fc273076C4D623",
+    "baseToken": {
+      "address": "0x6F05709bc91Bad933346F9E159f0D3FdBc2c9DCE",
+      "name": "Hera Token",
+      "symbol": "HERA"
+    },
+    "quoteToken": {
+      "address": "0xEA32A96608495e54156Ae48931A7c20f0dcc1a21",
+      "name": "USDC Token",
+      "symbol": "m.USDC"
+    },
+    "priceNative": "2.1040",
+    "priceUsd": "2.10",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 2
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 11
+      },
+      "h24": {
+        "buys": 17,
+        "sells": 21
+      }
+    },
+    "volume": {
+      "h24": 1274.96,
+      "h6": 861.18,
+      "h1": 763.17,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": -0.86,
+      "h6": -0.97,
+      "h24": -0.87
+    },
+    "liquidity": {
+      "usd": 352428.42,
+      "base": 83750,
+      "quote": 176214
+    },
+    "fdv": 21040365,
+    "marketCap": 21040365,
+    "pairCreatedAt": 1648648525000
+  }
+]
