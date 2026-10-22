@@ -160,7 +160,7 @@ main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 
 
 /* ---------- layout primitives ---------- */
-.stack { display: grid; gap: 14px; align-content: start; }
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; }
 .stack-sm { display: grid; gap: 8px; }
 .grid { display: grid; gap: 14px; align-content: start; }
 .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -259,6 +259,7 @@ main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 .seg button { border: 0; background: var(--surface); padding: 4px 10px; font-size: 11px; cursor: pointer; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.seg button:disabled { opacity: .6; cursor: not-allowed; }
 .toggle {
   width: 30px; height: 17px; border-radius: 999px; border: 1px solid var(--line-2);
   background: var(--surface-3); position: relative; flex: 0 0 auto;
