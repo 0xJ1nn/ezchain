@@ -6,8 +6,13 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+
+DEFAULT_DATABASE_URL = "postgresql+psycopg://jinultimate@localhost:5432/ezchain"
+DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+MIN_PROD_TOKEN_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -15,8 +20,16 @@ class Settings(BaseSettings):
 
     app_name: str = "ezchain-api"
     environment: Literal["dev", "test", "prod"] = "dev"
-    database_url: str = "postgresql+psycopg://jinultimate@localhost:5432/ezchain"
+    database_url: str = DEFAULT_DATABASE_URL
+    # Dev/test convenience only. Prod refuses this flag (see ``_validate_production``).
     auto_create_schema: bool = True
+    log_level: str = "INFO"
+
+    # Mutations are authenticated with a bearer token. Reads stay open so the UI and
+    # health probes do not need a secret. In dev/test an unset token keeps mutations
+    # available with a warning; prod refuses to start without one.
+    auth_enabled: bool = True
+    api_token: SecretStr | None = None
 
     data_mode: Literal["live", "fixture"] = "live"
     engine_inline: bool = True
@@ -39,7 +52,37 @@ class Settings(BaseSettings):
     min_liquidity_usd: Decimal = Field(default=Decimal("10000"))
     paper_mark_max_order_usd: Decimal = Field(default=Decimal("250"))
 
-    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
+
+    @model_validator(mode="after")
+    def _validate_production(self) -> Settings:
+        """Refuse an unsafe production boot, naming the exact configuration key."""
+        if self.environment != "prod":
+            return self
+
+        if not self.auth_enabled:
+            raise ValueError("EZCHAIN_AUTH_ENABLED must be true in prod")
+        token = None if self.api_token is None else self.api_token.get_secret_value()
+        if token is None or len(token) < MIN_PROD_TOKEN_LENGTH:
+            raise ValueError(
+                f"EZCHAIN_API_TOKEN must be set and at least {MIN_PROD_TOKEN_LENGTH} "
+                "characters in prod"
+            )
+        if self.auto_create_schema:
+            raise ValueError("EZCHAIN_AUTO_CREATE_SCHEMA must be false in prod")
+        if self.database_url == DEFAULT_DATABASE_URL:
+            raise ValueError("EZCHAIN_DATABASE_URL must not use the local development default")
+        try:
+            password = make_url(self.database_url).password
+        except Exception as exc:  # noqa: BLE001 - any parse failure is a bad production URL
+            raise ValueError("EZCHAIN_DATABASE_URL must be a valid database URL") from exc
+        if not password:
+            raise ValueError("EZCHAIN_DATABASE_URL must include a password in prod")
+        if self.data_mode == "fixture":
+            raise ValueError("EZCHAIN_DATA_MODE must not be fixture in prod")
+        if "*" in self.cors_origins:
+            raise ValueError("EZCHAIN_CORS_ORIGINS must not contain '*' in prod")
+        return self
 
 
 @lru_cache

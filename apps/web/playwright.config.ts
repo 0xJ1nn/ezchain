@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { PROXY_TEST_API_URL, PROXY_TEST_TOKEN } from "./e2e/proxy-env";
 
 export default defineConfig({
 	testDir: "./e2e",
@@ -16,6 +17,10 @@ export default defineConfig({
 		url: "http://127.0.0.1:3100",
 		reuseExistingServer: false,
 		timeout: 120_000,
-		env: { EZCHAIN_WEB_MODE: "fixture" },
+		env: {
+			EZCHAIN_WEB_MODE: "fixture",
+			EZCHAIN_API_URL: PROXY_TEST_API_URL,
+			EZCHAIN_API_TOKEN: PROXY_TEST_TOKEN,
+		},
 	},
 });

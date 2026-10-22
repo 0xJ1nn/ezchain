@@ -15,21 +15,29 @@ reference) and [`docs/CONTRACT.md`](docs/CONTRACT.md) (invariants) before your f
 
 ## Setup
 
-Prerequisites: Node.js 22+, pnpm 9 (`npm install -g pnpm@9`), and Chrome for the
-Playwright smoke test.
+Prerequisites: Node.js 22+, pnpm 9 (`npm install -g pnpm@9`), Python 3.11, Postgres 16,
+and Chrome for the Playwright smoke test.
 
 ```bash
 git clone https://github.com/0xJ1nn/ezchain.git
 cd ezchain
 node tools/sync-agent-stubs.mjs
 pnpm install
+PYTHON=python3.11 bash tools/setup-python.sh
+createdb ezchain
+cp .env.example .env
+.venv/bin/alembic -c apps/api/alembic.ini upgrade head
 pnpm dev                       # web UI at http://localhost:3000
 bash tools/ci.sh
 ```
 
-The Python services do not exist yet. Until they do, the repository is docs + design +
-web UI + infra, and the local gates are the whole contract. Playwright uses the installed
-Chrome channel; install Chrome if the UI test cannot find it.
+The API, engine, web UI and Postgres schema are built; the executor and live execution are
+not. Docker Compose remains a blueprint and is not verified. Migrations are forward-only:
+add a revision with `alembic -c apps/api/alembic.ini revision --autogenerate`, review it,
+and never put destructive operations in `upgrade()`. Mutations need
+`EZCHAIN_API_TOKEN`; the web server injects it, so never send the token to the browser.
+Playwright uses the installed Chrome channel; install Chrome if the UI test cannot find
+it.
 
 ## PRs
 

@@ -5,6 +5,7 @@
 // the pages; it is never presented as live data. Unknown money values stay null and the
 // pages print an em dash — they never become zero.
 
+import { serverAuthorizationHeader } from "./api-auth";
 import {
 	fixtureStrategies,
 	fixtureStrategyRuns,
@@ -85,8 +86,9 @@ export function webMode(): PaperApiMode {
 }
 
 function apiBase() {
-	// On the server Next needs an absolute URL. In the browser the Next rewrite at
-	// /api/:path* proxies to the API, so a relative path keeps working on any origin.
+	// On the server Next needs an absolute URL. In the browser the server-side proxy at
+	// /api/[...path] forwards to the API and injects the bearer token, so a relative path
+	// keeps working on any origin without exposing the token.
 	return typeof window === "undefined" ? API_URL : "";
 }
 
@@ -103,6 +105,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		headers: {
 			"content-type": "application/json",
 			...(init?.headers ?? {}),
+			...serverAuthorizationHeader(),
 		},
 	});
 
