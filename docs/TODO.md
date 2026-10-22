@@ -1,9 +1,10 @@
 # TODO — ezCHAIN P0 + M1 close-out
 
-Status as of **2026-10-22**. The app is a **live paper slice**: live multi-chain browsing,
-Jupiter paper quotes on Solana, an append-only paper ledger and user-defined strategies.
-There are no keys, no signing and no live execution. Wallet/automation/system pages remain
-fixtures or placeholders.
+Status as of **2026-10-22**. The app is a **PAPER stack with production operations**:
+continuous 22/25-chain market observation, Jupiter paper quotes on Solana, an append-only
+paper ledger, strategy CRUD/scheduler, migrations, bearer auth, observability and a stress
+harness. There are no keys, no signing and no live execution. Wallet/automation/system
+pages remain fixtures or placeholders. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
 Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 [`docs/CONTRACT.md`](CONTRACT.md), [`docs/PLAN-LIVE-PAPER.md`](PLAN-LIVE-PAPER.md),
@@ -19,6 +20,20 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] #22 token page + quote panel, Bonk and fail-closed SCAM states.
 - [x] #23 mobile chart overflow; #24 markets evidence; #38 cross-page constants.
 - [x] Evidence: `docs/evidence/m1-ui/` (dashboard, positions, markets, token, SCAM, mobile).
+
+## Done — production operations (2026-10-22)
+
+- [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
+- [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
+  `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
+- [x] Ops: Alembic 0001–0003 (fresh + legacy), bearer auth + CSRF proxy,
+  `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
+- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (static; build/up not verified).
+- [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
+- [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
+- [ ] Supervised `docker compose up --build` on a host with Docker.
+- [ ] Per-user auth/RBAC; `/metrics` exposure decision.
+- [ ] Live dashboard history/attribution/wallets (#57); EVM venue (#59).
 
 ## Now — P0 live paper slice
 

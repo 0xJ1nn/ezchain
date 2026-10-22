@@ -4,10 +4,11 @@ Status: living document, updated when a milestone opens or closes. The roadmap i
 permission for uncontrolled development: each item becomes a focused issue before work
 starts (`project.md` §30).
 
-The current code is the **P0 live paper slice**: live multi-chain browsing, a paper ledger
-and user-defined strategies. Live execution, keys, wallets and automations are not built.
+The current code is the **PAPER stack with production operations**: 22/25 chain market
+observation, a paper ledger, user strategies, migrations, auth, observability and a stress
+harness. Live execution, keys, wallets and automations are not built.
 
-## Now — P0: Live paper slice
+## Done — P0: Live paper slice
 
 Goal: live multi-chain browsing, a real paper ledger, and user-defined strategies that
 run in paper mode. No keys, no live money. Full contract:
@@ -26,6 +27,23 @@ run in paper mode. No keys, no live money. Full contract:
 Exit: a user can browse live markets, place a paper buy/sell, see the ledger and position,
 create a strategy and watch it place paper orders. Every number carries source, age and
 `PAPER`; no key material exists.
+
+## Done — production operations (paper)
+
+- [x] Market eyes: `services/ingest`-equivalent inline scan, 22/25 chains, overview/stored.
+- [x] All-chain browse fan-out/round-robin with coverage and 30-pair-cap regression tests.
+- [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
+  `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
+- [x] Production ops: Alembic 0001–0003, genesis/fill uniqueness, bearer auth + CSRF
+  proxy, `/healthz`/`/readyz`/`/metrics`, JSON logs, runtime-only image deps.
+- [x] Runnable PAPER Compose stack and Caddy edge; Docker build/up **not verified** here.
+- [x] Stress harness (smoke/soak/idempotency/chaos) with deduplicated issue filing;
+  #71 detected and closed by #72.
+- [x] Web truth: fixture badges, DCA/dip vocabulary, Playwright build guard.
+- [ ] Docker build/`compose up` on a machine with a container runtime.
+- [ ] Per-user auth/RBAC; one deployment token today.
+- [ ] Dashboard equity history/attribution/risk/wallets remain fixture previews (#57).
+- [ ] EVM/venue execution and executor/vault (out of paper scope).
 
 ## Current — M1: UI close-out
 

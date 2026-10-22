@@ -1,34 +1,35 @@
 # CURRENT TASK
 
-**Objective:** P0 — live paper slice: multi-chain live browsing, paper execution and
-user-defined strategies. No keys, no live money.
+**Objective:** PAPER stack with production operations. No keys, no live money.
 
 **Scope in:** `apps/api`, `services/engine` (inline), `packages/core-py`,
-`packages/adapters`, `apps/web` markets/token/positions/strategies, Postgres schema,
-Playwright and pytest, docs.
-**Scope out:** live signing, executor/vault, wallet/automation/system pages, fiat,
-copy-trading, pump.fun live trading.
+`packages/adapters`, `apps/web`, Docker/Caddy/Compose, Alembic, auth, observability,
+`tools/stress`, tests and docs.
+**Scope out:** live signing, executor/vault, wallet/automation/system pages beyond
+labelled fixtures, fiat, copy-trading, pump.fun live trading.
 
-**Acceptance:** a user can browse live markets across the registry, place a paper buy/sell,
-see the ledger/position/PnL, create a strategy and watch it place paper orders; unknown,
-stale and no-route states fail closed; `bash tools/ci.sh` is green.
+**State (2026-10-22):** merged to `main` through PR #89.
 
-**Verification:** `bash tools/ci.sh`, `pnpm --filter @ezchain/web test`, `.venv/bin/pytest`,
-`.venv/bin/ruff check`, `.venv/bin/mypy --strict`, live smoke in the PR.
+- Market eyes: continuous inline scan, 22/25 chains covered live, overview/stored,
+  all-chain fan-out/round-robin, position marks refreshed.
+- Paper: buy/sell, idempotent orders, append-only ledger, reconciliation, kill switch,
+  strategy CRUD/scheduler, `ORDER_REJECTED` truth, pair-age and sell-side risk fixes.
+- Ops: Alembic 0001–0003 (fresh + legacy), bearer auth with Next proxy and CSRF guard,
+  `/healthz`/`/readyz`/`/metrics`, JSON access logs, runtime-only API image deps.
+- Deployment: Dockerfiles, runnable PAPER Compose stack, Caddy edge, Prometheus profile.
+  Docker build/up is **not verified** (no container runtime on the authoring machine).
+- Stress: smoke/soak/idempotency/chaos pass; `--file-issues` filed #71, closed by #72.
+- Web: dashboard fixtures badged, DCA/dip vocabularies aligned, Playwright guard.
 
-**State:** P0 is merged to `main` (PR #51): adapters #53, paper #54, engine #52, live web
-#55, paper/strategy web #56. Live smoke passes: markets, token, paper buy/sell, positions
-and a DCA strategy order on Solana; Base USDC paper-mark buy also passes. `bash tools/ci.sh`
-is green on `main` (203 Python + 31 Playwright tests). Dashboard KPI band now reads the
-paper account; its equity chart and open-position tiles remain fixture-preview.
+**Verification:** `bash tools/ci.sh` green (398 Python + 36 Playwright);
+`EZCHAIN_TEST_DATABASE_URL=<test db> bash tools/check-migrations.sh` green;
+auth-enabled live smoke on Postgres passed. Full matrix and gaps:
+[`docs/PRODUCTION-READINESS.md`](../docs/PRODUCTION-READINESS.md).
 
-**Next:** P0.7 dashboard history/tiles (#57), engine boundary (#58), EVM venue (#59) and
-the evidence pack (#60). Then M1 wallets (#10) on a new branch. Do not start live execution
-or key custody without an ADR and the paper gate.
+**Next:** supervised Docker `up --build` on a host with Docker; per-user auth/RBAC;
+dashboard live history/attribution/wallets (#57); EVM venue (#59); executor/vault only
+after ADRs and the paper gate. Do not claim live execution works.
 
-**Hardening (#64, `feat/paper-hardening`):** strategy delete now cascades its run log in
-one transaction, `GET /paper/reconciliation` reports ledger/fill/order integrity read-only,
-and a persisted strategy-scoped kill switch (`/api/v1/system/kill-switch`) blocks
-strategy-originated execution while manual paper orders remain available. Concurrent
-run-now/scheduler evaluation is covered by a regression test that relies on the order
-idempotency key, not a process lock.
+**Known limits:** one deployment bearer token (not per-user), unauthenticated `/metrics`,
+22/25 chain coverage (Osmosis/Cosmos/Moonbeam have no DexScreener pairs), dashboard
+fixtures, no Timescale/tick retention, non-Solana fills are `paper_mark`.

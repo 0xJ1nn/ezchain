@@ -6,11 +6,13 @@ ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledg
 positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
-> Status: **P0 — live paper slice**. Live multi-chain market browsing (DexScreener),
-> Solana paper quotes (Jupiter), an append-only paper ledger with positions/PnL, and
-> user-defined declarative strategies that run in paper mode. There are **no keys, no
-> signing, no live execution and no fiat rail**. Wallet, automation and system pages
-> remain wireframe/fixture surfaces; routes without an implementation say so.
+> Status: **PAPER stack — production operations**. Continuous all-chain market
+> observation, an append-only paper ledger with positions/PnL, user-defined declarative
+> strategies, persisted kill switch, reconciliation, bearer-authenticated mutations,
+> Alembic migrations, structured logs/metrics and a stress harness. There are **no keys,
+> no signing, no live execution and no fiat rail**. Verified vs unverified is recorded in
+> [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); wallet, automation and
+> system pages remain labelled fixture surfaces.
 
 ## Why this exists
 
@@ -36,7 +38,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | `packages/core-py/` | Domain, append-only ledger, paper accounting, risk, strategy rules |
 | `packages/adapters/` | DexScreener market data, Jupiter quotes, 25-chain registry |
 | `packages/ui/` | Generated design tokens shared by the web app |
-| `docs/` | Product, architecture, domain, chains, plan, infra, security, workflow |
+| `docs/` | Product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
 | `infra/` | Docker Compose PAPER stack, Caddy edge, Prometheus, future-service blueprint |
 | `tools/` | Local gates, setup and the combined dev runner |
