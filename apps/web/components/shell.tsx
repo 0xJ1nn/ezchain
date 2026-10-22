@@ -54,6 +54,7 @@ function isActive(href: string, active: string) {
 }
 
 export function Topbar() {
+	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
 	return (
 		<header className="topbar">
 			<div className="brand">
@@ -83,8 +84,8 @@ export function Topbar() {
 				<span className="dot" />
 				PAPER
 			</span>
-			<span className="chip" title="Last successful sync">
-				⟳ fixture data
+			<span className="chip" title="Market data source">
+				{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}
 			</span>
 			<span className="spacer" />
 			<Link className="icon-btn" href="/alerts" title="Alerts" aria-label="Alerts">
@@ -131,7 +132,7 @@ export function Sidebar({ active }: { active: string }) {
 				<Link href="/components">Components</Link>
 				<Link href="/mobile">Mobile</Link>
 				<div className="micro" style={{ marginTop: 8 }}>
-					v0.0.0 · M1
+					v0.1.0 · P0
 				</div>
 			</div>
 		</nav>

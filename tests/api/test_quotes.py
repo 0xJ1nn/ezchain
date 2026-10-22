@@ -132,15 +132,33 @@ async def test_non_solana_uses_a_paper_mark() -> None:
 
 
 @pytest.mark.asyncio
-async def test_non_solana_sell_requires_quantity() -> None:
-    with pytest.raises(NoRoute):
-        await get_quote(
-            chain="base",
-            token_address="0xtoken",
-            side="sell",
-            amount_usd=Decimal("25"),
-            quantity=None,
-            dexscreener=FakeDex(),  # type: ignore[arg-type]
-            jupiter=FakeJupiter(),  # type: ignore[arg-type]
-            settings=Settings(),
-        )
+async def test_non_solana_sell_sizes_from_usd_when_quantity_is_omitted() -> None:
+    quote = await get_quote(
+        chain="base",
+        token_address="0xtoken",
+        side="sell",
+        amount_usd=Decimal("25"),
+        quantity=None,
+        dexscreener=FakeDex(price=Decimal("2")),  # type: ignore[arg-type]
+        jupiter=FakeJupiter(),  # type: ignore[arg-type]
+        settings=Settings(),
+    )
+    assert quote.amount_in == Decimal("12.5")
+    assert quote.amount_out == Decimal("25")
+
+
+@pytest.mark.asyncio
+async def test_solana_sell_sizes_from_usd_when_quantity_is_omitted() -> None:
+    jupiter = FakeJupiter()
+    quote = await get_quote(
+        chain="solana",
+        token_address="mint",
+        side="sell",
+        amount_usd=Decimal("10"),
+        quantity=None,
+        dexscreener=FakeDex(price=Decimal("2")),  # type: ignore[arg-type]
+        jupiter=jupiter,  # type: ignore[arg-type]
+        settings=Settings(),
+    )
+    assert quote.side == "sell"
+    assert jupiter.calls[0]["quantity"] == Decimal("5")

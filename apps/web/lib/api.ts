@@ -5,7 +5,8 @@
 //             FIXTURE on screen; nothing pretends to be a live feed.
 //   live    — fetch the API and throw `ApiError`. There is no silent fallback: a failed
 //             live request renders a reason code, never fixture rows.
-// An unset switch means `fixture` (the safe default). Any other value is an error.
+// An unset switch means `live` (the product default). Tests set `fixture` explicitly.
+// Any other value is an error.
 //
 // Reads are mode-switched. Writes (`postPaperOrder`) always reach the API so a fixture
 // build can never fabricate a fill.
@@ -173,8 +174,8 @@ export function asApiError(error: unknown): ApiError {
 
 export function webMode(): WebMode {
 	const value = process.env.EZCHAIN_WEB_MODE;
-	if (value === "live") return "live";
-	if (value === undefined || value === "" || value === "fixture") return "fixture";
+	if (value === "fixture") return "fixture";
+	if (value === undefined || value === "" || value === "live") return "live";
 	throw new ApiError({
 		code: "WEB_MODE_INVALID",
 		message: `EZCHAIN_WEB_MODE must be "fixture" or "live", got "${value}"`,

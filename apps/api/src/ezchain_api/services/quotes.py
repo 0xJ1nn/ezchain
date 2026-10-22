@@ -22,6 +22,11 @@ async def get_quote(
     settings: Settings,
 ) -> Quote:
     if chain == "solana":
+        if side == "sell" and quantity is None:
+            snapshot = await dexscreener.get_token(chain, token_address)
+            if snapshot.price_usd is None or snapshot.price_usd <= 0:
+                raise NoRoute("sell requires a positive price")
+            quantity = amount_usd / snapshot.price_usd
         quote, _, _ = await jupiter.quote_paper(
             token_address=token_address,
             side=side,
@@ -50,7 +55,7 @@ async def get_quote(
         amount_out = amount_usd / price
     else:
         if quantity is None or quantity <= 0:
-            raise NoRoute("sell requires a positive quantity")
+            quantity = amount_usd / price
         amount_in = quantity
         amount_out = quantity * price
     source = snapshot.source or SourceRef("dexscreener", "https://dexscreener.com", utcnow())

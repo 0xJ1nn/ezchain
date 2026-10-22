@@ -169,12 +169,12 @@ test("a non-solana token is labelled PAPER · MARK, not an executable route", as
 	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 });
 
-test("sell without a token quantity fails closed instead of guessing a size", async ({ page }) => {
+test("sell is sized from the USD notional and renders a paper quote", async ({ page }) => {
 	await page.goto(`/tokens/solana/${BONK_MINT}?side=sell&amount=100`);
 
-	await expect(page.locator("#quote")).toContainText("NO_SELL_ROUTE");
-	await expect(page.locator("#quote")).toContainText("sell requires a positive token quantity");
-	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeDisabled();
+	await expect(page.locator("#quote")).not.toContainText("NO_SELL_ROUTE");
+	await expect(page.locator("#quote")).toContainText("PAPER");
+	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 });
 
 test("unknown chain or token ids return 404", async ({ page }) => {

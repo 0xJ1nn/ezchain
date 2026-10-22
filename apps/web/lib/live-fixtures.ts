@@ -521,14 +521,13 @@ export function fixtureQuote(query: QuoteQuery): Quote {
 	if (!Number.isFinite(amount) || amount <= 0) {
 		fail("INVALID_AMOUNT", "amount_usd must be greater than zero", 422);
 	}
-	// Parity with the API: a sell is sized in token quantity, which this page does not
-	// collect yet. Unknown size is not guessed; it fails closed with the API's code.
-	if (query.side === "sell") {
-		fail("NO_SELL_ROUTE", "sell requires a positive token quantity", 502);
-	}
-	// Parity with the quote service: a Solana buy needs an executable full-size sell.
+	// Parity with the quote service: SCAM has no exit, so neither side can quote.
 	if (snapshot.symbol === "SCAM") {
-		fail("NO_SELL_ROUTE", "buy has no full-size sell route", 502);
+		fail(
+			"NO_SELL_ROUTE",
+			query.side === "sell" ? "no full-size sell route" : "buy has no full-size sell route",
+			502,
+		);
 	}
 	const price = Number(snapshot.price_usd);
 	if (!Number.isFinite(price) || price <= 0) {
@@ -536,13 +535,15 @@ export function fixtureQuote(query: QuoteQuery): Quote {
 	}
 	const isSolana = query.chain === "solana";
 	const now = Date.now();
+	const sell = query.side === "sell";
 	return {
 		chain: query.chain,
-		token_in: "USDC",
-		token_out: snapshot.address,
-		side: "buy",
-		amount_in: decimal(amount),
-		amount_out: decimal(amount / price),
+		token_in: sell ? snapshot.address : "USDC",
+		token_out: sell ? "USDC" : snapshot.address,
+		side: sell ? "sell" : "buy",
+		// A sell is sized from the USD notional at the observed mark.
+		amount_in: decimal(sell ? amount / price : amount),
+		amount_out: decimal(sell ? amount : amount / price),
 		price: snapshot.price_usd ?? "0",
 		price_impact_pct: null,
 		fee_usd: "0",

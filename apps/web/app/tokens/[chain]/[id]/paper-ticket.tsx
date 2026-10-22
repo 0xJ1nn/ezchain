@@ -77,8 +77,11 @@ export function PaperTicket({
 		setState({ kind: "idle" });
 	}, [quoteIdentity]);
 
+	// A buy quote's amount_in is USD; a sell quote's amount_in is the token quantity.
+	// The ticket always collects the USD notional, so compare against the server amount.
+	const quoteUsd = quote?.side === "buy" ? quote.amount_in : amount;
 	const matches =
-		quote !== null && quote.side === localSide && sameAmount(localAmount, quote.amount_in);
+		quote !== null && quote.side === localSide && sameAmount(localAmount, quoteUsd);
 	const amountValid = /^\d+(\.\d{1,2})?$/.test(localAmount.trim()) && Number(localAmount) > 0;
 
 	function preview() {
@@ -101,7 +104,7 @@ export function PaperTicket({
 				chain,
 				token_address: tokenAddress,
 				side: quote.side === "sell" ? "sell" : "buy",
-				amount_usd: quote.amount_in,
+				amount_usd: localAmount,
 				idempotency_key: idempotencyKey,
 			});
 			if (order.status === "rejected" || order.status === "cancelled") {
@@ -132,7 +135,7 @@ export function PaperTicket({
 		: !quote
 			? "No quote has been rendered yet. Preview a quote first."
 			: !matches
-				? `The quote on this page is for ${quote.side} ${formatUsd(quote.amount_in)}. Preview at the current amount first.`
+				? `The quote on this page is for ${quote.side} ${formatUsd(quoteUsd ?? amount)}. Preview at the current amount first.`
 				: null;
 
 	return (
@@ -193,11 +196,15 @@ export function PaperTicket({
 				) : quote && matches ? (
 					<span className="stack-sm">
 						<span className="row">
-							<span className="micro">Expected out</span>
+							<span className="micro">
+							{quote.side === "buy" ? "Expected out" : "Expected USD out"}
+						</span>
 							<span className="spacer" style={{ flex: 1 }} />
 							<Badge tone="ghost">PAPER</Badge>
 							<span className="mono">
-								{formatAmount(quote.amount_out)} {symbol}
+								{quote.side === "buy"
+									? `${formatAmount(quote.amount_out)} ${symbol}`
+									: formatUsd(quote.amount_out)}
 							</span>
 						</span>
 						<span className="row">
