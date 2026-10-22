@@ -34,10 +34,12 @@ no copy-trading. `live_execute` is `false` for every chain.
 
 These are explicit gaps, not silent assumptions:
 
-1. **Docker image build / `docker compose up`.** No Docker runtime exists on the
-   authoring machine. Dockerfiles, Compose, Caddyfile and YAML parse and were reviewed;
-   the first `docker compose -f infra/compose.yaml up --build` must be a
-   maintainer-supervised smoke test.
+1. **Docker image build / `docker compose up`.** Verified on 2026-10-22 on Docker 29.9.2 /
+   Compose v5.6.1: `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d`
+   succeeded, all five services healthy, migration at head `0003_paper_fill_order`, paper BUY
+   filled through the edge, restart and backup drills passed. Evidence:
+   [docs/evidence/p0-production/docker-up.md](evidence/p0-production/docker-up.md). The
+   remaining Docker gaps are per-user auth/RBAC and the other items below.
 2. **Per-user auth / RBAC.** The edge injects one deployment bearer token. It is not an
    identity; anyone who can reach the edge can mutate the paper account. Keep the default
    `EZCHAIN_BIND=127.0.0.1` or put a trusted authenticating proxy in front.

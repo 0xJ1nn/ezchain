@@ -117,6 +117,6 @@ Observed: `ci: ok`; 398 Python + 36 Playwright tests passed; migration check
 
 ## Not shown here
 
-- Docker image build/`compose up` (no Docker runtime on this machine; see
-  [`docs/PRODUCTION-READINESS.md`](../../PRODUCTION-READINESS.md))
+- Docker image build/`compose up` — now verified; see
+  [docs/evidence/p0-production/docker-up.md](docker-up.md)
 - per-user auth/RBAC, live execution/keys, EVM venue, Timescale retention
