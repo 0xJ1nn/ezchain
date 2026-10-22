@@ -233,6 +233,12 @@ read normally.
    if it was exposed: change both processes, restart, then re-test a mutation.
 6. In local dev only, an unset token allows mutations with one warning. That is not a
    production mode.
+
+`403 CROSS_ORIGIN_DENIED` means the Next proxy rejected a browser request whose
+`Origin`/`Sec-Fetch-Site` did not match the edge. Set `EZCHAIN_PUBLIC_URL` to the exact
+public origin (for example `https://ezchain.example.com`) in the web container; the
+proxy also accepts the forwarded host/proto. A non-browser client with no Origin header
+is still allowed, so this only affects browser CSRF attempts and misconfigured origins.
 ## 13. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.

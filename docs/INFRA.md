@@ -67,6 +67,8 @@ Restore drill is part of release: restore into a scratch container, run
 ## 4. Networking and TLS
 
 - Caddy terminates TLS, serves the web app, proxies `/api` and `/ws`, sets CSP/HSTS.
+The web container must set `EZCHAIN_PUBLIC_URL` to the public edge origin; the
+`/api/[...path]` proxy rejects cross-site mutations with `403 CROSS_ORIGIN_DENIED`.
 - Only Caddy is published. API/executor are on an internal network. Postgres/Redis/NATS
   are never published.
 - **Browser `/api/*` must reach the Next server proxy (`web:3000`), not the API directly,
