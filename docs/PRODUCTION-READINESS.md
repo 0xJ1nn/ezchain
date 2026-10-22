@@ -4,6 +4,7 @@ Status: **paper-ready, live-execution-not-built**. This document records what wa
 measured on 2026-10-22, not what is planned. It is the honest answer to "can I run this
 and trust the paper numbers?".
 
+Raw commands and observed results: [docs/evidence/p0-production](evidence/p0-production/README.md).
 Scope: PAPER only. There is no key custody, no signing, no live order, no fiat rail and
 no copy-trading. `live_execute` is `false` for every chain.
 

@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- `docs/evidence/p0-production/`: live market/paper/strategy/auth/API-down/restart and
+  stress evidence for the PAPER production operations.
 - `docs/PRODUCTION-READINESS.md`: verified vs unverified matrix, operator checklist and the
   release rule for the PAPER stack (398 Python + 36 Playwright tests, live auth-enabled
   smoke, stress suite, migrations).
