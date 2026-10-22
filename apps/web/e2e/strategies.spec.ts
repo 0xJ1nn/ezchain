@@ -89,6 +89,12 @@ test("DCA kind hides exit-only fields", async ({ page }) => {
 	await form.getByRole("button", { name: /Momentum/ }).click();
 	await expect(form.getByLabel("Take profit (%)")).toBeVisible();
 	await expect(form.getByLabel("Stop loss (%)")).toBeVisible();
+	await expect(form.getByLabel("Exit change (%)")).toBeVisible();
+
+	await form.getByRole("button", { name: /Dip/ }).click();
+	await expect(form.getByLabel("Take profit (%)")).toBeVisible();
+	await expect(form.getByLabel("Stop loss (%)")).toBeVisible();
+	await expect(form.getByLabel("Exit change (%)")).toHaveCount(0);
 });
 
 test("strategy detail renders params and its run log", async ({ page }) => {

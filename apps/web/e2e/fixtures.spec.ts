@@ -32,6 +32,20 @@ test("DCA form vocabulary matches the server validator", () => {
 	]);
 	expect(dcaFields.some((field) => field.name === "take_profit_pct")).toBe(false);
 	expect(dcaFields.some((field) => field.name === "stop_loss_pct")).toBe(false);
+
+	const dipFields = strategyParamFields
+		.filter((field) => field.kinds.includes("dip"))
+		.map((field) => field.name)
+		.sort();
+	expect(dipFields).toEqual([
+		"entry_change_pct",
+		"interval_minutes",
+		"lookback",
+		"max_position_usd",
+		"order_usd",
+		"stop_loss_pct",
+		"take_profit_pct",
+	]);
 });
 
 test("cross-page BONK constants agree", () => {
