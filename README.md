@@ -38,7 +38,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain, chains, plan, infra, security, workflow |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
-| `infra/` | Docker Compose + Caddy + Prometheus blueprint (not runnable yet) |
+| `infra/` | Docker Compose PAPER stack, Caddy edge, Prometheus, future-service blueprint |
 | `tools/` | Local gates, setup and the combined dev runner |
 
 ## Principles
@@ -101,15 +101,51 @@ labelled `FIXTURE` and never presented as live.
 npx serve design/wireframe      # or any static file server
 ```
 
-Docker Compose remains the production deployment contract. It is **not runnable yet**:
-`infra/compose.yaml` references images and Dockerfiles that do not exist in this
-repository. The local quick start above uses the Python API and Next dev server directly.
+## Docker quick start — PAPER stack
+
+Docker Engine 24+ with Compose v2. The stack builds the API and web images from this
+repository, runs Postgres 16 and an Alembic migration job, and publishes only Caddy.
 
 ```bash
-# production blueprint — not runnable yet
 cp infra/.env.example infra/.env
-docker compose -f infra/compose.yaml up -d
+
+# Edit infra/.env and set both required secrets:
+#   POSTGRES_PASSWORD=<long random value>
+#   EZCHAIN_API_TOKEN=<at least 32 random characters>
+# If the edge runs on a different origin, set EZCHAIN_PUBLIC_URL to that exact origin.
+openssl rand -hex 32   # run twice: once for the password, once for the token
+
+docker compose -f infra/compose.yaml up --build -d
+docker compose -f infra/compose.yaml ps
+open http://localhost:8080
 ```
+
+The first `up` builds `ezchain/api:local` and `ezchain/web:local`, waits for Postgres,
+runs `alembic upgrade head`, then starts the API, web and Caddy. The API does **not**
+create tables itself (`EZCHAIN_AUTO_CREATE_SCHEMA=false`); a failed migration stops the
+rollout before the API starts.
+
+**Verification status:** the Dockerfiles, Compose file, Caddyfile and YAML were reviewed
+statically; a Docker image build/`compose up` was not run in this environment (no Docker
+runtime). Treat the first deployment as a maintainer-supervised smoke test, not as
+already-observed behavior.
+
+| URL | What |
+|---|---|
+| <http://localhost:8080> | Web app (markets, positions, strategies) |
+| <http://localhost:8080/healthz> | API liveness |
+| <http://localhost:8080/readyz> | API readiness, including the database |
+| <http://localhost:8080/metrics> | Prometheus metrics from the API (no auth; keep the default loopback bind) |
+| `http://localhost:8080/api/v1/...` | API through the edge; the Next.js route handler adds the bearer token server-side |
+
+The interactive OpenAPI UI is **not** published by the edge. On a trusted machine,
+uncomment the `/docs*` and `/openapi.json` handlers in `infra/Caddyfile`, or run the API
+and web locally with `tools/dev.sh`.
+
+Operational detail — services, networks, backups, migration and rollback — is in
+[docs/INFRA.md](docs/INFRA.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md). Services that do
+not exist yet (Redis, NATS, executor, ingest, a standalone engine) are recorded in
+`infra/compose.blueprint.yaml` and are not part of this stack.
 
 ## License
 

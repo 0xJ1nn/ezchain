@@ -1,3 +1,7 @@
+# Prometheus for the PAPER stack (observability profile).
+# Only targets that exist in infra/compose.yaml are listed. Do not add
+# engine/executor/ingest jobs until those deployables exist.
+
 global:
   scrape_interval: 15s
   evaluation_interval: 30s
@@ -7,12 +11,12 @@ rule_files:
 
 scrape_configs:
   - job_name: api
-    static_configs: [{ targets: ["api:8000"] }]
-  - job_name: engine
-    static_configs: [{ targets: ["engine:8001"] }]
-  - job_name: executor
-    static_configs: [{ targets: ["executor:8010"] }]
-  - job_name: ingest
-    static_configs: [{ targets: ["ingest:8002"] }]
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  # Prometheus scrapes itself so `up` and the alert rules have a second target
+  # that proves the config is live.
   - job_name: prometheus
-    static_configs: [{ targets: ["localhost:9090"] }]
+    static_configs:
+      - targets: ["localhost:9090"]
