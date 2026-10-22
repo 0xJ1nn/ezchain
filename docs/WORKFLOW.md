@@ -59,17 +59,12 @@ workflow — do not add a workflow that cannot run.
 | 2 | Generated tokens fresh | `node tools/build-tokens.mjs --check` |
 | 3 | Wireframe integrity | `node tools/check-wireframe.mjs` |
 | 4 | Docs links | `node tools/check-links.mjs` |
-| 5 | Security | `node tools/check-secrets.mjs`; `gitleaks` when available |
-| 6 | Web lint / types | `pnpm -r lint`, `pnpm -r typecheck` |
-| 7 | Web smoke + screenshots | `pnpm -r test` (Playwright, Chrome channel) |
-| 8 | Python format/lint/types | `ruff`, `mypy` when `pyproject.toml` exists |
-| 9 | Python unit + property | `pytest` when `tests/` exists |
-| 10 | Invariants | ledger/risk/adapter contract suites (M2+) |
-| 11 | OpenAPI diff | generated client vs committed schema (M2+) |
-| 12 | Compose | `docker compose config -q` (when Docker is available) |
+| 5 | Security | `node tools/check-secrets.mjs` |
+| 6 | Runtime gates | `ruff`/`mypy`/`pytest` when the Python artifacts exist; `pnpm -r lint`, `pnpm -r typecheck`, `pnpm --filter @ezchain/web build`, `pnpm -r test` |
 
-Gates 1–7 run today. Gates 8–12 activate as the artifacts they check land. Every gate
-that is committed must be runnable on this machine.
+All six steps run today. Python, invariant and adapter-contract suites activate as those
+artifacts land; compose validation is not in the gate yet. Every gate that is committed
+must be runnable on this machine.
 
 ## 5. Merge
 
@@ -101,9 +96,9 @@ that is committed must be runnable on this machine.
 
 ## 8. Issue labels
 
-`bug`, `feature`, `design`, `docs`, `chain`, `venue`, `strategy-sdk`, `security`,
-`money-path`, `good-first-issue`, `needs-triage`, `blocked`. `money-path` automatically
-adds the second-review requirement.
+`bug`, `feature`, `design`, `documentation`, `chain`, `venue`, `strategy-sdk`, `security`,
+`money-path`, `good first issue`, `needs-triage`, `blocked`. `money-path` is intended to
+require a second review; the branch ruleset does not enforce that yet, so reviewers must.
 
 ## 9. Working agreements
 
