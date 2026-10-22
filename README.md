@@ -33,6 +33,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | `apps/web/` | Next.js UI: shell, dashboard, positions, markets, token page (M1), fixture-driven |
 | `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain model, chains, SDK, infra, security, workflow |
+| `docs/TODO.md` | M1 close-out checklist and page-level definition of done |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
 | `design/BRIEF.md` | Design brief for the visual pass (Claude Design input) |
 | `infra/` | Docker Compose + Caddy + Prometheus blueprint (deployment contract, not runnable yet) |
