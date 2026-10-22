@@ -68,11 +68,7 @@ def ensure_genesis(session: Session, starting_cash_usd: Decimal) -> None:
 def _aware(value: datetime | None) -> datetime | None:
     if value is None:
         return None
-    return (
-        value.astimezone(UTC)
-        if value.tzinfo is not None
-        else value.replace(tzinfo=UTC)
-    )
+    return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _ledger_rows(session: Session) -> list[LedgerEntryRow]:
