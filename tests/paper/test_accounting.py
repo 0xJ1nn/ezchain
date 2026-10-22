@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections import defaultdict
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 from ezchain_api.services import paper
+from ezchain_core import utcnow
 
 from .conftest import (
     CHAIN,
@@ -32,6 +35,25 @@ def _group_sums(session: Session) -> dict[str, Decimal]:
 
 def _money(value: str) -> Decimal:
     return Decimal(value)
+
+
+def test_genesis_cannot_be_inserted_twice(session) -> None:
+    paper.ensure_genesis(session, Decimal("10000"))
+    session.add(
+        LedgerEntryRow(
+            group_id="genesis",
+            account="cash:USD",
+            asset="USD",
+            amount=Decimal("10000"),
+            usd_value=Decimal("10000"),
+            kind="genesis",
+            created_at=utcnow(),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+    assert session.scalar(select(func.count()).select_from(LedgerEntryRow)) == 2
 
 
 def test_buy_then_sell_reconciles(session, settings, dex, jupiter) -> None:

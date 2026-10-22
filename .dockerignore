@@ -19,6 +19,7 @@
 **/venv
 **/node_modules
 **/.next
+**/build
 **/.turbo
 **/__pycache__
 **/*.py[cod]

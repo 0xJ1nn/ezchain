@@ -8,5 +8,8 @@ version = "0.1.0"
 description = "ezCHAIN HTTP edge"
 requires-python = ">=3.11"
 
+[project.scripts]
+ezchain-api = "ezchain_api.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]

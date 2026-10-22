@@ -63,13 +63,34 @@ Requires Node 22 + pnpm 9, Python 3.11 and Postgres 16.
 createdb ezchain                 # once
 cp .env.example .env             # DB URL, API URL, paper limits
 PYTHON=python3.11 bash tools/setup-python.sh
+.venv/bin/alembic -c apps/api/alembic.ini upgrade head   # once, forward-only
 bash tools/dev.sh                # API on :8000, web on :3000
 open http://localhost:3000
 ```
 
 - API docs: <http://127.0.0.1:8000/docs>
+- Liveness/readiness: `/healthz` and `/readyz` (the latter includes the migration head)
 - Live markets: `/markets` · token/ticket: `/tokens/{chain}/{address}`
 - Paper positions: `/positions` · user strategies: `/strategies`
+
+### Mutations need a bearer token
+
+Reads (`GET`/`HEAD`/`OPTIONS`) are open. Every other request under `/api/` requires
+`Authorization: Bearer <EZCHAIN_API_TOKEN>`. The web server injects the token in its
+`/api/[...path]` proxy; the browser never receives it. In local dev an unset token still
+allows mutations and logs one warning. Production **refuses to start** without a token of
+at least 32 characters, `EZCHAIN_AUTO_CREATE_SCHEMA=false`, a non-default database URL
+with a password, `EZCHAIN_DATA_MODE=live`, and no `*` CORS origin.
+
+```bash
+openssl rand -hex 32             # put this in EZCHAIN_API_TOKEN for the API and web
+```
+
+Existing local databases created by `create_all()` before Alembic are unstamped:
+`/readyz` reports `migration: missing`. Verify the schema matches the models, then run
+`alembic -c apps/api/alembic.ini stamp 0001_baseline` once, then run
+`alembic -c apps/api/alembic.ini upgrade head` so the forward-only 0002 index is
+applied. Never stamp a production database.
 
 For deterministic UI work and Playwright, set `EZCHAIN_WEB_MODE=fixture`; every fixture is
 labelled `FIXTURE` and never presented as live.
@@ -91,6 +112,7 @@ cp infra/.env.example infra/.env
 # Edit infra/.env and set both required secrets:
 #   POSTGRES_PASSWORD=<long random value>
 #   EZCHAIN_API_TOKEN=<at least 32 random characters>
+# If the edge runs on a different origin, set EZCHAIN_PUBLIC_URL to that exact origin.
 openssl rand -hex 32   # run twice: once for the password, once for the token
 
 docker compose -f infra/compose.yaml up --build -d
@@ -103,12 +125,17 @@ runs `alembic upgrade head`, then starts the API, web and Caddy. The API does **
 create tables itself (`EZCHAIN_AUTO_CREATE_SCHEMA=false`); a failed migration stops the
 rollout before the API starts.
 
+**Verification status:** the Dockerfiles, Compose file, Caddyfile and YAML were reviewed
+statically; a Docker image build/`compose up` was not run in this environment (no Docker
+runtime). Treat the first deployment as a maintainer-supervised smoke test, not as
+already-observed behavior.
+
 | URL | What |
 |---|---|
 | <http://localhost:8080> | Web app (markets, positions, strategies) |
 | <http://localhost:8080/healthz> | API liveness |
 | <http://localhost:8080/readyz> | API readiness, including the database |
-| <http://localhost:8080/metrics> | Prometheus metrics from the API |
+| <http://localhost:8080/metrics> | Prometheus metrics from the API (no auth; keep the default loopback bind) |
 | `http://localhost:8080/api/v1/...` | API through the edge; the Next.js route handler adds the bearer token server-side |
 
 The interactive OpenAPI UI is **not** published by the edge. On a trusted machine,

@@ -4,8 +4,8 @@
 # Build context is the repository root:
 #   docker build -f apps/web/Dockerfile -t ezchain/web .
 #
-# EZCHAIN_API_URL is baked into next.config's rewrite at build time. The runtime
-# value from compose wins for server components and the /api route handler.
+# The API base and bearer token are runtime-only. Server components and the
+# /api/[...path] route handler read them from the container environment.
 
 FROM node:22-alpine AS base
 
@@ -27,9 +27,6 @@ COPY packages/ui/package.json packages/ui/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
-
-ARG EZCHAIN_API_URL=http://api:8000
-ENV EZCHAIN_API_URL=${EZCHAIN_API_URL}
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules

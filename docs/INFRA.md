@@ -9,6 +9,18 @@ are published yet. Services that do not exist are recorded separately in
 The rule is unchanged: nothing is decorative. A service belongs in `compose.yaml` only
 when code in this repository uses it, it has a health signal and a resource budget.
 
+## 0. Runnable today vs blueprint
+
+| Area | State |
+|---|---|
+| Local API + Next web + local Postgres (`tools/dev.sh`) | runnable |
+| Alembic baseline and `ezchain-api migrate` | runnable and verified against a fresh Postgres database |
+| `/healthz`, `/readyz`, `/metrics`, JSON request logs | runnable |
+| Docker Compose, Caddy edge, images, Prometheus/Grafana/Loki | **blueprint** — not built or verified here |
+
+The Docker topology is owned by a separate change. Do not read this document as evidence
+that `docker compose up` works.
+
 ## 1. Topologies
 
 | Topology | Who | Services |
@@ -28,7 +40,7 @@ required and no manifests are shipped.
 |---|---|---|---|---|
 | `postgres` | `postgres:16-alpine` | 5432 (internal) | `pg_isready` | 1 CPU / 1 GB |
 | `migrate` | builds `apps/api/Dockerfile` as `ezchain/api` | — | exit code (`restart: "no"`) | 0.5 / 512 MB |
-| `api` | builds `apps/api/Dockerfile` | 8000 (internal) | `GET /healthz` | 1 / 512 MB |
+| `api` | builds `apps/api/Dockerfile` | 8000 (internal) | `GET /readyz` (compose); Dockerfile liveness `/healthz` | 1 / 512 MB |
 | `web` | builds `apps/web/Dockerfile` | 3000 (internal) | `GET /` | 0.5 / 256 MB |
 | `caddy` | `caddy:2.8-alpine` | `${EZCHAIN_BIND}:${EZCHAIN_PORT}` → 8080 | `GET /` through the proxy | 0.25 / 128 MB |
 | `prometheus` | `prom/prometheus:v2.54.1` | 9090 (localhost by default) | `/-/healthy` | 0.5 / 512 MB |
@@ -80,6 +92,8 @@ host :8080
 | `EZCHAIN_AUTO_CREATE_SCHEMA` | yes | `false`; Alembic owns the schema |
 | `EZCHAIN_AUTH_ENABLED` | yes | `true` |
 | `EZCHAIN_API_URL` | yes (web) | `http://api:8000` |
+| `EZCHAIN_PUBLIC_URL` | yes (web) | exact browser origin, e.g. `http://localhost:8080`; used by the proxy same-origin check |
+| `EZCHAIN_LOG_LEVEL` | no | `INFO`; structured access logs |
 | `EZCHAIN_DATA_MODE` | no | `live` (default); `fixture` is for tests only |
 | `EZCHAIN_ENGINE_INLINE` | no | `true`; engine runs in the API process |
 | `EZCHAIN_MARKET_SCAN_INLINE` | no | `true`; bounded market observation in the API |
@@ -88,17 +102,21 @@ host :8080
 
 Notes:
 
-- `env_file` does **not** expand `${POSTGRES_PASSWORD}`. That is why the database URL is
-  built in `compose.yaml` (`environment:` overrides `env_file`). The line in
-  `.env.example` documents the shape; the container receives the interpolated value.
+- `env_file` does **not** expand `${POSTGRES_PASSWORD}`. The database URL is built in
+  `compose.yaml` from `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`; do not set it in
+  `.env`.
 - Percent-encode special characters in `POSTGRES_PASSWORD`, or use a long alphanumeric
   secret. `openssl rand -hex 32` avoids the problem entirely.
 - Never commit `infra/.env`. `.gitignore` excludes `.env` and `.env.*` except
   `.env.example`.
 - Secrets are not baked into images. The Docker build context is `.dockerignore`d against
   `.env` and key material.
-- The API's `/healthz`, `/readyz` and `/metrics` are edge endpoints, not `/api/*`. Keep
-  the default `EZCHAIN_BIND=127.0.0.1` unless you intentionally expose metrics.
+- The API's `/healthz`, `/readyz` and `/metrics` are edge endpoints, not `/api/*`.
+  `/metrics` has no authentication and exposes order/fill counts; keep the default
+  `EZCHAIN_BIND=127.0.0.1` unless you intentionally expose it.
+- The edge injects one deployment bearer token for every caller. It is not per-user auth;
+  anyone who can reach the edge can mutate the paper account. Run it on a trusted host
+  until per-user auth exists.
 - Future credentials (`REDIS_URL`, `NATS_URL`, `EZCHAIN_VAULT_KEY`, RPC keys) are in a
   clearly marked commented block in `.env.example`. They do nothing today.
 
@@ -158,7 +176,123 @@ that before enabling the profile on a shared host.
 
 There is no S3/MinIO artifact store, no NATS JetStream and no Redis in this stack.
 
+<<<<<<< HEAD
 Dump:
+=======
+## 4. Networking and TLS
+
+- Caddy terminates TLS, serves the web app, proxies `/api` and `/ws`, sets CSP/HSTS.
+The web container must set `EZCHAIN_PUBLIC_URL` to the public edge origin; the
+`/api/[...path]` proxy rejects cross-site mutations with `403 CROSS_ORIGIN_DENIED`.
+- Only Caddy is published. API/executor are on an internal network. Postgres/Redis/NATS
+  are never published.
+- **Browser `/api/*` must reach the Next server proxy (`web:3000`), not the API directly,
+  when `EZCHAIN_API_TOKEN` is set.** The current compose/Caddy blueprint sends `/api/*`
+  straight to `api:8000`; that edge change belongs to the Docker change. Direct API routes
+  remain fine for server-to-server calls that carry the bearer token, and `/ws` is
+  unaffected today because websockets are not a mutation path in P0.
+- Modes: `localhost` (http, self-signed optional), `lan` (mkcert), `public` (ACME with a
+  real domain). Auth cannot be disabled in `public` mode — the process refuses to boot.
+- Executor accepts signed internal requests only (HMAC + mTLS); no browser path.
+
+## 5. Configuration and secrets
+
+```toml
+# ezchain.toml — committed example, no secrets
+[server] public_url = "http://localhost:8080"
+[auth]   mode = "local"           # local | oidc
+[chains] enabled = ["solana", "base"]
+[risk]   max_daily_loss_usd = 250
+```
+
+Secrets are references:
+
+```toml
+[rpc.helius] api_key = "env:HELIUS_API_KEY"
+[cex.binance] api_key = "vault:binance/api_key"
+[vault] master_key = "env:EZCHAIN_VAULT_KEY"   # 32 bytes, base64
+```
+
+Precedence: defaults < `ezchain.toml` < env < DB workspace overrides (audited, with an
+actor and a reason). A missing required secret fails startup with the exact key name and
+how to provide it.
+
+The API reads `EZCHAIN_DATABASE_URL` (the env prefix is `EZCHAIN_`). `DATABASE_URL` in the
+compose environment is not read by the settings model; keep the two in sync until the
+Docker change unifies them.
+
+### 5.1 API auth
+
+`GET`/`HEAD`/`OPTIONS` under `/api/` are open. Every other method requires
+`Authorization: Bearer $EZCHAIN_API_TOKEN`, enforced by middleware so new routes are
+covered by default. The Next server injects the token in its `/api/[...path]` proxy; the
+browser never receives it. In dev/test an unset token allows mutations with one warning.
+With `EZCHAIN_ENVIRONMENT=prod` the API refuses to start unless `EZCHAIN_AUTH_ENABLED=true`,
+`EZCHAIN_API_TOKEN` is at least 32 characters, `EZCHAIN_AUTO_CREATE_SCHEMA=false`,
+`EZCHAIN_DATABASE_URL` is non-default and includes a password, `EZCHAIN_DATA_MODE=live`,
+and `EZCHAIN_CORS_ORIGINS` contains no `*`.
+
+## 6. Migrations and upgrades
+
+- Images are immutable and tagged `MAJOR.MINOR.PATCH`; `latest` is never used in prod.
+- `migrate` runs before api starts; it is idempotent and does **not** take a backup
+  automatically. Take a verified dump first (see §7). The runner is `ezchain-api migrate`
+  (or `python -m ezchain_api.migrate`); both call `alembic upgrade head`.
+- The database URL comes from Settings, never from `alembic.ini`.
+- Forward-only. No destructive migrations (CONTRACT I8). A guard test scans every
+  `upgrade()` body for `drop_table`, `drop_column`, `TRUNCATE`, `DELETE FROM`, `wipe` and
+  `clean_slate`; `downgrade()` may drop.
+- Readiness is `/readyz`: it returns 503 unless `SELECT 1` succeeds **and**
+  `alembic_version` equals the script head. `/healthz` is liveness only.
+- Upgrade procedure: backup → pull → migrate → start → wait for `/readyz` →
+  `ezchain-admin verify` → reconcile → unpause. Documented in `docs/RUNBOOK.md`.
+
+## 7. Observability
+
+- **Metrics** (Prometheus): HTTP RED, intent rate/latency, decision reasons, quote
+  latency, fill ratio, slippage realised vs quoted, source freshness seconds, queue depth,
+  breaker state, ledger drift (must be 0), vault unlock age. The API exposes
+  `/metrics` with `ezchain_http_requests_total`, the
+  `ezchain_http_request_duration_ms` histogram, `ezchain_paper_orders_total{status}`,
+  `ezchain_paper_fills_total` and `ezchain_up`; labels are bounded by route template and a
+  series cap.
+- **Traces** (OTel): API → engine → executor → venue, sampled 10% (100% on error), with
+  `intent_id`.
+- **Logs** (Loki/JSON): one JSON line per request with `ts`, `level`, `logger`, `msg`,
+  `request_id`, `method`, route template, `status` and `duration_ms`. No Authorization,
+  bodies or query values. `X-Request-ID` is accepted only when it is 1–64 characters of
+  `[A-Za-z0-9_-]`; otherwise a uuid4 is generated and returned in the response.
+- **Alerts**: drift > 0, executor unreachable, chain source stale > 60 s, queue depth >
+  10k, breaker open > 5 min, backup failed, disk > 80%, certificate < 14 d.
+- **Ops page** in the product mirrors these; Grafana is optional.
+
+## 8. Backup, recovery, disaster
+
+| Scenario | RTO | Procedure |
+|---|---|---|
+| One service crashed | < 1 min | restart policy; state from DB |
+| Node reboot | < 5 min | compose up; executor reconciles open orders |
+| DB corruption | < 1 h | restore last verified dump; replay NATS/outbox |
+| Lost vault key | **no recovery** | keys are unrecoverable by design; recovery phrase is the user's responsibility |
+| Host loss | < 4 h | restore on new host from dump + artifacts |
+
+The vault recovery phrase is shown once at creation, never stored server-side. Losing it
+loses the hot wallets; watch-only and hardware wallets survive.
+
+## 9. CI/CD
+
+- Every PR: `tools/ci.sh` (format, lint, types, unit, invariants, adapter contract,
+  OpenAPI diff, wireframe check, secret scan, compose config validation).
+- `main`: build images, SBOM (syft), Trivy scan, sign with cosign, push to GHCR.
+- Release: tag `vX.Y.Z`, changelog, release notes with known limitations, compose image
+  digests, upgrade notes, restore-drill result.
+- Nightly: fresh-DB migration test, 24 h soak, adapter fixtures against mainnet read-only,
+  dependency audit.
+- No workflow may be committed without being runnable (`workflow_dispatch` at minimum) —
+  v3/ezcore both shipped dead CI.
+
+## 10. Local development
+>>>>>>> origin/main
 
 ```bash
 docker compose -f infra/compose.yaml exec -T postgres sh -c \

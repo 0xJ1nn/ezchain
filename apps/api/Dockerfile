@@ -18,13 +18,13 @@ WORKDIR /build
 
 # Runtime and migration dependencies (fastapi, uvicorn, sqlalchemy, psycopg,
 # pydantic, alembic, ...). The repository has one requirements file today.
-COPY requirements.txt ./
+COPY requirements-runtime.txt ./
 RUN python -m pip install --upgrade pip \
-    && python -m pip install --prefix=/install -r requirements.txt
+    && python -m pip install --prefix=/install -r requirements-runtime.txt
 
-# Local workspace packages. `--no-deps` is deliberate: requirements.txt above is
-# the single source of third-party pins, and the workspace packages declare no
-# external dependencies of their own.
+# Local workspace packages. `--no-deps` is deliberate: requirements-runtime.txt above
+# is the single source of runtime pins, and the workspace packages declare no external
+# dependencies of their own.
 COPY packages/core-py ./packages/core-py
 COPY packages/adapters ./packages/adapters
 COPY apps/api ./apps/api

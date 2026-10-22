@@ -44,6 +44,7 @@ x-api-env: &api-env
   EZCHAIN_MARKET_SCAN_INLINE: "${EZCHAIN_MARKET_SCAN_INLINE:-true}"
   EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS: "${EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS:-90}"
   EZCHAIN_MARKET_SCAN_LIMIT: "${EZCHAIN_MARKET_SCAN_LIMIT:-200}"
+  EZCHAIN_LOG_LEVEL: "${EZCHAIN_LOG_LEVEL:-INFO}"
 
 services:
   postgres:
@@ -106,15 +107,12 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
-      args:
-        # Baked into next.config's rewrite. Runtime server components and the
-        # /api/[...path] route handler read the compose environment value below.
-        EZCHAIN_API_URL: "http://api:8000"
     image: ezchain/web:${EZCHAIN_VERSION:-local}
     restart: unless-stopped
     env_file: [.env]
     environment:
-      EZCHAIN_API_URL: "http://api:8000"
+      EZCHAIN_API_URL: "${EZCHAIN_API_URL:-http://api:8000}"
+      EZCHAIN_PUBLIC_URL: "${EZCHAIN_PUBLIC_URL:?set EZCHAIN_PUBLIC_URL in infra/.env}"
       # Server-side only. Never expose this through a NEXT_PUBLIC_* variable.
       EZCHAIN_API_TOKEN: "${EZCHAIN_API_TOKEN:?set EZCHAIN_API_TOKEN in infra/.env (at least 32 characters)}"
       EZCHAIN_WEB_MODE: "${EZCHAIN_WEB_MODE:-live}"

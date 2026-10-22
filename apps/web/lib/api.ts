@@ -14,6 +14,8 @@
 // The UI formats only. Numbers arrive as decimal strings from the API; this module never
 // does PnL or quote arithmetic (CONTRACT I3/I10/I12).
 
+import { serverAuthorizationHeader } from "./api-auth";
+
 export type WebMode = "fixture" | "live";
 export type MarketSort = "trending" | "liquidity" | "new";
 export type Side = "buy" | "sell";
@@ -208,7 +210,10 @@ async function request<T>(path: string, init: RequestInitLite = {}): Promise<T> 
 	}
 	const suffix = query.size > 0 ? `?${query.toString()}` : "";
 	const target = `${apiBase()}${path}${suffix}`;
-	const headers: Record<string, string> = { accept: "application/json" };
+	const headers: Record<string, string> = {
+		accept: "application/json",
+		...serverAuthorizationHeader(),
+	};
 	let body: string | undefined;
 	if (init.body !== undefined) {
 		headers["content-type"] = "application/json";
