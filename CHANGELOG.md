@@ -7,6 +7,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Alembic baseline** (`0001_baseline`) for the current paper schema, generated against a
+  fresh Postgres database. `ezchain-api migrate` / `python -m ezchain_api.migrate` runs
+  `alembic upgrade head`; `/readyz` returns 503 unless the database is reachable and
+  `alembic_version` equals the script head. A test rejects destructive `upgrade()` bodies
+  (CONTRACT I8).
+- **Mutation auth**: every non-`GET`/`HEAD`/`OPTIONS` request under `/api/` requires
+  `Authorization: Bearer $EZCHAIN_API_TOKEN`; reads stay open. Production refuses to boot
+  with an unsafe config (no token, short token, `auto_create_schema`, fixture mode, `*`
+  CORS, default/passwordless database URL). The Next server proxies browser `/api/*` calls
+  and injects the token server-side, so it never reaches the browser.
+- **Observability**: one JSON access log line per request with a safe/echoed
+  `X-Request-ID`, route template and duration (no tokens, bodies or query values);
+  `/healthz` liveness, `/readyz` readiness, and a dependency-free Prometheus `/metrics`
+  with bounded labels (`ezchain_http_requests_total`, request-duration histogram,
+  paper-order/fill counters, `ezchain_up`).
 - **P0 live paper slice**: FastAPI edge, Postgres schema, `packages/core-py` domain and
   append-only ledger, DexScreener/Jupiter adapters, and an inline strategy scheduler.
 - Live multi-chain market browsing with a 25-chain registry, source and `observed_at` on
@@ -59,6 +74,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- `README.md` quick start now runs the Alembic baseline and documents bearer auth;
+  `CONTRIBUTING.md` no longer claims the Python services do not exist. `docs/INFRA.md`
+  separates runnable local pieces from the unverified Docker blueprint, and
+  `docs/RUNBOOK.md` documents migrate-on-deploy, legacy `stamp head`, probe semantics and
+  401 triage.
 - `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md` and `docs/PLAN-LIVE-PAPER.md` now
   describe the P0 live paper slice; the web defaults to live and tests set `fixture`.
 - `docs/CHAINS.md` now presents a **target** support matrix with a `Verified today`

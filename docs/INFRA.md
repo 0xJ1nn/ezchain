@@ -5,6 +5,18 @@ built yet. Every service listed must exist, have a healthcheck, a resource budge
 log/metric path. Nothing may be "decorative" (v1 shipped Postgres and Redis that no code
 used).
 
+## 0. Runnable today vs blueprint
+
+| Area | State |
+|---|---|
+| Local API + Next web + local Postgres (`tools/dev.sh`) | runnable |
+| Alembic baseline and `ezchain-api migrate` | runnable and verified against a fresh Postgres database |
+| `/healthz`, `/readyz`, `/metrics`, JSON request logs | runnable |
+| Docker Compose, Caddy edge, images, Prometheus/Grafana/Loki | **blueprint** — not built or verified here |
+
+The Docker topology is owned by a separate change. Do not read this document as evidence
+that `docker compose up` works.
+
 ## 1. Topologies
 
 | Topology | Who | Services |
@@ -55,8 +67,15 @@ Restore drill is part of release: restore into a scratch container, run
 ## 4. Networking and TLS
 
 - Caddy terminates TLS, serves the web app, proxies `/api` and `/ws`, sets CSP/HSTS.
+The web container must set `EZCHAIN_PUBLIC_URL` to the public edge origin; the
+`/api/[...path]` proxy rejects cross-site mutations with `403 CROSS_ORIGIN_DENIED`.
 - Only Caddy is published. API/executor are on an internal network. Postgres/Redis/NATS
   are never published.
+- **Browser `/api/*` must reach the Next server proxy (`web:3000`), not the API directly,
+  when `EZCHAIN_API_TOKEN` is set.** The current compose/Caddy blueprint sends `/api/*`
+  straight to `api:8000`; that edge change belongs to the Docker change. Direct API routes
+  remain fine for server-to-server calls that carry the bearer token, and `/ws` is
+  unaffected today because websockets are not a mutation path in P0.
 - Modes: `localhost` (http, self-signed optional), `lan` (mkcert), `public` (ACME with a
   real domain). Auth cannot be disabled in `public` mode — the process refuses to boot.
 - Executor accepts signed internal requests only (HMAC + mTLS); no browser path.
@@ -83,25 +102,51 @@ Precedence: defaults < `ezchain.toml` < env < DB workspace overrides (audited, w
 actor and a reason). A missing required secret fails startup with the exact key name and
 how to provide it.
 
+The API reads `EZCHAIN_DATABASE_URL` (the env prefix is `EZCHAIN_`). `DATABASE_URL` in the
+compose environment is not read by the settings model; keep the two in sync until the
+Docker change unifies them.
+
+### 5.1 API auth
+
+`GET`/`HEAD`/`OPTIONS` under `/api/` are open. Every other method requires
+`Authorization: Bearer $EZCHAIN_API_TOKEN`, enforced by middleware so new routes are
+covered by default. The Next server injects the token in its `/api/[...path]` proxy; the
+browser never receives it. In dev/test an unset token allows mutations with one warning.
+With `EZCHAIN_ENVIRONMENT=prod` the API refuses to start unless `EZCHAIN_AUTH_ENABLED=true`,
+`EZCHAIN_API_TOKEN` is at least 32 characters, `EZCHAIN_AUTO_CREATE_SCHEMA=false`,
+`EZCHAIN_DATABASE_URL` is non-default and includes a password, `EZCHAIN_DATA_MODE=live`,
+and `EZCHAIN_CORS_ORIGINS` contains no `*`.
+
 ## 6. Migrations and upgrades
 
 - Images are immutable and tagged `MAJOR.MINOR.PATCH`; `latest` is never used in prod.
 - `migrate` runs before api/engine start; it is idempotent and takes a pre-migration
-  backup automatically.
-- Forward-only. No destructive migrations (CONTRACT I8). A failed migration stops the
-  rollout; the previous image remains.
-- Upgrade procedure: backup → pull → migrate → start → `ezchain-admin verify` →
-  reconcile → unpause. Documented in `docs/RUNBOOK.md` (M2).
+  backup automatically. The runner is `ezchain-api migrate` (or
+  `python -m ezchain_api.migrate`); both call `alembic upgrade head`.
+- The database URL comes from Settings, never from `alembic.ini`.
+- Forward-only. No destructive migrations (CONTRACT I8). A guard test scans every
+  `upgrade()` body for `drop_table`, `drop_column`, `TRUNCATE`, `DELETE FROM`, `wipe` and
+  `clean_slate`; `downgrade()` may drop.
+- Readiness is `/readyz`: it returns 503 unless `SELECT 1` succeeds **and**
+  `alembic_version` equals the script head. `/healthz` is liveness only.
+- Upgrade procedure: backup → pull → migrate → start → wait for `/readyz` →
+  `ezchain-admin verify` → reconcile → unpause. Documented in `docs/RUNBOOK.md`.
 
 ## 7. Observability
 
 - **Metrics** (Prometheus): HTTP RED, intent rate/latency, decision reasons, quote
   latency, fill ratio, slippage realised vs quoted, source freshness seconds, queue depth,
-  breaker state, ledger drift (must be 0), vault unlock age.
+  breaker state, ledger drift (must be 0), vault unlock age. The API exposes
+  `/metrics` with `ezchain_http_requests_total`, the
+  `ezchain_http_request_duration_ms` histogram, `ezchain_paper_orders_total{status}`,
+  `ezchain_paper_fills_total` and `ezchain_up`; labels are bounded by route template and a
+  series cap.
 - **Traces** (OTel): API → engine → executor → venue, sampled 10% (100% on error), with
   `intent_id`.
-- **Logs** (Loki/JSON): structured, request id, actor, redacted. No secrets, no raw keys,
-  no signed transactions.
+- **Logs** (Loki/JSON): one JSON line per request with `ts`, `level`, `logger`, `msg`,
+  `request_id`, `method`, route template, `status` and `duration_ms`. No Authorization,
+  bodies or query values. `X-Request-ID` is accepted only when it is 1–64 characters of
+  `[A-Za-z0-9_-]`; otherwise a uuid4 is generated and returned in the response.
 - **Alerts**: drift > 0, executor unreachable, chain source stale > 60 s, queue depth >
   10k, breaker open > 5 min, backup failed, disk > 80%, certificate < 14 d.
 - **Ops page** in the product mirrors these; Grafana is optional.
