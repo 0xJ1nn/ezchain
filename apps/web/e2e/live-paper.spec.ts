@@ -81,3 +81,18 @@ test("paper buy and sell complete through the UI", async ({ page }) => {
 	const body = await reconciliation.json();
 	expect(body.ok).toBe(true);
 });
+
+test("live graph catalogue and builder load from the API", async ({ page, request }) => {
+	const catalogue = await request.get(`${BASE_URL}/api/v1/graph/catalogue`);
+	expect(catalogue.status()).toBe(200);
+	const body = await catalogue.json();
+	expect(body.schema).toBe("ezchain.graph/1");
+	expect(Array.isArray(body.node_types)).toBe(true);
+	expect(body.node_types.length).toBeGreaterThan(10);
+
+	await page.goto("/strategies/builder");
+	await expect(page.getByRole("heading", { name: "Visual strategy builder", level: 1 })).toBeVisible();
+	await expect(page.getByText("Loading the catalogue…")).toHaveCount(0, { timeout: 30_000 });
+	await expect(page.getByText("Every tick").first()).toBeVisible();
+	await expect(page.getByText("EMA").first()).toBeVisible();
+});

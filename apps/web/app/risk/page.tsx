@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
+import { getPaperLimits } from "@/lib/account-api";
 import { ageSeconds, formatUsd, formatUsdPrice, quoteKindLabel, shortAddress } from "@/lib/live-format";
 import {
 	getKillSwitch,
@@ -32,11 +33,13 @@ function rejectionSummary(orders: PaperOrderRecord[]) {
 }
 
 export default async function RiskPage() {
-	const [snapshot, killSwitchResult, ordersResult] = await Promise.all([
+	const [snapshot, killSwitchResult, ordersResult, limitsResult] = await Promise.all([
 		getPaperSnapshot(),
 		getKillSwitch(),
 		getPaperOrders(100),
+		getPaperLimits(),
 	]);
+	const limits = limitsResult.ok ? limitsResult.data : null;
 	const mode = snapshot.mode;
 	const account = snapshot.account.ok ? snapshot.account.data : null;
 	const positions = snapshot.positions.ok ? snapshot.positions.data : [];
@@ -59,9 +62,9 @@ export default async function RiskPage() {
 					<div className="crumbs">Protect / Risk</div>
 					<h1>Risk</h1>
 					<p className="sub">
-						The persisted operator switch, the paper account as the API returns it, and the
-						rejected order attempts that are actually recorded. No limit is invented here; the
-						API owns the numbers and this build exposes no limit read endpoint.
+						The persisted operator switch, the server risk limits, the paper account as the API
+						returns it, and the rejected order attempts that are actually recorded. Limits come
+						from <span className="mono">/api/v1/paper/limits</span>; no number is invented here.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -155,6 +158,29 @@ export default async function RiskPage() {
 					meta="last 100 attempts"
 				/>
 			</section>
+
+			<Panel
+				title="Server limits"
+				sub={limits ? "configured · PAPER" : "unavailable"}
+				action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">/api/v1/paper/limits</Badge>}
+				className="mb-12"
+			>
+				{limits ? (
+					<div className="grid cols-3">
+						<div className="between small"><span>Max order</span><span className="mono">{formatUsd(limits.max_order_usd)}</span></div>
+						<div className="between small"><span>Max position</span><span className="mono">{formatUsd(limits.max_position_usd)}</span></div>
+						<div className="between small"><span>Max open positions</span><span className="mono">{limits.max_open_positions}</span></div>
+						<div className="between small"><span>Daily loss cap</span><span className="mono">{formatUsd(limits.max_daily_loss_usd)}</span></div>
+						<div className="between small"><span>Min pair age</span><span className="mono">{limits.min_pair_age_minutes}m</span></div>
+						<div className="between small"><span>Min liquidity</span><span className="mono">{formatUsd(limits.min_liquidity_usd)}</span></div>
+						<div className="between small"><span>Paper mark cap</span><span className="mono">{formatUsd(limits.paper_mark_max_order_usd)}</span></div>
+						<div className="between small"><span>Paper fee</span><span className="mono">{limits.paper_fee_bps} bps</span></div>
+						<div className="between small"><span>Max quote age</span><span className="mono">{limits.max_quote_age_seconds}s</span></div>
+					</div>
+				) : (
+					<Unavailable title="Limits unavailable" code={limitsResult.ok ? "UNAVAILABLE" : limitsResult.code} message={limitsResult.ok ? "No limits returned." : limitsResult.message} />
+				)}
+			</Panel>
 
 			<div className="split">
 				<div className="stack">

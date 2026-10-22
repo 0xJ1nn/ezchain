@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, ModeBadge, Unavailable, FixtureBadge } from "@/components/ops";
-import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
+import { Badge, Panel, Stat } from "@/components/ui";
+import { getPaperAttribution, getPaperPerformance, type AttributionRow, type PaperPerformance } from "@/lib/account-api";
 import { formatAmount, formatUsd, formatUsdPrice, shortAddress, ageLabel } from "@/lib/live-format";
 import {
 	getPaperFills,
@@ -28,7 +29,14 @@ export default async function PerformancePage({
 	const { state } = await searchParams;
 	const snapshot = await getPaperSnapshot();
 	const mode = snapshot.mode;
-	const [ordersResult, fillsResult] = await Promise.all([getPaperOrders(50), getPaperFills(50)]);
+	const [ordersResult, fillsResult, performanceResult, attributionResult] = await Promise.all([
+		getPaperOrders(50),
+		getPaperFills(50),
+		getPaperPerformance(),
+		getPaperAttribution(),
+	]);
+	const performance: PaperPerformance | null = performanceResult.ok ? performanceResult.data : null;
+	const attribution: AttributionRow[] = attributionResult.ok ? attributionResult.data : [];
 	const demo = mode === "fixture" ? state : undefined;
 
 	const accountResult =
@@ -49,7 +57,6 @@ export default async function PerformancePage({
 				: fillsResult;
 
 	const account = accountResult.ok ? accountResult.data : null;
-	const orders = orderResult.ok ? orderResult.data : [];
 	const fills = fillResult.ok ? fillResult.data : [];
 	const error = !accountResult.ok
 		? accountResult.error
@@ -57,7 +64,9 @@ export default async function PerformancePage({
 			? orderResult.error
 			: !fillResult.ok
 				? fillResult.error
-				: null;
+				: !performanceResult.ok
+					? { code: performanceResult.code, message: performanceResult.message }
+					: null;
 
 	return (
 		<AppShell active="performance">
@@ -104,35 +113,35 @@ export default async function PerformancePage({
 			<section className="kpi-band mb-12" aria-label="Paper account performance">
 				<Stat
 					label="Equity"
-					value={account ? formatUsd(account.equity_usd) : "—"}
-					meta={account ? "PAPER · cash + known marks" : "account unavailable"}
+					value={performance?.equity_usd ? formatUsd(performance.equity_usd) : account ? formatUsd(account.equity_usd) : "—"}
+					meta={performance?.equity_usd === null ? "unknown mark excluded · never zero" : "PAPER · cash + known marks"}
 				/>
 				<Stat
 					label="Cash"
-					value={account ? formatUsd(account.cash_usd) : "—"}
-					meta={account ? "PAPER · ledger cash" : "account unavailable"}
+					value={performance ? formatUsd(performance.cash_usd) : account ? formatUsd(account.cash_usd) : "—"}
+					meta={performance ? "PAPER · ledger projection" : "account unavailable"}
 				/>
 				<Stat
 					label="Realized"
-					value={account ? formatUsd(account.realized_usd) : "—"}
-					tone={account && Number(account.realized_usd) < 0 ? "err" : "ok"}
-					meta={account ? "PAPER · after fees" : "account unavailable"}
+					value={performance ? formatUsd(performance.realized_usd) : account ? formatUsd(account.realized_usd) : "—"}
+					tone={performance && Number(performance.realized_usd) < 0 ? "err" : "ok"}
+					meta={performance ? "PAPER · after fees" : "account unavailable"}
 				/>
 				<Stat
 					label="Unrealized"
-					value={account ? formatUsd(account.unrealized_usd) : "—"}
-					tone={account && Number(account.unrealized_usd) < 0 ? "err" : "ok"}
-					meta={account ? "PAPER · known marks only" : "account unavailable"}
+					value={performance?.unrealized_usd ? formatUsd(performance.unrealized_usd) : account ? formatUsd(account.unrealized_usd) : "—"}
+					tone={performance && performance.unrealized_usd && Number(performance.unrealized_usd) < 0 ? "err" : "ok"}
+					meta={performance?.unrealized_usd === null ? "unknown mark excluded" : "PAPER · known marks only"}
 				/>
 				<Stat
-					label="Orders"
-					value={orderResult.ok ? String(orders.length) : "—"}
-					meta={orderResult.ok ? "last 50 · API" : "orders unavailable"}
+					label="Trades / win rate"
+					value={performance ? `${performance.trades} / ${performance.win_rate_pct ?? "—"}%` : "—"}
+					meta={performance ? `${performance.wins}W · ${performance.losses}L` : "performance unavailable"}
 				/>
 				<Stat
-					label="Fills"
-					value={fillResult.ok ? String(fills.length) : "—"}
-					meta={fillResult.ok ? "last 50 · API" : "fills unavailable"}
+					label="Fees"
+					value={performance ? formatUsd(performance.fees_usd) : "—"}
+					meta={performance ? "PAPER · included in realized" : "performance unavailable"}
 				/>
 			</section>
 
@@ -140,12 +149,12 @@ export default async function PerformancePage({
 				<div className="stack">
 					<Panel
 						title="Realized by position"
-						sub={account ? `${account.positions.length} open · server view model` : "unavailable"}
+						sub={performance ? `${performance.by_token.length} token rows · server projection` : "unavailable"}
 						action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">PAPER</Badge>}
 						flush
-						footer="Realized and unrealized values are carried by /api/v1/paper/account; the UI only formats them."
+						footer="Realized and unrealized values are carried by /api/v1/paper/performance; the UI only formats them."
 					>
-						{account && account.positions.length > 0 ? (
+						{performance && performance.by_token.length > 0 ? (
 							<div className="table-wrap">
 								<table className="table compact">
 									<thead>
@@ -158,7 +167,7 @@ export default async function PerformancePage({
 										</tr>
 									</thead>
 									<tbody>
-										{account.positions.map((position) => (
+										{performance.by_token.map((position) => (
 											<tr key={`${position.chain}:${position.token_address}`}>
 												<td>
 													<Link href={`/tokens/${position.chain}/${position.token_address}`}>
@@ -192,12 +201,12 @@ export default async function PerformancePage({
 						) : (
 							<div className="panel-body">
 								<EmptyState
-									title={account ? "No open positions" : "Account unavailable"}
+									title={performance ? "No token results" : "Performance unavailable"}
 									links={[{ href: "/positions", label: "Open positions" }]}
 								>
-									{account
-										? "The paper account is flat, so there is no per-position result to show. Unknown values are never printed as zero."
-										: "No position rows are rendered while the account read fails."}
+									{performance
+										? "No token has a realized or open result yet. Unknown values are never printed as zero."
+										: "No token rows are rendered while the performance read fails."}
 								</EmptyState>
 							</div>
 						)}
@@ -266,41 +275,65 @@ export default async function PerformancePage({
 
 				<div className="stack">
 					<Panel
-						title="Equity series"
-						sub="not available in this build"
-						action={<Badge tone="warn">NO HISTORY</Badge>}
+						title="Daily realized"
+						sub="ledger groups · UTC days"
+						action={<Badge tone="ghost">PAPER</Badge>}
+						flush
 					>
-						<div className="note warn">
-							<strong>No equity curve is drawn.</strong> The paper API exposes a point-in-time
-							account snapshot and fill history, not an equity-history series. Inventing one
-							from the current balance would misstate the past.
-						</div>
-						<p className="small muted mt-8">
-							Exact reason: there is no <span className="mono">/paper/equity</span> or
-							<span className="mono"> /paper/history</span> endpoint in this build. When one
-							exists, this panel can render it without changing the KPI contract.
-						</p>
+						{performance && performance.daily_realized.length > 0 ? (
+							<div className="table-wrap">
+								<table className="table compact">
+									<thead><tr><th>Date</th><th className="num">Realized</th><th className="num">Fees</th></tr></thead>
+									<tbody>
+										{performance.daily_realized.map((day) => (
+											<tr key={day.date}>
+												<td className="mono small">{day.date}</td>
+												<td className={`num ${Number(day.realized_usd) < 0 ? "err" : ""}`}>{formatUsd(day.realized_usd)}</td>
+												<td className="num">{formatUsd(day.fees_usd)}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						) : (
+							<div className="panel-body"><div className="note">No realized journal groups yet. The API does not store an equity snapshot series, so no equity curve is drawn.</div></div>
+						)}
 					</Panel>
 
 					<Panel
 						title="Attribution"
-						sub="not computed in this build"
-						action={<Badge tone="warn">NO ATTRIBUTION</Badge>}
+						sub="per token · share of absolute realized"
+						action={<Badge tone="ghost">PAPER</Badge>}
+						flush
 					>
-						<p className="small muted">
-							The strategy list endpoint does not return per-strategy PnL, and the account
-							read model does not attribute fills to a strategy. This page therefore shows no
-							per-strategy return, win rate or fee total.
-						</p>
-						<ButtonLink href="/strategies" size="sm">
-							Installed strategies
-						</ButtonLink>
+						{attribution.length > 0 ? (
+							<div className="table-wrap">
+								<table className="table compact">
+									<thead><tr><th>Token</th><th className="num">Realized</th><th className="num">Share</th></tr></thead>
+									<tbody>
+										{attribution.map((row) => (
+											<tr key={`${row.chain}:${row.token_address}`}>
+												<td><Link href={`/tokens/${row.chain}/${row.token_address}`}>{row.symbol}</Link><span className="sub" style={{ display: "block" }}>{row.chain}</span></td>
+												<td className={`num ${Number(row.realized_usd) < 0 ? "err" : ""}`}>{formatUsd(row.realized_usd)}</td>
+												<td className="num">{row.share_pct === null ? "—" : `${row.share_pct}%`}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						) : (
+							<div className="panel-body"><div className="note">No token attribution yet. Per-strategy attribution is not exposed by this API build; this table is per token, never invented.</div></div>
+						)}
 					</Panel>
 
 					<Panel title="Population" sub="what the numbers above cover" action={mode === "fixture" ? <FixtureBadge /> : undefined}>
 						<div className="small muted">
 							<div>
 								Account: <span className="mono">/api/v1/paper/account</span>
+							</div>
+							<div>
+								Performance: <span className="mono">/api/v1/paper/performance</span> · attribution:{" "}
+								<span className="mono">/api/v1/paper/attribution</span>
 							</div>
 							<div>
 								Orders: <span className="mono">/api/v1/paper/orders?limit=50</span>

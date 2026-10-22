@@ -34,7 +34,17 @@ export function formatUsdPrice(value: string | null | undefined): string {
 export function formatUsd(value: string | null | undefined): string {
 	const n = parseDecimal(value);
 	if (n === null) return DASH;
-	return `${n < 0 ? MINUS : ""}$${Math.abs(n).toLocaleString("en-US", {
+	const abs = Math.abs(n);
+	const sign = n < 0 ? MINUS : "";
+	// A sub-cent value is still a value. Printing $0.00 for a real position would be a
+	// false zero; show enough decimals to distinguish it from no value at all.
+	if (abs > 0 && abs < 0.01) {
+		return `${sign}$${abs.toLocaleString("en-US", {
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 8,
+		})}`;
+	}
+	return `${sign}$${abs.toLocaleString("en-US", {
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	})}`;
@@ -54,7 +64,15 @@ export function formatUsdCompact(value: string | null | undefined): string {
 export function formatAmount(value: string | null | undefined): string {
 	const n = parseDecimal(value);
 	if (n === null) return DASH;
-	return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+	// Token quantities are not dollars: 0.000419 must not render as 0. Keep the familiar
+	// two-decimal display for whole units and add precision only below one.
+	if (Math.abs(n) >= 1) {
+		return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+	}
+	return n.toLocaleString("en-US", {
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 20,
+	});
 }
 
 export function changeText(value: string | null | undefined): string {

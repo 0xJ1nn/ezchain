@@ -23,8 +23,11 @@ In progress / not merged yet:
   strategy performance) and graph scheduler wiring.
 - Paper read models (ledger, performance, attribution, limits, alerts, CSV exports).
 - Real operator pages for every sidebar route; removal of the placeholder catch-all.
-- Live executor/vault, live intents and live UI: **not built**. `live_execute` is false
-  everywhere.
+- Live executor foundation exists on the unmerged `feat/live-executor` branch, but its
+  reviewer verdict is **BLOCKED**: venue transactions are not bound to the approved
+  intent, sell caps can be bypassed, and a confirmed sell can be dropped from the live
+  book. It is not merged, no live UI exists, and `live_execute` remains false everywhere.
+  The branch is retained for a dedicated hardening slice.
 
 ## Next, in order
 

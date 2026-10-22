@@ -1,28 +1,33 @@
-// Typed client for backtest runs.
+// Typed client for the immutable graph backtest list.
 //
-// The backtest route is not part of this API build yet. The page therefore renders a
-// truthful "not available" state with the reason. The shape below is the contract the
-// page is ready to render as soon as the leader wires `GET /api/v1/backtests/runs`.
+// The API stores a backtest as an immutable row and labels every result BACKTEST. The
+// page renders only server values; it never simulates a run or computes a return.
 
 import { serverAuthorizationHeader } from "./api-auth";
-import {
-	PaperApiError,
-	type PaperResult,
-	webMode,
-} from "./paper-api";
+import { PaperApiError, type PaperResult, webMode } from "./paper-api";
 
-export interface BacktestRun {
+export interface BacktestMetrics {
+	net_pnl_usd: string;
+	return_pct: string;
+	max_drawdown_pct: string;
+	win_rate_pct: string | null;
+	profit_factor: string | null;
+	trades: number;
+	closed_trades: number;
+	exposure_pct: string;
+	sharpe: string | null;
+	fees_usd: string;
+}
+
+export interface BacktestRow {
 	id: string;
-	name: string;
-	strategy_id: string | null;
-	status: string;
-	started_at: string | null;
-	finished_at: string | null;
-	fill_model: string | null;
-	fee_bps: number | null;
-	slippage_bps: number | null;
-	trades: number | null;
-	net_pnl_usd: string | null;
+	created_at: string;
+	label: "BACKTEST";
+	request: Record<string, unknown>;
+	data_source: string;
+	fill_model: string;
+	metrics: BacktestMetrics;
+	node_hits: Record<string, number>;
 }
 
 function apiBase() {
@@ -30,21 +35,22 @@ function apiBase() {
 	return (process.env.EZCHAIN_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 }
 
-export async function getBacktestRuns(): Promise<PaperResult<BacktestRun[]>> {
+export async function getBacktests(strategyId?: string): Promise<PaperResult<BacktestRow[]>> {
 	const mode = webMode();
 	if (mode === "fixture") {
 		return {
 			ok: false,
 			mode,
 			error: {
-				code: "BACKTESTS_UNAVAILABLE",
+				code: "BACKTESTS_FIXTURE_UNAVAILABLE",
 				message:
-					"The backtest service is not part of this build. No runs are listed and no results are simulated.",
+					"Backtests are not part of the labelled fixture set. Run the builder against a live API to create a real BACKTEST row.",
 			},
 		};
 	}
 	try {
-		const response = await fetch(`${apiBase()}/api/v1/backtests/runs`, {
+		const query = strategyId ? `?strategy_id=${encodeURIComponent(strategyId)}` : "";
+		const response = await fetch(`${apiBase()}/api/v1/backtests${query}`, {
 			cache: "no-store",
 			headers: { accept: "application/json", ...serverAuthorizationHeader() },
 		});
@@ -68,20 +74,9 @@ export async function getBacktestRuns(): Promise<PaperResult<BacktestRun[]>> {
 				(typeof detail === "object" && detail !== null && "message" in detail
 					? String((detail as Record<string, unknown>).message)
 					: undefined) ?? `backtest request failed with status ${response.status}`;
-			if (response.status === 404) {
-				return {
-					ok: false,
-					mode,
-					error: {
-						code: "BACKTESTS_UNAVAILABLE",
-						message:
-							"This API build does not expose /api/v1/backtests/runs. No runs are listed and no results are simulated.",
-					},
-				};
-			}
 			throw new PaperApiError(code, message, response.status);
 		}
-		return { ok: true, mode, data: payload as BacktestRun[] };
+		return { ok: true, mode, data: payload as BacktestRow[] };
 	} catch (error) {
 		const apiError = error instanceof PaperApiError ? error : null;
 		return {

@@ -12,7 +12,7 @@ no copy-trading. `live_execute` is `false` for every chain.
 
 | Area | Evidence | Result |
 |---|---|---|
-| Packaging / tests | `bash tools/ci.sh`, `.venv/bin/pytest -q` | 398 Python + 36 Playwright, green |
+| Packaging / tests | `bash tools/ci.sh`, `.venv/bin/pytest -q` | 1044 Python + 94 Playwright, green |
 | Market eyes | `/api/v1/markets/overview` after a scan | 22/25 chains `ok`, 3 `no_data`, 0 `error`, 90 snapshots |
 | All-chain browse | `/api/v1/markets?chain=all&limit=100` | 100 rows across 22 chains, round-robin, source+age on every row |
 | Paper buy/sell | `POST /api/v1/paper/orders` on Base WETH and Solana BONK | filled; ledger groups balanced |
@@ -25,7 +25,7 @@ no copy-trading. `live_execute` is `false` for every chain.
 | Auth | direct API vs Next proxy | direct mutation without token 401; proxy mutation 200; cross-site 403 `CROSS_ORIGIN_DENIED` |
 | Migrations | 0001→0003 on fresh and legacy DBs | `alembic check` clean; genesis and fill-order unique constraints present |
 | Observability | `/healthz`, `/readyz`, `/metrics`, JSON logs | 200/200/200 with DB at head; request id/path/status/duration logged |
-| Stress | smoke, idempotency, soak 60s×4, chaos | all PASS with 0 findings against a clean paper API |
+| Stress | `--mode all` against real Postgres + live data | PASS, 0 findings: smoke, idempotency, 27 fuzz cases, 4-way sell race, kill switch, chain matrix. Evidence: [stress-all-2026-10-23.md](evidence/p0-production/stress-all-2026-10-23.md) |
 | Stress → issue loop | `--strategy-order-usd 1500` | filed #71; PR #72 fixed it; same run now passes and files nothing |
 | Web truth | dashboard, strategy builder | live reads carry `PAPER`/source/age; fixture mode is labelled; DCA/dip vocabularies match the validator |
 | Graph strategies | `/api/v1/graph/catalogue`, `/validate`, `/dry-run`, `/backtests` | validated live against Base WETH; dry run placed no order; backtest returned `BACKTEST` with GeckoTerminal closed bars. Evidence: [graph-api-paper.md](evidence/p0-production/graph-api-paper.md) |
@@ -54,12 +54,14 @@ These are explicit gaps, not silent assumptions:
    sells), not executable venue routes. ADR-0020.
 6. **Market coverage is 22/25.** Osmosis, Cosmos Hub and Moonbeam returned no DexScreener
    pairs on 2026-10-22. They stay `no_data`, never zero.
-7. **Dashboard history/attribution/risk/automations/wallets** remain fixture previews,
-   explicitly badged. Live positions come from `/paper/account`.
+7. **The dashboard is live** against `/paper/account`, `/paper/positions`, `/paper/limits`,
+   `/paper/alerts` and the strategy/market reads. It does not draw an equity curve because
+   no equity-snapshot history is stored. Wallets have no backend yet; the page says so.
 8. **Timescale retention / market-event ingest / replay harness** are M2, not part of this
    stack. Snapshot storage is current-state `market_snapshots`, not a tick history.
-9. **No per-strategy PnL attribution in the API**; the 7-day attribution screen is a
-   fixture preview.
+9. **Per-token attribution exists** (`/paper/attribution`); per-strategy attribution is
+   not exposed because a paper position is shared by the account. The dashboard does not
+   invent it.
 10. **Playwright does not run the full create→trade→delete flow against the live API**;
     the Python stress harness covers the API flow. Add an API-backed e2e run when a
     disposable Postgres is available.

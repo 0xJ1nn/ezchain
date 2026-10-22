@@ -2,17 +2,27 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, Panel, Stat } from "@/components/ui";
-import { getBacktestRuns } from "@/lib/backtest-api";
+import { getBacktests, type BacktestRow } from "@/lib/backtest-api";
 import { formatUsd } from "@/lib/live-format";
 
 export const dynamic = "force-dynamic";
 
-const DOCS = "https://github.com/0xJ1nn/ezchain/blob/main/docs";
+function requestText(row: BacktestRow, key: string): string {
+	const value = row.request[key];
+	return typeof value === "string" || typeof value === "number" ? String(value) : "—";
+}
+
+function pct(value: string | null | undefined) {
+	if (value === null || value === undefined) return "—";
+	return `${value}%`;
+}
 
 export default async function BacktestsPage() {
-	const result = await getBacktestRuns();
+	const result = await getBacktests();
 	const mode = result.mode;
-	const runs = result.ok ? result.data : [];
+	const runs: BacktestRow[] = result.ok ? result.data : [];
+	const net = runs.reduce((sum, row) => sum + Number(row.metrics.net_pnl_usd), 0);
+	const trades = runs.reduce((sum, row) => sum + row.metrics.trades, 0);
 
 	return (
 		<AppShell active="backtests">
@@ -21,19 +31,16 @@ export default async function BacktestsPage() {
 					<div className="crumbs">Automate / Backtests</div>
 					<h1>Backtests</h1>
 					<p className="sub">
-						Replayable research, when the backtest service exists. This page renders the API
-						result and never simulates a run, a fill or a return in the browser.
+						Immutable graph replays from <span className="mono">/api/v1/backtests</span>. Every
+						row is labelled <strong>BACKTEST</strong> and names its fee, slippage and fill
+						model; the browser never computes a return.
 					</p>
 				</div>
 				<div className="page-actions">
 					<ModeBadge mode={mode} />
-					<a
-						className="btn"
-						href={`${DOCS}/STRATEGY-GRAPH.md`}
-						rel="noreferrer"
-					>
-						Strategy graph docs
-					</a>
+					<Link className="btn" href="/strategies/builder">
+						Open builder
+					</Link>
 					<Link className="btn" href="/strategies">
 						Strategies
 					</Link>
@@ -43,79 +50,76 @@ export default async function BacktestsPage() {
 			{!result.ok && (
 				<div className="mb-12">
 					<Unavailable
-						title="Backtest service: not part of this build"
+						title="Backtest list unavailable"
 						code={result.error.code}
 						message={result.error.message}
 						action={
-							<a
-								className="small"
-								href={`${DOCS}/STRATEGY-GRAPH.md`}
-								rel="noreferrer"
-							>
-								Read docs/STRATEGY-GRAPH.md →
-							</a>
+							<Link className="small" href="/backtests">
+								Retry →
+							</Link>
 						}
 					>
-						The page is ready to render <span className="mono">GET /api/v1/backtests/runs</span>{" "}
-						when that read model lands. Until then it shows no runs and no metrics. A backtest
-						claim would need its fee, slippage and fill model, which this build cannot name.
+						No run is fabricated. A backtest result needs a stored row and a named fee,
+						slippage and fill model.
 					</Unavailable>
 				</div>
 			)}
 
 			<section className="kpi-band mb-12" aria-label="Backtest summary">
-				<Stat
-					label="Runs"
-					value={result.ok ? String(runs.length) : "—"}
-					meta={result.ok ? "from the API" : "service unavailable"}
-				/>
-				<Stat label="Fill model" value="—" meta="named per run when available" />
-				<Stat label="Fees" value="—" meta="no default claimed in the UI" />
-				<Stat label="Net PnL" value="—" meta="never computed in the browser" />
+				<Stat label="Runs" value={result.ok ? String(runs.length) : "—"} meta="immutable BACKTEST rows" />
+				<Stat label="Net PnL" value={result.ok && runs.length > 0 ? formatUsd(String(net)) : "—"} meta="sum of server metrics" />
+				<Stat label="Trades" value={result.ok && runs.length > 0 ? String(trades) : "—"} meta="fills across rows" />
+				<Stat label="Label" value="BACKTEST" meta="never PAPER or LIVE" />
 			</section>
 
 			{result.ok ? (
 				<Panel
 					title="Runs"
-					sub={`${runs.length} · API`}
+					sub={`${runs.length} · newest first`}
+					action={<Badge tone="ghost">BACKTEST</Badge>}
 					flush
-					footer="Every result must name its fee, slippage and fill model. A run without that metadata is not a comparable result."
+					footer="A result without fee, slippage and fill-model metadata is not comparable. The API stores those fields with every row."
 				>
 					{runs.length > 0 ? (
 						<div className="table-wrap">
 							<table className="table">
 								<thead>
 									<tr>
+										<th>Created</th>
 										<th>Run</th>
-										<th>Strategy</th>
-										<th>Status</th>
-										<th>Fill model</th>
+										<th>Target</th>
+										<th className="col-hide-sm">Fill model</th>
 										<th className="num col-hide-sm">Fee bps</th>
 										<th className="num col-hide-sm">Slippage bps</th>
-										<th className="num col-hide-sm">Trades</th>
 										<th className="num">Net PnL</th>
+										<th className="num col-hide-sm">Return</th>
+										<th className="num col-hide-sm">Trades</th>
 									</tr>
 								</thead>
 								<tbody>
-									{runs.map((run) => (
-										<tr key={run.id}>
+									{runs.map((row) => (
+										<tr key={row.id}>
+											<td className="small mono">{row.created_at.slice(0, 19)}Z</td>
 											<td>
-												<span className="strong">{run.name}</span>
+												<span className="mono small">{row.id.slice(0, 8)}…</span>
 												<span className="sub" style={{ display: "block" }}>
-													{run.id}
+													{row.label} · {row.data_source}
 												</span>
 											</td>
-											<td className="small">{run.strategy_id ?? "—"}</td>
-											<td>
-												<Badge tone={run.status === "completed" ? "ok" : "warn"}>
-													{run.status}
-												</Badge>
+											<td className="small">
+												{requestText(row, "chain")} · {requestText(row, "timeframe")}
+												<span className="sub" style={{ display: "block" }}>
+													{requestText(row, "token_address")}
+												</span>
 											</td>
-											<td className="small">{run.fill_model ?? "—"}</td>
-											<td className="num col-hide-sm">{run.fee_bps ?? "—"}</td>
-											<td className="num col-hide-sm">{run.slippage_bps ?? "—"}</td>
-											<td className="num col-hide-sm">{run.trades ?? "—"}</td>
-											<td className="num">{formatUsd(run.net_pnl_usd)}</td>
+											<td className="small col-hide-sm">{row.fill_model}</td>
+											<td className="num col-hide-sm">{requestText(row, "fee_bps")}</td>
+											<td className="num col-hide-sm">{requestText(row, "slippage_bps")}</td>
+											<td className={`num ${Number(row.metrics.net_pnl_usd) < 0 ? "err" : "ok"}`}>
+												{formatUsd(row.metrics.net_pnl_usd)}
+											</td>
+											<td className="num col-hide-sm">{pct(row.metrics.return_pct)}</td>
+											<td className="num col-hide-sm">{row.metrics.trades}</td>
 										</tr>
 									))}
 								</tbody>
@@ -123,76 +127,36 @@ export default async function BacktestsPage() {
 						</div>
 					) : (
 						<div className="panel-body">
-							<EmptyState title="No backtest runs" links={[{ href: "/strategies", label: "Strategies" }]}>
-								The backtest endpoint returned an empty list. No result is fabricated.
+							<EmptyState
+								title="No backtest runs"
+								links={[
+									{ href: "/strategies/builder", label: "Build a graph", primary: true },
+									{ href: "/strategies", label: "Strategies" },
+								]}
+							>
+								The API returned an empty list. Creating a graph strategy and running a
+								backtest stores the first immutable row here.
 							</EmptyState>
 						</div>
 					)}
 				</Panel>
 			) : (
-				<div className="split">
-					<Panel title="What is missing" sub="exact blockers">
-						<div className="list">
-							<div className="list-row">
-								<Badge tone="warn">NO ENDPOINT</Badge>
-								<span className="grow">
-									<span className="title">Run contract</span>
-									<span className="sub">
-										There is no backtest run list or run-detail route in this API build.
-									</span>
-								</span>
-							</div>
-							<div className="list-row">
-								<Badge tone="warn">NO STORAGE</Badge>
-								<span className="grow">
-									<span className="title">Artifacts</span>
-									<span className="sub">
-										No run artifact table, storage location or retention policy is exposed.
-									</span>
-								</span>
-							</div>
-							<div className="list-row">
-								<Badge tone="warn">NO CLAIM</Badge>
-								<span className="grow">
-									<span className="title">Performance numbers</span>
-									<span className="sub">
-										Without a fee, slippage and fill model a return would be unlabelled and
-										uncomparable. None is shown.
-									</span>
-								</span>
-							</div>
-						</div>
-					</Panel>
-
-					<Panel title="What is ready" sub="the page contract">
-						<p className="small muted">
-							When the leader adds <span className="mono">GET /api/v1/backtests/runs</span>{" "}
-							returning the run shape used by <span className="mono">lib/backtest-api.ts</span>,
-							this page renders the table above with no further page change. The UI still
-							formats only.
-						</p>
-						<div className="row mt-12">
-							<a className="btn sm" href={`${DOCS}/STRATEGY-GRAPH.md`} rel="noreferrer">
-								Strategy graph
-							</a>
-							<a className="btn sm" href={`${DOCS}/STRATEGY-SDK.md`} rel="noreferrer">
-								Strategy SDK
-							</a>
-							<a className="btn sm" href={`${DOCS}/ARCHITECTURE.md`} rel="noreferrer">
-								Architecture
-							</a>
-						</div>
-					</Panel>
-				</div>
+				<Panel title="What the page needs" sub="honest requirements">
+					<div className="note">
+						A live API with the <span className="mono">backtests</span> table at migration
+						head. In fixture mode no backtest rows are fabricated: the builder and the
+						backtester are live-only surfaces.
+					</div>
+					<div className="row mt-12">
+						<Link className="btn" href="/operations">
+							Operations
+						</Link>
+						<Link className="btn" href="/developer">
+							Developer
+						</Link>
+					</div>
+				</Panel>
 			)}
-
-			<Panel title="No simulated results" sub="CONTRACT I12" className="mt-16">
-				<p className="small muted">
-					Backtests are labelled with fees, slippage and fill model at the point they are shown.
-					This build has no backtest service, so there is nothing to label and nothing is
-					labelled. The absence is the honest state.
-				</p>
-			</Panel>
 		</AppShell>
 	);
 }

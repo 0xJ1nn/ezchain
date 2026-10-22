@@ -889,8 +889,8 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 		const candles = document.nodes.find((node) => node.type === "data.candles");
 		const timeframe = typeof candles?.params.timeframe === "string" ? candles.params.timeframe : "5m";
 		// The API accepts exactly one of graph/strategy_id. The builder sends the current
-		// document so unsaved edits are what get tested; saved-strategy backtests use the
-		// strategy id path elsewhere.
+		// document so unsaved edits are what get tested; a saved strategy can be backtested
+		// by id through the same endpoint when the caller has its row.
 		const result = await runBacktest(mode, {
 			graph: document,
 			chain: meta.chain,

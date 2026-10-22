@@ -56,6 +56,10 @@ export interface PerformanceToken {
 	market_value_usd: string | null;
 }
 
+export interface AttributionRow extends PerformanceToken {
+	share_pct: string | null;
+}
+
 export interface PaperPerformance {
 	mode: "paper";
 	as_of: string;
@@ -71,6 +75,17 @@ export interface PaperPerformance {
 	open_positions: number;
 	by_token: PerformanceToken[];
 	daily_realized: { date: string; realized_usd: string; fees_usd: string }[];
+}
+
+export interface LedgerEntry {
+	id: string;
+	group_id: string;
+	account: string;
+	asset: string;
+	amount: string;
+	usd_value: string;
+	kind: string;
+	created_at: string;
 }
 
 export interface PaperOrder {
@@ -178,6 +193,14 @@ export function getPaperAlerts(): Promise<ReadResult<PaperAlerts>> {
 
 export function getPaperPerformance(): Promise<ReadResult<PaperPerformance>> {
 	return read("/paper/performance");
+}
+
+export function getPaperAttribution(): Promise<ReadResult<AttributionRow[]>> {
+	return read("/paper/attribution");
+}
+
+export function getPaperLedger(limit = 200): Promise<ReadResult<LedgerEntry[]>> {
+	return read(`/paper/ledger?limit=${limit}`);
 }
 
 export function getPaperOrders(limit = 10): Promise<ReadResult<PaperOrder[]>> {

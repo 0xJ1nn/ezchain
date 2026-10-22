@@ -2,17 +2,10 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
-import { ageSeconds, ageLabel, formatUsd, shortAddress } from "@/lib/live-format";
-import {
-	getKillSwitch,
-	getPaperOrders,
-	getPaperSnapshot,
-	getReconciliation,
-} from "@/lib/paper-api";
+import { getPaperAlerts } from "@/lib/account-api";
+import { getKillSwitch, getPaperSnapshot, getReconciliation } from "@/lib/paper-api";
 
 export const dynamic = "force-dynamic";
-
-const STALE_AFTER_SECONDS = 60;
 
 type Severity = "critical" | "warning" | "info";
 
@@ -32,89 +25,46 @@ function tone(severity: Severity): "err" | "warn" | "ghost" {
 }
 
 export default async function AlertsPage() {
-	const [snapshot, orderResult, reconciliationResult, switchResult] = await Promise.all([
+	const [snapshot, alertsResult, reconciliationResult, switchResult] = await Promise.all([
 		getPaperSnapshot(),
-		getPaperOrders(100),
+		getPaperAlerts(),
 		getReconciliation(),
 		getKillSwitch(),
 	]);
 	const mode = snapshot.mode;
-	const positions = snapshot.positions.ok ? snapshot.positions.data : [];
-	const orders = orderResult.ok ? orderResult.data : [];
+	const serverAlerts = alertsResult.ok ? alertsResult.data.alerts : [];
 	const reconciliation = reconciliationResult.ok ? reconciliationResult.data : null;
 	const reconciliationError = reconciliationResult.ok ? null : reconciliationResult.error;
 	const killSwitch = switchResult.ok ? switchResult.data : null;
-	const alerts: DerivedAlert[] = [];
 
-	if (killSwitch?.active) {
-		alerts.push({
-			id: "kill-switch-armed",
-			severity: "critical",
-			title: "Kill switch is armed",
-			detail: `Strategy-attributed orders are refused before a quote. Reason: ${
-				killSwitch.reason ?? "not recorded"
-			}.`,
-			source: "/api/v1/system/kill-switch",
-			href: "/risk",
-		});
-	}
-
-	if (reconciliation && !reconciliation.ok) {
-		const failed = reconciliation.checks.filter((check) => !check.ok);
-		alerts.push({
-			id: "reconciliation-failed",
-			severity: "critical",
-			title: `${failed.length} reconciliation check${failed.length === 1 ? "" : "s"} failed`,
-			detail: failed.map((check) => `${check.id}: ${check.detail}`).join(" · "),
-			source: "/api/v1/paper/reconciliation",
-			href: "/operations",
-		});
-	}
-
-	for (const position of positions) {
-		const age = ageSeconds(position.source?.observed_at);
-		if (position.mark_usd === null || position.source === null) {
-			alerts.push({
-				id: `unknown-mark:${position.chain}:${position.token_address}`,
-				severity: "warning",
-				title: `${position.symbol} mark is unknown`,
-				detail:
-					"The API returned no mark for this position. The value stays — and is not executable; it is not treated as zero.",
-				source: `/api/v1/paper/positions · ${position.chain}`,
-				href: `/tokens/${position.chain}/${position.token_address}`,
-			});
-		} else if (age === null || age > STALE_AFTER_SECONDS) {
-			alerts.push({
-				id: `stale-mark:${position.chain}:${position.token_address}`,
-				severity: "warning",
-				title: `${position.symbol} mark is stale`,
-				detail: `${position.source.name} last observed ${
-					age === null ? "at an unknown time" : `${ageLabel(position.source.observed_at)} ago`
-				}; the stale threshold is ${STALE_AFTER_SECONDS}s.`,
-				source: `/api/v1/paper/positions · ${position.source.name}`,
-				href: `/tokens/${position.chain}/${position.token_address}`,
-			});
+	function hrefFor(code: string, resource: string | null): string {
+		if (code.startsWith("mark.")) {
+			const [chain, token] = (resource ?? "").split(":");
+			return chain && token ? `/tokens/${chain}/${token}` : "/positions";
 		}
+		if (code.startsWith("orders.rejected")) return "/ledger";
+		if (code.startsWith("kill_switch")) return "/risk";
+		if (code.startsWith("reconciliation") || code.startsWith("cash.") || code.startsWith("positions.")) return "/operations";
+		return "/alerts";
 	}
 
-	const rejected = orders.filter((order) => order.status === "rejected");
-	for (const order of rejected.slice(0, 8)) {
-		alerts.push({
-			id: `rejected:${order.id}`,
-			severity: "warning",
-			title: `Paper order rejected · ${order.reason ?? "no reason recorded"}`,
-			detail: `${order.side} ${formatUsd(order.amount_usd)} on ${order.chain} · ${shortAddress(
-				order.token_address,
-			)} · quote ${order.quote_kind ?? "unknown"}.`,
-			source: `/api/v1/paper/orders · ${order.id}`,
-			href: "/ledger",
-		});
-	}
+	const alerts: DerivedAlert[] = serverAlerts.map((alert) => ({
+		id: alert.id,
+		severity: alert.severity,
+		title: alert.title,
+		detail: alert.detail,
+		source: alert.resource ?? `/api/v1/paper/alerts · ${alert.code}`,
+		href: hrefFor(alert.code, alert.resource),
+	}));
 
 	const critical = alerts.filter((alert) => alert.severity === "critical");
 	const warnings = alerts.filter((alert) => alert.severity === "warning");
 	const info = alerts.filter((alert) => alert.severity === "info");
-	const error = !snapshot.positions.ok ? snapshot.positions.error : null;
+	const error = !snapshot.positions.ok
+		? snapshot.positions.error
+		: !alertsResult.ok
+			? { code: alertsResult.code, message: alertsResult.message }
+			: null;
 
 	return (
 		<AppShell active="alerts">
@@ -123,10 +73,9 @@ export default async function AlertsPage() {
 					<div className="crumbs">Protect / Alerts</div>
 					<h1>Alerts</h1>
 					<p className="sub">
-						Alerts are derived on this page from the API read models: reconciliation, stale
-						or unknown marks, rejected orders and the persisted kill switch. Fixture mode
-						uses labelled sample rows. There is no notification service in this build, so
-						nothing is emailed or paged.
+						Alerts are server-derived from the paper read models: reconciliation, stale or
+						unknown marks, rejected orders and the persisted kill switch. There is no
+						notification channel in this build, so nothing is emailed or paged.
 					</p>
 				</div>
 				<div className="page-actions">

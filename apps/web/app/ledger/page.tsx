@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel } from "@/components/ui";
+import { getPaperLedger, type LedgerEntry } from "@/lib/account-api";
 import { formatAmount, formatUsd, formatUsdPrice, quoteKindLabel, shortAddress } from "@/lib/live-format";
 import {
 	getPaperFills,
@@ -39,9 +40,10 @@ export default async function LedgerPage({
 }) {
 	const { state } = await searchParams;
 	const mode = process.env.EZCHAIN_WEB_MODE === "fixture" ? "fixture" : "live";
-	const [ordersResult, fillsResult] = await Promise.all([
+	const [ordersResult, fillsResult, ledgerResult] = await Promise.all([
 		getPaperOrders(100),
 		getPaperFills(100),
+		getPaperLedger(200),
 	]);
 	const demo = mode === "fixture" ? state : undefined;
 	const orders =
@@ -59,6 +61,7 @@ export default async function LedgerPage({
 
 	const orderRows = orders.ok ? orders.data : [];
 	const fillRows = fills.ok ? fills.data : [];
+	const ledgerRows: LedgerEntry[] = ledgerResult.ok ? ledgerResult.data : [];
 	const rejected = orderRows.filter((order) => order.status === "rejected");
 	const error = !orders.ok ? orders.error : !fills.ok ? fills.error : null;
 	const empty = orders.ok && fills.ok && orderRows.length === 0 && fillRows.length === 0;
@@ -70,10 +73,10 @@ export default async function LedgerPage({
 					<div className="crumbs">Trade / Activity</div>
 					<h1>Activity</h1>
 					<p className="sub">
-						Paper orders and their fills from the API read models; fixture mode labels its
-						sample rows. A rejected order keeps its exact reason codes. The append-only
-						ledger has no public read endpoint in this build, so this page does not invent
-						ledger entries.
+						Paper orders, fills and the append-only ledger from the API read models; fixture
+						mode labels its sample rows. A rejected order keeps its exact reason codes. The
+						journal comes from <span className="mono">/api/v1/paper/ledger</span>; the page
+						never reconstructs an entry in the browser.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -124,9 +127,9 @@ export default async function LedgerPage({
 					<div className="meta">carry reason codes</div>
 				</div>
 				<div className="stat">
-					<div className="label">Ledger read</div>
-					<div className="value sm">—</div>
-					<div className="meta">no public endpoint</div>
+					<div className="label">Ledger entries</div>
+					<div className="value sm">{ledgerResult.ok ? ledgerRows.length : "—"}</div>
+					<div className="meta">{ledgerResult.ok ? "last 200 · append-only" : "unavailable"}</div>
 				</div>
 			</section>
 
@@ -301,6 +304,40 @@ export default async function LedgerPage({
 						Risk and reconciliation
 					</ButtonLink>
 				</div>
+			</Panel>
+			<Panel
+				title="Ledger journal"
+				sub={ledgerResult.ok ? `${ledgerRows.length} entries · append-only` : ledgerResult.message}
+				action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">PAPER</Badge>}
+				flush
+				footer="Cash, positions and PnL are projections of these rows. A row is never edited or deleted; a correction is a new journal group."
+			>
+				{ledgerResult.ok ? (
+					ledgerRows.length > 0 ? (
+						<div className="table-wrap">
+							<table className="table compact">
+								<thead><tr><th>Created</th><th>Account</th><th>Asset</th><th className="num">Amount</th><th className="num">USD value</th><th>Kind</th><th className="col-hide-sm">Group</th></tr></thead>
+								<tbody>
+									{ledgerRows.slice(0, 100).map((entry) => (
+										<tr key={entry.id}>
+											<td className="small mono">{stamp(entry.created_at)}</td>
+											<td className="small mono">{entry.account}</td>
+											<td className="small">{entry.asset}</td>
+											<td className="num mono">{formatAmount(entry.amount)}</td>
+											<td className={`num mono ${Number(entry.usd_value) < 0 ? "err" : ""}`}>{formatUsd(entry.usd_value)}</td>
+											<td><Badge tone="ghost">{entry.kind}</Badge></td>
+											<td className="small mono col-hide-sm">{entry.group_id.slice(0, 8)}…</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					) : (
+						<div className="panel-body"><EmptyState title="No ledger entries" links={[{ href: "/markets", label: "Place a paper order", primary: true }]}>The journal is empty until the first paper fill.</EmptyState></div>
+					)
+				) : (
+					<div className="panel-body"><Unavailable title="Ledger unavailable" code={ledgerResult.code} message={ledgerResult.message} /></div>
+				)}
 			</Panel>
 		</AppShell>
 	);
