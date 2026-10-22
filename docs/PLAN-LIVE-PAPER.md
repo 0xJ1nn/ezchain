@@ -96,13 +96,16 @@ detail}`.
 | GET | `/paper/orders?limit=` | order history |
 | POST | `/paper/orders` | `{chain, token_address, side, amount_usd, idempotency_key}` |
 | GET | `/paper/fills?limit=` | fill history |
+| GET | `/paper/reconciliation` | read-only ledger/fill/order reconciliation |
 | GET | `/strategies` | user strategies + last run |
 | POST | `/strategies` | create declarative strategy |
 | GET | `/strategies/{id}` | detail + runs |
 | PATCH | `/strategies/{id}` | pause/resume/params |
-| DELETE | `/strategies/{id}` | delete (soft) |
+| DELETE | `/strategies/{id}` | delete strategy and its run log (orders keep attribution) |
 | POST | `/strategies/{id}/run` | evaluate now, return decision |
 | GET | `/strategies/{id}/runs` | decision log |
+| GET | `/system/kill-switch` | persisted strategy-scoped operator switch |
+| POST | `/system/kill-switch` | `{active, reason}`: arm/release and return state |
 
 Discovery responses carry per-chain `coverage` and `ordered_by`
 (`chain_round_robin` for `chain=all`, `global_sort` for search and single-chain queries).
@@ -137,6 +140,40 @@ token quantities need precision.
   **new risk only (buys)**. A sell is always allowed to reduce exposure; the fail-closed
   data gates (price, liquidity, route, freshness) still apply.
 - Any unknown/missing field → `DENY` with a reason code; unknown is never zero.
+
+## Execution hardening (P0.6)
+
+- **Reconciliation is a read model.** `GET /paper/reconciliation` derives everything
+  from persisted `ledger_entries`, `paper_fills` and `paper_orders`: per-group
+  `SUM(usd_value)` within `0.000001`, ledger cash against an independent
+  `genesis + Σ(sell notional − buy notional − fee)` projection, open positions,
+  fill/order counts, orphan fills, filled orders without exactly one fill, negative cash
+  and negative position quantities, and fill counts by `quote_kind`. Genesis comes from
+  the `equity:genesis` ledger account, never from the cash sum. It never writes or
+  repairs. `ok: false` means pause and investigate, not "retry until clean".
+- **Strategy-scoped kill switch.** The flag is persisted in `system_flags`
+  (`engine_kill_switch`) so it survives a restart and is visible to every process. This is
+  the only new table in this slice; ops generates the Alembic baseline after merge. The
+  engine wraps the order executor; a request with `strategy_id` is refused with
+  `ExecutionBlocked` (`KILL_SWITCH_ACTIVE`) and the run log records a `hold` with the
+  attempted action and amount. The strategy window is not consumed, so releasing the
+  switch takes effect on the next run. The scheduler skips its pass entirely while armed,
+  so an idle outage writes no hold row per strategy per tick; a manual run still records
+  one `KILL_SWITCH_ACTIVE` hold. Manual paper orders stay allowed but the HTTP request
+  schema has no `strategy_id`, and the service rejects any internal order that still
+  claims strategy attribution before a quote. There is no authentication yet; the
+  endpoint is for a trusted network until ops adds auth.
+- **Strategy deletion is a cascade with an audit trade-off** (ADR-0022). Deleting a
+  strategy removes its `strategy_runs` decision log and the strategy in one transaction;
+  historical `paper_orders.strategy_id` stays as an opaque string. The execution trail is
+  preserved, but the reasoning that led to those orders is not, and the deleted
+  strategy's decisions cannot be replayed. Operators who need the decision log for an
+  investigation should **pause** the strategy instead of deleting it.
+- **Concurrency is resolved by the idempotency key.** A manual run and the scheduler can
+  evaluate the same strategy at once. Both may decide to buy, but the unique
+  `paper_orders.idempotency_key` admits one order and one fill per window; the loser
+  returns the winning order. No in-process lock is used, so multiple API/engine
+  processes stay safe.
 
 ## User-defined strategies (declarative, no code execution)
 
