@@ -69,7 +69,8 @@ Rules:
 - Every number carries `source`, `observed_at` and `age_seconds`.
 - `age > 60s` is `stale`; a stale quote cannot open a position.
 - A buy on Solana requires a full-size sell quote; no route → `NO_SELL_ROUTE`.
-- Non-Solana paper fills are capped at **$250** and labelled `PAPER · MARK` in the UI.
+- Non-Solana paper **buys** are capped at **$250** and labelled `PAPER · MARK` in the UI.
+  A paper-mark sell is reduce-only and is not capped, so an exit is always possible.
   This is a deliberate v1 limitation recorded in ADR-0020.
 - No client-side PnL or quote math; the API returns computed view models.
 
@@ -118,9 +119,13 @@ token quantities need precision.
 ## Risk policy (P0)
 
 - Max order notional `$1,000`; max position `$2,500`; max 10 open positions.
-- Max daily realized loss `$500`; max strategy budget `$2,500`.
+- Max daily realized loss `$500`, enforced as a new-entry block (sells stay available);
+  max strategy budget `$2,500`.
 - Quote age `<= 60s`; liquidity `>= $10,000`; pair age `>= 10 minutes`.
 - Solana buy requires a sell route; non-Solana buy requires `paper_mark` and the $250 cap.
+- Order-size, paper-mark-size, position-size, open-position and daily-loss limits gate
+  **new risk only (buys)**. A sell is always allowed to reduce exposure; the fail-closed
+  data gates (price, liquidity, route, freshness) still apply.
 - Any unknown/missing field → `DENY` with a reason code; unknown is never zero.
 
 ## User-defined strategies (declarative, no code execution)

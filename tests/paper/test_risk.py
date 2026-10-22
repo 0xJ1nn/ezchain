@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from ezchain_core import (
     OrderRequest,
     Quote,
@@ -72,35 +74,58 @@ def evaluate(
     )
 
 
-def test_unknown_price_denies() -> None:
-    allowed, reasons = evaluate(snapshot=make_snapshot(price=None))
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_unknown_price_denies(side: str) -> None:
+    allowed, reasons = evaluate(
+        req=request(side=side),
+        quote=make_quote(side=side),
+        snapshot=make_snapshot(price=None),
+    )
     assert allowed is False
     assert "PRICE_UNKNOWN" in reasons
 
 
-def test_unknown_liquidity_denies() -> None:
-    allowed, reasons = evaluate(snapshot=make_snapshot(liquidity=None))
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_unknown_liquidity_denies(side: str) -> None:
+    allowed, reasons = evaluate(
+        req=request(side=side),
+        quote=make_quote(side=side),
+        snapshot=make_snapshot(liquidity=None),
+    )
     assert allowed is False
     assert "LIQUIDITY_UNKNOWN" in reasons
 
 
-def test_low_liquidity_denies() -> None:
-    allowed, reasons = evaluate(snapshot=make_snapshot(liquidity=Decimal("9999")))
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_low_liquidity_denies(side: str) -> None:
+    allowed, reasons = evaluate(
+        req=request(side=side),
+        quote=make_quote(side=side),
+        snapshot=make_snapshot(liquidity=Decimal("9999")),
+    )
     assert allowed is False
     assert "LIQUIDITY_TOO_LOW" in reasons
 
 
-def test_stale_quote_denies() -> None:
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_stale_quote_denies(side: str) -> None:
     from datetime import timedelta
 
     stale = utcnow() - timedelta(seconds=61)
-    allowed, reasons = evaluate(quote=make_quote(observed_at=stale))
+    allowed, reasons = evaluate(
+        req=request(side=side), quote=make_quote(side=side, observed_at=stale)
+    )
     assert allowed is False
     assert reasons == ("QUOTE_STALE",)
 
 
-def test_stale_snapshot_denies() -> None:
-    allowed, reasons = evaluate(snapshot=make_snapshot(stale=True))
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_stale_snapshot_denies(side: str) -> None:
+    allowed, reasons = evaluate(
+        req=request(side=side),
+        quote=make_quote(side=side),
+        snapshot=make_snapshot(stale=True),
+    )
     assert allowed is False
     assert "SNAPSHOT_STALE" in reasons
 
@@ -117,8 +142,13 @@ def test_paper_mark_size_cap_denies() -> None:
     assert "PAPER_MARK_LIMIT" in reasons
 
 
-def test_missing_pairs_denies() -> None:
-    allowed, reasons = evaluate(snapshot=make_snapshot(pairs=0))
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_missing_pairs_denies(side: str) -> None:
+    allowed, reasons = evaluate(
+        req=request(side=side),
+        quote=make_quote(side=side),
+        snapshot=make_snapshot(pairs=0),
+    )
     assert allowed is False
     assert "NO_PAIR" in reasons
 
@@ -131,14 +161,51 @@ def test_position_limit_denies_a_buy() -> None:
 
 def test_position_limit_never_blocks_a_sell() -> None:
     """Reducing risk must stay possible: plan §Paper accounting / risk intent."""
-    limits = RiskLimits(max_order_usd=Decimal("5000"))
     quote = make_quote(side="sell", amount_out="2400", amount_in="1.2", kind="jupiter")
     allowed, reasons = evaluate(
         req=request(side="sell", amount="2400"),
         quote=quote,
         current_value="2400",
         open_positions=10,
-        limits=limits,
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_order_size_never_blocks_a_sell() -> None:
+    """A position larger than max_order_usd must still be exitable in one order."""
+    quote = make_quote(side="sell", amount_out="2400", amount_in="1.2", kind="jupiter")
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="2400"),
+        quote=quote,
+        current_value="2400",
+        limits=RiskLimits(max_order_usd=Decimal("1000")),
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_paper_mark_cap_never_blocks_a_sell() -> None:
+    """The paper-mark order cap sizes new risk; it must not trap an exit."""
+    quote = make_quote(side="sell", amount_out="300", amount_in="300", kind="paper_mark")
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="300"),
+        quote=quote,
+        current_value="300",
+        limits=RiskLimits(max_order_usd=Decimal("1000"), paper_mark_max_order_usd=Decimal("250")),
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_daily_loss_never_blocks_a_sell() -> None:
+    """A loss breach stops new risk; it must not stop the exit that reduces it."""
+    quote = make_quote(side="sell", amount_out="100", amount_in="100", kind="jupiter")
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="100"),
+        quote=quote,
+        daily_pnl="-10000",
+        limits=RiskLimits(max_daily_loss_usd=Decimal("500")),
     )
     assert allowed is True
     assert reasons == ()
