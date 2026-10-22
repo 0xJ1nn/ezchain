@@ -157,7 +157,8 @@ discovery call, uses its per-chain coverage, and persists every row to
 `market_snapshots` before it is served. A chain the fan-out already attempted is not
 re-probed; a failed all-chain call falls back to one probe per chain. The adapter fan-out issues one token lookup per
 registered chain (seeds first, four in flight) and round-robins ranked rows before the
-page limit. The scan interval is
+page limit. After the chain scan it refreshes one mark per open paper position (bounded by
+`max_open_positions`), including quote-side tokens. The scan interval is
 `EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS` (default 90, minimum 30) and the per-call row
 budget is `EZCHAIN_MARKET_SCAN_LIMIT` (default 200).
 

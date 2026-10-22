@@ -116,6 +116,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- The market monitor now refreshes marks for open paper positions after each scan,
+  including quote-side tokens that discovery would not store, bounded by
+  `max_open_positions` (#88).
 - Playwright fails fast with an actionable message when a `next dev` server is running
   on :3000, instead of corrupting the shared `apps/web/.next` manifest and producing a
   flaky 500. The `.next-test` approach was reverted because Next rewrites tracked type
