@@ -9,8 +9,18 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlsplit
 
-MODES = ("smoke", "soak", "idempotency", "chaos")
-STRATEGY_KINDS = ("momentum", "dip", "dca", "threshold")
+MODES = (
+    "smoke",
+    "soak",
+    "idempotency",
+    "chaos",
+    "matrix",
+    "fuzz",
+    "race",
+    "killswitch",
+    "all",
+)
+STRATEGY_KINDS = ("momentum", "dip", "dca", "threshold", "all")
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_REPORT_DIR = Path("tools/stress/reports")
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
