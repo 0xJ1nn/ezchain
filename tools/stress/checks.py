@@ -24,6 +24,7 @@ ALLOWED_ORDER_SIDES = frozenset({"buy", "sell"})
 ORDER_INVARIANTS = (
     "orders.status_allowed",
     "orders.side_allowed",
+    "orders.amount_valid",
     "orders.fill_order_exists",
     "orders.filled_has_one_fill",
 )
@@ -149,7 +150,7 @@ def check_order(order: Mapping[str, object], *, scenario: str) -> list[Finding]:
             Finding(
                 code="ORDER_AMOUNT_INVALID",
                 scenario=scenario,
-                invariant="orders.status_allowed",
+                invariant="orders.amount_valid",
                 summary=f"order {label} has an invalid amount",
                 expected="positive finite amount_usd",
                 actual=repr(order.get("amount_usd")),

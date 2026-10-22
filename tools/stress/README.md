@@ -46,6 +46,7 @@ PYTHONPATH=packages/core-py/src:packages/adapters/src:apps/api/src:services/engi
 | `--token` | discover | token address; requires `--chain` |
 | `--token-symbol` | row symbol or `STRESS` | display only |
 | `--order-usd` | `1` | paper notional per order |
+| `--strategy-order-usd` | `1` | notional used by the strategy lifecycle; set above `max_order_usd` to exercise a rejection |
 | `--strategy-kind` | `dca` | `momentum`, `dip`, `dca`, `threshold` |
 | `--report-dir` | `tools/stress/reports` | JSON + Markdown evidence |
 | `--file-issues` | off | create GitHub issues for failures |
@@ -88,6 +89,7 @@ Pure functions in `tools/stress/checks.py`, covered by `tests/stress/test_checks
 - account: cash/equity/realized/unrealized are finite decimals; cash is non-negative;
   equity equals cash plus known position market values; no NaN or infinity.
 - a created strategy has a non-empty run log after `POST /run`.
+- a run that claims `buy`/`sell` must point at a **filled** order; a rejected order must log `hold` / `ORDER_REJECTED` (`strategy.run_order_filled`). Set `--strategy-order-usd 1500` to exercise this.
 - `GET /paper/reconciliation` is optional: `404` is a skip, otherwise it must report ok.
 - no unexpected 5xx and no connection errors outside chaos.
 - p50/p95/p99 per endpoint group against the configured budgets.
@@ -95,6 +97,14 @@ Pure functions in `tools/stress/checks.py`, covered by `tests/stress/test_checks
 Order/fill checks are scoped to ids this run created, because the API exposes the newest
 200 rows and may have older paper history. Account and position checks use the live
 snapshot.
+
+## Detected in practice
+
+On 2026-10-22 the harness ran with `--strategy-order-usd 1500` against a clean paper account:
+the order was rejected (`ORDER_LIMIT,PAPER_MARK_LIMIT`) while the run logged `action=buy`.
+The `strategy.run_order_filled` invariant failed and filed issue #71; PR #72 changed the
+engine to log `hold` / `ORDER_REJECTED`, and the same scenario then passed. Re-running
+with `--file-issues` filed nothing because the open fingerprint matched.
 
 ## Reading a report
 

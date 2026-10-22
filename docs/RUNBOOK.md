@@ -197,10 +197,13 @@ tools/stress/run.sh --mode chaos --duration 30
    `tools/stress/run.sh --mode soak --duration 300 --file-issues --repo owner/name`.
    Re-runs skip fingerprints already present in open `stress` issues. Pass
    `--dry-run-issues` to inspect payloads without calling `gh`.
-5. Strategy cleanup is part of the run. If a strategy survives, the report records
+5. Set `--strategy-order-usd` above the risk limit (for example `1500`) to exercise a
+   rejected strategy order. The run must log `hold` / `ORDER_REJECTED`, never `buy`/`sell`
+   with a rejected order id; `strategy.run_order_filled` enforces this.
+6. Strategy cleanup is part of the run. If a strategy survives, the report records
    `STRATEGY_CLEANUP_FAILED` and the run is red; delete it from the strategies page only
    after recording why.
-6. Do not point the harness at a live-venue API or add auth/key options to it. Chaos never
+7. Do not point the harness at a live-venue API or add auth/key options to it. Chaos never
    kills processes or injects 5xx responses; it only retries an invalid path and an
    unreachable loopback port.
 
