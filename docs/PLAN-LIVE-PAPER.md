@@ -163,6 +163,12 @@ token quantities need precision.
   schema has no `strategy_id`, and the service rejects any internal order that still
   claims strategy attribution before a quote. There is no authentication yet; the
   endpoint is for a trusted network until ops adds auth.
+- **A rejected order is not a trade.** If the paper order service persists `rejected`,
+  the engine records `hold` / `ORDER_REJECTED` with the attempted action, attempted
+  amount, order id and order reason. It never logs a `buy`/`sell` action for a fill that
+  did not happen. The interval window is not consumed, so a persistently rejected
+  strategy remains due and writes one hold per scheduler tick until its params change;
+  that is deliberate visibility, not a silent retry loop.
 - **Strategy deletion is a cascade with an audit trade-off** (ADR-0022). Deleting a
   strategy removes its `strategy_runs` decision log and the strategy in one transaction;
   historical `paper_orders.strategy_id` stays as an opaque string. The execution trail is
