@@ -350,3 +350,46 @@ a 200 placeholder.
 
 **Consequences:** one vocabulary across services and screens; contract tests assert every
 code renders. New failure modes require a code, not an ad-hoc string.
+
+---
+
+## ADR-0020 — Non-Solana paper fills use a capped DexScreener mark
+
+**Date:** 2026-10-22 · **Status:** Accepted for P0
+
+**Context:** live browsing covers every DexScreener chain, but only Solana has a
+keyless executable quote adapter in P0 (Jupiter). Building EVM aggregator adapters for
+the first slice would delay the paper loop and add API-key dependencies. A paper fill
+still needs a real observed price, not a synthetic one.
+
+**Decision:** Solana paper orders use Jupiter quotes. Other chains use the best DexScreener
+pair price as a `paper_mark`: it carries source, `observed_at` and age; it is capped at
+$250 per order; it is labelled `PAPER · MARK` in the UI; and `live_execute` is `false`.
+A `paper_mark` is not an executable route and cannot unlock live mode.
+
+**Consequences:** the paper loop works across every browsable chain on day one without
+pretending the fill is executable. EVM execution needs a real venue adapter and an ADR
+before it can move from `paper_mark` to a quote. Slippage/impact on `paper_mark` fills is
+unknown and must be shown as unknown, never zero.
+
+---
+
+## ADR-0021 — P0 runs the strategy scheduler inline in the API
+
+**Date:** 2026-10-22 · **Status:** Accepted for P0
+
+**Context:** the architecture separates `services/engine` from `apps/api`. For the first
+working paper slice, a separate deployable, queue and worker lifecycle would add failure
+modes before a single strategy has run. The engine logic is pure and already isolated in
+`ezchain_core`/`ezchain_engine`.
+
+**Decision:** when `EZCHAIN_ENGINE_INLINE=true`, the API runs a bounded asyncio task every
+`EZCHAIN_ENGINE_INTERVAL_SECONDS`; it evaluates active strategies and calls the same
+`PaperService` used by the HTTP route. The task is disabled in tests and can be replaced
+by a separate `services/engine` process without changing the evaluator or the order
+service.
+
+**Consequences:** one process to run locally. The API must keep the task bounded and
+observable; if p95 latency regresses, split the worker. The inline path is not a second
+execution pipeline — it uses the same service and ledger.
+

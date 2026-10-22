@@ -17,6 +17,12 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] #23 mobile chart overflow; #24 markets evidence; #38 cross-page constants.
 - [x] Evidence: `docs/evidence/m1-ui/` (dashboard, positions, markets, token, SCAM, mobile).
 
+## Now — P0 live paper slice
+
+The active plan is [`docs/PLAN-LIVE-PAPER.md`](PLAN-LIVE-PAPER.md): live multi-chain
+browsing, paper execution and user-defined strategies. The M1 checklist below remains for
+the surfaces P0 does not touch (wallets, automations, system pages).
+
 ## Now — M1
 
 ### 1. Wallets + wallet detail — #10 (next)
