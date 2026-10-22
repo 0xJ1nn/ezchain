@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
+    "test:live": "playwright test --config playwright.live.config.ts",
     "shots": "playwright test"
   },
   "dependencies": {

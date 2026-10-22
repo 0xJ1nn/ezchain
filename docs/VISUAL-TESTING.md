@@ -10,8 +10,9 @@ pnpm install
 pnpm --filter @ezchain/web test       # Playwright smoke + screenshots
 ```
 
-The Playwright config starts the app on `127.0.0.1:3100`, uses the installed Chrome
-channel, and writes screenshots to `apps/web/.shots/` (gitignored):
+The Playwright config starts the app on `127.0.0.1:3100`, uses installed Chrome when
+present and bundled Chromium otherwise (override with `EZCHAIN_PW_CHANNEL`), and writes
+screenshots to `apps/web/.shots/` (gitignored):
 
 - `.shots/dashboard-1440.png` — desktop, full page
 - `.shots/dashboard-390.png` — mobile, full page

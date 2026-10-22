@@ -51,3 +51,7 @@ tools/stress/reports/
 # Scratch (rejected by review anyway)
 _tmp_*
 scratch/
+
+# Internal agent orchestration, model policy, review logs, local handoffs.
+# These are deliberately NOT part of the public repository.
+.agents/

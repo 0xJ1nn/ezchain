@@ -1,5 +1,10 @@
 # AGENTS.md — AI & developer instructions
 
+> **Maintainer workflow:** if the maintainer invokes **“leader go”** or **“leader mode”**,
+> read the maintainer's local, untracked orchestration brief if one is present in the
+> working tree. If it is absent, ask the maintainer; do not invent a process. Internal
+> orchestration and review material is intentionally not part of this public repository.
+>
 > **Canonical engineering rules:** [`project.md`](project.md) is the single source of truth
 > for how ezCHAIN is developed. Read it before every meaningful task.
 >

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Badge, LiveDot } from "@/components/ui";
 import type { PositionTileView, TileChart } from "@/lib/position-fixtures";
 
@@ -55,7 +54,7 @@ export function PositionTile({ position }: { position: PositionTileView }) {
 					</div>
 					<div>
 						<div className="tile-name">
-							<Link href={`/positions/${position.id}`}>{position.name}</Link>
+							<span>{position.name}</span>
 						</div>
 						<div className="tile-sub">{position.sub}</div>
 					</div>

@@ -207,7 +207,7 @@ export default async function DashboardPage() {
 												</span>
 											</td>
 											<td className="right">
-												<Link className="btn sm" href={`/positions/${p.id}`}>
+												<Link className="btn sm" href="/positions">
 													Open
 												</Link>
 											</td>
