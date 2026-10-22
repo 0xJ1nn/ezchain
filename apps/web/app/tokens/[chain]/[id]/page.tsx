@@ -89,7 +89,12 @@ export default async function TokenPage({
 					</div>
 					<span className="badge">PAPER</span>
 					<Badge tone={token.execBadge.tone}>{token.execBadge.label}</Badge>
-					<button className="btn" type="button" aria-pressed="true">
+					<button
+						className="btn"
+						type="button"
+						disabled
+						title="Watchlist is not wired in M1"
+					>
 						★ Watchlist
 					</button>
 					<Link className="btn" href="/alerts">
@@ -447,7 +452,7 @@ export default async function TokenPage({
 
 							<div className="row mt-12">
 								<button
-									className="btn primary lg"
+									className={`btn lg ${token.quote.canConfirm ? "primary" : "ghost"}`}
 									style={{ flex: 1 }}
 									type="button"
 									disabled={!token.quote.canConfirm}

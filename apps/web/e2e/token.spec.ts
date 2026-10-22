@@ -153,7 +153,7 @@ test("scamcoin token page fails closed with no fabricated route", async ({ page 
 	// No fabricated route, no confirmable order; the gate reason is visible, not title-only.
 	await expect(page.getByText("Jupiter v6")).toHaveCount(0);
 	await expect(page.getByText("1,403,571")).toHaveCount(0);
-	const confirm = page.getByRole("button", { name: "Review & confirm" });
+	const confirm = page.getByRole("button", { name: "No route · nothing to confirm" });
 	await expect(confirm).toBeDisabled();
 	await expect(confirm).toHaveAttribute("aria-describedby", "confirm-block");
 	await expect(page.locator("#confirm-block")).toHaveText("No sell route — nothing can be sent");
@@ -196,5 +196,7 @@ test("token page screenshot at mobile width", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/tokens/solana/bonk");
 	await expect(page.getByRole("navigation", { name: "Primary mobile navigation" })).toBeVisible();
+	const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+	expect(scrollWidth, "page must not scroll sideways on a 390px viewport").toBeLessThanOrEqual(390);
 	await page.screenshot({ path: ".shots/token-390.png", fullPage: true });
 });

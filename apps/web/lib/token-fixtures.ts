@@ -387,7 +387,7 @@ const bonk: TokenPageView = {
 	},
 	myPosition: {
 		sub: "pos_7f3a91 · Momentum v1.2",
-		detailHref: "/positions/bonk",
+		detailHref: "/positions#bonk",
 		cells: [
 			{ k: "PnL", v: "+42.6%", vTone: "ok", sub: "+$38.12" },
 			{ k: "Equity", v: "$127.60", sub: "banked $46.20" },
@@ -464,7 +464,7 @@ const bonk: TokenPageView = {
 			{ k: "Chain tier", v: "Solana · T1", plain: true },
 			{ k: "Executable", v: "", badge: "buy + sell", badgeTone: "ok" },
 		],
-		foot: "Prices from venue quotes; supply and holders from the chain. Age shown per cell on hover.",
+		foot: "Prices from venue quotes; supply and holders from the chain. Fixture snapshot; source/age fields land with the API.",
 	},
 };
 
@@ -531,7 +531,7 @@ const scam: TokenPageView = {
 	},
 	myPosition: {
 		sub: "Manual · paper",
-		detailHref: "/positions/scamcoin",
+		detailHref: "/positions#scamcoin",
 		cells: [
 			{ k: "PnL", v: "−96.2%", vTone: "err", sub: "at mark · not executable · −$142.30" },
 			{ k: "Value", v: "$0.0041", sub: "executable · last exact quote · 2m" },
@@ -576,7 +576,7 @@ const scam: TokenPageView = {
 				{ text: " · 2m ago. New buys for this token are blocked while safety checks fail." },
 			],
 		},
-		confirmLabel: "Review & confirm",
+		confirmLabel: "No route · nothing to confirm",
 		limitsHref: "/risk",
 		foot:
 			"Nothing is signed on this screen. With no route there is nothing to confirm; the page " +
