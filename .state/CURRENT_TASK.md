@@ -1,25 +1,26 @@
 # CURRENT TASK
 
-**Objective:** M1 — stand up the ezCHAIN web UI from the wireframe: shell, dashboard, the
-signature position tile, markets screener and token page.
+**Objective:** P0 — live paper slice: multi-chain live browsing, paper execution and
+user-defined strategies. No keys, no live money.
 
-**Scope in:** `apps/web` shell, dashboard, positions page + tile states, generated design
-tokens, fixture view models, Playwright smoke/screenshot checks, docs.
-**Scope out:** API, engine, executor, ingest, auth, real market data, order execution,
-remaining wireframe pages (tracked as separate M1 issues).
+**Scope in:** `apps/api`, `services/engine` (inline), `packages/core-py`,
+`packages/adapters`, `apps/web` markets/token/positions/strategies, Postgres schema,
+Playwright and pytest, docs.
+**Scope out:** live signing, executor/vault, wallet/automation/system pages, fiat,
+copy-trading, pump.fun live trading.
 
-**Acceptance:** dashboard and positions render at 1440 px without external requests;
-the shell is navigable; every unimplemented route is explicit; `bash tools/ci.sh` is
-green; screenshot comparisons are attached to the PR.
+**Acceptance:** a user can browse live markets across the registry, place a paper buy/sell,
+see the ledger/position/PnL, create a strategy and watch it place paper orders; unknown,
+stale and no-route states fail closed; `bash tools/ci.sh` is green.
 
-**Verification:** `pnpm -r lint`, `pnpm -r typecheck`, `pnpm -r test`,
-`node tools/build-tokens.mjs --check`, `bash tools/ci.sh`.
+**Verification:** `bash tools/ci.sh`, `pnpm --filter @ezchain/web test`, `.venv/bin/pytest`,
+`.venv/bin/ruff check`, `.venv/bin/mypy --strict`, live smoke in the PR.
 
-**State:** shell + dashboard #16; positions #18; markets #21; token #22; mobile overflow
-#23; evidence #24; docs audit #37; cross-page constants #38; shots #41. Issue #9 is
-closed; #8 stays open until all tile states exist. The M1 gate is green (15 tests).
-See `.state/HANDOFF.md` for the next-chat handoff and `docs/TODO.md` for the checklist.
+**State:** P0.0–P0.5 merged on `feat/live-paper-foundation` (PR #51): adapters #53, paper
+#54, engine #52, live web #55, paper/strategy web #56. Live smoke passes: markets, token,
+paper buy/sell, positions and a DCA strategy order on Solana; Base USDC paper-mark buy
+also passes. `bash tools/ci.sh` is green (203 Python + 31 Playwright tests at the last
+run). P0.6 failure drills, dashboard paper-account wiring and docs/evidence remain.
 
-**Next:** wallets (#10), then automations (#11), strategies/signals (#12), risk/alerts
-(#13), system pages (#14), remaining tile states (#8), deterministic gate (#36). M2
-starts with `services/ingest`, the `MarketEvent` contract and persistence (#25–#28).
+**Next:** finish P0.6, merge PR #51 to `main`, then M1 wallets (#10) on a new branch.
+Do not start live execution or key custody without an ADR and the paper gate.

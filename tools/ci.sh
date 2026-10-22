@@ -36,6 +36,19 @@ if command -v pytest >/dev/null 2>&1 && [ -d tests ]; then
   pytest -q
   ran=1
 fi
+if [ -x .venv/bin/ruff ]; then
+  .venv/bin/ruff check packages apps/api services
+  .venv/bin/ruff format --check packages apps/api services
+  ran=1
+fi
+if [ -x .venv/bin/mypy ]; then
+  .venv/bin/mypy --strict packages apps/api services
+  ran=1
+fi
+if [ -x .venv/bin/pytest ]; then
+  .venv/bin/pytest -q
+  ran=1
+fi
 if [ -f pnpm-workspace.yaml ]; then
   command -v pnpm >/dev/null 2>&1 || {
     echo "pnpm is required for the web gate: npm install -g pnpm@9"

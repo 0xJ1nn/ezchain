@@ -78,7 +78,7 @@ and the recorded fixtures (§5). Until then the UI must not present it as tradea
 
 | Chain | Family | Target tier | Verified today | Target execution | Notes |
 |---|---|---|---|---|---|
-| Solana | SVM | T1 | — | Jupiter, Raydium, PumpSwap | first-class; rent/ATA accounting |
+| Solana | SVM | T1 | paper quote + paper fill | Jupiter, Raydium, PumpSwap | first-class; rent/ATA accounting |
 | Ethereum | EVM | T1 | — | Uniswap v3/v4, 1inch | L1 gas model, EIP-1559 |
 | Base | EVM | T1 | — | Uniswap, Aerodrome | OP-stack finality |
 | Arbitrum One | EVM | T1 | — | Uniswap, Camelot | L2 sequencer feed |
@@ -102,6 +102,12 @@ and the recorded fixtures (§5). Until then the UI must not present it as tradea
 **Honesty rule:** once adapters exist, the UI reads the matrix from the registry. A chain
 shown as T2 says "beta" next to execution; T3 disables the trade button with the reason.
 A chain with no adapter says "not implemented", not "T1".
+
+`paper quote + paper fill` means the P0 API has been exercised against live mainnet
+quotes and the paper ledger; it is **not** a live-execution tier. Every other chain is
+`paper_mark` only: live browsing plus a capped paper fill at the best DexScreener pair
+price, with `live_execute: false`. No chain is T1 until the executor and live contract
+suite exist.
 
 ## 4. Per-chain data requirements
 

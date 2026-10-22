@@ -4,7 +4,26 @@ Status: living document, updated when a milestone opens or closes. The roadmap i
 permission for uncontrolled development: each item becomes a focused issue before work
 starts (`project.md` §30).
 
-The current code is a **fixture-driven web UI only**. Nothing in M2–M5 exists yet.
+The current code is the **P0 live paper slice**: live multi-chain browsing, a paper ledger
+and user-defined strategies. Live execution, keys, wallets and automations are not built.
+
+## Now — P0: Live paper slice
+
+Goal: live multi-chain browsing, a real paper ledger, and user-defined strategies that
+run in paper mode. No keys, no live money. Full contract:
+[`docs/PLAN-LIVE-PAPER.md`](docs/PLAN-LIVE-PAPER.md).
+
+- [x] P0.0 foundation: FastAPI, Postgres, adapter/core/engine packages, proxy, CI.
+- [x] P0.1 live data: DexScreener multi-chain + Jupiter quotes.
+- [x] P0.2 paper ledger: idempotent orders, fills, positions, PnL, risk.
+- [x] P0.3 strategy engine: declarative momentum/dip/DCA/threshold rules.
+- [x] P0.4 web live markets and token pages.
+- [x] P0.5 web paper ticket and strategy builder.
+- [ ] P0.6 integration: live smoke, failure drills, docs and evidence.
+
+Exit: a user can browse live markets, place a paper buy/sell, see the ledger and position,
+create a strategy and watch it place paper orders. Every number carries source, age and
+`PAPER`; no key material exists.
 
 ## Current — M1: UI close-out
 

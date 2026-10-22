@@ -1,0 +1,64 @@
+[
+  {
+    "url": "https://dexscreener.com/solana/g8f5c3ubygdaw52ty5clbawfxunnlajfleydrwfbpump",
+    "chainId": "solana",
+    "tokenAddress": "G8f5c3uBYgDaw52ty5CLbAWFxuNnLAJfLEYDRwfBpump",
+    "icon": "8fEV0UOGdFH2i02a",
+    "header": "https://cdn.dexscreener.com/cms/images/Rr8xOKatVBc6ORfV?width=900&height=300&fit=crop&quality=95&format=auto",
+    "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/G8f5c3uBYgDaw52ty5CLbAWFxuNnLAJfLEYDRwfBpump?timestamp=1792661700000",
+    "links": [
+      {
+        "url": "https://dariomodei.com/post/thoughts-on-world-systems-2026-12-09#cloverbrow:~:text=to%20protect%20themselves.-,Cloverbrow,-There%20is%20a"
+      },
+      {
+        "type": "twitter",
+        "url": "https://x.com/wellitsover4me/status/2113188714801475827?s=20"
+      }
+    ],
+    "totalAmount": 10,
+    "amount": 10
+  },
+  {
+    "url": "https://dexscreener.com/solana/kihgkfrib6emvel3bxe3zmu2qnbgsxjzdotugojpump",
+    "chainId": "solana",
+    "tokenAddress": "KihGKfriB6eMvEL3bXE3ZMu2qnBgsXJZDotuGoJpump",
+    "icon": "Cly7kIQIoUY1GdDw",
+    "header": "https://cdn.dexscreener.com/cms/images/BuG3TJr0inwXP99x?width=900&height=300&fit=crop&quality=95&format=auto",
+    "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/KihGKfriB6eMvEL3bXE3ZMu2qnBgsXJZDotuGoJpump?timestamp=1792661700000",
+    "links": [
+      {
+        "url": "https://fomo.family/tokens/solana/KihGKfriB6eMvEL3bXE3ZMu2qnBgsXJZDotuGoJpump?r=PastClearFly"
+      },
+      {
+        "type": "twitter",
+        "url": "https://x.com/BIKEchiDev"
+      }
+    ],
+    "totalAmount": 30,
+    "amount": 30
+  },
+  {
+    "url": "https://dexscreener.com/solana/hmyd9tosnuxunhmq7pxmoeprvblbbja3jbfydq6upump",
+    "chainId": "solana",
+    "tokenAddress": "HMYd9tosnUXuNHmq7pXmoePRVBLBBjA3JBfydq6upump",
+    "description": "Developed by @yhbryankimiq the World's Highest IQ Record Holder, in cooperation with World Memory Championships, under an official signed agreement.",
+    "icon": "C00PG8ebjcD8d36M",
+    "header": "https://cdn.dexscreener.com/cms/images/_KVgfikLprLElD6Y?width=900&height=300&fit=crop&quality=95&format=auto",
+    "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/HMYd9tosnUXuNHmq7pXmoePRVBLBBjA3JBfydq6upump?timestamp=1792661700000",
+    "links": [
+      {
+        "url": "https://si276.xyz"
+      },
+      {
+        "type": "twitter",
+        "url": "https://x.com/si276_xyz"
+      },
+      {
+        "type": "telegram",
+        "url": "https://t.me/si276_official"
+      }
+    ],
+    "totalAmount": 10,
+    "amount": 10
+  }
+]
