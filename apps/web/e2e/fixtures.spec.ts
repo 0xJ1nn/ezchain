@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { activity, attribution, totals } from "../lib/dashboard-fixtures";
 import { marketRows } from "../lib/markets-fixtures";
+import { strategyParamFields } from "../lib/strategy-fixtures";
 import { tokenPages } from "../lib/token-fixtures";
 
 const num = (value: string) => Number(value.replace("\u2212", "-").replace(/[$,%+]/g, ""));
@@ -20,6 +21,17 @@ test("dashboard fixtures reconcile before they reach the UI", () => {
 	// presented as the sum of the four open positions.
 	expect(Math.round((totals.exposureUsd / totals.exposureCapUsd) * 100)).toBe(38);
 	expect(totals.openPositionValueUsd).toBeCloseTo(220.5041, 4);
+});
+
+test("DCA form vocabulary matches the server validator", () => {
+	const dcaFields = strategyParamFields.filter((field) => field.kinds.includes("dca"));
+	expect(dcaFields.map((field) => field.name).sort()).toEqual([
+		"interval_minutes",
+		"max_position_usd",
+		"order_usd",
+	]);
+	expect(dcaFields.some((field) => field.name === "take_profit_pct")).toBe(false);
+	expect(dcaFields.some((field) => field.name === "stop_loss_pct")).toBe(false);
 });
 
 test("cross-page BONK constants agree", () => {
