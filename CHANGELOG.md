@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- Stress harness bearer support via `EZCHAIN_STRESS_API_TOKEN`, with HTTPS/loopback
+  enforcement and report redaction (#79).
+
 - **P0 live paper slice**: FastAPI edge, Postgres schema, `packages/core-py` domain and
   append-only ledger, DexScreener/Jupiter adapters, and an inline strategy scheduler.
 - Live multi-chain market browsing with a 25-chain registry, source and `observed_at` on

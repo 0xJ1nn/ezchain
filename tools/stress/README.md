@@ -62,6 +62,21 @@ PYTHONPATH=packages/core-py/src:packages/adapters/src:apps/api/src:services/engi
 Exit codes: `0` pass, `1` invariant/latency/HTTP failure, `2` config error or refused
 preflight, `3` issue filing failed (the report is still kept).
 
+### Auth-enabled API
+
+When `EZCHAIN_AUTH_ENABLED=true`, export the deployment token rather than putting it on
+the command line:
+
+```bash
+EZCHAIN_STRESS_API_TOKEN="$(cat /run/secrets/ezchain_api_token)" \
+  tools/stress/run.sh --mode smoke --duration 30
+```
+
+The harness sends it as `Authorization: Bearer ...` on every request, never prints it and
+redacts it from report/issue evidence. It refuses to send the token over plain HTTP to a
+non-loopback host; use HTTPS or a loopback address. There is deliberately no
+`--api-token` flag, because tokens in shell history or process lists are a leak.
+
 ## What each mode does
 
 - **smoke** — one full flow (markets, chains, token, buy/sell quotes, one paper buy, a sell
