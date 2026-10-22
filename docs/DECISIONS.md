@@ -363,14 +363,16 @@ the first slice would delay the paper loop and add API-key dependencies. A paper
 still needs a real observed price, not a synthetic one.
 
 **Decision:** Solana paper orders use Jupiter quotes. Other chains use the best DexScreener
-pair price as a `paper_mark`: it carries source, `observed_at` and age; it is capped at
-$250 per order; it is labelled `PAPER · MARK` in the UI; and `live_execute` is `false`.
-A `paper_mark` is not an executable route and cannot unlock live mode.
+pair price as a `paper_mark`: it carries source, `observed_at` and age; new risk is capped
+at $250 per **buy**; it is labelled `PAPER · MARK` in the UI; and `live_execute` is
+`false`. A `paper_mark` sell is reduce-only and may exceed the entry cap so a position can
+always be closed. A `paper_mark` is not an executable route and cannot unlock live mode.
 
 **Consequences:** the paper loop works across every browsable chain on day one without
-pretending the fill is executable. EVM execution needs a real venue adapter and an ADR
-before it can move from `paper_mark` to a quote. Slippage/impact on `paper_mark` fills is
-unknown and must be shown as unknown, never zero.
+pretending the fill is executable. The entry cap sizes new risk but never traps an exit.
+EVM execution needs a real venue adapter and an ADR before it can move from `paper_mark`
+to a quote. Slippage/impact on `paper_mark` fills is unknown and must be shown as unknown,
+never zero.
 
 ---
 

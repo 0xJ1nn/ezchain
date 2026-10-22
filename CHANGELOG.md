@@ -47,6 +47,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Paper sells are no longer blocked by order-size, paper-mark-size or daily-loss limits;
+  those limits gate new risk, not exits. Fail-closed price/liquidity/route/freshness gates
+  still apply to sells (#65, PR #66).
 - Position-tile charts no longer widen the page at 390 px (#23).
 - Dashboard bank activity and the position-tile peak now agree with the token fixture;
   a cross-page test guards the constants (#38).
