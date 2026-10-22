@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- Stress harness bearer support via `EZCHAIN_STRESS_API_TOKEN`, with HTTPS/loopback
+  enforcement and report redaction (#79).
+
 - **PAPER Docker stack (issue #63)**: `apps/api/Dockerfile` and `apps/web/Dockerfile`
   build from the repository root as multi-stage, non-root images; the API image installs
   `requirements-runtime.txt` only (no pytest/ruff/mypy); `infra/compose.yaml`

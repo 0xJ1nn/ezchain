@@ -7,12 +7,14 @@ deliberately invalid path/URL to exercise retry/backoff, and is documented as su
 
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -32,7 +34,7 @@ from .checks import (
     check_reconciliation,
     percentiles,
 )
-from .config import RunConfig
+from .config import ConfigError, RunConfig
 from .issues import fingerprint_for
 
 Params = Mapping[str, str | int | float]
@@ -180,6 +182,15 @@ class Harness:
         self._order_slots = 0
         self._sequence = 0
         self._threads = _ThreadClients()
+        self._api_token = os.environ.get("EZCHAIN_STRESS_API_TOKEN") or None
+        if self._api_token is not None:
+            parsed = urlsplit(config.base_url)
+            loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            if parsed.scheme != "https" and not loopback:
+                raise ConfigError(
+                    "EZCHAIN_STRESS_API_TOKEN must not be sent over plain HTTP to a "
+                    "non-loopback host"
+                )
         self.run_tag = f"{config.seed}-{int(time.time())}"
         self.started_monotonic = time.monotonic()
 
@@ -193,8 +204,13 @@ class Harness:
                 timeout=timeout,
                 follow_redirects=False,
                 headers={
-                    "User-Agent": "ezchain-stress/0.1 (paper-only; no auth)",
+                    "User-Agent": "ezchain-stress/0.1 (paper-only)",
                     "Accept": "application/json",
+                    **(
+                        {"Authorization": f"Bearer {self._api_token}"}
+                        if self._api_token is not None
+                        else {}
+                    ),
                 },
             )
             self._threads.clients[origin] = client
@@ -204,6 +220,12 @@ class Harness:
         for client in self._threads.clients.values():
             client.close()
         self._threads.clients.clear()
+
+    def redact(self, text: str) -> str:
+        """Never let the deployment token reach a report or issue payload."""
+        if self._api_token is None:
+            return text
+        return text.replace(self._api_token, "[redacted]")
 
     def next_id(self, prefix: str) -> str:
         with self._lock:
@@ -409,7 +431,7 @@ class Harness:
                         summary="a request could not reach the API",
                         expected=f"{method.upper()} {path} succeeds",
                         actual=error,
-                        evidence=str(exc)[:500],
+                        evidence=self.redact(str(exc)[:500]),
                     )
                 )
             return None
@@ -437,7 +459,7 @@ class Harness:
                     summary=f"{method.upper()} {path} returned {status}",
                     expected="no 5xx responses",
                     actual=f"HTTP {status}",
-                    evidence=response.text[:500],
+                    evidence=self.redact(response.text[:500]),
                 )
             )
         if status not in expected and status not in allow_status:
@@ -449,7 +471,7 @@ class Harness:
                     summary=f"{method.upper()} {path} returned an unexpected status",
                     expected=f"one of {sorted(set(expected) | set(allow_status))}",
                     actual=f"HTTP {status}",
-                    evidence=response.text[:500],
+                    evidence=self.redact(response.text[:500]),
                 )
             )
         return response

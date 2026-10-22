@@ -363,7 +363,9 @@ is still allowed, so this only affects browser CSRF attempts and misconfigured o
 ## 13. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.
-It is PAPER-only and refuses a non-paper API before mutating anything.
+It is PAPER-only and refuses a non-paper API before mutating anything. For an
+auth-enabled API, export `EZCHAIN_STRESS_API_TOKEN` (never a CLI flag); the harness sends a
+bearer header and redacts it from reports.
 
 ```bash
 tools/stress/run.sh --mode smoke --duration 30
