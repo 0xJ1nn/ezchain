@@ -136,10 +136,10 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 
 ## Cross-cutting
 
-- [ ] Responsive table → card conversion for markets/token/positions tables. Today the
-      tables scroll horizontally at <760 px; the wireframe calls for cards
-      (`design/wireframe/28-mobile.html`). The shared `ui.css` has `col-hide-sm`; a proper
-      card primitive is still missing.
+- [ ] Responsive table → card conversion for markets/token/positions tables. Today at
+      <=768 px the tables scroll horizontally inside `.table-wrap`, and `col-hide-sm`
+      drops secondary columns; the wireframe calls for cards
+      (`design/wireframe/28-mobile.html`). A proper card primitive is still missing.
 - [ ] Real filters/search/watchlist. Preview-only today; watchlists are #33.
 - [ ] Position tiles/tables do not link anywhere yet; the dead `/positions/...`
       route is gone and dashboard rows link to `/tokens/{chain}/{address}`. Add a real

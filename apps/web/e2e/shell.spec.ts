@@ -32,6 +32,20 @@ const MAIN_ROUTES = [
 	"/mobile",
 ];
 
+// The reviewed responsive widths. 768px is the mobile breakpoint, 761px and 769px pin its
+// edges, and 390/1100/1440 are the phone, compact-desktop and desktop targets.
+const OVERFLOW_WIDTHS = [390, 761, 768, 769, 1100, 1440];
+
+// Scan in small route groups so every width gets its own per-test budget. One 24-route x
+// 3-width scan shared a single 300s budget and timed out mid-run when a cold `next dev`
+// compile landed on a later route; separate tests also run concurrently.
+const ROUTE_GROUP_SIZE = 4;
+const ROUTE_GROUPS = Array.from(
+	{ length: Math.ceil(MAIN_ROUTES.length / ROUTE_GROUP_SIZE) },
+	(_, index) =>
+		MAIN_ROUTES.slice(index * ROUTE_GROUP_SIZE, (index + 1) * ROUTE_GROUP_SIZE),
+);
+
 test("Discovery is the first sidebar group and holds Browse then Signals", async ({ page }) => {
 	await page.goto("/");
 
@@ -164,15 +178,17 @@ test("topbar search names markets and All chains opens the browser", async ({ pa
 	await search.fill("bonk");
 	await search.press("Enter");
 	await expect(page).toHaveURL(/\/markets\?q=bonk$/);
+	await expect(page.getByRole("heading", { name: "Markets", level: 1 })).toBeVisible();
 	const rows = page.locator("main table tbody tr");
 	await expect(rows).toHaveCount(1);
 	await expect(rows.first()).toContainText("BONK");
 
-	// A miss must be a real empty result, not a silently ignored query.
-	await page.getByRole("searchbox", {
-		name: "Search markets (symbol, name or address)",
-	}).fill("zzzz-not-a-token");
-	await page.keyboard.press("Enter");
+	// A miss must be a real empty result, not a silently ignored query. The searchbox
+	// survives the in-app navigation; press on the field itself so the key event cannot
+	// land on the page body and leave the query at q=bonk.
+	await search.fill("zzzz-not-a-token");
+	await expect(search).toHaveValue("zzzz-not-a-token");
+	await search.press("Enter");
 	await expect(page).toHaveURL(/\/markets\?q=zzzz-not-a-token$/);
 	await expect(page.locator("main table tbody tr")).toHaveCount(0);
 	await expect(page.getByText(/Nothing matched .*zzzz-not-a-token/)).toBeVisible();
@@ -412,19 +428,24 @@ test("narrow topbar search takes a full row and hides the chips", async ({ page 
 	}
 });
 
-test("main routes have no page-level overflow at 390px, 768px and 761px", async ({ page }) => {
-	test.setTimeout(300_000);
-	for (const width of [390, 768, 761]) {
-		await page.setViewportSize({ width, height: 900 });
-		for (const route of MAIN_ROUTES) {
-			await page.goto(route);
-			const overflow = await page.evaluate(
-				() => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-			);
-			expect(overflow, `${route} overflows at ${width}px`).toBeLessThanOrEqual(0);
-		}
+for (const width of OVERFLOW_WIDTHS) {
+	for (const [index, routes] of ROUTE_GROUPS.entries()) {
+		test(`main routes have no page-level overflow at ${width}px (routes ${index + 1}/${ROUTE_GROUPS.length})`, async ({
+			page,
+		}) => {
+			await page.setViewportSize({ width, height: 900 });
+			for (const route of routes) {
+				await page.goto(route);
+				const overflow = await page.evaluate(
+					() =>
+						document.documentElement.scrollWidth -
+						document.documentElement.clientWidth,
+				);
+				expect(overflow, `${route} overflows at ${width}px`).toBeLessThanOrEqual(0);
+			}
+		});
 	}
-});
+}
 
 test("loading and error boundaries are wired", async () => {
 	const app = join(__dirname, "..", "app");
