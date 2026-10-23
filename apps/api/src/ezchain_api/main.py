@@ -26,18 +26,19 @@ from ezchain_adapters import (
     StonfiClient,
     VeloraClient,
 )
-from ezchain_engine import KillSwitchExecutor, StrategyScheduler
+from ezchain_engine import KillSwitchExecutor, PluginHost, PluginRegistry, StrategyScheduler
 
 from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .errors import request_validation_error
 from .observability import ObservabilityMiddleware, configure_logging
-from .routers import account, backtests, graph, markets, paper, strategies, system
+from .routers import account, agent, backtests, graph, markets, paper, plugins, strategies, system
 from .services.executor import PaperOrderExecutor
 from .services.graph import PaperGraphRuntime
 from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
+from .services.plugin_runtime import PaperPluginRuntime
 from .services.system_flags import read_kill_switch, seed_kill_switch
 
 
@@ -89,6 +90,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     graph_runtime = PaperGraphRuntime(gecko, dexscreener, settings.data_mode)
     app.state.graph_runtime = graph_runtime
 
+    plugin_registry = PluginRegistry(paths=settings.plugin_path_list)
+    plugin_host = PluginHost(
+        timeout_seconds=settings.plugin_timeout_seconds,
+        memory_mb=settings.plugin_memory_mb,
+        cpu_seconds=settings.plugin_cpu_seconds,
+    )
+    plugin_runtime = PaperPluginRuntime(gecko, dexscreener, settings, plugin_registry)
+    app.state.plugin_registry = plugin_registry
+    app.state.plugin_host = plugin_host
+    app.state.plugin_runtime = plugin_runtime
+
     scheduler: StrategyScheduler | None = None
     scheduler_task: asyncio.Task[None] | None = None
     if settings.engine_inline:
@@ -97,6 +109,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             dexscreener,
             executor,
             graph_runtime=graph_runtime,
+            plugin_runtime=plugin_runtime,
+            plugin_host=plugin_host,
+            plugin_registry=plugin_registry,
             interval_seconds=settings.engine_interval_seconds,
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
@@ -124,6 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             scheduler.stop()
         if scheduler_task is not None:
             await scheduler_task
+        await plugin_host.close_all()
         for client in clients:
             await client.__aexit__(None, None, None)
 
@@ -158,6 +174,8 @@ def create_app() -> FastAPI:
     app.include_router(strategies.router)
     app.include_router(graph.router)
     app.include_router(backtests.router)
+    app.include_router(plugins.router)
+    app.include_router(agent.router)
     return app
 
 

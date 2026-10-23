@@ -25,6 +25,8 @@ EXPECTED_PROTECTED_ROUTES = (
     ("POST", "/api/v1/graph/dry-run"),
     ("POST", "/api/v1/graph/validate"),
     ("POST", "/api/v1/paper/orders"),
+    ("POST", "/api/v1/plugins/reload"),
+    ("POST", "/api/v1/plugins/{plugin_id}/validate"),
     ("POST", "/api/v1/strategies"),
     ("POST", "/api/v1/strategies/{strategy_id}/run"),
     ("POST", "/api/v1/system/kill-switch"),

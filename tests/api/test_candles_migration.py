@@ -87,11 +87,13 @@ def test_market_candles_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     database = tmp_path / "candles.db"
     url = f"sqlite+pysqlite:///{database}"
     config = _config(url)
-    # 0003 uses Postgres-only DDL, so start a SQLite database at 0003 and run 0004 alone.
+    engine = create_engine(url)
+    # 0003 uses Postgres-only DDL, so start a SQLite database at 0003 and run the tail.
+    # The strategies table is seeded because a later revision adds columns to it.
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
     command.stamp(config, "0003_paper_fill_order")
     command.upgrade(config, "head")
-
-    engine = create_engine(url)
     try:
         _assert_candle_table(engine)
         _assert_duplicate_bar_is_rejected(engine)

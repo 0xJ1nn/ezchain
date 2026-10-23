@@ -68,6 +68,16 @@ def test_development_defaults_keep_working() -> None:
     assert settings.data_mode == "live"
 
 
+def test_live_mode_is_refused_until_the_executor_exists() -> None:
+    with pytest.raises(ValidationError, match="EZCHAIN_EXECUTION_MODE"):
+        Settings(environment="dev", execution_mode="live")  # type: ignore[arg-type]
+
+
+def test_plugin_paths_are_comma_separated() -> None:
+    settings = Settings(environment="dev", plugin_paths="/srv/a, /srv/b ,")
+    assert settings.plugin_path_list == ["/srv/a", "/srv/b"]
+
+
 def test_test_environment_may_use_sqlite_and_fixtures() -> None:
     settings = Settings(environment="test", data_mode="fixture", database_url="sqlite+pysqlite://")
 

@@ -348,9 +348,21 @@ class StrategyIn(BaseModel):
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
     token_symbol: str = Field(min_length=1, max_length=40)
-    kind: Literal["momentum", "dip", "dca", "threshold", "graph"]
+    kind: Literal["momentum", "dip", "dca", "threshold", "graph", "plugin"]
     params: dict[str, Any] = Field(default_factory=dict)
+    plugin_id: str | None = Field(default=None, min_length=3, max_length=128)
+    plugin_version: str | None = Field(default=None, max_length=32)
     status: Literal["active", "paused"] = "active"
+
+    @model_validator(mode="after")
+    def plugin_identity(self) -> StrategyIn:
+        if self.kind == "plugin" and not self.plugin_id:
+            raise ValueError("plugin_id is required when kind is plugin")
+        if self.kind != "plugin" and (
+            self.plugin_id is not None or self.plugin_version is not None
+        ):
+            raise ValueError("plugin_id/plugin_version are only valid when kind is plugin")
+        return self
 
 
 class StrategyPatch(BaseModel):
@@ -367,6 +379,8 @@ class StrategyOut(BaseModel):
     token_symbol: str
     kind: str
     params: dict[str, Any]
+    plugin_id: str | None = None
+    plugin_version: str | None = None
     status: str
     last_run_at: str | None = None
     created_at: str

@@ -18,6 +18,9 @@ from ezchain_engine import (
     ExecutorUnavailable,
     GraphContextBuilder,
     OrderExecutor,
+    PluginContextBuilder,
+    PluginHost,
+    PluginRegistry,
     RunResult,
     TokenSource,
     evaluate_strategy,
@@ -74,6 +77,9 @@ async def run_strategy_once(
     order_executor: OrderExecutor,
     *,
     graph_runtime: GraphContextBuilder | None = None,
+    plugin_runtime: PluginContextBuilder | None = None,
+    plugin_host: PluginHost | None = None,
+    plugin_registry: PluginRegistry | None = None,
     now: datetime | None = None,
 ) -> RunResult:
     return await evaluate_strategy(
@@ -82,5 +88,8 @@ async def run_strategy_once(
         token_source,
         order_executor,
         graph_runtime=graph_runtime,
+        plugin_runtime=plugin_runtime,
+        plugin_host=plugin_host,
+        plugin_registry=plugin_registry,
         now=now,
     )

@@ -23,15 +23,16 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install --prefix=/install -r requirements-runtime.txt
 
 # Local workspace packages. `--no-deps` is deliberate: requirements-runtime.txt above
-# is the single source of runtime pins, and the workspace packages declare no external
-# dependencies of their own.
+# is the single source of runtime pins (including the SDK's `packaging` dependency).
 COPY packages/core-py ./packages/core-py
 COPY packages/adapters ./packages/adapters
+COPY packages/sdk-py ./packages/sdk-py
 COPY apps/api ./apps/api
 COPY services/engine ./services/engine
 RUN python -m pip install --prefix=/install --no-deps \
         ./packages/core-py \
         ./packages/adapters \
+        ./packages/sdk-py \
         ./apps/api \
         ./services/engine
 
