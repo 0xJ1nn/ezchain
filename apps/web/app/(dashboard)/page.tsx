@@ -22,6 +22,9 @@ import {
 import {
 	fixturePaperAccountComplete,
 	fixturePaperAccountFlat,
+	fixturePaperAccountMany,
+	fixturePaperAccountSingle,
+	fixturePaperAccountUnpricedSource,
 	getPaperSnapshot,
 	getStrategies,
 } from "@/lib/paper-api";
@@ -84,12 +87,22 @@ export default async function DashboardPage({
 	// Deterministic composition states for fixture screenshots and tests. Live mode always
 	// renders the API's answer; a demo flag never masks a real outage.
 	const demo = live ? undefined : state;
-	const accountResult =
+	const demoAccount =
 		demo === "complete"
-			? { ok: true as const, mode: snapshot.mode, data: fixturePaperAccountComplete }
+			? fixturePaperAccountComplete
 			: demo === "flat"
-				? { ok: true as const, mode: snapshot.mode, data: fixturePaperAccountFlat }
-				: snapshot.account;
+				? fixturePaperAccountFlat
+				: demo === "many"
+					? fixturePaperAccountMany
+					: demo === "single"
+						? fixturePaperAccountSingle
+						: demo === "unpriced-source"
+							? fixturePaperAccountUnpricedSource
+							: null;
+	const accountResult =
+		demoAccount === null
+			? snapshot.account
+			: { ok: true as const, mode: snapshot.mode, data: demoAccount };
 	const account = accountResult.ok ? accountResult.data : null;
 	const positions = account?.positions ?? [];
 	const unpricedCount = account?.unpriced_positions.length ?? 0;
@@ -318,7 +331,9 @@ export default async function DashboardPage({
 														{row.share_pct === null ? "—" : `${row.share_pct}%`}
 													</td>
 													<td className="small">
-														{row.source ? (
+														{row.mark_status === "unknown" ? (
+															<Badge tone="warn">unknown mark</Badge>
+														) : row.source ? (
 															`${sourceLabel(row.source.name)} · ${ageLabel(row.source.observed_at)}`
 														) : row.kind === "cash" ? (
 															"ledger"

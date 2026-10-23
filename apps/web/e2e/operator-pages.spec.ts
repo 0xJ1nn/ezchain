@@ -145,6 +145,27 @@ test("wallets and performance withhold equity instead of excluding an unknown ma
 	await expect(page.getByText(/unknown mark excluded/i)).toHaveCount(0);
 });
 
+test("risk and workspace label withheld equity with its reason", async ({ page }) => {
+	await page.goto("/risk");
+	const risk = page.locator('section.kpi-band[aria-label="Paper risk inputs"]');
+	await expect(risk.locator(".stat").filter({ hasText: /^Equity/ }).locator(".value")).toHaveText(
+		"—",
+	);
+	await expect(
+		risk.locator(".stat").filter({ hasText: /^Equity/ }).locator(".meta"),
+	).toHaveText(/equity unavailable — 1 open mark unknown/i);
+
+	await page.goto("/workspace");
+	const workspace = page.locator('section.kpi-band[aria-label="Workspace paper account"]');
+	await expect(
+		workspace.locator(".stat").filter({ hasText: /^Paper equity/ }).locator(".value"),
+	).toHaveText("—");
+	await expect(
+		workspace.locator(".stat").filter({ hasText: /^Paper equity/ }).locator(".meta"),
+	).toHaveText(/equity unavailable — 1 open mark unknown/i);
+	await expect(page.getByText(/No partial total is substituted/i)).toBeVisible();
+});
+
 
 test("system pages never print the API token", async ({ page }) => {
 	for (const route of ["/settings", "/security", "/developer", "/operations"]) {

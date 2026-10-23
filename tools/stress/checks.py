@@ -599,8 +599,22 @@ def check_account(
         )
 
     known_market_value = Decimal(0)
-    unpriced = 0
+    unpriced_positions: list[Mapping[str, object]] = []
     for position in positions:
+        label = _label(position, "position")
+        mark_raw = position.get("mark_usd")
+        mark = _decimal(mark_raw)
+        if mark_raw is not None and mark is None:
+            findings.append(
+                Finding(
+                    code="ACCOUNT_POSITION_MARK_INVALID",
+                    scenario=scenario,
+                    invariant="account.decimals",
+                    summary=f"position {label} has an invalid mark",
+                    expected="null or finite mark_usd",
+                    actual=repr(mark_raw),
+                )
+            )
         raw = position.get("market_value_usd")
         parsed = _decimal(raw)
         if raw is not None and parsed is None:
@@ -614,12 +628,48 @@ def check_account(
                     actual=repr(raw),
                 )
             )
-        elif parsed is not None:
-            known_market_value += parsed
+        if mark is None:
+            # Unpriced is defined by the missing mark, never by a zero market value.
+            unpriced_positions.append(position)
+            if parsed is not None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_POSITION_VALUE_WITHOUT_MARK",
+                        scenario=scenario,
+                        invariant="account.equity_matches",
+                        summary=f"position {label} has a market value but no mark",
+                        expected="market_value_usd null when mark_usd is null",
+                        actual=str(parsed),
+                    )
+                )
+            unrealized = _decimal(position.get("unrealized_usd"))
+            if unrealized is not None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_POSITION_UNREALIZED_WITHOUT_MARK",
+                        scenario=scenario,
+                        invariant="account.equity_matches",
+                        summary=f"position {label} has unrealized PnL but no mark",
+                        expected="unrealized_usd null when mark_usd is null",
+                        actual=str(unrealized),
+                    )
+                )
+        elif parsed is None:
+            findings.append(
+                Finding(
+                    code="ACCOUNT_POSITION_VALUE_MISSING",
+                    scenario=scenario,
+                    invariant="account.equity_matches",
+                    summary=f"position {label} has a mark but no market value",
+                    expected="finite market_value_usd when mark_usd is present",
+                    actual=repr(raw),
+                )
+            )
         else:
-            unpriced += 1
+            known_market_value += parsed
 
-    marks_unknown = unpriced > 0
+    marks_unknown = bool(unpriced_positions)
+    unpriced_label = f"{len(unpriced_positions)} unpriced position(s)"
     complete_raw = account.get("complete")
     complete = complete_raw if isinstance(complete_raw, bool) else None
     if complete_raw is not None and complete is None:
@@ -633,6 +683,41 @@ def check_account(
                 actual=repr(complete_raw),
             )
         )
+    marks_raw = account.get("marks_unknown")
+    reported_marks_unknown = marks_raw if isinstance(marks_raw, bool) else None
+    if marks_raw is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_MARKS_UNKNOWN_MISSING",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account does not report marks_unknown",
+                expected="marks_unknown boolean",
+                actual="missing",
+            )
+        )
+    elif reported_marks_unknown is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_MARKS_UNKNOWN_INVALID",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account marks_unknown flag is not a boolean",
+                expected="true or false",
+                actual=repr(marks_raw),
+            )
+        )
+    elif reported_marks_unknown != marks_unknown:
+        findings.append(
+            Finding(
+                code="ACCOUNT_MARKS_UNKNOWN_MISMATCH",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account marks_unknown disagrees with its open position marks",
+                expected=f"marks_unknown={marks_unknown} ({unpriced_label})",
+                actual=f"marks_unknown={reported_marks_unknown}",
+            )
+        )
     if complete is not None and complete != (not marks_unknown):
         findings.append(
             Finding(
@@ -640,8 +725,23 @@ def check_account(
                 scenario=scenario,
                 invariant="account.equity_complete",
                 summary="account completeness disagrees with its open position marks",
-                expected=f"complete={not marks_unknown} ({unpriced} unpriced position(s))",
+                expected=f"complete={not marks_unknown} ({unpriced_label})",
                 actual=f"complete={complete}",
+            )
+        )
+    if (
+        complete is not None
+        and reported_marks_unknown is not None
+        and reported_marks_unknown != (not complete)
+    ):
+        findings.append(
+            Finding(
+                code="ACCOUNT_MARKS_UNKNOWN_COMPLETE_MISMATCH",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account marks_unknown disagrees with its completeness flag",
+                expected=f"marks_unknown={not complete}",
+                actual=f"marks_unknown={reported_marks_unknown} complete={complete}",
             )
         )
     if equity is not None and marks_unknown:
@@ -666,6 +766,240 @@ def check_account(
                 actual="equity_usd is null",
             )
         )
+
+    def position_key(row: Mapping[str, object]) -> tuple[str, str]:
+        return (str(row.get("chain")), str(row.get("token_address")))
+
+    unpriced_raw = account.get("unpriced_positions")
+    unpriced_rows = _sequence(unpriced_raw)
+    if unpriced_rows is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_UNPRICED_POSITIONS_INVALID",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account unpriced_positions is not a list",
+                expected="a list of unpriced position identities",
+                actual=repr(unpriced_raw),
+            )
+        )
+    else:
+        listed: list[Mapping[str, object]] = []
+        for item in unpriced_rows:
+            row = _mapping(item)
+            if (
+                row is None
+                or _text(row.get("chain")) is None
+                or _text(row.get("token_address")) is None
+            ):
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_UNPRICED_POSITION_INVALID",
+                        scenario=scenario,
+                        invariant="account.equity_complete",
+                        summary="unpriced_positions contains an invalid identity",
+                        expected="objects with chain and token_address",
+                        actual=repr(item),
+                    )
+                )
+                continue
+            listed.append(row)
+        expected_keys = sorted(position_key(row) for row in unpriced_positions)
+        actual_keys = sorted(position_key(row) for row in listed)
+        if actual_keys != expected_keys:
+            findings.append(
+                Finding(
+                    code="ACCOUNT_UNPRICED_IDENTITY_MISMATCH",
+                    scenario=scenario,
+                    invariant="account.equity_complete",
+                    summary="unpriced_positions does not list exactly the unmarked positions",
+                    expected=repr(expected_keys),
+                    actual=repr(actual_keys),
+                )
+            )
+        else:
+            expected_quantities = {
+                position_key(row): row.get("quantity") for row in unpriced_positions
+            }
+            for row in listed:
+                key = position_key(row)
+                if row.get("quantity") != expected_quantities[key]:
+                    findings.append(
+                        Finding(
+                            code="ACCOUNT_UNPRICED_QUANTITY_MISMATCH",
+                            scenario=scenario,
+                            invariant="account.equity_complete",
+                            summary=f"unpriced position {key!r} has a different quantity",
+                            expected=repr(expected_quantities[key]),
+                            actual=repr(row.get("quantity")),
+                        )
+                    )
+
+    by_asset_raw = account.get("by_asset")
+    asset_rows_raw = _sequence(by_asset_raw)
+    asset_rows: list[Mapping[str, object]] = []
+    if asset_rows_raw is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_COMPOSITION_INVALID",
+                scenario=scenario,
+                invariant="account.equity_matches",
+                summary="account composition by_asset is not a list",
+                expected="a list of asset composition rows",
+                actual=repr(by_asset_raw),
+            )
+        )
+    else:
+        for item in asset_rows_raw:
+            row = _mapping(item)
+            if row is None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_COMPOSITION_INVALID",
+                        scenario=scenario,
+                        invariant="account.equity_matches",
+                        summary="account composition contains a non-object asset row",
+                        expected="asset composition objects",
+                        actual=repr(item),
+                    )
+                )
+                continue
+            asset_rows.append(row)
+
+    for row in asset_rows:
+        label = f"{row.get('chain')}:{row.get('token_address')}"
+        mark = _decimal(row.get("mark_usd"))
+        mark_status = row.get("mark_status")
+        if mark is None:
+            if mark_status != "unknown":
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_MARK_STATUS_MISMATCH",
+                        scenario=scenario,
+                        invariant="account.equity_complete",
+                        summary=f"asset {label} has no mark but is reported as {mark_status!r}",
+                        expected="mark_status 'unknown'",
+                        actual=repr(mark_status),
+                    )
+                )
+            for field in ("market_value_usd", "unrealized_usd", "share_pct", "source"):
+                raw = row.get(field)
+                if raw is not None:
+                    findings.append(
+                        Finding(
+                            code="ACCOUNT_UNPRICED_ASSET_VALUED",
+                            scenario=scenario,
+                            invariant="account.equity_complete",
+                            summary=f"unpriced asset {label} still reports {field}",
+                            expected=f"{field} null when mark_usd is null",
+                            actual=repr(raw),
+                        )
+                    )
+        else:
+            if mark_status != "known":
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_MARK_STATUS_MISMATCH",
+                        scenario=scenario,
+                        invariant="account.equity_complete",
+                        summary=f"asset {label} has a mark but is reported as {mark_status!r}",
+                        expected="mark_status 'known'",
+                        actual=repr(mark_status),
+                    )
+                )
+            if _decimal(row.get("market_value_usd")) is None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_ASSET_VALUE_MISSING",
+                        scenario=scenario,
+                        invariant="account.equity_matches",
+                        summary=f"priced asset {label} has no market value",
+                        expected="finite market_value_usd when mark_usd is present",
+                        actual=repr(row.get("market_value_usd")),
+                    )
+                )
+
+    by_chain_raw = account.get("by_chain")
+    chain_rows_raw = _sequence(by_chain_raw)
+    chain_rows: list[Mapping[str, object]] = []
+    if chain_rows_raw is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_COMPOSITION_INVALID",
+                scenario=scenario,
+                invariant="account.equity_matches",
+                summary="account composition by_chain is not a list",
+                expected="a list of chain composition rows",
+                actual=repr(by_chain_raw),
+            )
+        )
+    else:
+        for item in chain_rows_raw:
+            row = _mapping(item)
+            if row is None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_COMPOSITION_INVALID",
+                        scenario=scenario,
+                        invariant="account.equity_matches",
+                        summary="account composition contains a non-object chain row",
+                        expected="chain composition objects",
+                        actual=repr(item),
+                    )
+                )
+                continue
+            chain_rows.append(row)
+
+    for row in chain_rows:
+        chain = row.get("chain")
+        unpriced_assets = row.get("unpriced_assets")
+        if not isinstance(unpriced_assets, int) or isinstance(unpriced_assets, bool):
+            findings.append(
+                Finding(
+                    code="ACCOUNT_COMPOSITION_INVALID",
+                    scenario=scenario,
+                    invariant="account.equity_matches",
+                    summary=f"chain {chain!r} has an invalid unpriced_assets count",
+                    expected="a non-negative integer",
+                    actual=repr(unpriced_assets),
+                )
+            )
+            continue
+        expected_status = "unknown" if unpriced_assets > 0 else "known"
+        if row.get("mark_status") != expected_status:
+            findings.append(
+                Finding(
+                    code="ACCOUNT_MARK_STATUS_MISMATCH",
+                    scenario=scenario,
+                    invariant="account.equity_complete",
+                    summary=f"chain {chain!r} mark_status disagrees with its unpriced assets",
+                    expected=f"mark_status {expected_status!r}",
+                    actual=repr(row.get("mark_status")),
+                )
+            )
+        if unpriced_assets > 0:
+            if _decimal(row.get("market_value_usd")) is not None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_UNPRICED_CHAIN_VALUED",
+                        scenario=scenario,
+                        invariant="account.equity_complete",
+                        summary=f"chain {chain!r} has a value although it holds an unpriced asset",
+                        expected="market_value_usd null",
+                        actual=repr(row.get("market_value_usd")),
+                    )
+                )
+            if row.get("share_pct") is not None:
+                findings.append(
+                    Finding(
+                        code="ACCOUNT_UNPRICED_CHAIN_VALUED",
+                        scenario=scenario,
+                        invariant="account.equity_complete",
+                        summary=f"chain {chain!r} has a share although it holds an unpriced asset",
+                        expected="share_pct null",
+                        actual=repr(row.get("share_pct")),
+                    )
+                )
 
     known_raw = account.get("known_market_value_usd")
     known_parsed = _decimal(known_raw)
@@ -1579,7 +1913,50 @@ def self_test() -> None:
         "equity_usd": "100",
         "realized_usd": "0",
         "unrealized_usd": "1",
+        "complete": True,
+        "marks_unknown": False,
+        "known_market_value_usd": "3",
+        "unpriced_positions": [],
         "positions": [position],
+        "by_asset": [
+            {
+                **position,
+                "kind": "position",
+                "share_pct": "3.00",
+                "source": None,
+                "mark_status": "known",
+            },
+            {
+                "chain": "settlement",
+                "token_address": None,
+                "symbol": "USD",
+                "kind": "cash",
+                "quantity": "97",
+                "mark_usd": "1",
+                "market_value_usd": "97",
+                "share_pct": "97.00",
+                "source": None,
+                "mark_status": "known",
+            },
+        ],
+        "by_chain": [
+            {
+                "chain": "base",
+                "assets": 1,
+                "unpriced_assets": 0,
+                "market_value_usd": "3",
+                "share_pct": "3.00",
+                "mark_status": "known",
+            },
+            {
+                "chain": "settlement",
+                "assets": 1,
+                "unpriced_assets": 0,
+                "market_value_usd": "97",
+                "share_pct": "97.00",
+                "mark_status": "known",
+            },
+        ],
     }
     assert check_positions([position], scenario="self") == []
     assert check_account(account, scenario="self") == []
@@ -1592,7 +1969,54 @@ def self_test() -> None:
         "complete": False,
         "marks_unknown": True,
         "known_market_value_usd": "0",
+        "unpriced_positions": [
+            {
+                "chain": "base",
+                "token_address": "0xabc",
+                "symbol": "TKN",
+                "quantity": "2",
+            }
+        ],
         "positions": [unpriced],
+        "by_asset": [
+            {
+                **unpriced,
+                "kind": "position",
+                "share_pct": None,
+                "source": None,
+                "mark_status": "unknown",
+            },
+            {
+                "chain": "settlement",
+                "token_address": None,
+                "symbol": "USD",
+                "kind": "cash",
+                "quantity": "97",
+                "mark_usd": "1",
+                "market_value_usd": "97",
+                "share_pct": None,
+                "source": None,
+                "mark_status": "known",
+            },
+        ],
+        "by_chain": [
+            {
+                "chain": "base",
+                "assets": 1,
+                "unpriced_assets": 1,
+                "market_value_usd": None,
+                "share_pct": None,
+                "mark_status": "unknown",
+            },
+            {
+                "chain": "settlement",
+                "assets": 1,
+                "unpriced_assets": 0,
+                "market_value_usd": "97",
+                "share_pct": None,
+                "mark_status": "known",
+            },
+        ],
     }
     assert check_account(withheld, scenario="self") == []
     assert check_account({**withheld, "equity_usd": "97"}, scenario="self")

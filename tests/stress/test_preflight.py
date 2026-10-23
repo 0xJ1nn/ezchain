@@ -43,7 +43,35 @@ class FakeHarness:
             "equity_usd": "10000",
             "realized_usd": "0",
             "unrealized_usd": "0",
+            "complete": True,
+            "marks_unknown": False,
+            "known_market_value_usd": "0",
+            "unpriced_positions": [],
             "positions": [],
+            "by_asset": [
+                {
+                    "chain": "settlement",
+                    "token_address": None,
+                    "symbol": "USD",
+                    "kind": "cash",
+                    "quantity": "10000",
+                    "mark_usd": "1",
+                    "market_value_usd": "10000",
+                    "share_pct": "100.00",
+                    "source": None,
+                    "mark_status": "known",
+                }
+            ],
+            "by_chain": [
+                {
+                    "chain": "settlement",
+                    "assets": 1,
+                    "unpriced_assets": 0,
+                    "market_value_usd": "10000",
+                    "share_pct": "100.00",
+                    "mark_status": "known",
+                }
+            ],
             "mode": self.account_mode,
         }
 

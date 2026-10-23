@@ -316,6 +316,7 @@ def _composition(
     for view in views:
         market_value = view["market_value_usd"]
         value = None if market_value is None else Decimal(str(market_value))
+        priced = view["mark_usd"] is not None
         assets.append(
             {
                 "chain": view["chain"],
@@ -326,8 +327,11 @@ def _composition(
                 "mark_usd": view["mark_usd"],
                 "market_value_usd": market_value,
                 "share_pct": (None if not complete or value is None else _share_pct(value, equity)),
-                "source": view["source"],
-                "mark_status": "unknown" if view["mark_usd"] is None else "known",
+                # A source describes where a mark came from. An unmarked row keeps no
+                # source: otherwise the UI could show an observation age as if the row
+                # were priced (CONTRACT I3).
+                "source": view["source"] if priced else None,
+                "mark_status": "unknown" if not priced else "known",
             }
         )
 

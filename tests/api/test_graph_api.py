@@ -86,6 +86,29 @@ def price_gate_doc(
     )
 
 
+def equity_gate_doc() -> dict[str, Any]:
+    """A graph whose only order path is gated by the account equity node."""
+    return doc(
+        [
+            node("tick", "event.tick"),
+            node("seq", "flow.sequence"),
+            node("acct", "acct.state"),
+            node("floor", "math.const", value="100"),
+            node("rich", "math.compare", op=">"),
+            node("branch", "flow.branch"),
+            node("buy", "act.buy", amount_usd="10"),
+        ],
+        [
+            edge("tick", "out", "seq", "in"),
+            edge("seq", "then0", "branch", "in"),
+            edge("acct", "equity_usd", "rich", "a"),
+            edge("floor", "value", "rich", "b"),
+            edge("rich", "out", "branch", "cond"),
+            edge("branch", "true", "buy", "in"),
+        ],
+    )
+
+
 def candles_doc() -> dict[str, Any]:
     """A valid graph that references 5m candles (orphan data is only a warning)."""
     return doc(
@@ -294,6 +317,48 @@ def test_dry_run_withholds_equity_when_an_open_mark_is_unknown(
     assert account["cash_usd"] == "9990"
     assert account["equity_usd"] is None
     assert account["open_positions"] == 1
+
+
+def test_dry_run_branch_on_unknown_wired_equity_holds_with_an_unknown_trace(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """Equity is wired into a comparison: an unknown mark must hold, never use zero."""
+    for entry in genesis_entries(Decimal("10000")):
+        session.add(LedgerEntryRow(**entry.to_row("genesis", created_at=NOW)))
+    for entry in buy_entries(
+        chain=CHAIN,
+        token_address="0x0000000000000000000000000000000000000def",
+        quantity=Decimal("5"),
+        price_usd=Decimal("2"),
+        fee_bps=0,
+        notional_usd=Decimal("10"),
+        fee_usd=Decimal("0"),
+    ):
+        session.add(LedgerEntryRow(**entry.to_row("graph-trade", created_at=NOW)))
+    session.commit()
+
+    client = build(client_for, snapshots=FakeSnapshots(price="1.00"))
+    response = client.post(
+        "/api/v1/graph/dry-run",
+        json={"graph": equity_gate_doc(), "chain": CHAIN, "token_address": TOKEN},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    decision = body["decision"]
+    assert decision["action"] == "hold"
+    assert decision["reason"] == "UNKNOWN_CONDITION"
+    assert decision["amount_usd"] is None
+    assert decision["effects"] == []
+    assert body["context"]["account"]["equity_usd"] is None
+    assert body["context"]["account"]["cash_usd"] == "9990"
+
+    trace = body["trace"]
+    assert trace["unknown"] == ["branch"]
+    assert trace["values"]["acct"]["equity_usd"] is None
+    assert trace["values"]["rich"]["out"] is None
+    assert "buy" not in trace["exec"]
+    assert session.scalar(select(func.count(PaperOrderRow.id))) == 0
 
 
 def test_dry_run_refuses_an_invalid_graph(client_for: Callable[..., TestClient]) -> None:

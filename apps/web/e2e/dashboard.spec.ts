@@ -66,6 +66,60 @@ test("dashboard renders a complete server composition with shares", async ({ pag
 	).toHaveText("98.61%");
 });
 
+test("an unmarked row never shows a source or age as its mark", async ({ page }) => {
+	await page.goto("/?state=unpriced-source");
+
+	const assets = page.getByRole("table", { name: "Composition by asset" });
+	const mochi = assets.locator("tbody tr").filter({ hasText: "MOCHI" });
+	await expect(mochi).toBeVisible();
+	await expect(mochi.locator("td").nth(2)).toHaveText("—");
+	await expect(mochi.locator("td").nth(3)).toHaveText("—");
+	await expect(mochi.locator("td").nth(4)).toHaveText("—");
+	await expect(mochi.locator("td").nth(5)).toHaveText("unknown mark");
+	await expect(mochi).not.toContainText("dexscreener");
+	await expect(mochi).not.toContainText("ago");
+});
+
+test("eleven positions across chains render every row without overflow", async ({ page }) => {
+	await page.goto("/?state=many");
+
+	await expect(page.getByText(/equity unavailable/i)).toHaveCount(0);
+	const assets = page.getByRole("table", { name: "Composition by asset" });
+	await expect(assets.locator("tbody tr")).toHaveCount(12); // eleven positions plus cash
+	await expect(assets.locator("tbody tr a")).toHaveCount(12);
+	for (const symbol of ["ABT", "SOLA", "ETHA", "BCP", "JUP", "UNI", "DEG", "PYT", "MKR", "TOS", "ORC", "USD"]) {
+		await expect(assets.locator("tbody tr").filter({ hasText: symbol }).first()).toBeVisible();
+	}
+	await expect(assets.locator("tbody tr").filter({ hasText: "ABT" }).locator("td").nth(4)).toHaveText(
+		"1.00%",
+	);
+	await expect(page.getByRole("table", { name: "Composition by chain" }).locator("tbody tr")).toHaveCount(4);
+
+	const overflow = await page.evaluate(
+		() => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+	);
+	expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("a single position renders its row and settlement cash without overflow", async ({ page }) => {
+	await page.goto("/?state=single");
+
+	await expect(page.getByText(/equity unavailable/i)).toHaveCount(0);
+	const assets = page.getByRole("table", { name: "Composition by asset" });
+	await expect(assets.locator("tbody tr")).toHaveCount(2);
+	await expect(assets.locator("tbody tr a")).toHaveCount(2);
+	const aero = assets.locator("tbody tr").filter({ hasText: "AERO" });
+	await expect(aero).toBeVisible();
+	await expect(aero.locator("td").nth(4)).toHaveText("0.15%");
+	await expect(assets.locator("tbody tr").filter({ hasText: "USD" })).toBeVisible();
+	await expect(page.getByRole("table", { name: "Composition by chain" }).locator("tbody tr")).toHaveCount(2);
+
+	const overflow = await page.evaluate(
+		() => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+	);
+	expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("a flat account has a cash-only composition and no invented total", async ({ page }) => {
 	await page.goto("/?state=flat");
 

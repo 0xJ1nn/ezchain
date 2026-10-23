@@ -508,6 +508,199 @@ export const fixturePaperAccountFlat: PaperAccount = {
 	mode: "paper",
 };
 
+function manyPosition(chain: string, token: string, symbol: string, secondsAgo: number): PaperPosition {
+	return {
+		chain,
+		token_address: token,
+		symbol,
+		quantity: "10",
+		avg_cost_usd: "10.00",
+		mark_usd: "10.00",
+		market_value_usd: "100.00",
+		unrealized_usd: "0.00",
+		realized_usd: "0.00",
+		source: { name: "dexscreener", observed_at: observed(secondsAgo) },
+		mode: "paper",
+	};
+}
+
+/** Eleven priced positions across three chains plus settlement cash. */
+export const fixturePaperAccountMany: PaperAccount = (() => {
+	const positions = [
+		["base", "0x000000000000000000000000000000000000b001", "ABT"],
+		["solana", "So11111111111111111111111111111111111111101", "SOLA"],
+		["ethereum", "0x000000000000000000000000000000000000c001", "ETHA"],
+		["base", "0x000000000000000000000000000000000000b002", "BCP"],
+		["solana", "So11111111111111111111111111111111111111102", "JUP"],
+		["ethereum", "0x000000000000000000000000000000000000c002", "UNI"],
+		["base", "0x000000000000000000000000000000000000b003", "DEG"],
+		["solana", "So11111111111111111111111111111111111111103", "PYT"],
+		["ethereum", "0x000000000000000000000000000000000000c003", "MKR"],
+		["base", "0x000000000000000000000000000000000000b004", "TOS"],
+		["solana", "So11111111111111111111111111111111111111104", "ORC"],
+	].map(([chain, token, symbol], index) => manyPosition(chain, token, symbol, index + 1));
+	const cash: PaperAssetComposition = {
+		chain: "settlement",
+		token_address: null,
+		symbol: "USD",
+		kind: "cash",
+		quantity: "8900.00",
+		mark_usd: "1",
+		market_value_usd: "8900.00",
+		share_pct: "89.00",
+		source: null,
+		mark_status: "known",
+	};
+	return {
+		cash_usd: "8900.00",
+		equity_usd: "10000.00",
+		realized_usd: "0.00",
+		unrealized_usd: "0.00",
+		complete: true,
+		marks_unknown: false,
+		known_market_value_usd: "1100.00",
+		unpriced_positions: [],
+		by_chain: [
+			{
+				chain: "base",
+				assets: 4,
+				unpriced_assets: 0,
+				market_value_usd: "400.00",
+				share_pct: "4.00",
+				mark_status: "known",
+			},
+			{
+				chain: "solana",
+				assets: 4,
+				unpriced_assets: 0,
+				market_value_usd: "400.00",
+				share_pct: "4.00",
+				mark_status: "known",
+			},
+			{
+				chain: "ethereum",
+				assets: 3,
+				unpriced_assets: 0,
+				market_value_usd: "300.00",
+				share_pct: "3.00",
+				mark_status: "known",
+			},
+			{
+				chain: "settlement",
+				assets: 1,
+				unpriced_assets: 0,
+				market_value_usd: "8900.00",
+				share_pct: "89.00",
+				mark_status: "known",
+			},
+		],
+		by_asset: [
+			...positions.map(
+				(position): PaperAssetComposition => ({
+					chain: position.chain,
+					token_address: position.token_address,
+					symbol: position.symbol,
+					kind: "position",
+					quantity: position.quantity,
+					mark_usd: position.mark_usd,
+					market_value_usd: position.market_value_usd,
+					share_pct: "1.00",
+					source: position.source,
+					mark_status: "known",
+				}),
+			),
+			cash,
+		],
+		positions,
+		mode: "paper",
+	};
+})();
+
+/** One priced position plus settlement cash: the smallest non-flat composition. */
+export const fixturePaperAccountSingle: PaperAccount = {
+	cash_usd: "9990.00",
+	equity_usd: "10005.00",
+	realized_usd: "0.00",
+	unrealized_usd: "5.00",
+	complete: true,
+	marks_unknown: false,
+	known_market_value_usd: "15.00",
+	unpriced_positions: [],
+	by_chain: [
+		{
+			chain: "base",
+			assets: 1,
+			unpriced_assets: 0,
+			market_value_usd: "15.00",
+			share_pct: "0.15",
+			mark_status: "known",
+		},
+		{
+			chain: "settlement",
+			assets: 1,
+			unpriced_assets: 0,
+			market_value_usd: "9990.00",
+			share_pct: "99.85",
+			mark_status: "known",
+		},
+	],
+	by_asset: [
+		{
+			chain: "base",
+			token_address: AERO,
+			symbol: "AERO",
+			kind: "position",
+			quantity: "10",
+			mark_usd: "1.50",
+			market_value_usd: "15.00",
+			share_pct: "0.15",
+			source: { name: "dexscreener", observed_at: observed(2) },
+			mark_status: "known",
+		},
+		{
+			chain: "settlement",
+			token_address: null,
+			symbol: "USD",
+			kind: "cash",
+			quantity: "9990.00",
+			mark_usd: "1",
+			market_value_usd: "9990.00",
+			share_pct: "99.85",
+			source: null,
+			mark_status: "known",
+		},
+	],
+	positions: [
+		{
+			chain: "base",
+			token_address: AERO,
+			symbol: "AERO",
+			quantity: "10",
+			avg_cost_usd: "1.00",
+			mark_usd: "1.50",
+			market_value_usd: "15.00",
+			unrealized_usd: "5.00",
+			realized_usd: "0.00",
+			source: { name: "dexscreener", observed_at: observed(2) },
+			mode: "paper",
+		},
+	],
+	mode: "paper",
+};
+
+/**
+ * A legacy-shaped payload whose unmarked row still carries a source. The server now
+ * strips it; this fixture proves the dashboard refuses to present an age as a mark.
+ */
+export const fixturePaperAccountUnpricedSource: PaperAccount = {
+	...fixturePaperAccount,
+	by_asset: fixturePaperAccount.by_asset.map((row) =>
+		row.mark_status === "unknown"
+			? { ...row, source: { name: "dexscreener", observed_at: observed(4) } }
+			: row,
+	),
+};
+
 function fixturePositions(): PaperPosition[] {
 	return [
 		{

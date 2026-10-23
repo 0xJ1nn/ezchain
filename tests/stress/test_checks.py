@@ -51,15 +51,120 @@ def position(**overrides: object) -> dict[str, object]:
     return values
 
 
+def asset_row(**overrides: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        **position(),
+        "kind": "position",
+        "share_pct": "3.00",
+        "source": None,
+        "mark_status": "known",
+    }
+    values.update(overrides)
+    return values
+
+
+def cash_row(**overrides: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "chain": "settlement",
+        "token_address": None,
+        "symbol": "USD",
+        "kind": "cash",
+        "quantity": "97",
+        "mark_usd": "1",
+        "market_value_usd": "97",
+        "share_pct": "97.00",
+        "source": None,
+        "mark_status": "known",
+    }
+    values.update(overrides)
+    return values
+
+
+def chain_row(**overrides: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "chain": "base",
+        "assets": 1,
+        "unpriced_assets": 0,
+        "market_value_usd": "3",
+        "share_pct": "3.00",
+        "mark_status": "known",
+    }
+    values.update(overrides)
+    return values
+
+
 def account(**overrides: object) -> dict[str, object]:
     values: dict[str, object] = {
         "cash_usd": "97",
         "equity_usd": "100",
         "realized_usd": "0",
         "unrealized_usd": "1",
+        "complete": True,
+        "marks_unknown": False,
+        "known_market_value_usd": "3",
+        "unpriced_positions": [],
         "positions": [position()],
+        "by_asset": [asset_row(), cash_row()],
+        "by_chain": [
+            chain_row(),
+            chain_row(
+                chain="settlement",
+                market_value_usd="97",
+                share_pct="97.00",
+            ),
+        ],
         "mode": "paper",
     }
+    values.update(overrides)
+    return values
+
+
+def withheld_account(**overrides: object) -> dict[str, object]:
+    """The same account with one open mark unknown, so equity and shares are withheld."""
+    unknown = position(
+        token_address="0x00000000000000000000000000000000000000bb",
+        mark_usd=None,
+        market_value_usd=None,
+        unrealized_usd=None,
+    )
+    values = account(
+        equity_usd=None,
+        unrealized_usd=None,
+        complete=False,
+        marks_unknown=True,
+        known_market_value_usd="3",
+        positions=[position(), unknown],
+        unpriced_positions=[
+            {
+                "chain": "base",
+                "token_address": unknown["token_address"],
+                "symbol": "TKN",
+                "quantity": "2",
+            }
+        ],
+        by_asset=[
+            asset_row(),
+            asset_row(
+                token_address=unknown["token_address"],
+                mark_usd=None,
+                market_value_usd=None,
+                unrealized_usd=None,
+                share_pct=None,
+                mark_status="unknown",
+            ),
+            cash_row(share_pct=None),
+        ],
+        by_chain=[
+            chain_row(
+                assets=2,
+                unpriced_assets=1,
+                market_value_usd=None,
+                share_pct=None,
+                mark_status="unknown",
+            ),
+            chain_row(chain="settlement", market_value_usd="97", share_pct=None),
+        ],
+    )
     values.update(overrides)
     return values
 
@@ -152,15 +257,7 @@ def test_account_equity_reconciles_with_known_market_values() -> None:
 
 
 def test_account_with_an_unknown_mark_withholds_equity() -> None:
-    unknown = position(mark_usd=None, market_value_usd=None, unrealized_usd=None)
-    withheld = account(
-        positions=[position(), unknown],
-        equity_usd=None,
-        unrealized_usd=None,
-        complete=False,
-        marks_unknown=True,
-        known_market_value_usd="3",
-    )
+    withheld = withheld_account()
     assert check_account(withheld, scenario="t") == []
 
     partial = check_account(withheld | {"equity_usd": "100"}, scenario="t")
@@ -168,6 +265,72 @@ def test_account_with_an_unknown_mark_withholds_equity() -> None:
 
     mislabelled = check_account(withheld | {"complete": True}, scenario="t")
     assert any(finding.code == "ACCOUNT_COMPLETE_MISMATCH" for finding in mislabelled)
+
+
+def test_account_unpriced_is_defined_by_the_mark_not_the_market_value() -> None:
+    # A null mark with a zero value is still unpriced: zero is not a substitute.
+    zero_value = withheld_account(
+        known_market_value_usd="0",
+        positions=[position(mark_usd=None, market_value_usd="0", unrealized_usd=None)],
+        by_asset=[
+            asset_row(mark_usd=None, market_value_usd="0", share_pct=None, mark_status="unknown"),
+            cash_row(share_pct=None),
+        ],
+        by_chain=[
+            chain_row(
+                assets=1,
+                unpriced_assets=1,
+                market_value_usd=None,
+                share_pct=None,
+                mark_status="unknown",
+            )
+        ],
+        unpriced_positions=[
+            {
+                "chain": "base",
+                "token_address": position()["token_address"],
+                "symbol": "TKN",
+                "quantity": "2",
+            }
+        ],
+    )
+    findings = check_account(zero_value, scenario="t")
+    assert any(finding.code == "ACCOUNT_POSITION_VALUE_WITHOUT_MARK" for finding in findings)
+    assert any(finding.code == "ACCOUNT_UNPRICED_ASSET_VALUED" for finding in findings)
+
+
+def test_account_marks_unknown_must_match_complete() -> None:
+    flipped = check_account(withheld_account(marks_unknown=False), scenario="t")
+    assert any(finding.code == "ACCOUNT_MARKS_UNKNOWN_MISMATCH" for finding in flipped)
+    assert any(finding.code == "ACCOUNT_MARKS_UNKNOWN_COMPLETE_MISMATCH" for finding in flipped)
+
+
+def test_account_unpriced_positions_must_be_listed() -> None:
+    missing = withheld_account()
+    missing.pop("unpriced_positions")
+    findings = check_account(missing, scenario="t")
+    assert any(finding.code == "ACCOUNT_UNPRICED_POSITIONS_INVALID" for finding in findings)
+
+
+def test_account_unpriced_asset_must_not_carry_a_source_or_value() -> None:
+    leaked = withheld_account(
+        by_asset=[
+            asset_row(),
+            asset_row(
+                mark_usd=None,
+                market_value_usd=None,
+                unrealized_usd=None,
+                share_pct="0.00",
+                source={"name": "dexscreener", "observed_at": "2026-01-01T00:00:00Z"},
+                mark_status="known",
+            ),
+            cash_row(share_pct=None),
+        ]
+    )
+    findings = check_account(leaked, scenario="t")
+    codes = {finding.code for finding in findings}
+    assert "ACCOUNT_MARK_STATUS_MISMATCH" in codes
+    assert "ACCOUNT_UNPRICED_ASSET_VALUED" in codes
 
 
 def test_account_that_withholds_a_complete_equity_is_a_finding() -> None:
