@@ -4,9 +4,10 @@ Attribution is the join from a fill to its order and then to ``orders.strategy_i
 fill belonging to another strategy or to a manual order is never included, and there is
 no fallback that spreads the account's PnL across strategies.
 
-The curve is a cumulative realized PnL after fees at each of the strategy's fills. Buy
-fees are recognized when paid; a position's unrealized PnL is reported only when a mark
-is known, otherwise ``None`` (CONTRACT I3).
+The curve is cumulative realized PnL after fees. A buy fee is part of the cost basis and
+is recognized when the position closes; it is not subtracted a second time at the buy.
+A position's unrealized PnL is reported only when a mark is known, otherwise ``None``
+(CONTRACT I3).
 """
 
 from __future__ import annotations
@@ -61,7 +62,6 @@ def strategy_performance(session: Session, strategy_id: str) -> dict[str, Any] |
         if fill.side == "buy":
             quantity += fill_quantity
             cost += notional + fee
-            cumulative -= fee
         else:
             closed = min(fill_quantity, quantity)
             if closed > 0 and quantity > 0:

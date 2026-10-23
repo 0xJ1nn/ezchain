@@ -23,13 +23,13 @@ no copy-trading. `live_execute` is `false` for every chain.
 | Rejected orders | strategy order above risk cap | `hold` / `ORDER_REJECTED`, never a fake fill |
 | Kill switch | `POST /api/v1/system/kill-switch` | persists across restart; scheduler skips while armed; manual paper orders stay available |
 | Auth | direct API vs Next proxy | direct mutation without token 401; proxy mutation 200; cross-site 403 `CROSS_ORIGIN_DENIED` |
-| Migrations | 0001→0003 on fresh and legacy DBs | `alembic check` clean; genesis and fill-order unique constraints present |
+| Migrations | 0001→0006 on fresh and legacy DBs | `alembic check` clean; genesis, fill-order and backtest tables present |
 | Observability | `/healthz`, `/readyz`, `/metrics`, JSON logs | 200/200/200 with DB at head; request id/path/status/duration logged |
 | Stress | `--mode all` against real Postgres + live data | PASS, 0 findings: smoke, idempotency, 27 fuzz cases, 4-way sell race, kill switch, chain matrix. Evidence: [stress-all-2026-10-23.md](evidence/p0-production/stress-all-2026-10-23.md) |
 | Stress → issue loop | `--strategy-order-usd 1500` | filed #71; PR #72 fixed it; same run now passes and files nothing |
 | Web truth | dashboard, strategy builder | live reads carry `PAPER`/source/age; fixture mode is labelled; DCA/dip vocabularies match the validator |
 | Graph strategies | `/api/v1/graph/catalogue`, `/validate`, `/dry-run`, `/backtests` | validated live against Base WETH; dry run placed no order; backtest returned `BACKTEST` with GeckoTerminal closed bars. Evidence: [graph-api-paper.md](evidence/p0-production/graph-api-paper.md) |
-| Paper read models | `/paper/ledger`, `/performance`, `/attribution`, `/limits`, `/alerts`, CSV exports | server-computed from the ledger; unknown marks stay `null`; 1001 Python tests green before the graph merge |
+| Paper read models | `/paper/ledger`, `/performance`, `/attribution`, `/limits`, `/alerts`, CSV exports | server-computed from the ledger; unknown marks stay `null`; covered by the 1044-test gate |
 | Live UI paper flow | Playwright live spec + 8001 API + disposable Postgres | buy $1 → position → full sell → reconciliation `ok: true`; evidence: [live-ui-paper-flow.md](evidence/p0-production/live-ui-paper-flow.md) |
 | Gate determinism | Playwright with a dev server on :3000 | fails fast with instructions instead of corrupting `.next`; green without it |
 
@@ -37,19 +37,22 @@ no copy-trading. `live_execute` is `false` for every chain.
 
 These are explicit gaps, not silent assumptions:
 
-1. **Docker image build / `docker compose up`.** Verified on 2026-10-22 on Docker 29.9.2 /
-   Compose v5.6.1: `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d`
-   succeeded, all five services healthy, migration at head `0003_paper_fill_order`, paper BUY
-   filled through the edge, restart and backup drills passed. Evidence:
-   [docs/evidence/p0-production/docker-up.md](evidence/p0-production/docker-up.md). The
-   remaining Docker gaps are per-user auth/RBAC and the other items below.
+1. **Docker at the current migration head.** The 2026-10-22 drill on Docker 29.9.2 /
+   Compose v5.6.1 passed at head `0003_paper_fill_order` (five services healthy, paper BUY
+   through the edge, restart and backup drills). The stack has **not** been re-drilled at
+   head `0006_backtests` or after the graph/read-model changes. Evidence for the historical
+   drill: [docker-up.md](evidence/p0-production/docker-up.md). Re-run
+   `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d` at the release
+   commit before claiming Docker parity.
 2. **Per-user auth / RBAC.** The edge injects one deployment bearer token. It is not an
    identity; anyone who can reach the edge can mutate the paper account. Keep the default
    `EZCHAIN_BIND=127.0.0.1` or put a trusted authenticating proxy in front.
 3. **`/metrics` is unauthenticated.** It exposes paper order/fill counts and `ezchain_up`.
    Keep it off the public internet.
-4. **Live execution, keys, executor, vault.** Not built by design. `services/executor`,
-   `services/ingest` and the Redis/NATS/OTel topology are blueprint-only.
+4. **Live execution, keys, executor, vault.** Not built in `main`. The unmerged
+   `feat/live-executor` foundation was reviewed and **BLOCKED** (venue transactions not
+   bound to the intent, sell cap bypass, confirmed-sell bookkeeping gap). `services/ingest`
+   and the Redis/NATS/OTel topology remain blueprint-only. `live_execute` is false.
 5. **EVM execution.** Non-Solana paper fills are `paper_mark` (capped buys, reduce-only
    sells), not executable venue routes. ADR-0020.
 6. **Market coverage is 22/25.** Osmosis, Cosmos Hub and Moonbeam returned no DexScreener

@@ -7,12 +7,13 @@ positions, automations, signals, backtests and a strategy plugin SDK. It ships w
 strategies** — the platform, not the alpha, is the product.
 
 > Status: **PAPER stack — production operations**. Continuous all-chain market
-> observation, an append-only paper ledger with positions/PnL, user-defined declarative
-> strategies, persisted kill switch, reconciliation, bearer-authenticated mutations,
-> Alembic migrations, structured logs/metrics and a stress harness. There are **no keys,
-> no signing, no live execution and no fiat rail**. Verified vs unverified is recorded in
-> [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); wallet, automation and
-> system pages remain labelled fixture surfaces.
+> observation, per-chain quote ladders, an append-only paper ledger with positions/PnL,
+> user-defined declarative and visual graph strategies, a backtester, persisted kill
+> switch, reconciliation, bearer-authenticated mutations, Alembic migrations,
+> structured logs/metrics, a complete operator surface and a stress harness. There are
+> **no keys, no signing, no live execution and no fiat rail**. Verified vs unverified is
+> recorded in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live
+> executor foundation is deliberately unmerged until its review blockers are closed.
 
 ## Why this exists
 
@@ -32,7 +33,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | Path | What |
 |---|---|
 | `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
-| `apps/web/` | Next.js UI: shell, dashboard, positions, markets, token page, strategies |
+| `apps/web/` | Next.js UI: dashboard, positions, markets, token page, strategies, visual graph builder, performance, activity/ledger, reports, risk, alerts, chains, operations |
 | `apps/api/` | FastAPI edge: live markets, quotes, paper orders, strategy CRUD/run |
 | `services/engine/` | Declarative strategy evaluator and scheduler (inline in P0) |
 | `packages/core-py/` | Domain, append-only ledger, paper accounting, risk, strategy rules |

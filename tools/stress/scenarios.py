@@ -2261,6 +2261,13 @@ def _matrix(harness: Harness, token: ResolvedToken | None, *, scenario: str = "m
             + (f" reason={row.reason}" if row.reason else "")
         )
         harness.record_row("matrix", row.to_dict())
+    matrix_rows = harness.sections.get("matrix", [])
+    executed = sum(1 for row in matrix_rows if row.get("status") == STATUS_OK)
+    skipped = len(matrix_rows) - executed
+    harness.note(
+        f"matrix: executed {executed}/{len(matrix_rows)} chain(s); {skipped} did not execute "
+        "a buy/sell round trip (no_quote, documented rejection or no_data)"
+    )
     harness.check_paper_snapshot(scenario=scenario)
 
 

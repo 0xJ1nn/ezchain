@@ -152,13 +152,17 @@ def test_performance_uses_only_the_strategys_own_fills(
     assert Decimal(body["avg_cost_usd"]) == Decimal("1.01")
     assert Decimal(body["open_quantity"]) == Decimal("60")
     assert Decimal(body["fees_usd"]) == Decimal("1.8")
-    # 80 proceeds - 40 * 1.01 basis - 0.8 fee = 38.8.
+    # 80 proceeds - 40 * 1.01 basis - 0.8 fee = 38.8. The buy fee is in the basis,
+    # not subtracted twice.
     assert Decimal(body["realized_pnl_usd"]) == Decimal("38.8")
     # Mark 1.5: 90 - 60 * 1.01 = 29.4.
     assert Decimal(body["unrealized_pnl_usd"]) == Decimal("29.4")
     assert body["mark_usd"] == "1.5"
     assert len(body["equity_curve"]) == 2
-    assert [point["pnl_usd"] for point in body["equity_curve"]] == ["-1", "37.80"]
+    assert [Decimal(point["pnl_usd"]) for point in body["equity_curve"]] == [
+        Decimal("0"),
+        Decimal("38.8"),
+    ]
 
 
 def test_unknown_mark_keeps_unrealized_null(

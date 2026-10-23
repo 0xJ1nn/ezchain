@@ -50,6 +50,7 @@ const groups = [
 ];
 
 export default function MorePage() {
+	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
 	return (
 		<AppShell active="more">
 			<header className="page-head">
@@ -85,12 +86,13 @@ export default function MorePage() {
 			<Panel title="Chain filter & sync" sub="moved here on mobile" className="mt-16">
 				<div className="row">
 					<span className="chip">⬡ All chains</span>
-					<span className="chip">⟳ fixture data</span>
+					<span className="chip">{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}</span>
 					<span className="badge">PAPER</span>
 				</div>
 				<p className="note mt-12">
-					These controls are static in the M1 fixture. They move into the shell once the
-					chain registry and sync state are real.
+					{fixture
+						? "This is the labelled fixture shell. The chain registry is real; the chip is display-only here."
+						: "The chain registry and market source are live. The chip is display-only; the Markets page owns the real chain filter and sync state."}
 				</p>
 			</Panel>
 		</AppShell>

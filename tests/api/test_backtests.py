@@ -351,3 +351,16 @@ def test_unknown_backtest_is_404(client_for: Callable[..., TestClient]) -> None:
     response = client.get("/api/v1/backtests/nope")
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "BACKTEST_NOT_FOUND"
+
+
+def test_backtest_requires_exactly_one_graph_source(
+    client_for: Callable[..., TestClient],
+) -> None:
+    client = build(client_for, ())
+    both = request_body(graph={"schema": "ezchain.graph/1", "nodes": [], "edges": []})
+    both["strategy_id"] = "strategy-1"
+    assert client.post("/api/v1/backtests", json=both).status_code == 422
+
+    neither = request_body()
+    neither.pop("graph", None)
+    assert client.post("/api/v1/backtests", json=neither).status_code == 422

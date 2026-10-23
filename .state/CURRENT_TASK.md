@@ -7,39 +7,32 @@ dead controls, no unverified claims.
 
 ## State (2026-10-23)
 
-Merged into integration, gate green before the new slices:
+Merged into the integration release candidate (`integ/trader-superpower`):
 
 - Multi-chain quote ladders (KyberSwap, Velora, LI.FI, Jupiter, Cetus, STON.fi, Osmosis
   SQS) with impact/fee/route truth and per-chain fail-closed ladders.
-- Graph strategy core: schema, catalogue, validation, indicators, evaluator, backtester.
-- Visual strategy builder (fixture + live client) in the web app.
-- Stress harness v2: ledger truth, matrix, fuzz, race, kill-switch and report tests.
-- Public repo hygiene: internal orchestration moved out of the repository; generated
-  stubs and link/secret scanners operate on the public file set only.
+- Graph strategy core and HTTP API: catalogue, validation, dry run, backtests, scheduler
+  wiring and per-strategy performance; visual builder live against the API.
+- Paper read models: ledger, performance, attribution, limits, alerts and CSV exports.
+- Every sidebar route implemented; the placeholder catch-all is gone; unknown routes 404.
+- Account-scoped paper fill serialization, `POSITION_CHANGED`, quote deadlines and JSON
+  validation errors; ADR-0027 and the full stress evidence are recorded.
+- Full gate: 1044 Python + 94 Playwright; full `--mode all` stress PASS; live paper UI
+  buy → position → full sell → reconciliation PASS; every live route PASS.
 
-In progress / not merged yet:
-
-- Graph HTTP API (`/graph/catalogue`, `/graph/validate`, `/graph/dry-run`, `/backtests`,
-  strategy performance) and graph scheduler wiring.
-- Paper read models (ledger, performance, attribution, limits, alerts, CSV exports).
-- Real operator pages for every sidebar route; removal of the placeholder catch-all.
-- Live executor foundation exists on the unmerged `feat/live-executor` branch, but its
-  reviewer verdict is **BLOCKED**: venue transactions are not bound to the approved
-  intent, sell caps can be bypassed, and a confirmed sell can be dropped from the live
-  book. It is not merged, no live UI exists, and `live_execute` remains false everywhere.
-  The branch is retained for a dedicated hardening slice.
+**Live executor:** `feat/live-executor` exists but its reviewer verdict is **BLOCKED**
+(venue transactions not bound to the approved intent, sell caps can be bypassed, a
+confirmed sell can be dropped from the live book). It is not merged, no live UI exists,
+and `live_execute` remains false everywhere. Do not describe live mode as ready.
 
 ## Next, in order
 
-1. Merge graph API and read models; run the full Python + Playwright gate.
-2. Merge operator pages; no placeholder route, no dead button; run the live paper E2E.
-3. Rewrite the dashboard against live paper/account/strategy reads (remove fixture panels
-   and inert controls).
-4. Implement the executor/vault/live-intent foundation with fake-venue tests, then the
-   Solana/EVM venue adapters and simulation. Real-fund broadcast remains an explicit
-   owner-only action and must be labelled unverified until a funded pilot is recorded.
-5. Run the compulsory reviewer PASS and full stress (`bash tools/verify.sh --live`) before
-   merging to `main`.
+1. Final reviewer PASS on the exact release SHA.
+2. Re-run `bash tools/verify.sh --live` on a clean commit and record the commit/dirty flag.
+3. Merge the integration release candidate to `main`; update the public readiness record.
+4. Open a dedicated live-executor hardening slice; real-fund broadcast stays owner-only
+   and unverified until a funded or forked-anvil pilot is recorded.
+5. M2 data/ingest and the remaining visual/design work.
 
 ## Known limits
 
@@ -48,6 +41,6 @@ In progress / not merged yet:
 - Market coverage is 22/25; chains without DexScreener pairs stay `no_data`, never zero.
 - Non-Solana paper fills use the chain quote ladder, or a capped `paper_mark` where no
   keyless provider exists.
-- No strategy PnL attribution until the read-model endpoint lands.
+- Per-token attribution exists; per-strategy attribution remains out of scope for a shared paper account.
 - No live keys, signing, broadcast or live ledger.
 - Maintainer-local notes are not part of this repository.

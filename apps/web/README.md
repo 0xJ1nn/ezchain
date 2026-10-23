@@ -49,8 +49,9 @@ read-only graph summary instead of a squeezed canvas.
 - The UI formats; it never computes PnL, exposure or ledger math. Live pages read server
   view models; fixture pages are labelled `FIXTURE` on every panel.
 - No silent fixture fallback: a failed live read renders its API reason code.
-- Pages whose backend does not exist yet (`/backtests`, live wallets, notification
-  delivery, team features) say so and link to the contract that will define them.
+- Pages whose backend does not exist yet (live wallets/custody, notification delivery,
+  team features) say so and link to the contract that will define them. Backtests are
+  served by `/api/v1/backtests` and render only immutable `BACKTEST` rows.
 - `design/wireframe/` is the structural source of truth. Visual deviations are recorded
   in `design/OWNER-APPROVED-DELTAS.md`.
 - No external runtime or build-time font requests. Inter and IBM Plex Mono are vendored

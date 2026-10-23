@@ -125,7 +125,7 @@ export default async function PerformancePage({
 					label="Realized"
 					value={performance ? formatUsd(performance.realized_usd) : account ? formatUsd(account.realized_usd) : "—"}
 					tone={performance && Number(performance.realized_usd) < 0 ? "err" : "ok"}
-					meta={performance ? "PAPER · after fees" : "account unavailable"}
+					meta={performance ? `PAPER · after ${formatUsd(performance.fees_usd)} fees` : "account unavailable"}
 				/>
 				<Stat
 					label="Unrealized"
@@ -134,14 +134,14 @@ export default async function PerformancePage({
 					meta={performance?.unrealized_usd === null ? "unknown mark excluded" : "PAPER · known marks only"}
 				/>
 				<Stat
-					label="Trades / win rate"
-					value={performance ? `${performance.trades} / ${performance.win_rate_pct ?? "—"}%` : "—"}
-					meta={performance ? `${performance.wins}W · ${performance.losses}L` : "performance unavailable"}
+					label="Fills"
+					value={performance ? String(performance.trades) : "—"}
+					meta={performance ? "executions · PAPER" : "performance unavailable"}
 				/>
 				<Stat
-					label="Fees"
-					value={performance ? formatUsd(performance.fees_usd) : "—"}
-					meta={performance ? "PAPER · included in realized" : "performance unavailable"}
+					label="Closed trades"
+					value={performance ? String(performance.wins + performance.losses) : "—"}
+					meta={performance ? `${performance.win_rate_pct ?? "—"}% win rate · ${performance.wins}W ${performance.losses}L` : "performance unavailable"}
 				/>
 			</section>
 
