@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# OpenClaw runs this as a stdio MCP server. Credentials live in a 0600 env file,
+# never in the plugin manifest or an OpenClaw config literal.
+set -euo pipefail
+
+ENV_FILE="${EZCHAIN_AGENT_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/ezchain/agent.env}"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+
+if [ -n "${EZCHAIN_MCP_BIN:-}" ] && [ -x "$EZCHAIN_MCP_BIN" ]; then
+  exec "$EZCHAIN_MCP_BIN" "$@"
+fi
+if command -v ezchain-mcp >/dev/null 2>&1; then
+  exec ezchain-mcp "$@"
+fi
+for candidate in "$HOME/.local/bin/ezchain-mcp" /usr/local/bin/ezchain-mcp; do
+  if [ -x "$candidate" ]; then
+    exec "$candidate" "$@"
+  fi
+done
+
+echo "ezchain-mcp is not installed; set EZCHAIN_MCP_BIN or pip install ezchain-mcp" >&2
+exit 127

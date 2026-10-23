@@ -81,6 +81,21 @@ def test_delete_removes_runs_and_keeps_order_attribution(client_for, session: Se
     assert order.strategy_id == strategy_id
 
 
+def test_delete_closes_the_plugin_worker(client_for, session: Session) -> None:
+    strategy_id, _ = _seed(session)
+    client: TestClient = client_for(strategies.router)
+    closed: list[str] = []
+
+    class Host:
+        async def close(self, target: str) -> None:
+            closed.append(target)
+
+    client.app.state.plugin_host = Host()  # type: ignore[attr-defined]
+    response = client.delete(f"/api/v1/strategies/{strategy_id}")
+    assert response.status_code == 204
+    assert closed == [strategy_id]
+
+
 def test_delete_missing_strategy_is_404(client_for, session: Session) -> None:
     client: TestClient = client_for(strategies.router)
     response = client.delete("/api/v1/strategies/not-there")

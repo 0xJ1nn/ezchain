@@ -89,6 +89,7 @@ apps/
   web/                     # Next.js 15, App Router, CSS tokens (ADR-0013)
   api/                     # FastAPI edge
   mcp/                     # MCP 2025-11-25 server (stdio) for agents
+integrations/              # Hermes/OpenClaw packs (skill + MCP registration)
 services/
   engine/                  # strategy host, automation scheduler, signal router
   executor/                # vault, signer, broadcaster, confirmer
@@ -150,7 +151,8 @@ with no rows is `no_data`, and an old row is `stale` after
 Graph strategies need indicator inputs (EMA/RSI/ATR) and a backtest needs bars, so OHLCV
 history is served from `market_candles` rather than recomputed per request:
 
-- `GET /api/v1/tokens/{chain}/{address}/candles?timeframe=5m&limit=300` (read-only, no auth)
+- `GET /api/v1/tokens/{chain}/{address}/candles?timeframe=5m&limit=300` (read-only; no
+  auth by default, `read` scope when `EZCHAIN_REQUIRE_AUTH_FOR_READS=true`)
   returns closed bars oldest first, prices and volumes as decimal strings, unknown volume as
   `null`, plus `source`, `stale`, `pool_address` and a `reason` code when empty.
 - The pool is the highest-liquidity pair of the token snapshot the markets router already

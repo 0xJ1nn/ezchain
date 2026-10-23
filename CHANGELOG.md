@@ -22,6 +22,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - `docs/STRATEGY-SDK.md` is now the implemented contract; `docs/AGENT-INTEGRATION.md`
   documents Hermes/OpenClaw setup and `docs/RESEARCH-2026.md` records the competitor,
   trader and agent evidence behind ADR-0028.
+- **First-class Hermes and OpenClaw packs**: `integrations/hermes` installs the
+  `ezchain-trading` skill and prints the MCP registration; `integrations/openclaw` is an
+  Agent Plugins 1.0.0 bundle that OpenClaw detects as `format: bundle` with skills and an
+  MCP server. Verified against Hermes v0.22.2 (36 tools discovered) and OpenClaw
+  2026.10.6.
+- **Scoped agent keys**: `POST /api/v1/agent/keys` mints a one-time `read`/`trade`/`admin`
+  key, stored only as a peppered SHA-256 hash; `GET` lists metadata, `DELETE` revokes.
+  Middleware enforces least privilege per route, and `EZCHAIN_REQUIRE_AUTH_FOR_READS=true`
+  closes the read surface for hosted deployments. Migration `0008_api_keys`.
 
 - **Native desktop app (Linux verified)**: an Electron shell with a frozen FastAPI
   sidecar on embedded SQLite and a traced Next.js server, both bound to private loopback

@@ -34,7 +34,9 @@ MANIFEST = {
 }
 
 
-def _plugin(tmp_path: Path, source: str, manifest: dict[str, object] | None = None) -> PluginRegistry:
+def _plugin(
+    tmp_path: Path, source: str, manifest: dict[str, object] | None = None
+) -> PluginRegistry:
     root = tmp_path / "demo"
     root.mkdir()
     (root / "ezchain.plugin.json").write_text(json.dumps(manifest or MANIFEST))
@@ -176,6 +178,7 @@ async def test_timeout_kills_the_worker_and_quarantines_after_three_failures(
         assert "strategy-3" not in host.quarantined()
     finally:
         await host.close_all()
+        assert host.quarantined() == {}
 
 
 @pytest.mark.asyncio

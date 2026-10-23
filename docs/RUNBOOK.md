@@ -361,6 +361,34 @@ read normally.
 public origin (for example `https://ezchain.example.com`) in the web container; the
 proxy also accepts the forwarded host/proto. A non-browser client with no Origin header
 is still allowed, so this only affects browser CSRF attempts and misconfigured origins.
+### 12.7 Agent keys (scoped MCP credentials)
+
+Mint one key per agent/user with the deployment admin token:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/agent/keys \
+  -H "Authorization: Bearer $EZCHAIN_API_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"subject":"hermes-alice","scopes":["read","trade"],"label":"Alice desk"}'
+```
+
+The response is the only time the plaintext token is shown. Store it in the agent's
+secret store, not in a prompt. List metadata with `GET /api/v1/agent/keys`; revoke with
+`DELETE /api/v1/agent/keys/{id}` (204). Revocation is immediate on the next request.
+
+- `read` — GET/HEAD; required when `EZCHAIN_REQUIRE_AUTH_FOR_READS=true`.
+- `trade` — paper orders, strategies, runs, backtests. It cannot administer.
+- `admin` — key management, plugin reload, kill-switch mutations. Do not give this to an agent
+  unless the operator explicitly wants it to manage credentials or the switch.
+
+Set `EZCHAIN_API_KEY_PEPPER` to >=32 random bytes before minting keys in production.
+Changing the pepper invalidates every existing key; rotate by minting new keys, updating
+agents, then revoking the old ones. A 401 means the key is missing, revoked or expired;
+a 403 means the route needs a broader scope (usually `admin`).
+
+Run `hermes mcp test ezchain` or `openclaw plugins inspect ezchain --json` after a key
+change. Neither command should print the token.
+
 ## 13. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.

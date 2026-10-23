@@ -11,8 +11,9 @@ strategies** — the platform, not the alpha, is the product.
 > positions/PnL, user-defined declarative and visual graph strategies, **external Python
 > strategy plugins** in a supervised worker, a backtester, persisted kill switch,
 > reconciliation, bearer-authenticated mutations, Alembic migrations, structured
-> logs/metrics, a complete operator surface, an **MCP server for Hermes/OpenClaw**, and a
-> stress harness. There are **no keys, no signing, no live execution and no fiat rail**.
+> logs/metrics, a complete operator surface, **first-class Hermes/OpenClaw packs**, scoped
+> agent keys, an **MCP server**, and a stress harness. There are **no keys, no signing, no
+> live execution and no fiat rail**.
 > Verified vs unverified is recorded in
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
@@ -42,6 +43,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | `packages/sdk-py/` | Apache-2.0 strategy plugin SDK (manifest, context, intents) |
 | `packages/adapters/` | DexScreener market data, Jupiter quotes, 25-chain registry |
 | `apps/mcp/` | MCP 2025-11-25 server for Hermes, OpenClaw and other agents |
+| `integrations/` | Hermes skill/installer and OpenClaw Agent Plugins bundle |
 | `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
@@ -95,6 +97,7 @@ open http://localhost:3000
 - API docs: <http://127.0.0.1:8000/docs>
 - Plugin catalogue: <http://127.0.0.1:8000/api/v1/plugins>
 - Agent state: <http://127.0.0.1:8000/api/v1/agent/state>
+- Agent keys: `/api/v1/agent/keys` (admin only; tokens shown once)
 - Liveness/readiness: `/healthz` and `/readyz` (the latter includes the migration head)
 - Live markets: `/markets` · token/ticket: `/tokens/{chain}/{address}`
 - Paper positions: `/positions` · user strategies: `/strategies`
@@ -144,8 +147,25 @@ EZCHAIN_API_URL=http://127.0.0.1:8000 ezchain-mcp          # read-only
 EZCHAIN_MCP_ALLOW_WRITES=1 EZCHAIN_API_TOKEN=… ezchain-mcp # paper mutations
 ```
 
+One-command harness packs:
+
+```bash
+bash integrations/hermes/install.sh        # skill + printed hermes mcp add command
+openclaw plugins install ./integrations/openclaw --accept-capabilities
+```
+
+Mint a scoped key for each agent (admin token, shown once):
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/agent/keys \
+  -H "Authorization: Bearer $EZCHAIN_API_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"subject":"hermes","scopes":["read","trade"]}'
+```
+
 Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md),
-[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md) and the 2026 evidence note
+[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md),
+[integrations/README.md](integrations/README.md) and the 2026 evidence note
 [docs/RESEARCH-2026.md](docs/RESEARCH-2026.md). There is no live order tool; the API
 refuses `EZCHAIN_EXECUTION_MODE=live` until the executor ships.
 

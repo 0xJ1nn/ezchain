@@ -37,7 +37,9 @@ def registry(tmp_path: Path) -> PluginRegistry:
     root = tmp_path / "api_plugin"
     root.mkdir()
     (root / "ezchain.plugin.json").write_text(json.dumps(MANIFEST))
-    (root / "api_plugin.py").write_text("from ezchain_sdk import Strategy\n\nclass Plugin(Strategy):\n    pass\n")
+    (root / "api_plugin.py").write_text(
+        "from ezchain_sdk import Strategy\n\nclass Plugin(Strategy):\n    pass\n"
+    )
     return PluginRegistry(paths=[tmp_path], include_entry_points=False)
 
 
@@ -59,9 +61,7 @@ def _strategy(**overrides: object) -> dict[str, object]:
     return body
 
 
-def test_catalogue_and_parameter_validation(
-    client_for, registry: PluginRegistry
-) -> None:
+def test_catalogue_and_parameter_validation(client_for, registry: PluginRegistry) -> None:
     client: TestClient = client_for(
         plugins.router,
         overrides={get_plugin_registry: lambda: registry},
@@ -114,7 +114,11 @@ def test_create_plugin_strategy_pins_the_manifest_version(
 @pytest.mark.parametrize(
     ("payload", "status", "code"),
     [
-        (_strategy(params={"interval_minutes": 60, "config": {"lookback": 1}}), 422, "PLUGIN_PARAMS_INVALID"),
+        (
+            _strategy(params={"interval_minutes": 60, "config": {"lookback": 1}}),
+            422,
+            "PLUGIN_PARAMS_INVALID",
+        ),
         (_strategy(plugin_id="com.example.missing"), 404, "PLUGIN_NOT_FOUND"),
         (_strategy(chain="base"), 422, "PLUGIN_CHAIN_UNSUPPORTED"),
         (_strategy(plugin_version="1.0.0"), 422, "PLUGIN_VERSION_MISMATCH"),

@@ -155,7 +155,11 @@ def create_app() -> FastAPI:
     )
     # Later additions are outermost: access logs wrap CORS, and CORS wraps auth so a
     # 401 still carries CORS headers for the browser.
-    app.add_middleware(BearerAuthMiddleware, settings=settings)
+    app.add_middleware(
+        BearerAuthMiddleware,
+        settings=settings,
+        session_factory=session_factory(),
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

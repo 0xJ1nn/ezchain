@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "ezchain": {
+      "type": "stdio",
+      "command": "./bin/ezchain-mcp",
+      "args": [],
+      "env": {
+        "EZCHAIN_API_URL": "${EZCHAIN_API_URL}",
+        "EZCHAIN_API_TOKEN": "${EZCHAIN_API_TOKEN}",
+        "EZCHAIN_MCP_ALLOW_WRITES": "${EZCHAIN_MCP_ALLOW_WRITES}",
+        "EZCHAIN_MCP_BIN": "${EZCHAIN_MCP_BIN}"
+      }
+    }
+  }
+}

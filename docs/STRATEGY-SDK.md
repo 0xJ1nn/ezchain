@@ -133,6 +133,11 @@ Rules:
   host owns risk, sizing, quoting, routing, execution and accounting.
 - **One order intent per tick.** A list with more than one intent is refused with
   `PLUGIN_MULTIPLE_INTENTS`; the tick is recorded as a hold.
+- **`submit_intent` is required to order.** A manifest without it gets
+  `PLUGIN_INTENT_NOT_PERMITTED`; the context is still readable.
+- **Buys are clamped.** The host caps a buy at `order_usd`, `max_position_usd` headroom
+  and the paper risk policy, recording `requested_notional_usd` and
+  `clamped_notional_usd` in the run log.
 - **No reserved execution fields.** `limit_price`, `ttl_s` and `size_pct` are rejected
   with `PLUGIN_UNSUPPORTED_INTENT` rather than silently ignored.
 - **State is JSON.** `ctx.state` is persisted with the run (`inputs.plugin_state`) and

@@ -252,12 +252,19 @@ def patch_strategy(
 
 
 @router.delete("/{strategy_id}", status_code=204)
-def delete_strategy(strategy_id: str, session: Session = Depends(get_session)) -> None:
+async def delete_strategy(
+    strategy_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> None:
     if not strategy_service.delete_strategy(session, strategy_id):
         raise HTTPException(
             status_code=404,
             detail={"code": "STRATEGY_NOT_FOUND", "message": "strategy not found"},
         )
+    host = getattr(request.app.state, "plugin_host", None)
+    if host is not None:
+        await host.close(strategy_id)
 
 
 @router.post("/{strategy_id}/run", response_model=StrategyRunOut)

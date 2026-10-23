@@ -19,8 +19,10 @@ from ezchain_api.main import create_app
 from ezchain_api.routers import system
 
 EXPECTED_PROTECTED_ROUTES = (
+    ("DELETE", "/api/v1/agent/keys/{key_id}"),
     ("DELETE", "/api/v1/strategies/{strategy_id}"),
     ("PATCH", "/api/v1/strategies/{strategy_id}"),
+    ("POST", "/api/v1/agent/keys"),
     ("POST", "/api/v1/backtests"),
     ("POST", "/api/v1/graph/dry-run"),
     ("POST", "/api/v1/graph/validate"),
@@ -33,9 +35,17 @@ EXPECTED_PROTECTED_ROUTES = (
 )
 
 
-def make_client(settings: Settings, session: Session) -> TestClient:
+def make_client(
+    settings: Settings,
+    session: Session,
+    session_factory=None,
+) -> TestClient:
     app = FastAPI()
-    app.add_middleware(BearerAuthMiddleware, settings=settings)
+    app.add_middleware(
+        BearerAuthMiddleware,
+        settings=settings,
+        session_factory=session_factory,
+    )
     app.include_router(system.router)
     app.dependency_overrides[get_session] = lambda: session
     app.dependency_overrides[get_settings] = lambda: settings

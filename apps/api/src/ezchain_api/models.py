@@ -187,6 +187,28 @@ class BacktestRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
+class ApiKeyRow(Base):
+    """A hashed, scoped agent credential.
+
+    The plaintext token exists only in the creation response. ``token_hash`` is a
+    SHA-256 of the token (optionally peppered); the row carries identity, scopes,
+    expiry and audit timestamps. One deployment is one paper workspace; a key names
+    the agent/user acting inside it.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    subject: Mapped[str] = mapped_column(String(120), index=True)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    scopes: Mapped[list[str]] = mapped_column(JSONType, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SystemFlagRow(Base):
     """Small persisted operator switches. Values are JSON so a flag can grow fields."""
 

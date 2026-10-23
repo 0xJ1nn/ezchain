@@ -626,3 +626,35 @@ path. In-memory plugin state is not durable by design — only `ctx.state` is. P
 backtesting, signed packages, a bwrap/seccomp profile and per-user scoped tokens remain
 open and are not claimed by this ADR. A future real sandbox or a separate plugin service
 would need its own ADR and must keep the intent-only contract.
+
+---
+
+## ADR-0029 — Scoped agent keys; one deployment is one paper workspace
+
+**Date:** 2026-10-23 · **Status:** Accepted (first-class Hermes/OpenClaw integration)
+
+**Context:** The first MCP surface used the single deployment bearer token for every
+agent. Hermes and OpenClaw can connect many skills/sessions to one server, and a hosted
+operator may run an agent on behalf of several users. Handing every agent the admin token
+violates least privilege; adding multi-tenant ledger partitioning at the same time would
+rewrite the accounting model and delay a production integration.
+
+**Options:** (a) keep one token; (b) scoped keys inside one workspace plus one workspace
+per user for hosted multi-user; (c) full multi-tenant rows in every ledger/order table.
+
+**Decision:** (b). `api_keys` stores a peppered SHA-256 token hash, a subject, scopes
+(`read`, `trade`, `admin`), optional label/expiry, last-used and revocation timestamps.
+The deployment token remains the admin/bootstrap credential. Middleware resolves a
+bearer token to a principal and enforces the least scope per route; `read` covers reads
+and dry-run/validate, `trade` covers paper orders/strategies/backtests, `admin` covers
+key management, plugin reload and the kill switch. `EZCHAIN_REQUIRE_AUTH_FOR_READS=true`
+closes the read surface for hosted deployments. A key names the actor inside one paper
+workspace; it does not partition the ledger. Hosted multi-user means one workspace (or
+one reverse-proxied route) per user, with one key per agent.
+
+**Consequences:** agents can be provisioned and revoked without rotating the deployment
+token, and a trade key cannot administer the platform. The admin token remains a shared
+secret for the operator; production must keep it out of agent configs. Multi-tenant
+isolation, per-key rate limits, IP allowlists and key rotation remain follow-ups. Any
+change to ledger partitioning needs its own ADR and migration; this ADR deliberately
+does not claim it.

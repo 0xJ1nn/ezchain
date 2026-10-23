@@ -166,10 +166,16 @@ class PluginHost:
         if worker is not None:
             await self._shutdown(worker, reason="strategy_closed")
         self._quarantined.pop(strategy_id, None)
+        self._failures.pop(strategy_id, None)
 
     async def close_all(self) -> None:
         for strategy_id in list(self._workers):
             await self.close(strategy_id)
+        # Quarantine can outlive its worker: a timeout kills the process before the
+        # failure is recorded. Reload is the documented recovery action, so it must
+        # clear both maps.
+        self._quarantined.clear()
+        self._failures.clear()
 
     async def _ensure_worker(
         self,
@@ -267,6 +273,10 @@ class PluginHost:
             ) from exc
         except (BrokenPipeError, ConnectionResetError) as exc:
             raise PluginWorkerError("PLUGIN_CRASHED", self._stderr_message(worker)) from exc
+        except ValueError as exc:
+            raise PluginWorkerError(
+                "PLUGIN_PROTOCOL_ERROR", "worker response exceeds the 1 MiB frame limit"
+            ) from exc
         if not line:
             raise PluginWorkerError("PLUGIN_CRASHED", self._stderr_message(worker))
         try:
@@ -281,7 +291,13 @@ class PluginHost:
         if process.stderr is None:
             return
         while True:
-            line = await process.stderr.readline()
+            try:
+                line = await process.stderr.readline()
+            except ValueError:
+                # A plugin can print a >1 MiB line. Diagnostics are best-effort; keep
+                # draining so the task does not die with an unretrieved exception.
+                tail.append("<stderr line exceeded the frame limit>")
+                continue
             if not line:
                 return
             text = line.decode("utf-8", errors="replace").rstrip()

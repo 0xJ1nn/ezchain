@@ -14,20 +14,35 @@ flowchart LR
   A --> S[(strategies)]
 ```
 
+## 0. One-command packs
+
+| Harness | Pack | Install |
+|---|---|---|
+| Hermes | `integrations/hermes` | `bash integrations/hermes/install.sh` then `hermes mcp add` |
+| OpenClaw | `integrations/openclaw` | `openclaw plugins install ./integrations/openclaw --accept-capabilities` |
+
+The OpenClaw pack is an Agent Plugins 1.0.0 bundle (`plugin.json` + `mcp.json` +
+`skills/ezchain-trading`). OpenClaw detects it as `format: bundle`, `bundleFormat: agent`
+with `skills` and `mcpServers` capabilities. The Hermes pack installs an agentskills.io
+skill and prints the MCP registration command. Both read the same `apps/mcp` server.
+
 ## 1. Start the server
 
 ```bash
 pip install -e apps/mcp
 export EZCHAIN_API_URL=http://127.0.0.1:8000
-export EZCHAIN_API_TOKEN="$(openssl rand -hex 32)"   # same value as the API
-export EZCHAIN_MCP_ALLOW_WRITES=1                   # omit for read-only
+export EZCHAIN_API_TOKEN="ezk_…"   # a scoped read/trade key from §4, not the admin token
+export EZCHAIN_MCP_ALLOW_WRITES=1   # omit for read-only
 ezchain-mcp
 ```
 
 - Transport: stdio. stdout is protocol-only; logs go to stderr.
 - Read-only is the default. Without `EZCHAIN_MCP_ALLOW_WRITES=1`, every mutation tool is
   absent from `tools/list` and cannot be called.
-- The token is only needed for writes. Reads are open on the API, matching the web edge.
+- The token is a **scoped agent key** (`read`/`trade`/`admin`), not the deployment admin
+  token. Reads are open on a self-hosted workspace; set
+  `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` on a hosted deployment and the token is required
+  for both reads and writes.
 - There is **no** `mode` argument on any tool. The API derives `paper` server-side and
   refuses `EZCHAIN_EXECUTION_MODE=live` until the executor exists.
 
@@ -68,16 +83,21 @@ profile and add write tools only for an operator profile.
 
 ## 3. OpenClaw
 
+First-class bundle:
+
 ```bash
-openclaw mcp add ezchain \
-  --command ezchain-mcp \
-  --env EZCHAIN_API_URL=http://127.0.0.1:8000 \
-  --env EZCHAIN_API_TOKEN="$EZCHAIN_API_TOKEN" \
-  --env EZCHAIN_MCP_ALLOW_WRITES=1
-openclaw mcp doctor ezchain --probe
+pip install -e apps/mcp
+openclaw plugins install ./integrations/openclaw --accept-capabilities
+openclaw plugins inspect ezchain --json
 ```
 
-Or in config:
+Observed on OpenClaw 2026.10.6: `format: bundle`, `bundleFormat: agent`,
+`bundleCapabilities: ["skills","mcpServers"]`, skill `ezchain-trading` ready, and one
+stdio MCP server named `ezchain`. The bundle wrapper reads
+`~/.config/ezchain/agent.env` (0600), so credentials never enter the plugin manifest or
+`openclaw.json`.
+
+The equivalent hand-wired MCP definition (also valid):
 
 ```json5
 {
@@ -103,7 +123,36 @@ OpenClaw applies its normal tool profile and approval policy to every MCP tool. 
 `ezchain_arm_kill_switch` and `ezchain_place_paper_order` behind an approval prompt; they
 are marked `destructiveHint`/write in the tool annotations.
 
-## 4. Tool surface
+## 4. Scoped agent keys
+
+Mint one key per agent or user with the deployment admin token:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/agent/keys \
+  -H "Authorization: Bearer $EZCHAIN_API_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"subject":"hermes-alice","scopes":["read","trade"],"label":"Alice desk"}'
+```
+
+The response contains the plaintext token **once**. Only a peppered SHA-256 hash is
+stored. `GET /api/v1/agent/keys` (admin) lists metadata; `DELETE /api/v1/agent/keys/{id}`
+revokes.
+
+| Scope | Grants |
+|---|---|
+| `read` | GET/HEAD endpoints when `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` |
+| `trade` | paper orders, strategies, runs, backtests |
+| `admin` | key management, plugin reload, kill-switch mutations |
+
+Set `EZCHAIN_API_KEY_PEPPER` (>= 32 random bytes) before minting keys in production.
+Rotating it invalidates every key. A `trade` key that calls an admin route gets
+`403 FORBIDDEN`; an absent/revoked/expired key gets `401 UNAUTHORIZED`.
+
+One ezCHAIN instance is one paper workspace. A key names the actor inside that workspace;
+it does not partition the ledger. For a hosted multi-user product, run one workspace (or
+one reverse-proxied route) per user and mint one key per agent.
+
+## 5. Tool surface
 
 Read tools (always available):
 
@@ -140,7 +189,7 @@ Write tools (only with `EZCHAIN_MCP_ALLOW_WRITES=1`):
 Every write still requires `Authorization: Bearer <EZCHAIN_API_TOKEN>` at the API. The
 MCP server is not an auth bypass.
 
-## 5. Resources
+## 6. Resources
 
 `resources/list` returns static resources plus concrete URIs for current strategies and
 backtests:
@@ -155,7 +204,7 @@ backtests:
 `resources/templates/list` publishes the templates. Reads return JSON text and never
 mutate.
 
-## 6. REST for agents without MCP
+## 7. REST for agents without MCP
 
 The same data is on the OpenAPI edge. Start with:
 
@@ -168,7 +217,7 @@ curl http://127.0.0.1:8000/api/v1/plugins
 Mutations need the bearer token. The web proxy injects it server-side; a standalone
 agent must hold it in its own secret store, never in a prompt or a model context.
 
-## 7. Safety model
+## 8. Safety model
 
 - **Paper only.** No signing, no wallet, no live venue call exists in this path.
 - **Server-derived mode.** A tool call cannot request `live`; the mode is a boot setting
@@ -178,6 +227,8 @@ agent must hold it in its own secret store, never in a prompt or a model context
 - **Risk clamps.** A plugin's notional is clamped by the existing paper risk policy; a
   rejected order is logged with its reason.
 - **Read-only default.** An agent that only needs to observe never sees a write tool.
+- **Scoped keys.** `read` cannot trade, `trade` cannot administer, and revocation is
+  immediate. `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` closes the read surface too.
 - **Tool poisoning is real.** MCP tool descriptions, resource text and plugin metadata
   are untrusted data. Keep MCP servers allowlisted, review plugin manifests before
   install, and do not let an agent follow instructions embedded in market text. See
