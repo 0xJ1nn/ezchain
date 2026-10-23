@@ -124,6 +124,31 @@ test("sidebar toggle collapses, persists on reload and navigation, and shows rai
 	);
 });
 
+test("a persisted rail hydrates without a body class mismatch", async ({ page }) => {
+	await page.goto("/");
+	await page.evaluate(() => window.localStorage.setItem("ezchain.sidebar.collapsed", "1"));
+
+	const problems: string[] = [];
+	page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
+	page.on("console", (message) => {
+		if (message.type() !== "error" && message.type() !== "warning") return;
+		if (/hydrat|extra attributes from the server|did not match the server/i.test(message.text())) {
+			problems.push(`console.${message.type()}: ${message.text()}`);
+		}
+	});
+
+	// The inline bootstrap owns the class before paint; React must accept the served DOM
+	// instead of warning about it and regenerating the tree.
+	await page.reload();
+	await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/);
+	await expect(sidebar(page)).toHaveCSS("width", "72px");
+	await expect(page.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	expect(problems).toEqual([]);
+});
+
 test("topbar search names markets and All chains opens the browser", async ({ page }) => {
 	await page.goto("/");
 
@@ -210,6 +235,30 @@ test("mobile navigation puts Browse and Signals one tap away", async ({ page }) 
 		"true",
 	);
 	await expect(mobile.getByRole("link", { name: "More" })).toHaveClass(/on/);
+});
+
+test("every main route marks exactly one mobile tab and More links Performance", async ({
+	page,
+}) => {
+	test.setTimeout(300_000);
+	await page.setViewportSize({ width: 390, height: 844 });
+	const mobile = page.getByRole("navigation", { name: "Primary mobile navigation" });
+
+	for (const route of MAIN_ROUTES) {
+		await page.goto(route);
+		await expect(mobile.locator("a.on"), `${route} active tab`).toHaveCount(1);
+		await expect(mobile.locator("a[aria-current]"), `${route} current tab`).toHaveCount(1);
+	}
+
+	await page.goto("/more");
+	await expect(mobile.getByRole("link", { name: "More" })).toHaveAttribute(
+		"aria-current",
+		"page",
+	);
+	await expect(page.getByRole("main").getByRole("link", { name: "Performance" })).toHaveAttribute(
+		"href",
+		"/performance",
+	);
 });
 
 test("More keeps the reference galleries and reaches discovery first", async ({ page }) => {
@@ -315,9 +364,57 @@ test("1100px keeps the sidebar expanded with readable labels", async ({ page }) 
 	);
 });
 
-test("main routes have no page-level overflow at 768px and 761px", async ({ page }) => {
+test("numeric table cells stay on one line at 390px and 761px", async ({ page }) => {
 	test.setTimeout(300_000);
-	for (const width of [768, 761]) {
+	for (const width of [390, 761]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const route of ["/markets", "/positions"]) {
+			await page.goto(route);
+			const cells = page.locator("main table tbody tr:first-child td.num");
+			await expect(cells.first(), `${route} has a numeric cell at ${width}px`).toBeVisible();
+
+			const wrapped = await cells.evaluateAll((nodes) =>
+				nodes
+					.flatMap((node) => {
+						if (!node.textContent?.trim()) return [];
+						const range = document.createRange();
+						range.selectNodeContents(node);
+						// Inline children can yield duplicate rects at the same y; distinct tops
+						// are the real line count.
+						const lines = new Set(
+							[...range.getClientRects()].map((rect) => Math.round(rect.top)),
+						).size;
+						return [{ text: node.textContent.trim(), lines }];
+					})
+					.filter((cell) => cell.lines > 1),
+			);
+			expect(wrapped, `${route} wraps numeric cells at ${width}px`).toEqual([]);
+
+			const overflow = await page.evaluate(
+				() => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+			);
+			expect(overflow, `${route} overflows at ${width}px`).toBeLessThanOrEqual(0);
+		}
+	}
+});
+
+test("narrow topbar search takes a full row and hides the chips", async ({ page }) => {
+	for (const width of [390, 761]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto("/");
+
+		const box = await page.locator("header.topbar .search").boundingBox();
+		if (!box) throw new Error(`search has no box at ${width}px`);
+		expect(box.width, `search width at ${width}px`).toBeGreaterThanOrEqual(width - 40);
+
+		await expect(page.locator("header.topbar .source.chip")).toBeHidden();
+		await expect(page.locator("header.topbar .chain.chip")).toBeHidden();
+	}
+});
+
+test("main routes have no page-level overflow at 390px, 768px and 761px", async ({ page }) => {
+	test.setTimeout(300_000);
+	for (const width of [390, 768, 761]) {
 		await page.setViewportSize({ width, height: 900 });
 		for (const route of MAIN_ROUTES) {
 			await page.goto(route);

@@ -29,7 +29,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
 	return (
 		<html lang="en" className={`${inter.variable} ${plexMono.variable}`}>
-			<body>{children}</body>
+			{/* The inline sidebar bootstrap sets body.sidebar-collapsed before paint so the
+			    persisted rail never flashes. React did not render that class, so suppress the
+			    expected attribute difference instead of warning and regenerating the tree. */}
+			<body suppressHydrationWarning>{children}</body>
 		</html>
 	);
 }

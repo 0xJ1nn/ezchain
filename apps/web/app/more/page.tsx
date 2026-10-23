@@ -11,6 +11,10 @@ const groups = [
 		],
 	},
 	{
+		title: "Overview",
+		links: [["/performance", "Performance"]],
+	},
+	{
 		title: "Trade",
 		links: [
 			["/wallets", "Wallets"],
@@ -65,8 +69,8 @@ export default function MorePage() {
 					<h1>More</h1>
 					<p className="sub">
 						Browse and Signals are the primary discovery surfaces and stay one tap away in
-						the bottom nav. Automate lives here under More, alongside Trade, Protect and
-						System. Reference galleries are design documentation, not production surfaces.
+						the bottom nav. Performance, Automate, Trade, Protect and System live here under
+						More. Reference galleries are design documentation, not production surfaces.
 					</p>
 				</div>
 			</header>

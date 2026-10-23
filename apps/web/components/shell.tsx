@@ -66,6 +66,7 @@ const mobileNav = [
 // under More. This mirrors the desktop groups without duplicating Signals.
 const moreSections = new Set([
 	"more",
+	"performance",
 	"wallets",
 	"ledger",
 	"reports",

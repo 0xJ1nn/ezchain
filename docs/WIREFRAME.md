@@ -14,17 +14,20 @@ Open `design/wireframe/index.html`.
 │         sync status · alerts · kill switch · avatar                  │
 ├──────────────┬───────────────────────────────────────────────────────┤
 │ sidebar      │ page header (title, subtitle, primary action)         │
-│ Overview     │ ───────────────────────────────────────────────────── │
-│  Dashboard   │ content                                               │
+│ Discovery    │ ───────────────────────────────────────────────────── │
+│  Browse      │ content                                               │
+│  Signals     │                                                       │
+│ Overview     │                                                       │
+│  Dashboard   │                                                       │
 │  Positions   │                                                       │
-│  Markets     │                                                       │
+│  Performance │                                                       │
 │ Trade        │                                                       │
 │  Wallets     │                                                       │
 │  Activity    │                                                       │
+│  Reports     │                                                       │
 │ Automate     │                                                       │
 │  Automations │                                                       │
 │  Strategies  │                                                       │
-│  Signals     │                                                       │
 │  Backtests   │                                                       │
 │ Protect      │                                                       │
 │  Risk        │                                                       │
@@ -33,12 +36,17 @@ Open `design/wireframe/index.html`.
 │  Chains      │                                                       │
 │  Integrations│                                                       │
 │  Settings    │                                                       │
+│  Security    │                                                       │
+│  Developer   │                                                       │
 │  Operations  │                                                       │
+│  Workspace   │                                                       │
 └──────────────┴───────────────────────────────────────────────────────┘
 ```
 
 Persistent rules:
 
+- Discovery leads: Browse and Signals are the first sidebar group. Reference galleries
+  live under `/more`, never in the primary navigation.
 - Mode badge (`PAPER` / `LIVE`) is always in the topbar; live adds a red hairline.
 - Kill switch is always visible; it opens a confirm sheet with scope (all / chain /
   wallet / strategy).
@@ -174,8 +182,8 @@ unsellable, dust, stale mark, closed, quarantined.
 
 The desktop sidebar can be collapsed to a 72px labelled rail with the explicit persisted
 toggle; it never auto-collapses at 1100px. The topbar is 52px above the mobile breakpoint;
-at ≤1200px its low-priority chips hide and the search flexes, at ≤980px the market-source
-chip hides, and at ≤768px it wraps.
+at ≤1200px its low-priority chips hide and the search flexes, and at ≤768px the search takes
+a full row and the topbar wraps.
 
 ## 8. Handoff to visual design
 

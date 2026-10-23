@@ -232,8 +232,8 @@ export default function MobilePage() {
 				<p className="note mt-12">
 					The desktop sidebar can be collapsed to a 72px labelled rail with the explicit
 					persisted toggle; it never auto-collapses at 1100px. The topbar is 52px above the
-					mobile breakpoint; at ≤1200px low-priority chips hide and the search flexes, at
-					≤980px the market-source chip hides, and at ≤768px it wraps.
+					mobile breakpoint; at ≤1200px its low-priority chips hide and the search flexes, and
+					at ≤768px the search takes a full row and the topbar wraps.
 				</p>
 			</Panel>
 
