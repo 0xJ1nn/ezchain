@@ -23,6 +23,7 @@ from typing import Any
 
 from ezchain_sdk import (
     MANIFEST_FILENAME,
+    SDK_VERSION,
     ManifestError,
     PluginManifest,
     check_compatible,
@@ -322,7 +323,7 @@ class PluginRegistry:
         return {
             "plugins": [record.to_dict() for record in self.list()],
             "issues": [issue.to_dict() for issue in self.issues],
-            "sdk_version": __import__("ezchain_sdk").SDK_VERSION,
+            "sdk_version": SDK_VERSION,
         }
 
 
