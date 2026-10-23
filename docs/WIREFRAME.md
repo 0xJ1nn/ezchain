@@ -167,10 +167,15 @@ unsellable, dust, stale mark, closed, quarantined.
 
 | Breakpoint | Behaviour |
 |---|---|
-| ≥ 1440 | 3-column tile grid, persistent 240px sidebar, 2-column detail |
-| 1024–1439 | 2-column tiles; sidebar stays expanded at 240px, with an explicit user control to collapse it to a 72px labelled rail |
-| 768–1023 | 1-column tiles; sidebar stays expanded, tables → cards |
-| < 768 | bottom nav (Home, Browse, Signals, Positions, More), sticky mode + kill switch, tile becomes a stacked summary with a chart accordion |
+| ≥ 1440 | Full 240px sidebar, 3-column tiles, 2-column detail, 52px topbar |
+| 1101–1439 | 240px sidebar; 3-column tiles → 2; 4-column grids → 2 |
+| 769–1100 | 240px sidebar; split panes → 1 column; 5/6-column grids → 3 |
+| ≤ 768 | Sidebar hidden, bottom nav (Home, Browse, Signals, Positions, More), all grids 1 column, tables scroll, topbar wraps |
+
+The desktop sidebar can be collapsed to a 72px labelled rail with the explicit persisted
+toggle; it never auto-collapses at 1100px. The topbar is 52px above the mobile breakpoint;
+at ≤1200px its low-priority chips hide and the search flexes, at ≤980px the market-source
+chip hides, and at ≤768px it wraps.
 
 ## 8. Handoff to visual design
 

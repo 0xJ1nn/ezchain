@@ -160,11 +160,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - Execution mode is server-derived. `EZCHAIN_EXECUTION_MODE=live` is refused at boot
   until the executor ships; no API or MCP call accepts a mode argument.
 - **Discovery-first shell**: the sidebar now leads with Browse and Signals, keeps
-  Dashboard/Positions/Performance in Overview, moves Automate under a secondary group and
-  links to `/more` for reference galleries. The 240px sidebar stays expanded at desktop
-  widths and has a persisted user toggle to a 72px labelled rail; the topbar search names
-  markets, and `All chains` opens the market browser. Heavy routes ship loading
-  skeletons and the root view has an honest error boundary.
+  Dashboard/Positions/Performance in Overview, keeps Automate as a secondary sidebar group
+  and under More on mobile, and links to `/more` for reference galleries. The 240px
+  sidebar stays expanded at desktop widths and has a persisted user toggle to a 72px
+  labelled rail; the topbar search names markets, and `All chains` opens the market
+  browser. Heavy routes ship loading skeletons and the root view has an honest error
+  boundary; error-boundary rendering is manually verified, not CI-covered.
 - Caddy now sends `/api/*` to `web:3000` so the Next.js route handler injects the bearer
   token; `/healthz`, `/readyz` and `/metrics` go to `api:8000`, and everything else is the
   web app. The edge listens on `:8080` instead of matching `localhost`.

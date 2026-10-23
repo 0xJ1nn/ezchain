@@ -5,6 +5,33 @@ import { expect, test } from "@playwright/test";
 const sidebar = (page: import("@playwright/test").Page) =>
 	page.getByRole("navigation", { name: "Primary navigation" });
 
+const MAIN_ROUTES = [
+	"/",
+	"/positions",
+	"/markets",
+	"/performance",
+	"/wallets",
+	"/ledger",
+	"/reports",
+	"/automations",
+	"/strategies",
+	"/signals",
+	"/backtests",
+	"/risk",
+	"/alerts",
+	"/chains",
+	"/integrations",
+	"/settings",
+	"/security",
+	"/developer",
+	"/operations",
+	"/workspace",
+	"/more",
+	"/states",
+	"/components",
+	"/mobile",
+];
+
 test("Discovery is the first sidebar group and holds Browse then Signals", async ({ page }) => {
 	await page.goto("/");
 
@@ -44,13 +71,13 @@ test("sidebar toggle collapses, persists on reload and navigation, and shows rai
 
 	const collapse = page.getByRole("button", { name: "Collapse sidebar" });
 	await expect(collapse).toBeVisible();
-	await expect(collapse).toHaveAttribute("aria-expanded", "true");
+	await expect(collapse).toHaveAttribute("aria-pressed", "false");
 	await expect(collapse).toHaveAttribute("aria-controls", "primary-navigation-items");
 	await expect(page.locator("#primary-navigation-items .nav-group")).toHaveCount(6);
 
 	await collapse.click();
 	const expand = page.getByRole("button", { name: "Expand sidebar" });
-	await expect(expand).toHaveAttribute("aria-expanded", "false");
+	await expect(expand).toHaveAttribute("aria-pressed", "true");
 	await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/);
 	await expect(sidebar(page)).toHaveCSS("width", "72px");
 
@@ -68,8 +95,8 @@ test("sidebar toggle collapses, persists on reload and navigation, and shows rai
 	await page.reload();
 	await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/);
 	await expect(page.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute(
-		"aria-expanded",
-		"false",
+		"aria-pressed",
+		"true",
 	);
 
 	// The toggle is a real button, so Enter and Space work without a pointer.
@@ -92,8 +119,8 @@ test("sidebar toggle collapses, persists on reload and navigation, and shows rai
 	await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/);
 	await expect(sidebar(page)).toHaveCSS("width", "240px");
 	await expect(page.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute(
-		"aria-expanded",
-		"true",
+		"aria-pressed",
+		"false",
 	);
 });
 
@@ -112,12 +139,18 @@ test("topbar search names markets and All chains opens the browser", async ({ pa
 	await search.fill("bonk");
 	await search.press("Enter");
 	await expect(page).toHaveURL(/\/markets\?q=bonk$/);
-	const bonkRow = page
-		.locator("table")
-		.first()
-		.locator("tbody tr")
-		.filter({ hasText: "BONK" });
-	await expect(bonkRow.first()).toBeVisible();
+	const rows = page.locator("main table tbody tr");
+	await expect(rows).toHaveCount(1);
+	await expect(rows.first()).toContainText("BONK");
+
+	// A miss must be a real empty result, not a silently ignored query.
+	await page.getByRole("searchbox", {
+		name: "Search markets (symbol, name or address)",
+	}).fill("zzzz-not-a-token");
+	await page.keyboard.press("Enter");
+	await expect(page).toHaveURL(/\/markets\?q=zzzz-not-a-token$/);
+	await expect(page.locator("main table tbody tr")).toHaveCount(0);
+	await expect(page.getByText(/Nothing matched .*zzzz-not-a-token/)).toBeVisible();
 
 	await page.goto("/");
 	const chains = page.locator("header.topbar").getByRole("link", { name: "All chains" });
@@ -169,6 +202,14 @@ test("mobile navigation puts Browse and Signals one tap away", async ({ page }) 
 		"aria-current",
 		"page",
 	);
+
+	// A section page highlights More and exposes its current state to assistive tech.
+	await page.goto("/wallets");
+	await expect(mobile.getByRole("link", { name: "More" })).toHaveAttribute(
+		"aria-current",
+		"true",
+	);
+	await expect(mobile.getByRole("link", { name: "More" })).toHaveClass(/on/);
 });
 
 test("More keeps the reference galleries and reaches discovery first", async ({ page }) => {
@@ -245,6 +286,7 @@ test("sidebar fits its viewport at 1440x900 and 1100x900", async ({ page }) => {
 			.getByRole("link", { name: "More & reference" })
 			.boundingBox();
 		if (!footer) throw new Error(`footer link has no box at ${width}px`);
+		expect(footer.height, `footer target height at ${width}px`).toBeGreaterThanOrEqual(24);
 		expect(footer.y, `footer top at ${width}px`).toBeGreaterThanOrEqual(box.y - 0.5);
 		expect(footer.y + footer.height, `footer bottom at ${width}px`).toBeLessThanOrEqual(
 			box.y + box.height + 0.5,
@@ -262,8 +304,8 @@ test("1100px keeps the sidebar expanded with readable labels", async ({ page }) 
 	await expect(sidebar(page)).toHaveCSS("width", "240px");
 	await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/);
 	await expect(page.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute(
-		"aria-expanded",
-		"true",
+		"aria-pressed",
+		"false",
 	);
 
 	const label = sidebar(page).locator(".nav-item .t").first();
@@ -271,6 +313,20 @@ test("1100px keeps the sidebar expanded with readable labels", async ({ page }) 
 	expect(await label.evaluate((element) => getComputedStyle(element).display)).not.toBe(
 		"none",
 	);
+});
+
+test("main routes have no page-level overflow at 768px and 761px", async ({ page }) => {
+	test.setTimeout(300_000);
+	for (const width of [768, 761]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const route of MAIN_ROUTES) {
+			await page.goto(route);
+			const overflow = await page.evaluate(
+				() => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+			);
+			expect(overflow, `${route} overflows at ${width}px`).toBeLessThanOrEqual(0);
+		}
+	}
 });
 
 test("loading and error boundaries are wired", async () => {

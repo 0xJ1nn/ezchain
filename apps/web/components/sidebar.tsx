@@ -115,7 +115,7 @@ export function Sidebar({ active }: { active: string }) {
 				type="button"
 				className="sidebar-toggle"
 				onClick={toggle}
-				aria-expanded={!collapsed}
+				aria-pressed={collapsed}
 				aria-controls="primary-navigation-items"
 				aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
 				title={collapsed ? "Expand sidebar" : "Collapse sidebar"}

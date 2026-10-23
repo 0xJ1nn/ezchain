@@ -67,11 +67,6 @@ body {
   grid-template-rows: 24px 52px minmax(0, 1fr);
   min-height: 100vh;
 }
-/* The production shell uses an explicit user control for its 72px rail. The wireframe
-   has no toggle, so it stays expanded here and never auto-collapses at 1100px. */
-body.sidebar-collapsed {
-  grid-template-columns: 72px minmax(0, 1fr);
-}
 .wire-banner { grid-row: 1; grid-column: 1 / -1; }
 .topbar {
   grid-row: 2;
@@ -511,7 +506,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .split, .split-even { grid-template-columns: minmax(0, 1fr); }
   .cols-5, .cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   body { display: block; padding-bottom: 54px; }
   .topbar { position: sticky; top: 0; flex-wrap: wrap; height: auto; padding: 6px 10px; gap: 6px; }
   .brand { width: auto; }

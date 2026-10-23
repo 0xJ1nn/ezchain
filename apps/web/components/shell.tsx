@@ -95,13 +95,22 @@ export function MobileNav({ active }: { active: string }) {
 		<nav className="mobile-nav" aria-label="Primary mobile navigation">
 			{mobileNav.map((item) => {
 				const on = mobileActive(item.id, active);
-				const current = item.id === "more" ? active === "more" : on;
+				const current =
+					item.id === "more"
+						? active === "more"
+							? "page"
+							: on
+								? "true"
+								: undefined
+						: on
+							? "page"
+							: undefined;
 				return (
 					<Link
 						key={item.id}
 						href={item.href}
 						className={on ? "on" : undefined}
-						aria-current={current ? "page" : undefined}
+						aria-current={current}
 					>
 						<span className="g" aria-hidden="true">
 							{item.glyph}

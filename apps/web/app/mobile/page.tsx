@@ -159,7 +159,7 @@ export default function MobilePage() {
 							<span className="grow">
 								<span className="title">Bottom navigation</span>
 								<span className="sub">
-									Five targets, 44px minimum height. The sidebar is hidden below 760px.
+									Five targets, 44px minimum height. The sidebar is hidden at or below 768px.
 								</span>
 							</span>
 						</div>
@@ -206,32 +206,35 @@ export default function MobilePage() {
 						<tbody>
 							<tr>
 								<td className="mono">≥1440px</td>
-								<td>Full sidebar, split panes and 3–6 column grids.</td>
+								<td>Full 240px sidebar, split panes and 3–6 column grids; 52px topbar.</td>
 							</tr>
 							<tr>
-								<td className="mono">1100–1439px</td>
+								<td className="mono">1101–1439px</td>
+								<td>240px sidebar; 3-column tiles become 2, 4-column grids become 2.</td>
+							</tr>
+							<tr>
+								<td className="mono">769–1100px</td>
 								<td>
-									Sidebar stays expanded at 240px with readable labels; split panes
-									become a single column.
+									240px sidebar; split panes become one column and 5/6-column grids
+									become 3.
 								</td>
 							</tr>
 							<tr>
-								<td className="mono">761–1099px</td>
+								<td className="mono">≤768px</td>
 								<td>
-									Sidebar stays expanded; 3–6 column grids collapse to three, tables
-									still show wide columns.
-								</td>
-							</tr>
-							<tr>
-								<td className="mono">≤760px</td>
-								<td>
-									Sidebar hidden, bottom nav shown, top bar wraps, grids to one column and
-									low-priority table columns hidden.
+									Sidebar hidden, bottom nav shown, top bar wraps, all grids to one column
+									and tables scroll horizontally.
 								</td>
 							</tr>
 						</tbody>
 					</table>
 				</div>
+				<p className="note mt-12">
+					The desktop sidebar can be collapsed to a 72px labelled rail with the explicit
+					persisted toggle; it never auto-collapses at 1100px. The topbar is 52px above the
+					mobile breakpoint; at ≤1200px low-priority chips hide and the search flexes, at
+					≤980px the market-source chip hides, and at ≤768px it wraps.
+				</p>
 			</Panel>
 
 			<Panel title="Not a native app" sub="scope" className="mt-16">

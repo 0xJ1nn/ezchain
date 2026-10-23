@@ -179,7 +179,8 @@ body.sidebar-collapsed {
 .nav-item .badge { margin-left: auto; }
 .sidebar-foot { padding: 6px 8px 0; border-top: 1px solid var(--line); margin-top: 4px; }
 .sidebar-more {
-  display: block; padding: 3px 2px; font-size: 10.5px; color: var(--muted);
+  display: flex; align-items: center; min-height: 24px; padding: 3px 2px;
+  font-size: 10.5px; color: var(--muted);
 }
 .sidebar-more .more-rail, .sidebar-foot .foot-rail { display: none; }
 .sidebar-more:hover { color: var(--ink); }
@@ -354,6 +355,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .table .num, .table th.num { text-align: right; }
 .table.compact td, .table.compact th { padding: 4px 8px; }
 .table .sub { font-size: 10.5px; color: var(--muted); }
+.note .mono, .table td.mono, .table th.mono { overflow-wrap: anywhere; }
 .table .pnl-sub { display: block; }
 .rowlink { cursor: pointer; }
 .table-toolbar {
@@ -543,7 +545,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 .toast-demo { border: 1px solid var(--line-2); border-left: 3px solid var(--ok); background: var(--surface); padding: 8px 10px; border-radius: 4px; display: flex; gap: 8px; align-items: center; }
 
 .mobile-frame {
-  width: 340px; border: 8px solid #1b1b1b; border-radius: 26px; background: var(--surface);
+  width: min(340px, 100%); border: 8px solid #1b1b1b; border-radius: 26px; background: var(--surface);
   overflow: hidden; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,.12);
 }
 .mobile-frame .m-top { padding: 8px 10px; border-bottom: 1px solid var(--line); display: flex; gap: 6px; align-items: center; font-size: 10px; }
@@ -636,7 +638,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .topbar .source.chip { display: none; }
   .search { flex-basis: 200px; }
 }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   body { display: block; padding-bottom: 54px; }
   .topbar { position: sticky; top: 0; flex-wrap: wrap; height: auto; padding: 6px 10px; gap: 6px; }
   .brand { width: auto; }
@@ -663,7 +665,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 .mobile-nav { display: none; }
 
 /* Mobile shell: bottom nav, sticky mode + kill, tables scroll instead of squeeze. */
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .topbar .ws-chip,
   .topbar .chain.chip,
   .topbar .chip,
