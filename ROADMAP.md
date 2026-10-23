@@ -4,11 +4,13 @@ Status: living document, updated when a milestone opens or closes. The roadmap i
 permission for uncontrolled development: each item becomes a focused issue before work
 starts (`project.md` §30).
 
-The current code is the **PAPER stack with production operations**: 22/25 chain market
-observation, per-chain quote ladders, a paper ledger, declarative and visual graph
-strategies, a backtester, migrations, auth, observability, a complete operator surface and
-a full-code stress harness. Live execution, keys, wallet custody and a live UI are not
-built; the unmerged live-executor foundation has a blocked review and is not a claim.
+The current code is the **PAPER stack with production operations and strategy SDK v1**:
+22/25 chain market observation, per-chain quote ladders, a paper ledger, declarative and
+visual graph strategies, external Python strategy plugins in a supervised worker, an MCP
+server for agents, a backtester, migrations, auth, observability, a complete operator
+surface and a full-code stress harness. Live execution, keys, wallet custody and a live
+UI are not built; the unmerged live-executor foundation has a blocked review and is not a
+claim.
 
 ## Done — P0: Live paper slice
 
@@ -30,6 +32,21 @@ Exit: a user can browse live markets, place a paper buy/sell, see the ledger and
 create a strategy and watch it place paper orders. Every number carries source, age and
 `PAPER`; no key material exists.
 
+## Done — strategy SDK v1 and agent surface
+
+- [x] `packages/sdk-py` (Apache-2.0): manifest, JSON-Schema subset, context, intents,
+  strategy lifecycle; standalone from platform internals.
+- [x] Supervised plugin worker: scrubbed env, rlimits, per-callback timeout, crash
+  quarantine, replayable `ctx.state`, one intent per tick.
+- [x] Discovery through `ezchain.strategies` entry points and `EZCHAIN_PLUGIN_PATHS`;
+  catalogue, validation and reload API.
+- [x] `kind=plugin` strategies with pinned `plugin_id`/`plugin_version` (migration 0007).
+- [x] `apps/mcp` MCP 2025-11-25 stdio server: read tools/resources, paper-only mutations,
+  read-only default, bearer auth preserved.
+- [x] Server-derived execution mode; `EZCHAIN_EXECUTION_MODE=live` refused until the
+  executor ships; computed live-readiness endpoint.
+- [x] 2026 research note, SDK contract, Hermes/OpenClaw integration docs, ADR-0028.
+
 ## Done — production operations (paper)
 
 - [x] Market eyes: `services/ingest`-equivalent inline scan, 22/25 chains, overview/stored.
@@ -46,6 +63,9 @@ create a strategy and watch it place paper orders. Every number carries source, 
 - [ ] Per-user auth/RBAC; one deployment token today.
 - [ ] Dashboard equity-snapshot history remains absent; wallets have no backend yet (#57).
 - [ ] EVM/venue execution and executor/vault (out of paper scope).
+- [ ] Plugin backtest harness (graph backtests remain the only harness).
+- [ ] Signed plugin packages, registry and a bwrap/seccomp profile.
+- [ ] Per-user RBAC and scoped API tokens for agents.
 
 ## Current — M1: UI close-out
 

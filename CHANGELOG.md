@@ -7,6 +7,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Strategy SDK v1 and supervised plugin runtime**: new Apache-2.0 `ezchain-sdk`
+  (manifest, JSON-Schema subset, `PluginContext`, `Intent`, `Strategy`), discovery through
+  `ezchain.strategies` entry points and `EZCHAIN_PLUGIN_PATHS`, and `kind=plugin`
+  strategies. Plugin code runs in a separate worker with a scrubbed environment, memory/
+  CPU limits, a per-callback timeout and crash quarantine. `ctx.state` is persisted with
+  the run and replayed; one intent per tick; reserved execution fields fail closed.
+  Migration `0007_strategy_plugins` adds the pinned `plugin_id`/`plugin_version`.
+- **Plugin API and agent surface**: `GET /api/v1/plugins`, `POST /plugins/reload`,
+  `POST /plugins/{id}/validate`, `GET /api/v1/agent/state`, `GET /api/v1/agent/capabilities`
+  and `GET /api/v1/strategies/{id}/live-readiness`. New `apps/mcp` implements MCP
+  2025-11-25 over stdio with read tools/resources and paper-only mutation tools; writes
+  are hidden unless `EZCHAIN_MCP_ALLOW_WRITES=1` and still require the API bearer token.
+- `docs/STRATEGY-SDK.md` is now the implemented contract; `docs/AGENT-INTEGRATION.md`
+  documents Hermes/OpenClaw setup and `docs/RESEARCH-2026.md` records the competitor,
+  trader and agent evidence behind ADR-0028.
+
+### Changed
+
+- Execution mode is server-derived. `EZCHAIN_EXECUTION_MODE=live` is refused at boot
+  until the executor ships; no API or MCP call accepts a mode argument.
+
 - **Paper account read models**: `GET /api/v1/paper/ledger`, `/performance`,
   `/attribution`, `/limits`, `/alerts` and `/export/{orders,fills,ledger}.csv` project the
   append-only ledger into UI-facing read models (cash, equity, realized/unrealized PnL,

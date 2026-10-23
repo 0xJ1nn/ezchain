@@ -62,8 +62,10 @@ in CI, API schema has no key fields, executor redacts error payloads.
 ## I5 — No strategy code in this repository
 
 The platform ships zero strategies. A strategy is a versioned plugin package implementing
-the SDK manifest and intent interface. Platform code never imports a strategy by name.
-Examples live in `ezchain-strategies` (separate repo).
+the SDK manifest and intent interface. Platform code never imports a hardcoded strategy;
+the supervised worker imports only the entrypoint named by an installed manifest, and no
+strategy module ships in this repository. Examples live in `ezchain-strategies` (separate
+repo).
 
 *Enforced by:* CI greps `services/`/`apps/` for the strategies directory and a dependency
 rule; the SDK conformance suite loads a fixture plugin from outside the tree.

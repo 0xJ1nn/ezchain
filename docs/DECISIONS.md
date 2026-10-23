@@ -576,3 +576,53 @@ explicit `POSITION_CHANGED` and retries with a fresh quote. The in-process lock 
 single-worker API and SQLite tests; the advisory lock covers multiple API processes. A
 future per-account sharding scheme needs its own ADR and must keep cash and open positions
 in the same serialization domain.
+
+---
+
+## ADR-0028 — Strategy plugins run in a supervised worker; agents use MCP
+
+**Date:** 2026-10-23 · **Status:** Accepted (maintainer instruction: "strategies state of
+the art, plug and play, Hermes/OpenClaw, ML packages", 2026-10-23)
+
+**Context:** ADR-0004 and `docs/STRATEGY-SDK.md` promised external intent-only strategies,
+but the code shipped only five declarative kinds. The platform already had the hard
+parts — append-only ledger, one paper execution path, risk policy, reconciliation, paper
+gate — and lacked the extension and delegation surface. Competitors now expose Python
+strategy packages with ML dependencies (Freqtrade FreqAI, Jesse), and agent harnesses
+(Hermes, OpenClaw) converge on MCP. Running arbitrary strategy code in the API process
+would put keys, the ledger and every tenant in the same failure domain; not running it at
+all would leave the SDK a document.
+
+**Options:** (a) import plugins in-process; (b) run each plugin strategy in a supervised
+subprocess; (c) a separate plugin service/container; (d) no code plugins, declarative
+only.
+
+**Decision:** (b), with a stable standalone SDK and an MCP edge.
+
+- `packages/sdk-py` is Apache-2.0, imports no platform code, and defines the manifest,
+  JSON-Schema subset, context, intent and lifecycle. A plugin declares
+  `ezchain.plugin.json`, pins `ezchain-sdk>=1,<2`, and is discovered through the
+  `ezchain.strategies` entry point or `EZCHAIN_PLUGIN_PATHS`.
+- The engine runs one worker process per plugin strategy. The worker gets a scrubbed
+  environment, memory/CPU rlimits, a per-callback wall timeout, stdout redirected away
+  from the protocol, and crash quarantine (3 failures in 10 minutes). This is
+  containment, not a sandbox; installs are trusted operator actions.
+- A plugin returns at most one intent per tick. `ctx.state` is JSON, persisted with the
+  run and replayed on the next tick. Reserved execution fields are refused, not ignored.
+- The API exposes the catalogue, validation and plugin-strategy CRUD. `plugin_version` is
+  pinned from the installed manifest at creation; a manifest upgrade that invalidates a
+  persisted config fails closed.
+- `apps/mcp` implements MCP 2025-11-25 over stdio. Reads are always available; mutation
+  tools are absent unless `EZCHAIN_MCP_ALLOW_WRITES=1`, and every mutation still requires
+  the API bearer token. There is no mode argument and no live order tool.
+- Execution mode is server-derived. `EZCHAIN_EXECUTION_MODE=live` is refused at boot
+  until the executor ships. Paper-to-live readiness is a computed, read-only report.
+
+**Consequences:** plugins can use any package in their own environment (numpy,
+scikit-learn, torch), while the host owns risk and accounting. Spawning a worker costs
+tens of milliseconds per strategy start and the worker is restarted on a config change;
+that is acceptable for minute-scale strategies and deliberately not a high-frequency
+path. In-memory plugin state is not durable by design — only `ctx.state` is. Plugin
+backtesting, signed packages, a bwrap/seccomp profile and per-user scoped tokens remain
+open and are not claimed by this ADR. A future real sandbox or a separate plugin service
+would need its own ADR and must keep the intent-only contract.

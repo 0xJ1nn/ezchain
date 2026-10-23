@@ -2,9 +2,10 @@
 
 Status as of **2026-10-23**. The app is a **PAPER stack with production operations**:
 continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
-ledger, declarative and visual graph strategies, backtests, strategy CRUD/scheduler,
-migrations through `0006_backtests`, bearer auth, observability, a complete operator
-surface and a full-code stress harness. There are no keys, no signing and no live
+ledger, declarative and visual graph strategies, external Python strategy plugins in a
+supervised worker, an MCP server for agents, backtests, strategy CRUD/scheduler,
+migrations through `0007_strategy_plugins`, bearer auth, observability, a complete
+operator surface and a full-code stress harness. There are no keys, no signing and no live
 execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
 Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
@@ -27,7 +28,7 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Ops: Alembic 0001–0006 (fresh + legacy), bearer auth + CSRF proxy,
+- [x] Ops: Alembic 0001–0007 (fresh + legacy), bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
 - [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0006`).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
@@ -35,6 +36,15 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0006` is pending.
 - [ ] Per-user auth/RBAC; `/metrics` exposure decision.
 - [ ] Live dashboard equity history and live wallets (#57); EVM venue (#59).
+
+## Done — strategy SDK v1 + agent surface (2026-10-23)
+
+- [x] Apache-2.0 `ezchain-sdk`; manifest, params schema, context, intents, lifecycle.
+- [x] Supervised plugin worker (timeout, rlimits, scrubbed env, quarantine, replay state).
+- [x] Plugin catalogue/validation/reload API and `kind=plugin` strategies (0007).
+- [x] MCP 2025-11-25 server (read tools/resources, paper-only writes, read-only default).
+- [x] Server-derived execution mode and computed live-readiness endpoint.
+- [ ] Plugin backtest harness; signed packages; bwrap/seccomp; per-user scoped tokens.
 
 ## Now — P0 live paper slice
 
@@ -75,7 +85,8 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 
 - `/strategies` and `/strategies/[id]`: real CRUD, graph builder, runs, pause/resume.
 - `/signals`: live market movers with source and age; no safety or alpha claim.
-- Plugin manifests/grants/live promotion remain later work.
+- Plugin manifests/grants are now served by `/api/v1/plugins`; live promotion remains
+  later work (the readiness endpoint reports evidence only).
 
 ### 4. Risk + alerts — #13 (done for PAPER)
 
