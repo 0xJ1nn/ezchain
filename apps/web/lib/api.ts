@@ -83,6 +83,30 @@ export interface PairInfo {
 	url: string | null;
 }
 
+/** One safety check as the API may report it. The API owns the vocabulary; the UI prints it. */
+export interface SafetyCheckPayload {
+	id?: string;
+	check?: string;
+	name?: string;
+	status?: string;
+	result?: string;
+	reason?: string | null;
+	detail?: string | null;
+	[key: string]: unknown;
+}
+
+/**
+ * `TokenOut.safety`. The API currently sends `status` and `reason`; `checks` is optional
+ * and may be a list or an object keyed by check name. A missing value is unknown, never a
+ * pass, so every field is optional.
+ */
+export interface TokenSafety {
+	status?: string;
+	reason?: string | null;
+	checks?: SafetyCheckPayload[] | Record<string, unknown>;
+	[key: string]: unknown;
+}
+
 export interface TokenSnapshot {
 	chain: string;
 	address: string;
@@ -96,10 +120,39 @@ export interface TokenSnapshot {
 	price_change_h6: string | null;
 	price_change_h24: string | null;
 	pairs: PairInfo[];
-	safety: Record<string, unknown>;
+	safety: TokenSafety;
 	source: Source | null;
 	stale: boolean;
 }
+
+export type CandleTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+
+/** One closed OHLCV bar. Prices are decimal strings; unknown volume is null, never zero. */
+export interface Candle {
+	open_time: string;
+	close_time: string;
+	timeframe_seconds: number;
+	open: string;
+	high: string;
+	low: string;
+	close: string;
+	volume: string | null;
+}
+
+/** `CandlesOut`: closed bars only, oldest first. */
+export interface CandleSeries {
+	chain: string;
+	token_address: string;
+	timeframe: CandleTimeframe;
+	pool_address: string | null;
+	candles: Candle[];
+	source: Source;
+	stale: boolean;
+	reason: string | null;
+}
+
+/** Fixture-only candle states. Live mode ignores this; it never masks an API answer. */
+export type CandleFixtureState = "unsupported" | "no_pool" | "empty" | "error" | "stale";
 
 /** One registered chain as the API's market monitor currently sees it. */
 export interface MarketChainOverview {
@@ -366,6 +419,35 @@ export async function getToken(chain: string, address: string): Promise<TokenSna
 	}
 	return request<TokenSnapshot>(
 		`/v1/tokens/${encodeURIComponent(chain)}/${encodeURIComponent(address)}`,
+	);
+}
+
+export interface CandleQuery {
+	timeframe?: CandleTimeframe;
+	limit?: number;
+	/** Fixture-only demo state; ignored in live mode. */
+	fixtureState?: CandleFixtureState;
+}
+
+/**
+ * Closed OHLCV history. The API returns an empty `candles` list with a `reason`
+ * (`NO_POOL`, `CANDLES_EMPTY`) when there is no series, and a reason code error when the
+ * chain has no provider. Neither is rendered as a flat line.
+ */
+export async function getCandles(
+	chain: string,
+	address: string,
+	query: CandleQuery = {},
+): Promise<CandleSeries> {
+	const timeframe = query.timeframe ?? "1h";
+	const limit = Math.min(1000, Math.max(1, Math.floor(query.limit ?? 200)));
+	if (webMode() === "fixture") {
+		const fixtures = await import("./candle-fixtures");
+		return fixtures.fixtureCandles(chain, address, timeframe, limit, query.fixtureState);
+	}
+	return request<CandleSeries>(
+		`/v1/tokens/${encodeURIComponent(chain)}/${encodeURIComponent(address)}/candles`,
+		{ params: { timeframe, limit } },
 	);
 }
 

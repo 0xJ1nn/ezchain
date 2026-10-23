@@ -38,13 +38,28 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 	await expect(page.locator("#pairs tbody tr").first()).toContainText("$0.00003142");
 	await expect(page.locator("#pairs tbody tr").first()).toContainText(/Fixture · \d+s/);
 
-	// Safety is unknown everywhere. The page never promotes a miss to a pass.
+	// The safety object comes from TokenOut.safety. This payload has status/reason and no
+	// check list, so the page prints that instead of five invented checks.
 	await expect(page.locator("#safety .panel-head .badge")).toHaveText("unknown");
-	await expect(page.locator("#safety tbody tr")).toHaveCount(5);
-	await expect(
-		page.locator("#safety tbody tr td:nth-child(2) .badge", { hasText: "unknown" }),
-	).toHaveCount(5);
-	await expect(page.getByText("SAFETY_NOT_IMPLEMENTED").first()).toBeVisible();
+	await expect(page.locator("#safety tbody tr")).toHaveCount(0);
+	await expect(page.locator("#safety")).toContainText("carries no per-check list");
+	await expect(page.locator("#safety")).toContainText("SAFETY_NOT_IMPLEMENTED");
+	await expect(page.locator("#safety")).not.toContainText("Mint authority");
+
+	// Price history is a real candle series, with source/age and a table alternative.
+	const chart = page.locator("#chart");
+	await expect(chart.locator("svg[role='img']")).toBeVisible();
+	await expect(chart).toContainText("closed 1h bars");
+	await expect(chart.locator("summary")).toContainText("closed bars as a table");
+	await expect(chart.getByRole("navigation", { name: "Candle timeframe" })).toBeVisible();
+	await expect(chart).toContainText(/Fixture · \d+s old/);
+	await expect(chart.locator(".badge", { hasText: "fresh" })).toBeVisible();
+
+	// The timeframe control re-requests the series and keeps the paper ticket query.
+	await chart.getByRole("link", { name: "15m" }).click();
+	await expect(page).toHaveURL(/timeframe=15m/);
+	await expect(page).toHaveURL(/side=buy/);
+	await expect(page.locator("#chart .panel-head .sub")).toContainText("closed 15m bars");
 
 	// Quote panel: server-rendered Jupiter paper quote with PAPER on every number.
 	const quotePanel = page.locator("#quote");
@@ -193,8 +208,73 @@ test("unknown chain or token ids return 404", async ({ page }) => {
 test("token page has no external requests", async ({ page }) => {
 	const external = noExternal(page);
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	await expect(page.locator("#safety tbody tr")).toHaveCount(5);
+	await expect(page.locator("#safety")).toContainText("carries no per-check list");
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
+});
+
+test("safety renders the server status and checks for pass, warn and unknown", async ({
+	page,
+}) => {
+	// Fixture-only demo payloads exercise the same renderer the API feeds. The page labels
+	// the demo and never presents it as an assessment.
+	await page.goto(`/tokens/solana/${BONK_MINT}?safety=pass`);
+	await expect(page.locator("#safety .panel-head .badge")).toHaveText("pass");
+	await expect(page.locator("#safety")).toContainText("2 checks from TokenOut.safety");
+	await expect(page.locator("#safety [data-testid='safety-checks'] tbody tr")).toHaveCount(2);
+	await expect(
+		page.locator("#safety [data-testid='safety-checks'] .badge", { hasText: "pass" }),
+	).toHaveCount(2);
+	await expect(page.locator("#safety")).toContainText("fixture demo payload");
+	await expect(page.locator("#safety")).toContainText("not an assessment");
+
+	await page.goto(`/tokens/solana/${BONK_MINT}?safety=warn`);
+	await expect(page.locator("#safety .panel-head .badge")).toHaveText("warn");
+	await expect(page.locator("#safety")).toContainText("FIXTURE_SAFETY_WARN");
+	await expect(
+		page.locator("#safety [data-testid='safety-checks'] .badge", { hasText: "warn" }),
+	).toHaveCount(1);
+	await expect(
+		page.locator("#safety [data-testid='safety-checks'] .badge", { hasText: "pass" }),
+	).toHaveCount(1);
+
+	await page.goto(`/tokens/solana/${BONK_MINT}?safety=unknown`);
+	await expect(page.locator("#safety .panel-head .badge")).toHaveText("unknown");
+	await expect(page.locator("#safety tbody tr")).toHaveCount(0);
+});
+
+test("candle states are explicit reasons, not a fabricated series", async ({ page }) => {
+	const cases = [
+		{ query: "unsupported", code: "CANDLES_UNSUPPORTED_CHAIN" },
+		{ query: "no_pool", code: "NO_POOL" },
+		{ query: "empty", code: "CANDLES_EMPTY" },
+		{ query: "error", code: "UPSTREAM_UNREACHABLE" },
+	] as const;
+
+	for (const entry of cases) {
+		await page.goto(`/tokens/solana/${BONK_MINT}?candles=${entry.query}`);
+		const chart = page.locator("#chart");
+		await expect(chart.locator(".badge", { hasText: entry.code })).toBeVisible();
+		await expect(chart.locator("svg")).toHaveCount(0);
+		await expect(chart).toContainText(/no chart|not a flat line|no closed bars/i);
+	}
+
+	await page.goto(`/tokens/solana/${BONK_MINT}?candles=stale`);
+	const chart = page.locator("#chart");
+	await expect(chart.locator(".badge", { hasText: "STALE SERIES" })).toBeVisible();
+	await expect(chart.locator("svg[role='img']")).toBeVisible();
+	await expect(chart).toContainText("fixture demo state");
+});
+
+test("token page does not overflow at 390, 768 and 1440", async ({ page }) => {
+	for (const width of [390, 768, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto(`/tokens/solana/${BONK_MINT}`);
+		await expect(page.locator("#chart svg[role='img']")).toBeVisible();
+		const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+		expect(scrollWidth, `token page at ${width}px must not scroll sideways`).toBeLessThanOrEqual(
+			width,
+		);
+	}
 });
 
 test("token page screenshot at mobile width", async ({ page }) => {

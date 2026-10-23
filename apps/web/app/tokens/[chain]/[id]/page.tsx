@@ -2,18 +2,29 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/shell";
+import { CandleView } from "@/components/token-chart";
 import { Badge, Panel, Stat } from "@/components/ui";
 import {
 	asApiError,
+	getCandles,
 	getChains,
 	getQuote,
 	getToken,
+	webMode,
 	type ApiError,
 	type Chain,
+	type CandleTimeframe,
 	type Quote,
 	type Reason,
 	type Side,
 } from "@/lib/api";
+import {
+	TIMEFRAMES,
+	candleErrorFrom,
+	parseCandleFixtureState,
+	parseCandleTimeframe,
+	type CandleLoad,
+} from "@/lib/candle-view";
 import { ModeBanner } from "@/lib/live-banner";
 import {
 	ageLabel,
@@ -28,6 +39,14 @@ import {
 	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
+import {
+	parseSafetyDemo,
+	safetyChecks,
+	safetyReason,
+	safetyStatus,
+	safetyStatusLabel,
+	safetyTone,
+} from "@/lib/safety-view";
 import { PaperTicket } from "./paper-ticket";
 import styles from "./token.module.css";
 
@@ -129,6 +148,11 @@ export default async function TokenPage({
 	const side: Side = one(raw.side) === "sell" ? "sell" : "buy";
 	const amount = readAmount(one(raw.amount));
 	const pagePath = `/tokens/${chain}/${id}`;
+	const mode = webMode();
+	const timeframe = parseCandleTimeframe(raw.timeframe);
+	const candleFixtureState =
+		mode === "fixture" ? parseCandleFixtureState(raw.candles) : undefined;
+	const safetyDemo = mode === "fixture" ? parseSafetyDemo(raw.safety) : undefined;
 
 	const tokenResult = await getToken(chain, id)
 		.then((snapshot) => ({ ok: true as const, snapshot }))
@@ -144,13 +168,20 @@ export default async function TokenPage({
 	}
 	const token = tokenResult.snapshot;
 
-	const [quoteResult, chainsResult] = await Promise.all([
+	const [quoteResult, chainsResult, candleResult] = await Promise.all([
 		getQuote({ chain, token: token.address, side, amountUsd: amount })
 			.then((quote) => ({ quote, reason: null as Reason | null }))
 			.catch((error: unknown) => ({ quote: null as Quote | null, reason: asApiError(error).toReason() })),
 		getChains()
 			.then((chains) => chains)
 			.catch(() => [] as Chain[]),
+		getCandles(chain, token.address, {
+			timeframe,
+			limit: 200,
+			fixtureState: candleFixtureState,
+		})
+			.then((series): CandleLoad => ({ ok: true, series }))
+			.catch((error: unknown): CandleLoad => ({ ok: false, error: candleErrorFrom(error) })),
 	]);
 
 	const quote = quoteResult.quote;
@@ -158,6 +189,19 @@ export default async function TokenPage({
 	const chainMeta = chainsResult.find((candidate) => candidate.id === chain);
 	const chainLabel = chainMeta?.name ?? chain;
 	const sourceName = token.source?.name;
+	const candles: CandleLoad = candleResult;
+
+	let safety = token.safety;
+	if (mode === "fixture" && safetyDemo) {
+		const fixtures = await import("@/lib/live-fixtures");
+		safety = fixtures.fixtureSafety(safetyDemo);
+	}
+	const safetyStatusValue = safetyStatus(safety);
+	const safetyLabel = safetyStatusLabel(safety);
+	const safetyChecksValue = safetyChecks(safety);
+	const safetyReasonValue = safetyReason(safety);
+	const chartHref = (next: CandleTimeframe) =>
+		`${pagePath}?side=${side}&amount=${encodeURIComponent(amount)}&timeframe=${next}#chart`;
 
 	return (
 		<AppShell active="markets">
@@ -253,8 +297,9 @@ export default async function TokenPage({
 					/>
 					<Stat
 						label="Safety"
-						value={<Badge tone="warn">unknown</Badge>}
-						meta="SAFETY_NOT_IMPLEMENTED · not a pass"
+						value={<Badge tone={safetyTone(safetyStatusValue)}>{safetyLabel}</Badge>}
+						meta={safetyReasonValue ?? "reported by TokenOut.safety"}
+						title="TokenOut.safety status. An absent value is unknown, never a pass."
 					/>
 					<Stat
 						label="Freshness"
@@ -272,6 +317,47 @@ export default async function TokenPage({
 
 			<div className="split">
 				<div className="stack">
+					<div id="chart">
+						<Panel
+							title="Price history"
+							sub={`${token.symbol} · closed ${timeframe} bars`}
+							action={
+								<nav className={styles.timeframes} aria-label="Candle timeframe">
+									{TIMEFRAMES.map((option) => (
+										<Link
+											key={option.value}
+											className={`${styles.timeframe}${
+												option.value === timeframe ? ` ${styles.timeframeActive}` : ""
+											}`}
+											href={chartHref(option.value)}
+											aria-current={option.value === timeframe ? "page" : undefined}
+										>
+											{option.label}
+										</Link>
+									))}
+								</nav>
+							}
+							footer={
+								<span>
+									<span className="mono">
+										GET /api/v1/tokens/{"{chain}"}/{"{address}"}/candles?timeframe=
+										{timeframe}
+									</span>{" "}
+									· closed bars only, oldest first · source and age come from the series
+									{candleFixtureState && (
+										<>
+											{" "}
+											· fixture demo state{" "}
+											<span className="mono">?candles={candleFixtureState}</span>
+										</>
+									)}
+								</span>
+							}
+						>
+							<CandleView load={candles} retryHref={chartHref(timeframe)} />
+						</Panel>
+					</div>
+
 					<div id="pairs">
 					<Panel
 						title="Pairs"
@@ -342,41 +428,76 @@ export default async function TokenPage({
 					<div id="safety">
 					<Panel
 						title="Safety"
-						sub="every check is unknown in P0"
-						action={<Badge tone="warn">unknown</Badge>}
+						sub={
+							safetyChecksValue.length > 0
+								? `${safetyChecksValue.length} check${safetyChecksValue.length === 1 ? "" : "s"} from TokenOut.safety`
+								: "status from TokenOut.safety · no check list in the payload"
+						}
+						action={<Badge tone={safetyTone(safetyStatusValue)}>{safetyLabel}</Badge>}
 						flush
-						footer="Unknown is not a pass. Safety is not implemented in P0, so this page never claims a token is safe; the API risk policy is the execution gate."
+						footer={
+							<span>
+								Status and checks come from <span className="mono">TokenOut.safety</span>.
+								A field the API does not send is printed as unknown, never promoted to a
+								pass. The API risk policy remains the execution gate.
+								{safetyDemo && (
+									<>
+										{" "}
+										· fixture demo payload{" "}
+										<span className="mono">?safety={safetyDemo}</span> · not an
+										assessment
+									</>
+								)}
+							</span>
+						}
 					>
-						<div className="table-wrap">
-							<table className="table compact">
-								<thead>
-									<tr>
-										<th scope="col">Check</th>
-										<th scope="col">Result</th>
-										<th scope="col">Detail</th>
-										<th scope="col">Source · age</th>
-									</tr>
-								</thead>
-								<tbody>
-									{[
-										"Mint authority",
-										"Freeze authority",
-										"Top-10 concentration",
-										"Honeypot / sell simulation",
-										"LP custody",
-									].map((check) => (
-										<tr key={check}>
-											<td>{check}</td>
-											<td>
-												<Badge tone="warn">unknown</Badge>
-											</td>
-											<td className="small muted">not checked · no value is assumed</td>
-											<td className="small muted">SAFETY_NOT_IMPLEMENTED</td>
+						{safetyChecksValue.length > 0 ? (
+							<>
+							<div className="panel-body">
+								<p className={styles.safetyNote}>
+									Overall reason:{" "}
+									<span className="mono">{safetyReasonValue ?? "none supplied"}</span>
+								</p>
+							</div>
+							<div className="table-wrap">
+								<table className="table compact" data-testid="safety-checks">
+									<thead>
+										<tr>
+											<th scope="col">Check</th>
+											<th scope="col">Result</th>
+											<th scope="col">Detail</th>
 										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
+									</thead>
+									<tbody>
+										{safetyChecksValue.map((check, index) => (
+											<tr key={`${check.key}-${index}`}>
+												<td>{check.label}</td>
+												<td>
+													<Badge tone={safetyTone(check.status)}>{check.status}</Badge>
+												</td>
+												<td className="small muted">{check.reason ?? "—"}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+							</>
+						) : (
+							<div className="panel-body">
+								<p className={styles.safetyNote}>
+									The API payload carries no per-check list for this token. Overall status{" "}
+									<Badge tone={safetyTone(safetyStatusValue)}>{safetyLabel}</Badge>
+									{safetyReasonValue ? (
+										<>
+											{" "}· reason <span className="mono">{safetyReasonValue}</span>
+										</>
+									) : (
+										" · no reason supplied"
+									)}
+									. No placeholder checks are drawn.
+								</p>
+							</div>
+						)}
 					</Panel>
 					</div>
 

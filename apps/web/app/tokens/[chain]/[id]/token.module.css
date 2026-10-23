@@ -20,6 +20,50 @@
 	gap: 8px;
 }
 
+.timeframes {
+	display: inline-flex;
+	border: 1px solid var(--line-2);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+	max-width: 100%;
+	flex-wrap: wrap;
+}
+
+.timeframe {
+	padding: 3px 8px;
+	font-size: 10.5px;
+	color: var(--muted);
+	background: var(--surface);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.timeframe + .timeframe {
+	border-left: 1px solid var(--line);
+}
+
+.timeframe:hover {
+	color: var(--ink);
+	background: var(--surface-2);
+}
+
+.timeframeActive {
+	background: var(--ink);
+	color: #fff;
+}
+
+.timeframeActive:hover {
+	background: var(--ink);
+	color: #fff;
+}
+
+.safetyNote {
+	font-size: 11px;
+	color: var(--muted);
+	max-width: 78ch;
+	overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
 	.quoteMeta {
 		grid-template-columns: minmax(0, 1fr);

@@ -22,7 +22,7 @@ const PROVIDER_TEXT: Record<string, { title: string; role: string; boundary: str
 	},
 	geckoterminal: {
 		title: "GeckoTerminal",
-		role: "Closed OHLCV candles for token charts, served through the API cache.",
+		role: "Closed OHLCV candles for token and position charts, served through the API cache.",
 		boundary: "Only chains with the candles capability are served.",
 	},
 	jupiter: {

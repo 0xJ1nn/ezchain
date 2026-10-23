@@ -21,7 +21,7 @@ const ENDPOINTS: Endpoint[] = [
 	{ method: "GET", path: "/api/v1/markets", auth: "read", purpose: "DexScreener discovery rows with source and coverage.", used: "/markets, /signals" },
 	{ method: "GET", path: "/api/v1/markets/overview", auth: "read", purpose: "Per-chain coverage and observation age.", used: "/chains, /integrations" },
 	{ method: "GET", path: "/api/v1/tokens/{chain}/{address}", auth: "read", purpose: "Token snapshot and pair ladder.", used: "/tokens/…" },
-	{ method: "GET", path: "/api/v1/tokens/{chain}/{address}/candles", auth: "read", purpose: "Closed OHLCV candles for the token chart.", used: "/tokens/…" },
+	{ method: "GET", path: "/api/v1/tokens/{chain}/{address}/candles", auth: "read", purpose: "Closed OHLCV candles for the token and position charts.", used: "/tokens/…, /positions/…" },
 	{ method: "GET", path: "/api/v1/quotes", auth: "read", purpose: "Quote from the configured ladder; paper fill input.", used: "token order ticket" },
 	{ method: "GET", path: "/api/v1/paper/account", auth: "read", purpose: "Point-in-time paper cash, equity, realized and unrealized.", used: "/, /positions, /performance, /wallets" },
 	{ method: "GET", path: "/api/v1/paper/positions", auth: "read", purpose: "Server PositionView rows.", used: "/positions, /risk, /reports" },

@@ -270,7 +270,8 @@ export default async function ChainsPage() {
 							<span className="grow">
 								<span className="title">OHLCV served</span>
 								<span className="sub">
-									The token page can request closed candles for this chain.
+									The token and position pages can request closed candles for this
+									chain.
 								</span>
 							</span>
 						</div>
