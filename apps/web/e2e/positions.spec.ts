@@ -90,6 +90,25 @@ test("positions reads the paper account and PositionView shape from the typed cl
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
+test("an unmarked position never renders a leaked source as its mark", async ({ page }) => {
+	// The API nulls source when price_usd is null. This fixture injects the old leak so
+	// the page is tested to keep the mark unknown instead of showing a source or age.
+	await page.goto("/positions?state=unpriced-source");
+
+	const table = page
+		.locator("section.panel")
+		.filter({ hasText: "Server positions" })
+		.locator("table");
+	const mochi = table.locator("tbody tr").filter({ hasText: "MOCHI" });
+	await expect(mochi).toBeVisible();
+	await expect(mochi.locator("td").nth(4)).toHaveText("—");
+	await expect(mochi.locator("td").nth(5)).toHaveText("—");
+	await expect(mochi.locator("td").nth(6)).toHaveText("—");
+	await expect(mochi.locator(".badge", { hasText: "unknown mark" })).toBeVisible();
+	await expect(mochi).not.toContainText("dexscreener");
+	await expect(mochi).not.toContainText("ago");
+});
+
 test("positions page renders empty, error and stale states without fabricating numbers", async ({
 	page,
 }) => {

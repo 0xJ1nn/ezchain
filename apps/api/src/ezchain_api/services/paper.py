@@ -279,7 +279,10 @@ def _position_views(
             market_value_usd=market_value,
             unrealized_usd=unrealized,
             realized_usd=replay.realized_by_account.get(account, Decimal(0)),
-            source=None if snapshot is None else _source_ref(snapshot),
+            # A source describes where a mark came from. A snapshot row can exist with no
+            # price (a failed observation); labelling that row with a source would present
+            # it as priced and leak an observation age to dashboard/positions/reports.
+            source=None if snapshot is None or mark is None else _source_ref(snapshot),
             mode="paper",
         )
         views.append(view.to_dict())

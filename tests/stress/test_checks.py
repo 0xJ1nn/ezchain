@@ -338,6 +338,56 @@ def test_account_that_withholds_a_complete_equity_is_a_finding() -> None:
     assert any(finding.code == "ACCOUNT_EQUITY_WITHHELD" for finding in findings)
 
 
+def test_account_unrealized_is_withheld_with_equity() -> None:
+    # A withheld account must not report zero or a partial unrealized total.
+    partial = check_account(withheld_account(unrealized_usd="0"), scenario="t")
+    assert any(finding.code == "ACCOUNT_UNREALIZED_PARTIAL" for finding in partial)
+
+    # A complete account must report it.
+    withheld = check_account(account(unrealized_usd=None), scenario="t")
+    assert any(finding.code == "ACCOUNT_UNREALIZED_WITHHELD" for finding in withheld)
+
+
+def test_account_asset_mark_must_be_null_or_finite() -> None:
+    # "garbage" must not pass merely because mark_status is unknown and all dependent
+    # values are null.
+    findings = check_account(
+        withheld_account(
+            by_asset=[
+                asset_row(
+                    mark_usd="garbage",
+                    market_value_usd=None,
+                    unrealized_usd=None,
+                    share_pct=None,
+                    mark_status="unknown",
+                ),
+                cash_row(share_pct=None),
+            ]
+        ),
+        scenario="t",
+    )
+    assert any(finding.code == "ACCOUNT_DECIMAL_INVALID" for finding in findings)
+
+
+def test_account_chain_unpriced_count_must_be_non_negative() -> None:
+    findings = check_account(
+        withheld_account(
+            by_chain=[
+                chain_row(
+                    assets=2,
+                    unpriced_assets=-1,
+                    market_value_usd=None,
+                    share_pct=None,
+                    mark_status="unknown",
+                ),
+                chain_row(chain="settlement", market_value_usd="97", share_pct=None),
+            ]
+        ),
+        scenario="t",
+    )
+    assert any(finding.code == "ACCOUNT_COMPOSITION_INVALID" for finding in findings)
+
+
 def test_reconciliation_404_is_a_failure() -> None:
     # The endpoint became mandatory: its absence means ledger truth is unproven.
     findings = check_reconciliation(404, None, scenario="t")

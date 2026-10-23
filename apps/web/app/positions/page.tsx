@@ -6,6 +6,7 @@ import { positionTiles } from "@/lib/position-fixtures";
 import { usd, signedUsd, MINUS } from "@/lib/format";
 import {
 	fixturePaperAccountFlat,
+	fixturePaperPositionsUnpricedSource,
 	getPaperSnapshot,
 	type PaperAccount,
 	type PaperPosition,
@@ -43,7 +44,9 @@ interface MarkAge {
 }
 
 function markAge(position: PaperPosition): MarkAge {
-	if (!position.source?.observed_at) {
+	// A source describes a mark. An unmarked position keeps no source even if an older
+	// server leaked one, so the mark is unknown regardless of source.observed_at.
+	if (position.mark_usd === null || !position.source?.observed_at) {
 		return { label: "unknown mark", stale: false, unknown: true };
 	}
 	const observed = Date.parse(position.source.observed_at);
@@ -108,7 +111,9 @@ export default async function PositionsPage({
 			? demoResult<PaperPosition[]>(mode, "Fixture demo: the positions request failed.")
 			: demo === "empty"
 				? { ok: true as const, mode, data: [] as PaperPosition[] }
-				: demo === "stale"
+				: demo === "unpriced-source"
+					? { ok: true as const, mode, data: fixturePaperPositionsUnpricedSource }
+					: demo === "stale"
 					? {
 							ok: true as const,
 							mode,
@@ -431,7 +436,7 @@ export default async function PositionsPage({
 												{money(position.realized_usd, true)}
 											</td>
 											<td>
-												{position.source ? (
+												{position.mark_usd !== null && position.source ? (
 													<span className={styles.accountMeta}>
 														<Badge tone={age.stale ? "warn" : "ghost"}>
 															{age.stale ? `stale · ${age.label}` : `${position.source.name} · ${age.label}`}

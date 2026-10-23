@@ -392,6 +392,26 @@ def test_paper_account_unpriced_asset_never_reports_a_mark_source(
         observed_at=utcnow(),
         symbol="NOMARK",
     )
+    # A second, priced position proves the fix withholds the source per row and does not
+    # blank every source: the snapshot source ("test") still labels a row that has a mark.
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_B,
+        side="buy",
+        quantity="1",
+        price="1",
+        fee="0",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_B,
+        price="2",
+        observed_at=utcnow(),
+        symbol="PRICED",
+    )
 
     body = client_for(paper_router.router).get("/api/v1/paper/account").json()
 
@@ -413,8 +433,17 @@ def test_paper_account_unpriced_asset_never_reports_a_mark_source(
         }
     ]
     position = body["positions"][0]
+    assert position["token_address"] == TOKEN_A
     assert position["mark_usd"] is None
     assert position["market_value_usd"] is None
+    # The snapshot row exists with source "test"; the source belongs to a mark, so a
+    # null-price snapshot must not leak it through the positions read model.
+    assert position["source"] is None
+
+    priced = next(row for row in body["positions"] if row["token_address"] == TOKEN_B)
+    assert priced["source"]["name"] == "test"
+    priced_asset = next(row for row in body["by_asset"] if row["token_address"] == TOKEN_B)
+    assert priced_asset["source"]["name"] == "test"
 
 
 def test_paper_account_composition_keeps_eleven_positions_across_chains(

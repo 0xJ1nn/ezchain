@@ -760,6 +760,18 @@ function fixturePositions(): PaperPosition[] {
 
 export const fixturePaperPositions: PaperPosition[] = fixturePositions();
 
+/**
+ * The same positions with an observation source leaked onto the unmarked MOCHI row. A
+ * source belongs to a mark; the API nulls it when ``price_usd`` is null, so this fixture
+ * proves the page does not present a stale server leak as a mark age.
+ */
+export const fixturePaperPositionsUnpricedSource: PaperPosition[] = fixturePositions().map(
+	(position) =>
+		position.mark_usd === null && position.source === null
+			? { ...position, source: { name: "dexscreener", observed_at: observed(4) } }
+			: position,
+);
+
 function clonePositions(positions: PaperPosition[]) {
 	return positions.map((position) => ({
 		...position,

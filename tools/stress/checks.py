@@ -553,7 +553,7 @@ def check_account(
     cash = parsed_field("cash_usd", nullable=False)
     equity = parsed_field("equity_usd", nullable=True)
     parsed_field("realized_usd", nullable=False)
-    parsed_field("unrealized_usd", nullable=True)
+    account_unrealized = parsed_field("unrealized_usd", nullable=True)
 
     positions_raw = _sequence(account.get("positions"))
     if positions_raw is None:
@@ -766,6 +766,31 @@ def check_account(
                 actual="equity_usd is null",
             )
         )
+    # Unrealized PnL is the equity total minus cost basis, so it inherits equity's
+    # completeness. A withheld account must report null, not zero or a partial sum.
+    if marks_unknown or complete is False:
+        if account_unrealized is not None:
+            findings.append(
+                Finding(
+                    code="ACCOUNT_UNREALIZED_PARTIAL",
+                    scenario=scenario,
+                    invariant="account.equity_complete",
+                    summary="account reports unrealized PnL while completeness is withheld",
+                    expected="unrealized_usd null",
+                    actual=str(account_unrealized),
+                )
+            )
+    elif complete is True and account.get("unrealized_usd") is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_UNREALIZED_WITHHELD",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account withholds unrealized PnL although every open mark is known",
+                expected="unrealized_usd present",
+                actual="unrealized_usd is null",
+            )
+        )
 
     def position_key(row: Mapping[str, object]) -> tuple[str, str]:
         return (str(row.get("chain")), str(row.get("token_address")))
@@ -868,7 +893,21 @@ def check_account(
 
     for row in asset_rows:
         label = f"{row.get('chain')}:{row.get('token_address')}"
-        mark = _decimal(row.get("mark_usd"))
+        mark_raw = row.get("mark_usd")
+        mark = _decimal(mark_raw)
+        # A malformed mark is invalid even when mark_status and every dependent value are
+        # null: null is the only encoding of an unknown mark, never a string.
+        if mark_raw is not None and mark is None:
+            findings.append(
+                Finding(
+                    code="ACCOUNT_DECIMAL_INVALID",
+                    scenario=scenario,
+                    invariant="account.decimals",
+                    summary=f"asset {label} has an invalid mark",
+                    expected="null or finite mark_usd",
+                    actual=repr(mark_raw),
+                )
+            )
         mark_status = row.get("mark_status")
         if mark is None:
             if mark_status != "unknown":
@@ -953,7 +992,11 @@ def check_account(
     for row in chain_rows:
         chain = row.get("chain")
         unpriced_assets = row.get("unpriced_assets")
-        if not isinstance(unpriced_assets, int) or isinstance(unpriced_assets, bool):
+        if (
+            not isinstance(unpriced_assets, int)
+            or isinstance(unpriced_assets, bool)
+            or unpriced_assets < 0
+        ):
             findings.append(
                 Finding(
                     code="ACCOUNT_COMPOSITION_INVALID",
@@ -2020,6 +2063,52 @@ def self_test() -> None:
     }
     assert check_account(withheld, scenario="self") == []
     assert check_account({**withheld, "equity_usd": "97"}, scenario="self")
+    assert any(
+        finding.code == "ACCOUNT_UNREALIZED_PARTIAL"
+        for finding in check_account({**withheld, "unrealized_usd": "0"}, scenario="self")
+    )
+    assert any(
+        finding.code == "ACCOUNT_DECIMAL_INVALID"
+        for finding in check_account(
+            {
+                **withheld,
+                "by_asset": [
+                    {
+                        "chain": "base",
+                        "token_address": "0xabc",
+                        "kind": "position",
+                        "quantity": "2",
+                        "mark_usd": "garbage",
+                        "market_value_usd": None,
+                        "unrealized_usd": None,
+                        "share_pct": None,
+                        "source": None,
+                        "mark_status": "unknown",
+                    }
+                ],
+            },
+            scenario="self",
+        )
+    )
+    assert any(
+        finding.code == "ACCOUNT_COMPOSITION_INVALID"
+        for finding in check_account(
+            {
+                **withheld,
+                "by_chain": [
+                    {
+                        "chain": "base",
+                        "assets": 2,
+                        "unpriced_assets": -1,
+                        "market_value_usd": None,
+                        "share_pct": None,
+                        "mark_status": "unknown",
+                    }
+                ],
+            },
+            scenario="self",
+        )
+    )
     assert check_reconciliation(200, {"ok": True}, scenario="self") == []
     # The endpoint is mandatory: a 404 is a failure, not a skip.
     missing = check_reconciliation(404, None, scenario="self")
