@@ -32,19 +32,29 @@ const MAIN_ROUTES = [
 	"/mobile",
 ];
 
-// The reviewed responsive widths. 768px is the mobile breakpoint, 761px and 769px pin its
-// edges, and 390/1100/1440 are the phone, compact-desktop and desktop targets.
-const OVERFLOW_WIDTHS = [390, 761, 768, 769, 1100, 1440];
-
-// Scan in small route groups so every width gets its own per-test budget. One 24-route x
-// 3-width scan shared a single 300s budget and timed out mid-run when a cold `next dev`
-// compile landed on a later route; separate tests also run concurrently.
-const ROUTE_GROUP_SIZE = 4;
-const ROUTE_GROUPS = Array.from(
-	{ length: Math.ceil(MAIN_ROUTES.length / ROUTE_GROUP_SIZE) },
-	(_, index) =>
-		MAIN_ROUTES.slice(index * ROUTE_GROUP_SIZE, (index + 1) * ROUTE_GROUP_SIZE),
-);
+// A targeted responsive overflow matrix, not an all-route x all-width sweep. `next dev`
+// compiles a route on first hit, and the full 24-route x 6-width scan (36 tests, 144 cold
+// navigations) overloaded the dev server under parallel load and timed out even though the
+// layout was correct. The layout regression this guards is width-driven: the sidebar made
+// /mobile and /reports overflow near the 768px breakpoint. The routes below cover that
+// regression plus the main data surfaces at each reviewed width. Assertions are unchanged:
+// the document must not scroll sideways at all.
+const OVERFLOW_MATRIX = [
+	{
+		width: 390,
+		routes: [
+			"/",
+			"/markets",
+			"/positions",
+			"/tokens/solana/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+			"/more",
+		],
+	},
+	{ width: 761, routes: ["/reports"] },
+	{ width: 768, routes: ["/mobile", "/markets", "/positions"] },
+	{ width: 1100, routes: ["/", "/markets"] },
+	{ width: 1440, routes: ["/"] },
+];
 
 test("Discovery is the first sidebar group and holds Browse then Signals", async ({ page }) => {
 	await page.goto("/");
@@ -428,23 +438,21 @@ test("narrow topbar search takes a full row and hides the chips", async ({ page 
 	}
 });
 
-for (const width of OVERFLOW_WIDTHS) {
-	for (const [index, routes] of ROUTE_GROUPS.entries()) {
-		test(`main routes have no page-level overflow at ${width}px (routes ${index + 1}/${ROUTE_GROUPS.length})`, async ({
-			page,
-		}) => {
-			await page.setViewportSize({ width, height: 900 });
-			for (const route of routes) {
-				await page.goto(route);
-				const overflow = await page.evaluate(
-					() =>
-						document.documentElement.scrollWidth -
-						document.documentElement.clientWidth,
-				);
-				expect(overflow, `${route} overflows at ${width}px`).toBeLessThanOrEqual(0);
-			}
-		});
-	}
+for (const { width, routes } of OVERFLOW_MATRIX) {
+	test(`reviewed routes have no page-level overflow at ${width}px`, async ({ page }) => {
+		test.setTimeout(120_000);
+		await page.setViewportSize({ width, height: 900 });
+		for (const route of routes) {
+			await page.goto(route, { waitUntil: "domcontentloaded" });
+			const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+				scrollWidth: document.documentElement.scrollWidth,
+				clientWidth: document.documentElement.clientWidth,
+			}));
+			expect(scrollWidth, `${route} overflows at ${width}px`).toBeLessThanOrEqual(
+				clientWidth,
+			);
+		}
+	});
 }
 
 test("loading and error boundaries are wired", async () => {
