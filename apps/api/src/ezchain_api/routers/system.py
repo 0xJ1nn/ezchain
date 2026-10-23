@@ -38,14 +38,38 @@ def healthz() -> dict[str, str]:
 
 
 @router.get("/readyz")
-def readyz(session: Session = Depends(get_session)) -> JSONResponse:
-    """Readiness: database reachable and schema exactly at the Alembic head."""
+def readyz(
+    session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
+) -> JSONResponse:
+    """Readiness: database reachable and schema exactly at the Alembic head.
+
+    The desktop build bootstraps its embedded SQLite schema with ``create_all`` and has no
+    Alembic revision row. That is a supported deployment mode, not a missing migration;
+    it reports ``migration: embedded`` and is ready once the database answers.
+    """
     db_ok = True
     try:
         session.execute(text("SELECT 1"))
     except Exception:
         _rollback_quietly(session)
         db_ok = False
+
+    if (
+        settings.environment == "desktop"
+        and settings.database_url.startswith("sqlite")
+        and db_ok
+        and settings.auto_create_schema
+    ):
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ready",
+                "db": "ok",
+                "migration": "embedded",
+                "revision": None,
+                "head": None,
+            },
+        )
 
     revision = database_revision(session) if db_ok else None
     try:
