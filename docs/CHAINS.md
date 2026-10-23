@@ -141,22 +141,61 @@ ladder, so it cannot claim a provider the chain does not use.
 Mixed-unit hazards are rejected at the boundary (`docs/DOMAIN-MODEL.md` §2). A token with
 unknown decimals is not tradeable.
 
-### 4.1 Discovery coverage (measured 2026-10-22)
+### 4.1 Discovery coverage and browse population (measured 2026-10-23)
 
 `/api/v1/markets?chain=all` fans out one token lookup per registered chain because
 `/latest/dex/tokens` caps each response at 30 **pairs**, not 30 addresses. Seeds are
 requested first, at most 12 hint addresses are added per chain, and four chains are in
-flight at a time. Rows are ranked within each chain, then round-robined in registry order
-before `limit`, so a low-liquidity chain is not dropped by a global ranking. The response
-carries `coverage: [{chain, requested, returned, reason}]`; `reason` is `pairs`,
-`no_pairs` (successful empty response) or `error` (the probe failed), and coverage counts
-are pre-slice. When `chain=all`, `ordered_by` is `chain_round_robin`; search and single-chain
-queries are `global_sort`.
+flight at a time. Solana's seeds are its four canonical majors — wrapped SOL, USDC, BONK
+and JUP — not a promotional-feed hint, so an empty profile/boost/takeover response cannot
+erase the chain from an all-chain browse.
 
-Live read-only smoke (`chain=all&limit=100`, 2026-10-22): **22 of 25** registered chains
-returned rows. Osmosis, Cosmos Hub and Moonbeam returned no indexed pairs and were reported
-`no_pairs`, never zero. The Blast, Mantle, Linea, Scroll and zkSync seeds were verified in
-the same pass.
+Rows are ranked within each chain before the registry-order round robin. The five sort
+modes are `trending` (24h volume), `liquidity`, `new` (newest pair), `change_h24` and
+`pair_age` (oldest listing first). Unknown values always sort last and stay `null`; the
+pair address is the final tie-breaker, so two pages of one snapshot cannot swap equal
+rows. When `chain=all` has no search query, `sort_semantics` is
+`per_chain_round_robin`: each chain is ranked independently and the chains are
+interleaved, which is not one global ranking. A search or a single-chain request is
+`global_sort`. `ordered_by` remains as the older label for clients that do not read
+`sort_semantics`.
+
+The API asks the adapter for the whole bounded population (up to 1000 rows) and applies
+`q`, `dex`, liquidity, volume, 24h-change and pair-age filters before `offset`/`limit`.
+`total` is the filtered population, not the page, and `next_offset` is present only while
+another page exists. Every response carries `population`:
+
+| Field | Meaning |
+|---|---|
+| `chains_scanned` | chains probed in this pass; `null` for a global search |
+| `addresses_requested` | seed + hint addresses requested; `null` for a global search |
+| `rows_discovered` | adapter population before API filters |
+| `rows_after_filters` | filtered population used for `total` |
+| `rows_returned` | rows on this page |
+| `truncated` | true only when the adapter's own row cap cut the population |
+| `sort`, `sort_semantics` | the applied order, including the round-robin caveat |
+
+An active filter never invents a value: a row whose field is unknown is excluded and
+counted under `applied_filters.unknown_excluded`. The supported decimal filters are
+bounded to `±1e18` and at least `1e-18` (zero is allowed); a larger exponent is rejected
+with `422 INVALID_FILTER` before any provider work, so a filter cannot be echoed as a
+megabyte of digits.
+
+`/api/v1/markets/stored` is the persisted counterpart. It now returns an object
+(`{rows, as_of, offset, limit, total, has_more, next_offset}`) rather than a bare array.
+Rows are ordered by `liquidity_usd DESC NULLS LAST, observed_at DESC, token_address`, and
+the same offset/`next_offset` contract applies. Migration `0009_market_snapshot_sort`
+adds the matching unprefixed (all-chain) and chain-prefixed indexes.
+
+Live read-only discovery smoke (`DexScreenerClient.discover_markets(chain="all",
+limit=1000)`, 2026-10-23): **22 of 25** registered chains returned rows, with **629**
+discovered rows from **68** requested addresses and **0** probe errors. Osmosis, Cosmos
+Hub and Moonbeam returned no indexed pairs and were reported `no_pairs`, never zero.
+Solana returned 30 rows, led by wrapped SOL and USDC by liquidity. The first 100
+round-robined rows covered all 22 chains, and the measured population stayed below the
+1000-row discovery cap (`truncated: false`). The Blast, Mantle, Linea, Scroll and zkSync
+seeds were verified in the same pass.
+
 
 ## 5. Adding a chain (checklist)
 

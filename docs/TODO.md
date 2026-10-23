@@ -5,7 +5,7 @@ real-money trading. The PAPER stack has production operations:
 continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
 ledger, declarative and visual graph strategies, external Python strategy plugins in a
 supervised worker, an MCP server for agents, backtests, strategy CRUD/scheduler,
-migrations through `0008_api_keys`, scoped agent keys, bearer auth, observability, a complete
+migrations through `0009_market_snapshot_sort`, scoped agent keys, bearer auth, observability, a complete
 operator surface and a full-code stress harness. There are no keys, no signing and no live
 execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 

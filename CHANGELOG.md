@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Browsable market discovery**: `/api/v1/markets` accepts `dex`, liquidity, volume,
+  24h-change and pair-age filters plus `offset` paging; `sort` adds `change_h24` and
+  `pair_age` to the existing modes. Responses now carry `applied_filters` (including
+  `unknown_excluded`) and a `population` census, so a filtered total is never confused
+  with the adapter's discovered population. The web markets page gets URL-backed
+  filters, removable chips, a real pager and an honest per-chain round-robin label.
 - **Strategy SDK v1 and supervised plugin runtime**: new Apache-2.0 `ezchain-sdk`
   (manifest, JSON-Schema subset, `PluginContext`, `Intent`, `Strategy`), discovery through
   `ezchain.strategies` entry points and `EZCHAIN_PLUGIN_PATHS`, and `kind=plugin`
@@ -154,6 +160,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **Breaking (PAPER API)**: `/api/v1/markets/stored` now returns an object
+  `{rows, as_of, offset, limit, total, has_more, next_offset}` instead of a bare array.
+  Clients that consumed the array must read `.rows`. Rows are ordered by
+  `liquidity_usd DESC NULLS LAST, observed_at DESC, token_address`; migration
+  `0009_market_snapshot_sort` adds the matching all-chain and per-chain indexes.
 - README/roadmap now state the product is **alpha and paper-only**, explicitly not ready
   for real-money trading, and gate official Hermes/OpenClaw marketplace listings on
   real-mode readiness. README adds a contributor welcome section.
@@ -183,6 +194,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- Market filters reject unbounded Decimal exponents (`1e1000000`, `1e-1000000`) with
+  `422 INVALID_FILTER` before any provider call, and serialization never expands an
+  out-of-range exponent. The web page applies the same bounds so it cannot echo one.
+- A markets page past the end of a filtered result now says the page is out of range
+  instead of blaming the filters, omits the row range for an empty page, and Refresh or
+  Retry keeps the current filters and offset.
 - The market monitor now refreshes marks for open paper positions after each scan,
   including quote-side tokens that discovery would not store, bounded by
   `max_open_positions` (#88).

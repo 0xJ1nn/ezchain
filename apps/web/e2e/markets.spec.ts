@@ -50,7 +50,7 @@ test("markets renders the fixture screener with source, age and real filters", a
 	}
 
 	const marketTable = page.locator("table").first();
-	await expect(marketTable.locator("tbody tr")).toHaveCount(12);
+	await expect(marketTable.locator("tbody tr")).toHaveCount(14);
 	await expect(marketTable.locator('thead th[scope="col"]')).toHaveCount(10);
 
 	// Every row carries its source and age, and safety is unknown (not a pass).
@@ -58,7 +58,7 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(firstRow).toContainText("BONK");
 	await expect(firstRow.locator("td").nth(7)).toHaveText(/Fixture · \d+s/);
 	await expect(firstRow.locator("td").nth(9)).toHaveText("unknown");
-	await expect(marketTable.locator("tbody tr td:nth-child(10)")).toHaveCount(12);
+	await expect(marketTable.locator("tbody tr td:nth-child(10)")).toHaveCount(14);
 
 	// All-chain trending is an honest per-chain round robin, not a global ranking.
 	await expect(firstRow).toContainText("BONK");
@@ -78,9 +78,9 @@ test("markets renders the fixture screener with source, age and real filters", a
 		"href",
 		`/tokens/solana/${BONK_MINT}`,
 	);
-	await expect(marketTable.locator("tbody tr td:first-child a")).toHaveCount(12);
+	await expect(marketTable.locator("tbody tr td:first-child a")).toHaveCount(14);
 
-	await expect(page.getByText(/12 of 12 markets · showing 1–12/)).toBeVisible();
+	await expect(page.getByText(/14 of 14 markets · showing 1–14/)).toBeVisible();
 	await expect(page.getByText(/page 1 of 1/)).toBeVisible();
 	await expect(page.getByText(/limit 50 · source Fixture/)).toBeVisible();
 
@@ -157,7 +157,7 @@ test("markets filters round-trip through chips and the pager is real", async ({ 
 	// First/middle/last pages: totals stay the filtered count, no hardcoded 1/1.
 	await page.goto("/markets?limit=5");
 	await expect(marketTable.locator("tbody tr")).toHaveCount(5);
-	await expect(page.getByText(/5 of 12 markets · showing 1–5/)).toBeVisible();
+	await expect(page.getByText(/5 of 14 markets · showing 1–5/)).toBeVisible();
 	await expect(page.getByText(/showing 1–5/)).toBeVisible();
 	await expect(page.getByText(/page 1 of 3/)).toBeVisible();
 	await expect(page.getByText("← Prev")).toBeVisible();
@@ -170,8 +170,8 @@ test("markets filters round-trip through chips and the pager is real", async ({ 
 
 	await page.getByRole("link", { name: /Next/ }).click();
 	await expect(page).toHaveURL(/offset=10/);
-	await expect(marketTable.locator("tbody tr")).toHaveCount(2);
-	await expect(page.getByText(/2 of 12 markets · showing 11–12/)).toBeVisible();
+	await expect(marketTable.locator("tbody tr")).toHaveCount(4);
+	await expect(page.getByText(/4 of 14 markets · showing 11–14/)).toBeVisible();
 	await expect(page.getByText(/page 3 of 3/)).toBeVisible();
 	await expect(page.getByText("Next →")).toBeVisible();
 
@@ -184,6 +184,42 @@ test("markets filters round-trip through chips and the pager is real", async ({ 
 	await expect(page.getByText("EMPTY_RESULT")).toBeVisible();
 	await expect(page.getByText(/No rows matched: Liquidity ≥ \$5\.00B/)).toBeVisible();
 	await expect(page.getByRole("link", { name: "Reset filters" }).first()).toBeVisible();
+
+	// A page past the end with active filters is not blamed on the filters. The range is
+	// omitted for an empty page instead of printing "0–10".
+	await page.goto("/markets?min_liquidity_usd=10000000&limit=5&offset=10");
+	await expect(page.getByText("EMPTY_RESULT")).toBeVisible();
+	await expect(page.getByText("Page 3 is past the last result.")).toBeVisible();
+	await expect(page.getByText(/7 rows matched the active filters/)).toBeVisible();
+	await expect(page.getByText(/No rows matched:/)).toHaveCount(0);
+	await expect(
+		page.getByText(/0 of 7 markets · no rows on this page · page 3 of 2/),
+	).toBeVisible();
+	await expect(page.getByText(/showing 0–10/)).toHaveCount(0);
+
+	// Prev from that page reaches the last page that has rows.
+	await page.getByRole("link", { name: "← Prev", exact: true }).click();
+	await expect(page).toHaveURL(/offset=5/);
+	await expect(page.getByText(/2 of 7 markets · showing 6–7/)).toBeVisible();
+});
+
+test("markets error retry preserves filters and a nonzero page", async ({ page }) => {
+	await page.goto("/markets?chain=nope&offset=10&min_liquidity_usd=1000&dex=uniswap");
+	await expect(page.getByText("CHAIN_NOT_FOUND")).toBeVisible();
+	const retry = page.getByRole("link", { name: "Retry →" });
+	await expect(retry).toHaveAttribute(
+		"href",
+		"/markets?chain=nope&offset=10&min_liquidity_usd=1000&dex=uniswap",
+	);
+});
+
+test("markets drops unbounded decimal filters before they reach the API", async ({ page }) => {
+	for (const value of ["1e1000000", "1e-1000000"]) {
+		await page.goto(`/markets?min_liquidity_usd=${value}&max_change_h24=${value}`);
+		await expect(page.getByRole("link", { name: /Remove filter Liquidity/ })).toHaveCount(0);
+		await expect(page.getByRole("link", { name: /Remove filter 24h change/ })).toHaveCount(0);
+		await expect(page.getByText(/14 of 14 markets · showing 1–14/).first()).toBeVisible();
+	}
 });
 
 test("markets mobile filter panel keeps the result count visible", async ({ page }) => {
@@ -432,18 +468,39 @@ test("fixture mode returns fixture rows without touching the network", async () 
 		const first = await getMarkets({ limit: 5 });
 		const second = await getMarkets({ limit: 5, offset: 5 });
 		const third = await getMarkets({ limit: 5, offset: 10 });
-		expect(first.total).toBe(12);
+		expect(first.total).toBe(14);
 		expect(first.has_more).toBe(true);
 		expect(first.next_offset).toBe(5);
 		expect(first.rows).toHaveLength(5);
 		expect(second.rows).toHaveLength(5);
-		expect(third.rows).toHaveLength(2);
+		expect(third.rows).toHaveLength(4);
 		expect(third.has_more).toBe(false);
 		expect(third.next_offset).toBeNull();
 		const paged = [...first.rows, ...second.rows, ...third.rows].map(
 			(row) => `${row.chain}:${row.pair_address}`,
 		);
-		expect(new Set(paged).size).toBe(12);
+		expect(new Set(paged).size).toBe(14);
+
+		// Two fixture rows have null liquidity, volume, change and pair age. Unknown is
+		// never zero, and when both values are null the pair address breaks the tie.
+		const nullPairs = [
+			"0xa1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d",
+			"0xb2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e",
+		];
+		for (const sort of ["trending", "liquidity", "new", "change_h24", "pair_age"] as const) {
+			const nulls = await getMarkets({ chain: "optimism", sort });
+			expect(nulls.total).toBe(2);
+			expect(nulls.rows.map((row) => row.pair_address)).toEqual(nullPairs);
+			expect(
+				nulls.rows.every(
+					(row) =>
+						row.liquidity_usd === null &&
+						row.volume_24h_usd === null &&
+						row.price_change_h24 === null &&
+						row.pair_created_at === null,
+				),
+			).toBe(true);
+		}
 
 		const liquid = await getMarkets({ minLiquidityUsd: "10000000", chain: "solana" });
 		expect(liquid.rows.map((row) => row.symbol)).toEqual(["WIF", "JUP"]);

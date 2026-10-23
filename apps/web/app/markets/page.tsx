@@ -57,17 +57,32 @@ function readText(value: string, max = 80): string {
 	return value.trim().slice(0, max);
 }
 
-function readUnsigned(value: string): string {
+// Keep filter parsing aligned with the API: absorb every realistic USD/percent value,
+// but never echo an exponent the server would have to expand into a huge decimal string.
+const FILTER_MAX = 1e18;
+const FILTER_MIN = 1e-18;
+
+function readDecimal(value: string, signed: boolean): string {
 	const text = value.trim();
-	if (!text) return "";
+	// A filter belongs in a URL chip; bound the raw text before echoing it back.
+	if (!text || text.length > 48) return "";
+	const exponent = /[eE]([+-]?\d+)/.exec(text);
+	if (exponent && Math.abs(Number(exponent[1])) > 18) return "";
 	const parsed = Number(text);
-	return Number.isFinite(parsed) && parsed >= 0 ? text : "";
+	if (!Number.isFinite(parsed)) return "";
+	if (!signed && parsed < 0) return "";
+	if (Math.abs(parsed) > FILTER_MAX) return "";
+	// Zero is a valid minimum. A nonzero value below the floor is not supported.
+	if (parsed !== 0 && Math.abs(parsed) < FILTER_MIN) return "";
+	return text;
+}
+
+function readUnsigned(value: string): string {
+	return readDecimal(value, false);
 }
 
 function readSigned(value: string): string {
-	const text = value.trim();
-	if (!text) return "";
-	return Number.isFinite(Number(text)) ? text : "";
+	return readDecimal(value, true);
 }
 
 function readLimit(value: string): number {
@@ -319,7 +334,8 @@ export default async function MarketsPage({
 	const list = marketsOutcome.ok ? marketsOutcome.list : null;
 	const error = marketsOutcome.ok ? null : marketsOutcome.error;
 	const labelFor = (id: string) => chains.find((chain) => chain.id === id)?.name ?? id;
-	const refreshHref = marketsHref(params);
+	// Refresh keeps the current page and filters; only a filter change resets the page.
+	const refreshHref = marketsHref(params, { offset: params.offset });
 	const chips = filterChips(params, labelFor);
 	const filterNames = chips.filter((chip) => chip.key !== "sort").map((chip) => chip.label);
 	const semantics =
@@ -338,6 +354,9 @@ export default async function MarketsPage({
 	const pageCount = Math.max(1, Math.ceil(total / params.limit));
 	const hasPrevious = params.offset > 0;
 	const nextOffset = list?.next_offset ?? null;
+	// The API answers a page beyond the filtered total with an empty page. That is not
+	// evidence that the filters matched nothing, so name the out-of-range page first.
+	const pagePastEnd = total > 0 && params.offset >= total;
 
 	return (
 		<AppShell active="markets">
@@ -436,9 +455,12 @@ export default async function MarketsPage({
 					footer={
 						<div className={styles.footer}>
 							<span>
-								{returned} of {total} markets · showing {start}–{end} · page {page} of{" "}
-								{pageCount} · limit {list.limit} · source {sourceLabel(list.source.name)} ·
-								sorted by {sortLabel(list.sort).toLowerCase()}
+								{returned > 0
+									? `${returned} of ${total} markets · showing ${start}–${end}`
+									: `0 of ${total} markets · no rows on this page`}{" "}
+								· page {page} of {pageCount} · limit {list.limit} · source{" "}
+								{sourceLabel(list.source.name)} · sorted by{" "}
+								{sortLabel(list.sort).toLowerCase()}
 							</span>
 							<span>
 								Order: {semantics} ·{" "}
@@ -625,16 +647,20 @@ export default async function MarketsPage({
 							<div className="row mb-8">
 								<Badge tone="warn">EMPTY_RESULT</Badge>
 								<span className="small muted">
-									{total > 0
+									{pagePastEnd
 										? `Page ${page} is past the last result.`
 										: "No market rows matched this request."}
 								</span>
 							</div>
 							<p className="small muted">
-								{filterNames.length > 0
-									? `No rows matched: ${filterNames.join(" · ")}. Unknown values are excluded by these filters, never treated as zero.`
-									: total > 0
-										? `${total} rows matched, but this page is beyond the end. Use Prev or reset the page.`
+								{pagePastEnd
+									? `${total} row${total === 1 ? "" : "s"} matched${
+											filterNames.length > 0
+												? ` the active filters (${filterNames.join(" · ")})`
+												: ""
+										}, but this page is beyond the end. Use Prev, or reset the page to start over.`
+									: filterNames.length > 0
+										? `No rows matched: ${filterNames.join(" · ")}. Unknown values are excluded by these filters, never treated as zero.`
 										: "The feed returned no pairs for this chain. That is an empty result, not a zero price."}
 							</p>
 							<div className="row mt-12">

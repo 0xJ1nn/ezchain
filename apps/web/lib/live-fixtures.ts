@@ -179,8 +179,8 @@ interface Seed {
 	symbol: string;
 	name: string;
 	price: string;
-	liquidity: string;
-	volume: string;
+	liquidity: string | null;
+	volume: string | null;
 	m5: string | null;
 	h1: string | null;
 	h6: string | null;
@@ -408,6 +408,44 @@ const SEEDS: Seed[] = [
 		created_minutes_ago: 3 * 24 * 60,
 		url: null,
 	},
+	// Two rows with every sort key unknown. They make null handling observable: neither
+	// may be treated as zero, and the pair-address tie-breaker must order them.
+	{
+		chain: "optimism",
+		base_token: "0x9560e827af36c94d2ac33a39bce1fe78631088db",
+		quote_token: "0x4200000000000000000000000000000000000006",
+		pair_address: "0xb2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e",
+		dex: "velodrome",
+		symbol: "VELO",
+		name: "Velodrome",
+		price: "0.0842",
+		liquidity: null,
+		volume: null,
+		m5: null,
+		h1: null,
+		h6: null,
+		h24: null,
+		created_minutes_ago: null,
+		url: null,
+	},
+	{
+		chain: "optimism",
+		base_token: "0x4200000000000000000000000000000000000042",
+		quote_token: "0x4200000000000000000000000000000000000006",
+		pair_address: "0xa1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d",
+		dex: "uniswap",
+		symbol: "OP",
+		name: "Optimism",
+		price: "1.842",
+		liquidity: null,
+		volume: null,
+		m5: null,
+		h1: null,
+		h6: null,
+		h24: null,
+		created_minutes_ago: null,
+		url: null,
+	},
 ];
 
 /** Extra pools shown on a token page; the market row only carries the best pair. */
@@ -533,34 +571,27 @@ function sortRows(rows: MarketRow[], sort: MarketSort): MarketRow[] {
 		const tie = `${left.chain}:${left.pair_address}`.localeCompare(
 			`${right.chain}:${right.pair_address}`,
 		);
+		const compare = (a: number | null, b: number | null, descending: boolean): number => {
+			// Unknown sorts last. Two unknowns are equal and fall through to the
+			// pair-address tie-breaker, never return 1 (which makes the sort unstable).
+			if (a === null && b === null) return tie;
+			if (a === null) return 1;
+			if (b === null) return -1;
+			return (descending ? b - a : a - b) || tie;
+		};
 		if (sort === "liquidity") {
-			const a = number(left.liquidity_usd);
-			const b = number(right.liquidity_usd);
-			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
-			return b - a || tie;
+			return compare(number(left.liquidity_usd), number(right.liquidity_usd), true);
 		}
 		if (sort === "new") {
-			const a = created(left);
-			const b = created(right);
-			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
-			return b - a || tie;
+			return compare(created(left), created(right), true);
 		}
 		if (sort === "pair_age") {
-			const a = created(left);
-			const b = created(right);
-			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
-			return a - b || tie;
+			return compare(created(left), created(right), false);
 		}
 		if (sort === "change_h24") {
-			const a = number(left.price_change_h24);
-			const b = number(right.price_change_h24);
-			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
-			return b - a || tie;
+			return compare(number(left.price_change_h24), number(right.price_change_h24), true);
 		}
-		const a = number(left.volume_24h_usd);
-		const b = number(right.volume_24h_usd);
-		if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
-		return b - a || tie;
+		return compare(number(left.volume_24h_usd), number(right.volume_24h_usd), true);
 	});
 }
 

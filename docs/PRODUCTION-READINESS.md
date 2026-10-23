@@ -48,7 +48,7 @@ These are explicit gaps, not silent assumptions:
 1. **Docker at the current migration head.** The 2026-10-22 drill on Docker 29.9.2 /
    Compose v5.6.1 passed at head `0003_paper_fill_order` (five services healthy, paper BUY
    through the edge, restart and backup drills). The stack has **not** been re-drilled at
-   head `0008_api_keys` or after the plugin/agent changes. Evidence for the historical
+   head `0009_market_snapshot_sort` (or the plugin/agent changes). Evidence for the historical
    drill: [docker-up.md](evidence/p0-production/docker-up.md). Re-run
    `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d` at the release
    commit before claiming Docker parity.

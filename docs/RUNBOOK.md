@@ -162,6 +162,25 @@ page limit. After the chain scan it refreshes one mark per open paper position (
 `EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS` (default 90, minimum 30) and the per-call row
 budget is `EZCHAIN_MARKET_SCAN_LIMIT` (default 200).
 
+### 11.1 Browsing the population
+
+`GET /api/v1/markets` accepts `chain`, `q`, `sort`, `offset`, `limit`, `dex`,
+`min_liquidity_usd`, `min_volume_24h_usd`, `min_change_h24`, `max_change_h24`,
+`min_pair_age_minutes` and `max_pair_age_minutes`. `sort` is one of `trending`,
+`liquidity`, `new`, `change_h24` or `pair_age`. Filters are inclusive and run before the
+page slice, so `total`/`has_more`/`next_offset` describe the filtered population, not the
+rows already returned. Unknown values sort last and are excluded (and counted in
+`applied_filters.unknown_excluded`) when their filter is active; they are never zero.
+Decimal filters are capped at `±1e18` and a nonzero floor of `1e-18`; a huge exponent is
+`422 INVALID_FILTER` before any provider request.
+
+Read `sort_semantics`: with `chain=all` and no `q`, rows are a per-chain round robin
+(`per_chain_round_robin`) — each chain ranked independently, then interleaved, not one
+global ranking. Search and single-chain requests are `global_sort`. The `population`
+object reports `chains_scanned`, `addresses_requested`, `rows_discovered`,
+`rows_after_filters`, `rows_returned`, `truncated`, `sort` and `sort_semantics`; use it to
+tell an empty filter result from a capped discovery pass.
+
 Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `error`, or
 `/api/v1/markets` looks empty for a chain that used to work.
 
@@ -175,8 +194,13 @@ Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `er
 4. `no_data`: the scan succeeded and returned no pairs. Some chains are not indexed by
    DexScreener every day. A seed without a real pair is not a price; do not add one.
 5. Verify persistence directly:
-   `curl 'localhost:8000/api/v1/markets/stored?chain=<id>&limit=5'`. Every money field is
-   a decimal string, null means unknown, and `source`/`observed_at` come from the row.
+   `curl 'localhost:8000/api/v1/markets/stored?chain=<id>&offset=0&limit=5'`. The
+   response is an object `{rows, as_of, offset, limit, total, has_more, next_offset}`;
+   rows are ordered by `liquidity_usd DESC NULLS LAST, observed_at DESC,
+   token_address`. Every money field is a decimal string, null means unknown, and
+   `source`/`observed_at` come from the row. Migration
+   `0009_market_snapshot_sort` adds the matching indexes; an unindexed sort shows up as
+   high latency, not a wrong page.
 6. To switch observation off for a process, set `EZCHAIN_MARKET_SCAN_INLINE=false` and
    restart the API. The existing `/markets` request path keeps working; the overview
    then shows only DB-derived rows and statuses.

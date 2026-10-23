@@ -62,6 +62,14 @@ CandleTimeframe = Literal["1m", "5m", "15m", "1h", "4h", "1d"]
 # population is what lets the API filter and page before the HTTP limit is applied.
 BROWSE_DISCOVERY_ROWS = 1000
 
+# A filter is echoed back in ``applied_filters``. Without a bound, Decimal accepts
+# ``1e1000000`` and ``format(value, "f")`` expands it to a megabyte of digits before any
+# provider work happens. The supported range covers every realistic USD/percent filter
+# and caps both the magnitude and the number of significant digits.
+FILTER_MAX_ABS = Decimal("1e18")
+FILTER_MIN_ABS = Decimal("1e-18")
+FILTER_MAX_DIGITS = 30
+
 
 def _invalid_filter(message: str) -> None:
     raise HTTPException(
@@ -74,9 +82,54 @@ def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def _validate_decimal_filter(name: str, value: Decimal | None, *, non_negative: bool) -> None:
+    """Reject a filter that cannot be echoed safely, before discovery is attempted.
+
+    Pydantic already rejects non-finite query values. The explicit check keeps this
+    function safe if it is ever called with a Decimal built elsewhere.
+    """
+    if value is None:
+        return
+    if not value.is_finite():
+        _invalid_filter(f"{name} must be finite")
+    if value.is_zero():
+        return
+    if non_negative and value.as_tuple().sign:
+        _invalid_filter(f"{name} must be greater than or equal to zero")
+    # ``abs(Decimal("1E+1000000"))`` itself overflows the default context, so bound by
+    # the adjusted exponent before any arithmetic or formatting.
+    adjusted = value.adjusted()
+    if adjusted > 18 or (adjusted == 18 and value > FILTER_MAX_ABS):
+        _invalid_filter(f"{name} must not exceed {FILTER_MAX_ABS:f}")
+    if adjusted < -18:
+        _invalid_filter(f"{name} must be zero or at least {FILTER_MIN_ABS:f}")
+    if len(value.as_tuple().digits) > FILTER_MAX_DIGITS:
+        _invalid_filter(f"{name} must have at most {FILTER_MAX_DIGITS} significant digits")
+
+
 def _decimal_text(value: Decimal | None) -> str | None:
-    """Plain decimal text, never scientific notation, so the URL round-trip is literal."""
-    return None if value is None else format(value, "f")
+    """Plain decimal text without ever expanding an unbounded exponent.
+
+    Validated filters always take the ``format(value, "f")`` path. The fallback is
+    defence in depth: an out-of-range Decimal is echoed in scientific notation (short)
+    instead of materialising a huge string.
+    """
+    if value is None:
+        return None
+    if value.is_zero():
+        return "0"
+    if not value.is_finite():
+        return str(value)
+    digits = value.as_tuple().digits
+    adjusted = value.adjusted()
+    if (
+        len(digits) > FILTER_MAX_DIGITS
+        or adjusted > 18
+        or adjusted < -18
+        or (adjusted == 18 and (value > FILTER_MAX_ABS or value < -FILTER_MAX_ABS))
+    ):
+        return str(value)
+    return format(value, "f")
 
 
 def _apply_filters(
@@ -275,6 +328,10 @@ async def markets(
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
         )
+    _validate_decimal_filter("min_liquidity_usd", min_liquidity_usd, non_negative=True)
+    _validate_decimal_filter("min_volume_24h_usd", min_volume_24h_usd, non_negative=True)
+    _validate_decimal_filter("min_change_h24", min_change_h24, non_negative=False)
+    _validate_decimal_filter("max_change_h24", max_change_h24, non_negative=False)
     if q is not None:
         q = q.strip() or None
     if dex is not None:

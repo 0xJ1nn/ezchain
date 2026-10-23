@@ -513,8 +513,7 @@ def stored_snapshots(
         statement = statement.where(MarketSnapshotRow.chain == chain)
     statement = (
         statement.order_by(
-            MarketSnapshotRow.liquidity_usd.is_(None),
-            MarketSnapshotRow.liquidity_usd.desc(),
+            MarketSnapshotRow.liquidity_usd.desc().nulls_last(),
             MarketSnapshotRow.observed_at.desc(),
             MarketSnapshotRow.token_address.asc(),
         )

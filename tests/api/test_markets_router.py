@@ -375,3 +375,70 @@ def test_router_still_rejects_unknown_chain() -> None:
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "CHAIN_NOT_FOUND"
     assert adapter.calls == []
+
+
+def test_decimal_text_never_expands_an_unbounded_exponent() -> None:
+    # Defence in depth: even a Decimal that bypassed route validation must not become a
+    # megabyte string. Out-of-range values stay in short scientific notation.
+    assert markets._decimal_text(Decimal("1e1000000")) == "1E+1000000"
+    assert markets._decimal_text(Decimal("-1e-1000000")) == "-1E-1000000"
+    assert markets._decimal_text(Decimal("1e18")) == "1000000000000000000"
+    assert markets._decimal_text(Decimal("0E+1000000")) == "0"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"min_liquidity_usd": "1e1000000"},
+        {"min_volume_24h_usd": "1e-1000000"},
+        {"min_change_h24": "-1e1000000"},
+        {"max_change_h24": "1e-1000000"},
+        # Within a Decimal's arithmetic but outside the supported echo range.
+        {"min_liquidity_usd": "1e19"},
+        {"min_change_h24": "1e-19"},
+        {"min_liquidity_usd": "1." + "0" * 40},
+    ],
+)
+def test_unbounded_decimal_filters_are_422_before_discovery(params: dict[str, str]) -> None:
+    observed = datetime.now(UTC)
+    adapter = FakeDiscovery(
+        [], SourceRef("dexscreener", None, observed), [ChainCoverage("ethereum", 0, 0, "no_pairs")]
+    )
+    client = client_for(adapter)
+
+    response = client.get("/api/v1/markets", params={"chain": "ethereum", **params})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "INVALID_FILTER"
+    # The refusal must not reach the provider and must not echo the exponent back expanded.
+    assert adapter.calls == []
+    assert len(response.content) < 1024
+
+
+def test_decimal_filters_at_the_boundaries_are_small_plain_text() -> None:
+    observed = datetime.now(UTC)
+    adapter = FakeDiscovery(
+        [make_row("ethereum", "0xa", "A", "100", observed)],
+        SourceRef("dexscreener", "https://dexscreener.com", observed),
+        [ChainCoverage("ethereum", 2, 1, "pairs")],
+    )
+    client = client_for(adapter)
+
+    response = client.get(
+        "/api/v1/markets",
+        params={
+            "chain": "ethereum",
+            "min_liquidity_usd": "1e18",
+            "min_volume_24h_usd": "1e-18",
+            "max_change_h24": "1e-18",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied_filters"]["min_liquidity_usd"] == "1000000000000000000"
+    assert body["applied_filters"]["min_volume_24h_usd"] == "0.000000000000000001"
+    assert body["applied_filters"]["max_change_h24"] == "0.000000000000000001"
+    assert body["total"] == 0
+    assert len(response.content) < 4096

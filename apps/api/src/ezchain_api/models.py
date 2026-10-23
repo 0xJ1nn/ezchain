@@ -242,6 +242,27 @@ class MarketSnapshotRow(Base):
     raw: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
 
 
+# ``/markets/stored`` orders by
+# ``liquidity_usd DESC NULLS LAST, observed_at DESC, token_address``. These indexes match
+# that order exactly; the prefixed variant serves one chain, the unprefixed one serves
+# ``chain=all``. Declared outside ``__table_args__`` because the expression columns need
+# the mapped columns, and created on Postgres only: SQLite rejects ``NULLS LAST`` inside
+# ``CREATE INDEX``. SQLite therefore scans for this order in tests; it stays correct.
+Index(
+    "ix_market_snapshot_liquidity_observed",
+    MarketSnapshotRow.liquidity_usd.desc().nulls_last(),
+    MarketSnapshotRow.observed_at.desc(),
+    MarketSnapshotRow.token_address.asc(),
+).ddl_if(dialect="postgresql")
+Index(
+    "ix_market_snapshot_chain_liquidity_observed",
+    MarketSnapshotRow.chain,
+    MarketSnapshotRow.liquidity_usd.desc().nulls_last(),
+    MarketSnapshotRow.observed_at.desc(),
+    MarketSnapshotRow.token_address.asc(),
+).ddl_if(dialect="postgresql")
+
+
 class MarketCandleRow(Base):
     """One closed OHLCV bar per (chain, token, timeframe, open_time).
 

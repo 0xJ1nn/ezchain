@@ -86,9 +86,9 @@ detail}`.
 |---|---|---|
 | GET | `/health` | liveness + DB + scheduler state |
 | GET | `/chains` | registry, capabilities, browse/paper/live flags |
-| GET | `/markets?chain=all&q=&sort=trending&limit=50` | live discovery rows + per-chain coverage |
+| GET | `/markets?chain=all&q=&sort=trending&offset=0&limit=50&min_liquidity_usd=…` | filtered, paged live discovery rows + population |
 | GET | `/markets/overview` | per-chain observation status, age and scan errors |
-| GET | `/markets/stored?chain=all&limit=50` | latest persisted observations, liquidity desc |
+| GET | `/markets/stored?chain=all&offset=0&limit=50` | persisted observation page object, liquidity desc |
 | GET | `/tokens/{chain}/{address}` | token header, pairs, safety unknowns, quote preview |
 | GET | `/quotes?chain=&token=&side=&amount_usd=` | quote or `paper_mark` envelope |
 | GET | `/paper/account` | cash, equity, realized/unrealized, positions count |
@@ -107,10 +107,50 @@ detail}`.
 | GET | `/system/kill-switch` | persisted strategy-scoped operator switch |
 | POST | `/system/kill-switch` | `{active, reason}`: arm/release and return state |
 
-Discovery responses carry per-chain `coverage` and `ordered_by`
-(`chain_round_robin` for `chain=all`, `global_sort` for search and single-chain queries).
-Rows still carry `source`, `observed_at` and decimal-string money; unknown liquidity or
-volume is `null`, never zero.
+`/markets` accepts `chain`, `q`, `sort`, `offset`, `limit`, `dex`,
+`min_liquidity_usd`, `min_volume_24h_usd`, `min_change_h24`, `max_change_h24`,
+`min_pair_age_minutes` and `max_pair_age_minutes`. The filter range is inclusive and is
+applied to the discovered population before the page slice, so `total` is the filtered
+count. Decimal filters are bounded to `±1e18` and at least `1e-18` (zero is allowed); an
+exponent outside that range is `422 INVALID_FILTER` before the provider is called. A row
+whose field is unknown is excluded by an active filter and counted in
+`applied_filters.unknown_excluded`; unknown is never treated as zero.
+
+The sort modes are `trending` (24h volume), `liquidity`, `new`, `change_h24` and
+`pair_age`. Unknown values sort last and stay `null`; the pair address is the final
+tie-breaker. With `chain=all` and no `q`, `sort_semantics` is
+`per_chain_round_robin` (each chain ranked independently, then interleaved); search and
+single-chain requests are `global_sort`. `ordered_by` is kept as the older client-facing
+label.
+
+Each `/markets` response carries per-chain `coverage` and a `population` object:
+`chains_scanned`, `addresses_requested`, `rows_discovered`, `rows_after_filters`,
+`rows_returned`, `truncated`, `sort` and `sort_semantics`. `chains_scanned` and
+`addresses_requested` are `null` for a global search, which is not an all-chain census;
+`truncated` is true only when the adapter's own row cap cut the population, never when
+paging does. `offset`, `limit`, `total`, `has_more` and `next_offset` use the same
+contract as `/markets/stored`.
+
+`/markets/stored` returns an object, not a bare array:
+
+```json
+{
+  "rows": [{"chain": "solana", "token_address": "…", "price_usd": "0.00003142"}],
+  "as_of": "2026-10-23T17:05:04Z",
+  "offset": 0,
+  "limit": 50,
+  "total": 90,
+  "has_more": true,
+  "next_offset": 50
+}
+```
+
+Rows are ordered by `liquidity_usd DESC NULLS LAST, observed_at DESC, token_address`;
+`total` is the persisted population for the requested chain and `next_offset` is present
+only while another page exists.
+
+Rows in both endpoints still carry `source`, `observed_at` and decimal-string money;
+unknown liquidity or volume is `null`, never zero.
 
 Money fields are decimal USD strings in the API; the ledger stores exact `NUMERIC(38,8)`
 values and token quantities use `NUMERIC(38,18)`. No floats cross a money path.
