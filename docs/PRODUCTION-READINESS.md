@@ -1,7 +1,7 @@
 # PRODUCTION READINESS — PAPER stack
 
 Status: **paper-ready, live-execution-not-built**. This document records what was
-measured on 2026-10-22, not what is planned. It is the honest answer to "can I run this
+measured on 2026-10-23, not what is planned. It is the honest answer to "can I run this
 and trust the paper numbers?".
 
 Raw commands and observed results: [docs/evidence/p0-production](evidence/p0-production/README.md).
@@ -62,9 +62,10 @@ These are explicit gaps, not silent assumptions:
    no equity-snapshot history is stored. Wallets have no backend yet; the page says so.
 8. **Timescale retention / market-event ingest / replay harness** are M2, not part of this
    stack. Snapshot storage is current-state `market_snapshots`, not a tick history.
-9. **Per-token attribution exists** (`/paper/attribution`); per-strategy attribution is
-   not exposed because a paper position is shared by the account. The dashboard does not
-   invent it.
+9. **Attribution scope.** `/paper/attribution` is per token, and
+   `/strategies/{id}/performance` is per strategy from that strategy's own fills. There is
+   no position-level attribution when a paper position is shared by multiple strategies;
+   the UI does not invent one.
 10. **Playwright does not run the full create→trade→delete flow against the live API**;
     the Python stress harness covers the API flow. Add an API-backed e2e run when a
     disposable Postgres is available.

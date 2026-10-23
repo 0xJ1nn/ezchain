@@ -29,7 +29,7 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
 - [x] Ops: Alembic 0001–0006 (fresh + legacy), bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
-- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (static; build/up not verified).
+- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0006`).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
 - [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
 - [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0006` is pending.
@@ -106,8 +106,9 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
       (`design/wireframe/28-mobile.html`). The shared `ui.css` has `col-hide-sm`; a proper
       card primitive is still missing.
 - [ ] Real filters/search/watchlist. Preview-only today; watchlists are #33.
-- [x] Position detail link: tiles now link to the token page; there is no dead
-      `/positions/...` route.
+- [ ] Position tiles/tables do not link anywhere yet; the dead `/positions/...`
+      route is gone and dashboard rows link to `/tokens/{chain}/{address}`. Add a real
+      token/detail link to the tile and table when their view models carry chain + token.
 - [ ] #36 deterministic local gate: Playwright concurrency/port collisions and the
       `next build` cache need one clean run.
 - [ ] #39 review the audit-drafted ADR-0014–0019 and `ROADMAP.md` before treating them as
