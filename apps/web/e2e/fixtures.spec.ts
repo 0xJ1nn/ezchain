@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { fixtureCandles } from "../lib/candle-fixtures";
 import { activity, attribution, totals } from "../lib/dashboard-fixtures";
 import { marketRows } from "../lib/markets-fixtures";
+import {
+	safetyChecks,
+	safetyStatusLabel,
+	safetyTone,
+} from "../lib/safety-view";
 import { strategyParamFields } from "../lib/strategy-fixtures";
 import { tokenPages } from "../lib/token-fixtures";
 
@@ -45,6 +51,63 @@ test("DCA form vocabulary matches the server validator", () => {
 		"order_usd",
 		"stop_loss_pct",
 		"take_profit_pct",
+	]);
+});
+
+test("fixture candles are closed bars; unknown volume is null, never zero", () => {
+	const BONK = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+	const now = Date.now();
+	const series = fixtureCandles("solana", BONK, "1h", 24);
+	expect(series.candles).toHaveLength(24);
+	expect(series.reason).toBeNull();
+	expect(series.stale).toBe(false);
+	for (const candle of series.candles) {
+		expect(Date.parse(candle.close_time)).toBeLessThanOrEqual(now);
+		expect(Number(candle.close)).toBeGreaterThan(0);
+		expect(candle.volume === null || Number(candle.volume) > 0).toBe(true);
+	}
+	expect(series.candles.some((candle) => candle.volume === null)).toBe(true);
+
+	const noPool = fixtureCandles(
+		"solana",
+		"Scam1111111111111111111111111111111111111111",
+		"1h",
+		24,
+	);
+	expect(noPool.candles).toEqual([]);
+	expect(noPool.reason).toBe("NO_POOL");
+
+	expect(() => fixtureCandles("solana", BONK, "1h", 24, "unsupported")).toThrow(
+		/CANDLES_UNSUPPORTED_CHAIN/,
+	);
+});
+
+test("safety view keeps absent fields unknown and maps reported pass and warn", () => {
+	expect(safetyStatusLabel(undefined)).toBe("unknown");
+	expect(safetyTone(undefined)).toBe("warn");
+	expect(safetyStatusLabel({ status: "pass" })).toBe("pass");
+	expect(safetyTone("pass")).toBe("ok");
+	expect(safetyTone("warn")).toBe("warn");
+	expect(safetyTone("fail")).toBe("err");
+	expect(safetyChecks(undefined)).toEqual([]);
+
+	const checks = safetyChecks({
+		checks: [
+			{ id: "mint", name: "Mint authority", status: "pass", reason: "renounced" },
+			{ check: "owner", result: "warn" },
+		],
+	});
+	expect(checks).toEqual([
+		{ key: "mint", label: "Mint authority", status: "pass", reason: "renounced" },
+		{ key: "owner", label: "owner", status: "warn", reason: null },
+	]);
+
+	const keyed = safetyChecks({
+		checks: { freeze: { status: "warn", detail: "review" }, custody: "unknown" },
+	});
+	expect(keyed).toEqual([
+		{ key: "freeze", label: "freeze", status: "warn", reason: "review" },
+		{ key: "custody", label: "custody", status: "unknown", reason: null },
 	]);
 });
 

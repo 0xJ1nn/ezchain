@@ -16,8 +16,10 @@ import {
 	type Quote,
 	type QuoteQuery,
 	type Source,
+	type TokenSafety,
 	type TokenSnapshot,
 } from "./api";
+import type { SafetyDemoState } from "./safety-view";
 
 const CHAIN_REGISTRY: Chain[] = [
 	{
@@ -600,6 +602,34 @@ export function fixtureToken(chain: string, address: string): TokenSnapshot {
 		source,
 		stale: false,
 	};
+}
+
+/**
+ * Fixture-only safety payload for the `?safety=` renderer state. Clearly labelled demo
+ * data: it exercises pass, warn and unknown rendering without pretending to assess a token.
+ */
+export function fixtureSafety(state: SafetyDemoState): TokenSafety {
+	if (state === "pass") {
+		return {
+			status: "pass",
+			reason: "FIXTURE_SAFETY_PASS",
+			checks: [
+				{ id: "fixture_mint", name: "Fixture mint check", status: "pass", reason: "FIXTURE_PASS" },
+				{ id: "fixture_owner", name: "Fixture owner check", status: "pass", reason: "FIXTURE_PASS" },
+			],
+		};
+	}
+	if (state === "warn") {
+		return {
+			status: "warn",
+			reason: "FIXTURE_SAFETY_WARN",
+			checks: [
+				{ id: "fixture_mint", name: "Fixture mint check", status: "warn", reason: "FIXTURE_WARN" },
+				{ id: "fixture_owner", name: "Fixture owner check", status: "pass", reason: "FIXTURE_PASS" },
+			],
+		};
+	}
+	return { status: "unknown", reason: "FIXTURE_SAFETY_UNKNOWN" };
 }
 
 /** Trim fixture float output to a decimal string; display only, never page math. */

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
-import { PositionTile } from "@/components/position-tile";
+import { PositionDetailed, PositionGrid, PositionList, PositionViewSwitcher } from "@/components/position-views";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
-import { positionTiles } from "@/lib/position-fixtures";
-import { usd, signedUsd, MINUS } from "@/lib/format";
+import { getCandles } from "@/lib/api";
+import { candleErrorFrom, type CandleLoad } from "@/lib/candle-view";
 import {
 	fixturePaperAccountFlat,
 	fixturePaperPositionsUnpricedSource,
@@ -13,53 +13,23 @@ import {
 	type PaperResult,
 	type PaperSnapshot,
 } from "@/lib/paper-api";
+import {
+	POSITION_SORTS,
+	STALE_AFTER_SECONDS,
+	chainOptions,
+	money,
+	markAge,
+	parseChainFilter,
+	parsePositionSort,
+	parsePositionView,
+	positionKey,
+	positionsHref,
+	visiblePositions,
+	type PositionQuery,
+} from "@/lib/position-view";
 import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
-
-const STALE_AFTER_SECONDS = 60;
-
-function money(value: string | null | undefined, signed = false) {
-	if (value === null || value === undefined || value === "") return "—";
-	const amount = Number(value);
-	if (!Number.isFinite(amount)) return "—";
-	if (amount !== 0 && Math.abs(amount) < 0.01) {
-		const decimal = Math.abs(amount).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
-		return `${amount < 0 ? MINUS : ""}$${decimal}`;
-	}
-	if (amount === 0) return usd(0);
-	return signed ? signedUsd(amount) : usd(amount);
-}
-
-function quantity(value: string) {
-	const amount = Number(value);
-	if (!Number.isFinite(amount)) return "—";
-	return amount.toLocaleString("en-US", { maximumFractionDigits: 6 });
-}
-
-interface MarkAge {
-	label: string;
-	stale: boolean;
-	unknown: boolean;
-}
-
-function markAge(position: PaperPosition): MarkAge {
-	// A source describes a mark. An unmarked position keeps no source even if an older
-	// server leaked one, so the mark is unknown regardless of source.observed_at.
-	if (position.mark_usd === null || !position.source?.observed_at) {
-		return { label: "unknown mark", stale: false, unknown: true };
-	}
-	const observed = Date.parse(position.source.observed_at);
-	if (Number.isNaN(observed)) {
-		return { label: "unknown age", stale: false, unknown: true };
-	}
-	const seconds = Math.max(0, Math.round((Date.now() - observed) / 1000));
-	if (seconds <= STALE_AFTER_SECONDS) {
-		return { label: `${seconds}s`, stale: false, unknown: false };
-	}
-	const minutes = Math.round(seconds / 60);
-	return { label: `${minutes}m`, stale: true, unknown: false };
-}
 
 function chainCount(positions: PaperPosition[]) {
 	return new Set(positions.map((position) => position.chain)).size;
@@ -84,18 +54,43 @@ function demoResult<T>(mode: PaperSnapshot["mode"], message: string): PaperResul
 	};
 }
 
+async function detailedCandles(positions: PaperPosition[]): Promise<Record<string, CandleLoad>> {
+	const entries: [string, CandleLoad][] = [];
+	// Bounded concurrency: Detailed mode is a page render, not a provider stress test.
+	for (let start = 0; start < positions.length; start += 6) {
+		const batch = positions.slice(start, start + 6);
+		const loaded = await Promise.all(
+			batch.map(async (position): Promise<[string, CandleLoad]> => {
+				try {
+					const series = await getCandles(position.chain, position.token_address, {
+						timeframe: "1h",
+						limit: 60,
+					});
+					return [positionKey(position), { ok: true, series }];
+				} catch (error) {
+					return [positionKey(position), { ok: false, error: candleErrorFrom(error) }];
+				}
+			}),
+		);
+		entries.push(...loaded);
+	}
+	return Object.fromEntries(entries);
+}
+
 export default async function PositionsPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ state?: string }>;
+	searchParams: Promise<{ state?: string; view?: string; chain?: string; sort?: string }>;
 }) {
-	const { state } = await searchParams;
+	const raw = await searchParams;
 	const snapshot = await getPaperSnapshot();
 	const mode = snapshot.mode;
+	const view = parsePositionView(raw.view);
+	const sort = parsePositionSort(raw.sort);
 
 	// Deterministic state gallery in fixture mode only. Live mode always shows the API's
 	// answer, including an outage — a demo flag never masks real data.
-	const demo = mode === "fixture" ? state : undefined;
+	const demo = mode === "fixture" ? raw.state : undefined;
 	const accountResult =
 		demo === "error"
 			? demoResult<PaperAccount>(mode, "Fixture demo: the paper account request failed.")
@@ -107,7 +102,7 @@ export default async function PositionsPage({
 					}
 				: snapshot.account;
 	const positionsResult =
-		demo === "error"
+		demo === "error" || demo === "positions-error"
 			? demoResult<PaperPosition[]>(mode, "Fixture demo: the positions request failed.")
 			: demo === "empty"
 				? { ok: true as const, mode, data: [] as PaperPosition[] }
@@ -139,6 +134,14 @@ export default async function PositionsPage({
 	const unknownMarkCount = positions.filter((position) => position.mark_usd === null).length;
 	const attention = needsAttention(positions);
 
+	const chains = chainOptions(positions);
+	const chain = parseChainFilter(raw.chain, positions);
+	const query: PositionQuery = { view, chain, sort, state: demo };
+	const visible = visiblePositions(positions, { chain, sort });
+	const candles = view === "detailed" && !positionsFailed
+		? await detailedCandles(visible)
+		: {};
+
 	const errorMessage = !accountResult.ok
 		? accountResult.error.message
 		: !positionsResult.ok
@@ -159,9 +162,11 @@ export default async function PositionsPage({
 					<p className="sub">
 						Paper account and open positions read from{" "}
 						<span className="mono">GET /api/v1/paper/account</span> and{" "}
-						<span className="mono">/api/v1/paper/positions</span>. The page formats the
-						server view model; it never recomputes PnL, cost basis or executable value.
-						An unknown mark is <span className="mono">—</span>, never zero.
+						<span className="mono">/api/v1/paper/positions</span>. List, Grid and Detailed
+						render the same server rows; the view is a URL parameter and every row opens a
+						full position. The page formats the server view model; it never recomputes PnL,
+						cost basis or executable value. An unknown mark is{" "}
+						<span className="mono">—</span>, never zero.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -218,8 +223,14 @@ export default async function PositionsPage({
 						</span>
 					}
 					value={account ? money(account.realized_usd, true) : "—"}
-					tone={account && Number(account.realized_usd) < 0 ? "err" : "ok"}
-					meta="closed trades · fees included"
+					tone={
+						account
+							? Number(account.realized_usd) < 0
+								? "err"
+								: "ok"
+							: undefined
+					}
+					meta={account ? "closed trades · fees included" : "account unavailable"}
 				/>
 				<Stat
 					label={
@@ -253,12 +264,12 @@ export default async function PositionsPage({
 							</span>
 						</span>
 					}
-					value={String(positions.length)}
+					value={positionsFailed ? "—" : String(positions.length)}
 					meta={
-						positions.length > 0
-							? `${chainCount(positions)} chain${chainCount(positions) === 1 ? "" : "s"} · ${staleCount} stale`
-							: positionsFailed
-								? "positions unavailable"
+						positionsFailed
+							? "positions unavailable"
+							: positions.length > 0
+								? `${chainCount(positions)} chain${chainCount(positions) === 1 ? "" : "s"} · ${staleCount} stale`
 								: "flat"
 					}
 				/>
@@ -271,12 +282,14 @@ export default async function PositionsPage({
 							</span>
 						</span>
 					}
-					value={String(attention)}
-					tone={attention > 0 ? "err" : undefined}
+					value={positionsFailed ? "—" : String(attention)}
+					tone={!positionsFailed && attention > 0 ? "err" : undefined}
 					meta={
-						attention > 0
-							? `${unknownMarkCount} unknown mark · ${staleCount} stale`
-							: "every mark fresh"
+						positionsFailed
+							? "count not read"
+							: attention > 0
+								? `${unknownMarkCount} unknown mark · ${staleCount} stale`
+								: "every mark fresh"
 					}
 				/>
 			</section>
@@ -332,13 +345,18 @@ export default async function PositionsPage({
 			<Panel
 				flush
 				title="Server positions"
-				sub={`${positions.length} from /api/v1/paper/positions`}
+				sub={
+					positionsFailed
+						? "positions unavailable · count not read"
+						: `${positions.length} from /api/v1/paper/positions`
+				}
 				action={<Badge tone="ghost">PAPER</Badge>}
 				footer={
 					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
 						<span>
-							Server view model · mark age from <span className="mono">source.observed_at</span> ·{" "}
-							{STALE_AFTER_SECONDS}s stale threshold
+							Server view model · {view} view · mark age from{" "}
+							<span className="mono">source.observed_at</span> · {STALE_AFTER_SECONDS}s
+							stale threshold
 						</span>
 						<span>
 							{mode === "fixture"
@@ -348,114 +366,61 @@ export default async function PositionsPage({
 					</div>
 				}
 			>
-				{positions.length > 0 ? (
-					<div className="table-wrap">
-						<table className="table">
-							<thead>
-								<tr>
-									<th scope="col">Token</th>
-									<th scope="col" className="col-hide-sm">
-										Chain
-									</th>
-									<th scope="col" className="num">
-										Quantity
-									</th>
-									<th scope="col" className="num col-hide-sm">
-										Avg cost
-									</th>
-									<th scope="col" className="num">
-										Mark
-									</th>
-									<th scope="col" className="num col-hide-sm">
-										Value
-									</th>
-									<th scope="col" className="num">
-										Unrealized
-									</th>
-									<th scope="col" className="num col-hide-sm">
-										Realized
-									</th>
-									<th scope="col">Source · age</th>
-									<th scope="col">Mode</th>
-								</tr>
-							</thead>
-							<tbody>
-								{positions.map((position) => {
-									const age = markAge(position);
-									const unrealized = position.unrealized_usd;
-									return (
-										<tr
-											key={`${position.chain}:${position.token_address}`}
-											className={age.stale ? styles.staleRow : undefined}
-										>
-											<td>
-												<div className={styles.tokenCell}>
-													<span className="token sm" aria-hidden="true">
-														{position.symbol.slice(0, 2).toUpperCase()}
-													</span>
-													<span>
-														<span className="strong">{position.symbol}</span>
-														<span
-															className={styles.tokenAddress}
-															style={{ display: "block" }}
-															title={position.token_address}
-														>
-															{position.token_address.slice(0, 6)}…
-															{position.token_address.slice(-4)}
-														</span>
-													</span>
-												</div>
-											</td>
-											<td className="col-hide-sm">{position.chain}</td>
-											<td className="num mono">{quantity(position.quantity)}</td>
-											<td className="num mono col-hide-sm">
-												{money(position.avg_cost_usd)}
-											</td>
-											<td className={`num ${styles.monoCell}`}>
-												{position.mark_usd === null ? (
-													<span className={styles.unknown}>—</span>
-												) : (
-													money(position.mark_usd)
-												)}
-											</td>
-											<td className="num mono col-hide-sm">
-												{money(position.market_value_usd)}
-											</td>
-											<td
-												className={`num ${styles.monoCell}${
-													unrealized && Number(unrealized) < 0 ? " err" : ""
-												}`}
-											>
-												{unrealized === null ? (
-													<span className={styles.unknown}>—</span>
-												) : (
-													money(unrealized, true)
-												)}
-											</td>
-											<td className="num mono col-hide-sm">
-												{money(position.realized_usd, true)}
-											</td>
-											<td>
-												{position.mark_usd !== null && position.source ? (
-													<span className={styles.accountMeta}>
-														<Badge tone={age.stale ? "warn" : "ghost"}>
-															{age.stale ? `stale · ${age.label}` : `${position.source.name} · ${age.label}`}
-														</Badge>
-													</span>
-												) : (
-													<Badge tone="warn">unknown mark</Badge>
-												)}
-											</td>
-											<td>
-												<Badge tone="ghost">{position.mode}</Badge>
-											</td>
-										</tr>
-									);
-								})}
-							</tbody>
-						</table>
-					</div>
-				) : (
+				<div className={styles.toolbar}>
+					<PositionViewSwitcher view={view} query={query} />
+					<form
+						action="/positions"
+						method="get"
+						className={styles.filters}
+						aria-label="Position filters"
+					>
+						<input type="hidden" name="view" value={view} />
+						{demo && <input type="hidden" name="state" value={demo} />}
+						<label className={styles.filterField}>
+							<span className="micro">Chain</span>
+							<select
+								className="select sm"
+								name="chain"
+								key={`chain-${chain ?? "all"}`}
+								defaultValue={chain ?? "all"}
+							>
+								<option value="all">All chains</option>
+								{chains.map((option) => (
+									<option value={option} key={option}>
+										{option}
+									</option>
+								))}
+							</select>
+						</label>
+						<label className={styles.filterField}>
+							<span className="micro">Sort</span>
+							<select
+								className="select sm"
+								name="sort"
+								key={`sort-${sort}`}
+								defaultValue={sort}
+							>
+								{POSITION_SORTS.map((option) => (
+									<option value={option.value} key={option.value}>
+										{option.label}
+									</option>
+								))}
+							</select>
+						</label>
+						<button className="btn sm" type="submit">
+							Apply
+						</button>
+						<Link className="btn sm" href={positionsHref({ view, state: demo })}>
+							Reset
+						</Link>
+					</form>
+					<span className={styles.toolbarNote}>
+						View, chain filter and sort persist in the URL. Strategy filtering is not
+						available: the server position model carries no strategy field.
+					</span>
+				</div>
+
+				{positions.length === 0 ? (
 					<div className="panel-body">
 						<div className={styles.stateTitle}>
 							{positionsFailed ? "No positions read" : "No open positions"}
@@ -478,25 +443,34 @@ export default async function PositionsPage({
 							</div>
 						)}
 					</div>
+				) : visible.length === 0 ? (
+					<div className="panel-body">
+						<div className={styles.stateTitle}>No positions on this chain filter</div>
+						<p className={styles.stateBody}>
+							The account has {positions.length} open position
+							{positions.length === 1 ? "" : "s"}, none on{" "}
+							<span className="mono">{chain}</span>. Clear the filter to see every server
+							row.
+						</p>
+						<div className="row mt-12">
+							<Link className="btn" href={positionsHref({ view, sort, state: demo })}>
+								Clear chain filter
+							</Link>
+						</div>
+					</div>
+				) : view === "grid" ? (
+					<PositionGrid positions={visible} query={query} />
+				) : view === "detailed" ? (
+					<PositionDetailed
+						positions={visible}
+						query={query}
+						candles={candles}
+						timeframe="1h"
+					/>
+				) : (
+					<PositionList positions={visible} query={query} />
 				)}
 			</Panel>
-
-			{mode === "fixture" && !failed && positions.length > 0 && (
-				<section className="mt-16" aria-label="Position tiles">
-					<div className={styles.tileHeading}>
-						<h2>Position tiles</h2>
-						<span className="small muted">
-							the existing tile component · fixture chart and ladder fixture
-						</span>
-						<Badge tone="ghost">FIXTURE TILES</Badge>
-					</div>
-					<section className="grid cols-2 tiles" id="open">
-						{positionTiles.map((position) => (
-							<PositionTile position={position} key={position.id} />
-						))}
-					</section>
-				</section>
-			)}
 		</AppShell>
 	);
 }
