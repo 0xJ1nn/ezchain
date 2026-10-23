@@ -52,6 +52,12 @@ The UI test performed, through the rendered app:
 - The app does not fall back to fixtures in live mode; the same test asserts the live
   token page has no `FIXTURE` badge.
 
+## Release gate
+
+The same flow is part of `bash tools/verify.sh --live`. On candidate `744f32d` the full
+gate passed: `ci: ok` (1044 Python + 94 Playwright), `stress: PASS` (0 findings) and the
+live UI spec `4 passed`.
+
 ## Not covered by this drill
 
 - All-chain matrix, soak, fuzz, race and kill switch (run `tools/verify.sh --live`).

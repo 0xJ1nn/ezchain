@@ -14,8 +14,15 @@ EZCHAIN_STRESS_API_TOKEN=... \
 
 ## Observed result
 
-```text
-stress: PASS — 0 unique finding(s)
+Candidate commit `744f32ddaf238ce3beeb49e53ffc4880f8781e92`, clean working tree
+(`git_dirty: false` in the report), run via the release gate:
+
+```bash
+bash tools/verify.sh --live
+# ci: ok (1044 Python + 94 Playwright)
+# stress: PASS — 0 unique finding(s)
+# live UI: 4 passed — routes, markets/token, paper buy/sell, graph builder
+# verify: ok (live)
 ```
 
 The run exercised, in order: smoke (full flow), idempotency, fuzz (27 invalid-input
