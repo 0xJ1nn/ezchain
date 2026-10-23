@@ -109,14 +109,14 @@ export function Sidebar({ active }: { active: string }) {
 	}
 
 	return (
-		<nav className="sidebar" id="primary-navigation" aria-label="Primary navigation">
+		<nav className="sidebar" aria-label="Primary navigation">
 			<script dangerouslySetInnerHTML={{ __html: BOOTSTRAP }} />
 			<button
 				type="button"
 				className="sidebar-toggle"
 				onClick={toggle}
 				aria-expanded={!collapsed}
-				aria-controls="primary-navigation"
+				aria-controls="primary-navigation-items"
 				aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
 				title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
 			>
@@ -125,34 +125,36 @@ export function Sidebar({ active }: { active: string }) {
 				</span>
 				<span className="t">Collapse</span>
 			</button>
-			{nav.map((group) => (
-				<div className="nav-group" key={group.label}>
-					<div className="nav-label">{group.label}</div>
-					{group.items.map((item) => {
-						const on = isActive(item.href, active);
-						return (
-							<Link
-								className={`nav-item${on ? " active" : ""}`}
-								href={item.href}
-								key={item.id}
-								title={item.label}
-								aria-label={item.label}
-								aria-current={on ? "page" : undefined}
-								onMouseEnter={(event) => showTip(event, item.label)}
-								onMouseLeave={() => setTip(null)}
-								onFocus={(event) => showTip(event, item.label)}
-								onBlur={() => setTip(null)}
-								onClick={() => setTip(null)}
-							>
-								<span className="g" aria-hidden="true">
-									{item.glyph}
-								</span>
-								<span className="t">{item.label}</span>
-							</Link>
-						);
-					})}
-				</div>
-			))}
+			<div className="sidebar-items" id="primary-navigation-items">
+				{nav.map((group) => (
+					<div className="nav-group" key={group.label}>
+						<div className="nav-label">{group.label}</div>
+						{group.items.map((item) => {
+							const on = isActive(item.href, active);
+							return (
+								<Link
+									className={`nav-item${on ? " active" : ""}`}
+									href={item.href}
+									key={item.id}
+									title={item.label}
+									aria-label={item.label}
+									aria-current={on ? "page" : undefined}
+									onMouseEnter={(event) => showTip(event, item.label)}
+									onMouseLeave={() => setTip(null)}
+									onFocus={(event) => showTip(event, item.label)}
+									onBlur={() => setTip(null)}
+									onClick={() => setTip(null)}
+								>
+									<span className="g" aria-hidden="true">
+										{item.glyph}
+									</span>
+									<span className="t">{item.label}</span>
+								</Link>
+							);
+						})}
+					</div>
+				))}
+			</div>
 			{tip && (
 				<span
 					className="nav-tip"
@@ -164,7 +166,20 @@ export function Sidebar({ active }: { active: string }) {
 				</span>
 			)}
 			<div className="sidebar-foot">
-				<div className="micro">PAPER · no keys</div>
+				<Link className="sidebar-more" href="/more" aria-label="More & reference">
+					<span className="more-full" aria-hidden="true">
+						More &amp; reference
+					</span>
+					<span className="more-rail" aria-hidden="true">
+						More
+					</span>
+				</Link>
+				<div className="micro">
+					<span className="foot-full">PAPER · no keys</span>
+					<span className="foot-rail" aria-hidden="true">
+						PAPER
+					</span>
+				</div>
 			</div>
 		</nav>
 	);

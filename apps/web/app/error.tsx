@@ -24,16 +24,15 @@ export default function Error({
 					Something went wrong
 				</h1>
 				<p className="sub">
-					This surface could not be rendered. No order was placed and no ledger entry
-					changed.
+					This view failed to render. Nothing was retried automatically.
 				</p>
 				<div className="route-error-reason">
 					<span className="badge err">Reason</span>
 					<code className="mono">{error.digest ?? "RENDER_FAILED"}</code>
 				</div>
 				<p className="note">
-					{error.message || "The render failed without a message."} Retrying calls the
-					server again; if it keeps failing, open the dashboard or the market browser.
+					Check Positions and Activity before retrying, then try again. If the page keeps
+					failing, open the dashboard or the market browser.
 				</p>
 				<div className="row">
 					<button type="button" className="btn primary" onClick={() => reset()}>

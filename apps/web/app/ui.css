@@ -147,25 +147,25 @@ body.sidebar-collapsed {
 .sidebar {
   grid-row: 3; grid-column: 1;
   background: var(--surface); border-right: 1px solid var(--line);
-  padding: 8px 8px 16px; position: sticky; top: 76px; height: calc(100vh - 76px);
+  padding: 6px 8px 8px; position: sticky; top: 76px; height: calc(100vh - 76px);
   overflow-y: auto; overflow-x: hidden;
 }
 .sidebar-toggle {
-  width: 100%; min-height: 36px; display: flex; align-items: center; gap: 10px;
-  padding: 0 10px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
-  background: var(--surface-2); color: var(--muted); font-size: 11px; cursor: pointer;
+  width: 100%; min-height: 30px; display: flex; align-items: center; gap: 8px;
+  padding: 0 8px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--muted); font-size: 10.5px; cursor: pointer;
   position: sticky; top: 0; z-index: 2;
 }
 .sidebar-toggle:hover { background: var(--surface-3); color: var(--ink); }
-.sidebar-toggle .g { width: 24px; flex: 0 0 24px; text-align: center; font-size: 17px; line-height: 1; color: var(--ink); }
-.nav-group { margin-bottom: 10px; }
+.sidebar-toggle .g { width: 22px; flex: 0 0 22px; text-align: center; font-size: 16px; line-height: 1; color: var(--ink); }
+.nav-group { margin-bottom: 0; }
 .nav-group > .nav-label {
-  font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-  padding: 6px 10px 4px;
+  font-size: 8.5px; line-height: 1.25; letter-spacing: .11em; text-transform: uppercase;
+  color: var(--muted); padding: 3px 9px 1px;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 10px;
-  border-radius: var(--r-sm); color: var(--ink-2); font-size: 13px;
+  display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 9px;
+  border-radius: var(--r-sm); color: var(--ink-2); font-size: 12.5px;
 }
 .nav-item .g {
   width: 24px; height: 24px; flex: 0 0 24px; display: grid; place-items: center;
@@ -177,8 +177,13 @@ body.sidebar-collapsed {
 .nav-item.active { background: var(--ink); color: #fff; }
 .nav-item.active .g { color: #fff; }
 .nav-item .badge { margin-left: auto; }
-.sidebar-foot { padding: 10px 8px 0; border-top: 1px solid var(--line); margin-top: 8px; }
-.sidebar-foot .micro { font-size: 9px; letter-spacing: .03em; }
+.sidebar-foot { padding: 6px 8px 0; border-top: 1px solid var(--line); margin-top: 4px; }
+.sidebar-more {
+  display: block; padding: 3px 2px; font-size: 10.5px; color: var(--muted);
+}
+.sidebar-more .more-rail, .sidebar-foot .foot-rail { display: none; }
+.sidebar-more:hover { color: var(--ink); }
+.sidebar-foot .micro { margin-top: 2px; font-size: 8.5px; letter-spacing: .03em; }
 
 /* Collapsed rail: labels are hidden visually but every link keeps its aria-label and
    title, and the floating tip makes the label readable on hover and keyboard focus. */
@@ -189,7 +194,12 @@ body.sidebar-collapsed .nav-group { margin-bottom: 6px; }
 body.sidebar-collapsed .nav-label { display: none; }
 body.sidebar-collapsed .nav-item { justify-content: center; padding: 0; gap: 0; }
 body.sidebar-collapsed .nav-item .t { display: none; }
-body.sidebar-collapsed .sidebar-foot { padding: 10px 0 0; text-align: center; }
+body.sidebar-collapsed .sidebar-foot { padding: 6px 0 0; text-align: center; }
+body.sidebar-collapsed .sidebar-more { font-size: 9.5px; padding: 2px 0; }
+body.sidebar-collapsed .sidebar-more .more-full,
+body.sidebar-collapsed .sidebar-foot .foot-full { display: none; }
+body.sidebar-collapsed .sidebar-more .more-rail,
+body.sidebar-collapsed .sidebar-foot .foot-rail { display: inline; }
 body.sidebar-collapsed .sidebar-foot .micro { font-size: 8px; letter-spacing: 0; }
 
 .nav-tip {

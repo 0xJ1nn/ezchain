@@ -63,9 +63,14 @@ svg { display: block; }
 /* ---------- shell ---------- */
 body {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   grid-template-rows: 24px 52px minmax(0, 1fr);
   min-height: 100vh;
+}
+/* The production shell uses an explicit user control for its 72px rail. The wireframe
+   has no toggle, so it stays expanded here and never auto-collapses at 1100px. */
+body.sidebar-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
 }
 .wire-banner { grid-row: 1; grid-column: 1 / -1; }
 .topbar {
@@ -500,10 +505,9 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 1100px) {
-  body { grid-template-columns: 64px minmax(0, 1fr); }
+  /* The sidebar stays expanded; it is only hidden at the mobile breakpoint. */
   .brand { width: auto; }
-  .brand-tag, .nav-item span.t, .nav-label, .sidebar-foot { display: none; }
-  .nav-item { justify-content: center; }
+  .brand-tag { display: none; }
   .split, .split-even { grid-template-columns: minmax(0, 1fr); }
   .cols-5, .cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

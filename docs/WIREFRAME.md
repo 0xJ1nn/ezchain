@@ -167,10 +167,10 @@ unsellable, dust, stale mark, closed, quarantined.
 
 | Breakpoint | Behaviour |
 |---|---|
-| ≥ 1440 | 3-column tile grid, persistent sidebar, 2-column detail |
-| 1024–1439 | 2-column tiles, collapsible sidebar |
-| 768–1023 | 1-column tiles, sidebar → rail, tables → cards |
-| < 768 | bottom nav (Home, Positions, Markets, Automate, More), sticky mode + kill switch, tile becomes a stacked summary with a chart accordion |
+| ≥ 1440 | 3-column tile grid, persistent 240px sidebar, 2-column detail |
+| 1024–1439 | 2-column tiles; sidebar stays expanded at 240px, with an explicit user control to collapse it to a 72px labelled rail |
+| 768–1023 | 1-column tiles; sidebar stays expanded, tables → cards |
+| < 768 | bottom nav (Home, Browse, Signals, Positions, More), sticky mode + kill switch, tile becomes a stacked summary with a chart accordion |
 
 ## 8. Handoff to visual design
 

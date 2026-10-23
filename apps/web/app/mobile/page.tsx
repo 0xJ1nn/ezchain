@@ -4,9 +4,9 @@ import { Badge, Panel, Stat, TokenAvatar } from "@/components/ui";
 
 const nav = [
 	{ label: "Home", glyph: "▤", on: true },
+	{ label: "Browse", glyph: "◫" },
+	{ label: "Signals", glyph: "⌁" },
 	{ label: "Positions", glyph: "▥" },
-	{ label: "Markets", glyph: "◫" },
-	{ label: "Automate", glyph: "⟳" },
 	{ label: "More", glyph: "⋯" },
 ];
 
@@ -210,11 +210,17 @@ export default function MobilePage() {
 							</tr>
 							<tr>
 								<td className="mono">1100–1439px</td>
-								<td>Sidebar reduces to glyphs; split panes become a single column.</td>
+								<td>
+									Sidebar stays expanded at 240px with readable labels; split panes
+									become a single column.
+								</td>
 							</tr>
 							<tr>
 								<td className="mono">761–1099px</td>
-								<td>3–6 column grids collapse to three; tables still show wide columns.</td>
+								<td>
+									Sidebar stays expanded; 3–6 column grids collapse to three, tables
+									still show wide columns.
+								</td>
 							</tr>
 							<tr>
 								<td className="mono">≤760px</td>

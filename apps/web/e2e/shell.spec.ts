@@ -29,6 +29,11 @@ test("Discovery is the first sidebar group and holds Browse then Signals", async
 	await expect(sidebar(page).getByRole("link", { name: "State gallery" })).toHaveCount(0);
 	await expect(sidebar(page).getByRole("link", { name: "Components" })).toHaveCount(0);
 	await expect(sidebar(page).getByRole("link", { name: "Mobile" })).toHaveCount(0);
+
+	// The footer is the one low-emphasis desktop route into /more and its galleries.
+	const more = sidebar(page).getByRole("link", { name: "More & reference" });
+	await expect(more).toBeVisible();
+	await expect(more).toHaveAttribute("href", "/more");
 	await expect(sidebar(page).getByText("PAPER · no keys")).toBeVisible();
 });
 
@@ -40,7 +45,8 @@ test("sidebar toggle collapses, persists on reload and navigation, and shows rai
 	const collapse = page.getByRole("button", { name: "Collapse sidebar" });
 	await expect(collapse).toBeVisible();
 	await expect(collapse).toHaveAttribute("aria-expanded", "true");
-	await expect(collapse).toHaveAttribute("aria-controls", "primary-navigation");
+	await expect(collapse).toHaveAttribute("aria-controls", "primary-navigation-items");
+	await expect(page.locator("#primary-navigation-items .nav-group")).toHaveCount(6);
 
 	await collapse.click();
 	const expand = page.getByRole("button", { name: "Expand sidebar" });
@@ -103,6 +109,17 @@ test("topbar search names markets and All chains opens the browser", async ({ pa
 		"Search markets (symbol, name or address)",
 	);
 
+	await search.fill("bonk");
+	await search.press("Enter");
+	await expect(page).toHaveURL(/\/markets\?q=bonk$/);
+	const bonkRow = page
+		.locator("table")
+		.first()
+		.locator("tbody tr")
+		.filter({ hasText: "BONK" });
+	await expect(bonkRow.first()).toBeVisible();
+
+	await page.goto("/");
 	const chains = page.locator("header.topbar").getByRole("link", { name: "All chains" });
 	await expect(chains).toHaveAttribute("href", "/markets");
 	await expect(chains).toHaveAttribute("title", "Open the multi-chain market browser");
@@ -171,11 +188,99 @@ test("More keeps the reference galleries and reaches discovery first", async ({ 
 	await expect(chainLink).toHaveAttribute("title", "Open the multi-chain market browser");
 });
 
-test("heavy routes and the shell ship loading and error boundaries", async () => {
+test("desktop reaches /more and every reference gallery from the sidebar footer", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto("/");
+
+	const more = sidebar(page).getByRole("link", { name: "More & reference" });
+	await expect(more).toBeVisible();
+	await more.click();
+	await expect(page).toHaveURL(/\/more$/);
+	await expect(page.getByRole("heading", { name: "More", level: 1 })).toBeVisible();
+
+	for (const [label, path, heading] of [
+		["State gallery", "/states", "State gallery"],
+		["Components", "/components", "Components"],
+		["Mobile", "/mobile", "Mobile"],
+	]) {
+		await page.getByRole("link", { name: label, exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(`${path}$`));
+		await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+		await sidebar(page).getByRole("link", { name: "More & reference" }).click();
+		await expect(page).toHaveURL(/\/more$/);
+	}
+
+	// The galleries stay off the primary nav even though they are one footer click away.
+	await expect(sidebar(page).getByRole("link", { name: "State gallery" })).toHaveCount(0);
+	await expect(sidebar(page).getByRole("link", { name: "Components" })).toHaveCount(0);
+	await expect(sidebar(page).getByRole("link", { name: "Mobile" })).toHaveCount(0);
+});
+
+test("sidebar fits its viewport at 1440x900 and 1100x900", async ({ page }) => {
+	for (const width of [1440, 1100]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto("/");
+
+		const nav = sidebar(page);
+		const box = await nav.boundingBox();
+		if (!box) throw new Error(`sidebar has no box at ${width}px`);
+
+		const items = nav.locator(".nav-item");
+		await expect(items).toHaveCount(20);
+		for (let index = 0; index < 20; index += 1) {
+			const item = await items.nth(index).boundingBox();
+			if (!item) throw new Error(`nav item ${index} has no box at ${width}px`);
+			expect(item.y, `item ${index} top at ${width}px`).toBeGreaterThanOrEqual(
+				box.y - 0.5,
+			);
+			expect(
+				item.y + item.height,
+				`item ${index} bottom at ${width}px`,
+			).toBeLessThanOrEqual(box.y + box.height + 0.5);
+		}
+
+		const footer = await nav
+			.getByRole("link", { name: "More & reference" })
+			.boundingBox();
+		if (!footer) throw new Error(`footer link has no box at ${width}px`);
+		expect(footer.y, `footer top at ${width}px`).toBeGreaterThanOrEqual(box.y - 0.5);
+		expect(footer.y + footer.height, `footer bottom at ${width}px`).toBeLessThanOrEqual(
+			box.y + box.height + 0.5,
+		);
+
+		const overflow = await nav.evaluate((element) => element.scrollHeight - element.clientHeight);
+		expect(overflow, `sidebar overflow at ${width}px`).toBeLessThanOrEqual(1);
+	}
+});
+
+test("1100px keeps the sidebar expanded with readable labels", async ({ page }) => {
+	await page.setViewportSize({ width: 1100, height: 900 });
+	await page.goto("/");
+
+	await expect(sidebar(page)).toHaveCSS("width", "240px");
+	await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/);
+	await expect(page.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute(
+		"aria-expanded",
+		"true",
+	);
+
+	const label = sidebar(page).locator(".nav-item .t").first();
+	await expect(label).toBeVisible();
+	expect(await label.evaluate((element) => getComputedStyle(element).display)).not.toBe(
+		"none",
+	);
+});
+
+test("loading and error boundaries are wired", async () => {
 	const app = join(__dirname, "..", "app");
 
-	// Loading UI is timing-dependent in dev (the fixture reads resolve before the browser
-	// can paint the fallback), so assert the boundaries are wired rather than race them.
+	// A true error-boundary behavior test needs a route that throws; we do not ship test-only
+	// routes, so this asserts wiring only. Manual verification of app/error.tsx: a render
+	// failure showed the reason, the honest message, and a working Try again reset.
+	// Loading fallbacks are also timing-dependent in dev (fixture reads resolve before the
+	// browser paints the fallback), so this asserts the boundaries are wired, not a race.
 	for (const [route, active, skeleton] of [
 		["(dashboard)", "dashboard", "GenericSkeleton"],
 		["positions", "positions", "PositionsSkeleton"],
@@ -195,9 +300,6 @@ test("heavy routes and the shell ship loading and error boundaries", async () =>
 	expect(error).toContain("reset");
 	expect(error).toContain("Try again");
 	expect(error).toContain("RENDER_FAILED");
-
-	const rows = readFileSync(join(app, "ui.css"), "utf8");
-	for (const width of ["240px", "72px"]) {
-		expect(rows, `sidebar ${width} rule`).toContain(width);
-	}
+	expect(error).toContain("Nothing was retried automatically");
+	expect(error).toContain("Check Positions and Activity before retrying");
 });
