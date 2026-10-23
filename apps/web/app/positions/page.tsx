@@ -5,6 +5,8 @@ import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
 import { positionTiles } from "@/lib/position-fixtures";
 import { usd, signedUsd, MINUS } from "@/lib/format";
 import {
+	fixturePaperAccountFlat,
+	fixturePaperPositionsUnpricedSource,
 	getPaperSnapshot,
 	type PaperAccount,
 	type PaperPosition,
@@ -42,7 +44,9 @@ interface MarkAge {
 }
 
 function markAge(position: PaperPosition): MarkAge {
-	if (!position.source?.observed_at) {
+	// A source describes a mark. An unmarked position keeps no source even if an older
+	// server leaked one, so the mark is unknown regardless of source.observed_at.
+	if (position.mark_usd === null || !position.source?.observed_at) {
 		return { label: "unknown mark", stale: false, unknown: true };
 	}
 	const observed = Date.parse(position.source.observed_at);
@@ -66,6 +70,10 @@ function needsAttention(positions: PaperPosition[]) {
 		const age = markAge(position);
 		return age.stale || age.unknown || position.mark_usd === null;
 	}).length;
+}
+
+function markCountLabel(count: number) {
+	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
 }
 
 function demoResult<T>(mode: PaperSnapshot["mode"], message: string): PaperResult<T> {
@@ -95,14 +103,7 @@ export default async function PositionsPage({
 				? {
 						ok: true as const,
 						mode,
-						data: {
-							cash_usd: "10000.00",
-							equity_usd: "10000.00",
-							realized_usd: "0.00",
-							unrealized_usd: "0.00",
-							positions: [],
-							mode: "paper" as const,
-						},
+						data: fixturePaperAccountFlat,
 					}
 				: snapshot.account;
 	const positionsResult =
@@ -110,7 +111,9 @@ export default async function PositionsPage({
 			? demoResult<PaperPosition[]>(mode, "Fixture demo: the positions request failed.")
 			: demo === "empty"
 				? { ok: true as const, mode, data: [] as PaperPosition[] }
-				: demo === "stale"
+				: demo === "unpriced-source"
+					? { ok: true as const, mode, data: fixturePaperPositionsUnpricedSource }
+					: demo === "stale"
 					? {
 							ok: true as const,
 							mode,
@@ -197,7 +200,13 @@ export default async function PositionsPage({
 						</span>
 					}
 					value={account ? money(account.equity_usd) : "—"}
-					meta={account ? "cash + known marks" : "account unavailable"}
+					meta={
+						account
+							? account.marks_unknown
+								? `equity unavailable — ${markCountLabel(account.unpriced_positions.length)}`
+								: "cash + known marks"
+							: "account unavailable"
+					}
 				/>
 				<Stat
 					label={
@@ -222,8 +231,18 @@ export default async function PositionsPage({
 						</span>
 					}
 					value={account ? money(account.unrealized_usd, true) : "—"}
-					tone={account && Number(account.unrealized_usd) < 0 ? "err" : "ok"}
-					meta="known marks · not executable"
+					tone={
+						account?.unrealized_usd !== null &&
+						account?.unrealized_usd !== undefined &&
+						Number(account.unrealized_usd) < 0
+							? "err"
+							: "ok"
+					}
+					meta={
+						account?.marks_unknown
+							? `unrealized unavailable — ${markCountLabel(account.unpriced_positions.length)}`
+							: "known marks · not executable"
+					}
 				/>
 				<Stat
 					label={
@@ -261,6 +280,17 @@ export default async function PositionsPage({
 					}
 				/>
 			</section>
+
+			{!failed && account?.marks_unknown && (
+				<div className="note warn mb-12">
+					<strong>
+						Equity unavailable — {markCountLabel(account.unpriced_positions.length)}.
+					</strong>{" "}
+					The account total and every equity share are withheld until every open position
+					has a mark. Known marks and the USD cash balance are still shown; they are not a
+					total.
+				</div>
+			)}
 
 			{errorMessage && (
 				<section className={`panel mb-12 ${styles.statePanel}`} role="alert">
@@ -406,7 +436,7 @@ export default async function PositionsPage({
 												{money(position.realized_usd, true)}
 											</td>
 											<td>
-												{position.source ? (
+												{position.mark_usd !== null && position.source ? (
 													<span className={styles.accountMeta}>
 														<Badge tone={age.stale ? "warn" : "ghost"}>
 															{age.stale ? `stale · ${age.label}` : `${position.source.name} · ${age.label}`}

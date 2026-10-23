@@ -19,7 +19,15 @@ import {
 	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
-import { getPaperSnapshot, getStrategies } from "@/lib/paper-api";
+import {
+	fixturePaperAccountComplete,
+	fixturePaperAccountFlat,
+	fixturePaperAccountMany,
+	fixturePaperAccountSingle,
+	fixturePaperAccountUnpricedSource,
+	getPaperSnapshot,
+	getStrategies,
+} from "@/lib/paper-api";
 
 type Failure = {
 	ok: false;
@@ -49,7 +57,16 @@ function money(value: string | null | undefined, signed = false) {
 	return signed && amount > 0 ? `+${formatUsd(String(amount))}` : formatUsd(String(amount));
 }
 
-export default async function DashboardPage() {
+function markCountLabel(count: number) {
+	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
+}
+
+export default async function DashboardPage({
+	searchParams,
+}: {
+	searchParams: Promise<{ state?: string }>;
+}) {
+	const { state } = await searchParams;
 	const [snapshot, strategies, marketsOutcome, chainsOutcome, limits, alerts, orders, overview] =
 		await Promise.all([
 			getPaperSnapshot(),
@@ -67,8 +84,28 @@ export default async function DashboardPage() {
 		]);
 
 	const live = snapshot.mode === "live";
-	const account = snapshot.account.ok ? snapshot.account.data : null;
+	// Deterministic composition states for fixture screenshots and tests. Live mode always
+	// renders the API's answer; a demo flag never masks a real outage.
+	const demo = live ? undefined : state;
+	const demoAccount =
+		demo === "complete"
+			? fixturePaperAccountComplete
+			: demo === "flat"
+				? fixturePaperAccountFlat
+				: demo === "many"
+					? fixturePaperAccountMany
+					: demo === "single"
+						? fixturePaperAccountSingle
+						: demo === "unpriced-source"
+							? fixturePaperAccountUnpricedSource
+							: null;
+	const accountResult =
+		demoAccount === null
+			? snapshot.account
+			: { ok: true as const, mode: snapshot.mode, data: demoAccount };
+	const account = accountResult.ok ? accountResult.data : null;
 	const positions = account?.positions ?? [];
+	const unpricedCount = account?.unpriced_positions.length ?? 0;
 	const strategyRows = strategies.ok ? strategies.data : [];
 	const marketRows = marketsOutcome.ok ? marketsOutcome.list.rows.slice(0, 5) : [];
 	const marketSource = marketsOutcome.ok ? marketsOutcome.list.source : null;
@@ -80,7 +117,6 @@ export default async function DashboardPage() {
 	const chainTotal = overview.ok ? overview.data.totals.chains : chainRows.length;
 	const chainCovered = overview.ok ? overview.data.totals.covered : null;
 	const killSwitch = limitRows?.kill_switch.active ?? false;
-	const unknownMark = positions.some((position) => position.mark_usd === null);
 
 	return (
 		<AppShell active="dashboard">
@@ -108,11 +144,11 @@ export default async function DashboardPage() {
 				<Stat
 					hero
 					label="Equity"
-					value={account && !unknownMark ? money(account.equity_usd) : "—"}
+					value={account ? money(account.equity_usd) : "—"}
 					meta={
 						account
-							? unknownMark
-								? "unknown mark excluded · never zero"
+							? account.marks_unknown
+								? `equity unavailable — ${markCountLabel(unpricedCount)}`
 								: `${positions.length} open position${positions.length === 1 ? "" : "s"} · paper`
 							: "account unavailable"
 					}
@@ -126,9 +162,19 @@ export default async function DashboardPage() {
 				/>
 				<Stat
 					label="Unrealized"
-					value={account && !unknownMark ? money(account.unrealized_usd, true) : "—"}
-					tone={account && !unknownMark && Number(account.unrealized_usd) < 0 ? "err" : "ok"}
-					meta={unknownMark ? "unknown mark excluded" : "known marks only"}
+					value={account ? money(account.unrealized_usd, true) : "—"}
+					tone={
+						account?.unrealized_usd !== null &&
+						account?.unrealized_usd !== undefined &&
+						Number(account.unrealized_usd) < 0
+							? "err"
+							: "ok"
+					}
+					meta={
+						account?.marks_unknown
+							? `unrealized unavailable — ${markCountLabel(unpricedCount)}`
+							: "known marks only"
+					}
 				/>
 				<Stat
 					label="Risk"
@@ -143,6 +189,174 @@ export default async function DashboardPage() {
 				/>
 			</section>
 
+			<Panel
+				title="Equity composition"
+				sub={
+					account
+						? account.complete
+							? `${account.by_asset.length} asset rows · server shares of ${money(account.equity_usd)}`
+							: `equity withheld · ${markCountLabel(unpricedCount)}`
+						: "unavailable"
+				}
+				action={
+					<>
+						<SectionBadge live={live} />
+						<Badge tone="ghost">PAPER</Badge>
+					</>
+				}
+				footer={
+					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
+						<span>
+							Totals, quantities and shares are computed by{" "}
+							<span className="mono">/api/v1/paper/account</span>. This page only formats
+							them.
+						</span>
+						<ButtonLink href="/wallets" size="sm">
+							Wallets
+						</ButtonLink>
+					</div>
+				}
+			>
+				{!accountResult.ok ? (
+					failure(accountResult)
+				) : account ? (
+					<div className="stack-sm">
+						{account.marks_unknown && (
+							<div className="note warn">
+								<strong>
+									Equity unavailable — {markCountLabel(unpricedCount)}.
+								</strong>{" "}
+								Known rows keep their own values; no share or total is computed from a
+								partial portfolio. Cash is shown as the USD settlement asset.
+							</div>
+						)}
+						<div className="grid cols-2">
+							<div>
+								<div className="strong mb-8">By chain</div>
+								<div className="table-wrap">
+									<table className="table compact" aria-label="Composition by chain">
+										<thead>
+											<tr>
+												<th scope="col">Chain</th>
+												<th scope="col" className="num">
+													Assets
+												</th>
+												<th scope="col" className="num">
+													Value
+												</th>
+												<th scope="col" className="num">
+													Share
+												</th>
+												<th scope="col">Marks</th>
+											</tr>
+										</thead>
+										<tbody>
+											{account.by_chain.map((row) => (
+												<tr key={row.chain}>
+													<td>
+														<Link
+															href={
+																row.chain === "settlement"
+																	? "/wallets"
+																	: `/markets?chain=${encodeURIComponent(row.chain)}`
+															}
+														>
+															{row.chain}
+														</Link>
+													</td>
+													<td className="num mono">{row.assets}</td>
+													<td className="num mono">{money(row.market_value_usd)}</td>
+													<td className="num mono">
+														{row.share_pct === null ? "—" : `${row.share_pct}%`}
+													</td>
+													<td>
+														{row.mark_status === "unknown" ? (
+															<Badge tone="warn">{row.unpriced_assets} unpriced</Badge>
+														) : (
+															<Badge tone="ghost">known</Badge>
+														)}
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							</div>
+							<div>
+								<div className="strong mb-8">By asset</div>
+								<div className="table-wrap">
+									<table className="table compact" aria-label="Composition by asset">
+										<thead>
+											<tr>
+												<th scope="col">Asset</th>
+												<th scope="col" className="num">
+													Quantity
+												</th>
+												<th scope="col" className="num">
+													Mark
+												</th>
+												<th scope="col" className="num">
+													Value
+												</th>
+												<th scope="col" className="num">
+													Share
+												</th>
+												<th scope="col">Source · age</th>
+											</tr>
+										</thead>
+										<tbody>
+											{account.by_asset.map((row) => (
+												<tr key={`${row.chain}:${row.token_address ?? "cash"}`}>
+													<td>
+														{row.kind === "cash" ? (
+															<Link href="/wallets">
+																<span className="strong">{row.symbol}</span>
+																<span className="sub" style={{ display: "block" }}>
+																	settlement · cash
+																</span>
+															</Link>
+														) : (
+															<Link href={`/tokens/${row.chain}/${row.token_address}`}>
+																<span className="strong">{row.symbol}</span>
+																<span className="sub" style={{ display: "block" }}>
+																	{row.chain} · {shortAddress(row.token_address ?? "")}
+																</span>
+															</Link>
+														)}
+													</td>
+													<td className="num mono">{formatAmount(row.quantity)}</td>
+													<td className="num mono">{formatUsdPrice(row.mark_usd)}</td>
+													<td className="num mono">{money(row.market_value_usd)}</td>
+													<td className="num mono">
+														{row.share_pct === null ? "—" : `${row.share_pct}%`}
+													</td>
+													<td className="small">
+														{row.mark_status === "unknown" ? (
+															<Badge tone="warn">unknown mark</Badge>
+														) : row.source ? (
+															`${sourceLabel(row.source.name)} · ${ageLabel(row.source.observed_at)}`
+														) : row.kind === "cash" ? (
+															"ledger"
+														) : (
+															<Badge tone="warn">unknown mark</Badge>
+														)}
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</div>
+						{positions.length === 0 && (
+							<div className="note">
+								The paper account is flat; the composition is settlement cash only.
+							</div>
+						)}
+					</div>
+				) : null}
+			</Panel>
+
 			<div className="split">
 				<div className="stack">
 					<Panel
@@ -151,8 +365,8 @@ export default async function DashboardPage() {
 						action={<><SectionBadge live={live} /><ButtonLink href="/positions" size="sm">All positions</ButtonLink></>}
 						flush
 					>
-						{!snapshot.account.ok ? (
-							<div className="panel-body">{failure(snapshot.account)}</div>
+						{!accountResult.ok ? (
+							<div className="panel-body">{failure(accountResult)}</div>
 						) : positions.length === 0 ? (
 							<div className="panel-body">
 								<div className="note">

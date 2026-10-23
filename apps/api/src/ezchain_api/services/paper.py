@@ -49,6 +49,9 @@ from .system_flags import read_kill_switch
 GENESIS_GROUP = "genesis"
 POSITION_PREFIX = "position:"
 MONEY_QUANTUM = Decimal("0.00000001")
+SHARE_QUANTUM = Decimal("0.01")
+SETTLEMENT_CHAIN = "settlement"
+SETTLEMENT_ASSET = "USD"
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +279,10 @@ def _position_views(
             market_value_usd=market_value,
             unrealized_usd=unrealized,
             realized_usd=replay.realized_by_account.get(account, Decimal(0)),
-            source=None if snapshot is None else _source_ref(snapshot),
+            # A source describes where a mark came from. A snapshot row can exist with no
+            # price (a failed observation); labelling that row with a source would present
+            # it as priced and leak an observation age to dashboard/positions/reports.
+            source=None if snapshot is None or mark is None else _source_ref(snapshot),
             mode="paper",
         )
         views.append(view.to_dict())
@@ -288,13 +294,109 @@ def positions(session: Session) -> list[dict[str, Any]]:
     return _position_views(_replay(_ledger_rows(session)), _snapshot_index(session))
 
 
+def _share_pct(value: Decimal, equity: Decimal) -> str | None:
+    """A row's share of equity, computed only when the equity total is usable."""
+    if equity <= 0:
+        return None
+    return str((value * 100 / equity).quantize(SHARE_QUANTUM))
+
+
+def _composition(
+    views: list[dict[str, Any]], cash: Decimal, *, complete: bool, equity: Decimal
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Per-chain and per-asset composition, computed once on the server.
+
+    An asset without a mark keeps its row with ``market_value_usd`` and ``share_pct`` null:
+    it never disappears and is never valued at zero. A chain with any unpriced asset also
+    keeps ``market_value_usd`` null, because a partial chain total would be a lie. Cash is
+    the settlement asset (USD); its own value is always known, but its share is withheld
+    while any open mark is unknown because the denominator (equity) is unknown.
+
+    A chain has no single native quantity: tokens are not fungible across assets, so chain
+    rows carry an asset count and a USD total while native quantity lives on the asset row.
+    """
+    assets: list[dict[str, Any]] = []
+    for view in views:
+        market_value = view["market_value_usd"]
+        value = None if market_value is None else Decimal(str(market_value))
+        priced = view["mark_usd"] is not None
+        assets.append(
+            {
+                "chain": view["chain"],
+                "token_address": view["token_address"],
+                "symbol": view["symbol"],
+                "kind": "position",
+                "quantity": view["quantity"],
+                "mark_usd": view["mark_usd"],
+                "market_value_usd": market_value,
+                "share_pct": (None if not complete or value is None else _share_pct(value, equity)),
+                # A source describes where a mark came from. An unmarked row keeps no
+                # source: otherwise the UI could show an observation age as if the row
+                # were priced (CONTRACT I3).
+                "source": view["source"] if priced else None,
+                "mark_status": "unknown" if not priced else "known",
+            }
+        )
+
+    chains: list[dict[str, Any]] = []
+    for chain in sorted({str(view["chain"]) for view in views}):
+        members = [
+            asset for asset in assets if asset["kind"] == "position" and asset["chain"] == chain
+        ]
+        unpriced = sum(1 for asset in members if asset["market_value_usd"] is None)
+        total = (
+            None
+            if unpriced
+            else sum((Decimal(str(asset["market_value_usd"])) for asset in members), Decimal(0))
+        )
+        chains.append(
+            {
+                "chain": chain,
+                "assets": len(members),
+                "unpriced_assets": unpriced,
+                "market_value_usd": None if total is None else str(total),
+                "share_pct": (None if total is None or not complete else _share_pct(total, equity)),
+                "mark_status": "unknown" if unpriced else "known",
+            }
+        )
+
+    cash_share = _share_pct(cash, equity) if complete else None
+    chains.append(
+        {
+            "chain": SETTLEMENT_CHAIN,
+            "assets": 1,
+            "unpriced_assets": 0,
+            "market_value_usd": str(cash),
+            "share_pct": cash_share,
+            "mark_status": "known",
+        }
+    )
+    assets.append(
+        {
+            "chain": SETTLEMENT_CHAIN,
+            "token_address": None,
+            "symbol": SETTLEMENT_ASSET,
+            "kind": "cash",
+            "quantity": str(cash),
+            "mark_usd": "1",
+            "market_value_usd": str(cash),
+            "share_pct": cash_share,
+            "source": None,
+            "mark_status": "known",
+        }
+    )
+    return chains, assets
+
+
 def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None) -> dict[str, Any]:
-    """Cash, realized, unrealized and equity projected from the ledger.
+    """Cash, realized, unrealized, equity and composition projected from the ledger.
 
     ``starting_cash_usd`` is optional so bootstrapping callers can create genesis before
-    reading. Marks come from the latest market snapshot. A position without a mark
-    reports ``mark_usd = null`` and contributes nothing to the account totals; it is
-    never silently valued at zero.
+    reading. Marks come from the latest market snapshot. A position without a mark reports
+    ``mark_usd = null`` and makes the account incomplete: ``equity_usd`` and
+    ``unrealized_usd`` are withheld (CONTRACT I3), while ``known_market_value_usd`` names
+    the partial sum explicitly. ``by_asset`` and ``by_chain`` are always server-computed;
+    their shares are null while the total is unknown.
     """
     if starting_cash_usd is not None:
         ensure_genesis(session, starting_cash_usd)
@@ -302,16 +404,35 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
     views = _position_views(replay, _snapshot_index(session))
     known_market_value = Decimal(0)
     unrealized = Decimal(0)
+    unpriced: list[dict[str, Any]] = []
     for view in views:
         market_value = view["market_value_usd"]
-        if market_value is not None:
-            known_market_value += Decimal(str(market_value))
-            unrealized += Decimal(str(view["unrealized_usd"]))
+        if market_value is None:
+            unpriced.append(
+                {
+                    "chain": view["chain"],
+                    "token_address": view["token_address"],
+                    "symbol": view["symbol"],
+                    "quantity": view["quantity"],
+                }
+            )
+            continue
+        known_market_value += Decimal(str(market_value))
+        unrealized += Decimal(str(view["unrealized_usd"]))
+    complete = not unpriced
+    equity = replay.cash + known_market_value
+    by_chain, by_asset = _composition(views, replay.cash, complete=complete, equity=equity)
     return {
         "cash_usd": str(replay.cash),
-        "equity_usd": str(replay.cash + known_market_value),
+        "equity_usd": str(equity) if complete else None,
         "realized_usd": str(replay.realized),
-        "unrealized_usd": str(unrealized),
+        "unrealized_usd": str(unrealized) if complete else None,
+        "complete": complete,
+        "marks_unknown": not complete,
+        "known_market_value_usd": str(known_market_value),
+        "unpriced_positions": unpriced,
+        "by_chain": by_chain,
+        "by_asset": by_asset,
         "positions": views,
         "mode": "paper",
     }

@@ -7,6 +7,10 @@ import { getPaperSnapshot } from "@/lib/paper-api";
 
 export const dynamic = "force-dynamic";
 
+function markCountLabel(count: number) {
+	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
+}
+
 const custody = [
 	{
 		tier: "Paper ledger",
@@ -98,7 +102,13 @@ export default async function WalletsPage() {
 				<Stat
 					label="Paper equity"
 					value={account ? formatUsd(account.equity_usd) : "—"}
-					meta={account ? "PAPER · cash + known marks" : "unavailable"}
+					meta={
+						account
+							? account.marks_unknown
+								? `equity unavailable — ${markCountLabel(account.unpriced_positions.length)}`
+								: "PAPER · cash + known marks"
+							: "unavailable"
+					}
 				/>
 				<Stat
 					label="Open positions"

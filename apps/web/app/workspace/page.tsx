@@ -8,6 +8,10 @@ import { apiHostOnly, webMode } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 
+function markCountLabel(count: number) {
+	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
+}
+
 export default async function WorkspacePage() {
 	const mode = webMode();
 	const snapshot = await getPaperSnapshot();
@@ -58,7 +62,13 @@ export default async function WorkspacePage() {
 				<Stat
 					label="Paper equity"
 					value={account ? formatUsd(account.equity_usd) : "—"}
-					meta={account ? "PAPER · server snapshot" : "unavailable"}
+					meta={
+						account
+							? account.marks_unknown
+								? `equity unavailable — ${markCountLabel(account.unpriced_positions.length)}`
+								: "PAPER · server snapshot"
+							: "unavailable"
+					}
 				/>
 				<Stat
 					label="Paper cash"
@@ -117,6 +127,12 @@ export default async function WorkspacePage() {
 								<span className="muted">Open positions</span>
 								<span className="mono">{account.positions.length}</span>
 							</div>
+							{account.marks_unknown && (
+								<div className="note warn">
+									Equity unavailable — {markCountLabel(account.unpriced_positions.length)}.
+									No partial total is substituted.
+								</div>
+							)}
 						</div>
 					) : (
 						<div className="note err">

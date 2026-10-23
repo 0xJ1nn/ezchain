@@ -43,9 +43,14 @@ test("positions reads the paper account and PositionView shape from the typed cl
 		account.locator(".stat").filter({ hasText: new RegExp(`^${label}`) });
 	await expect(account.locator(".stat")).toHaveCount(6);
 	await expect(stat("Cash")).toContainText("$9,709.36");
-	await expect(stat("Equity")).toContainText("$9,870.80");
+	// MOCHI has no mark, so the server withholds equity and unrealized. Neither is a
+	// partial sum and neither ever becomes zero.
+	await expect(stat("Equity").locator(".value")).toHaveText("—");
+	await expect(stat("Equity")).toContainText("equity unavailable — 1 open mark unknown");
 	await expect(stat("Realized")).toContainText("+$12.10");
-	await expect(stat("Unrealized")).toContainText("−$129.20");
+	await expect(stat("Unrealized").locator(".value")).toHaveText("—");
+	await expect(stat("Unrealized")).toContainText("unrealized unavailable — 1 open mark unknown");
+	await expect(page.getByText(/unknown mark excluded/i)).toHaveCount(0);
 	await expect(account.locator(".badge", { hasText: "PAPER" })).toHaveCount(6);
 	await expect(stat("Open positions")).toContainText("4");
 	await expect(stat("Needs attention")).toContainText("2");
@@ -83,6 +88,25 @@ test("positions reads the paper account and PositionView shape from the typed cl
 	).toBeVisible();
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
+});
+
+test("an unmarked position never renders a leaked source as its mark", async ({ page }) => {
+	// The API nulls source when price_usd is null. This fixture injects the old leak so
+	// the page is tested to keep the mark unknown instead of showing a source or age.
+	await page.goto("/positions?state=unpriced-source");
+
+	const table = page
+		.locator("section.panel")
+		.filter({ hasText: "Server positions" })
+		.locator("table");
+	const mochi = table.locator("tbody tr").filter({ hasText: "MOCHI" });
+	await expect(mochi).toBeVisible();
+	await expect(mochi.locator("td").nth(4)).toHaveText("—");
+	await expect(mochi.locator("td").nth(5)).toHaveText("—");
+	await expect(mochi.locator("td").nth(6)).toHaveText("—");
+	await expect(mochi.locator(".badge", { hasText: "unknown mark" })).toBeVisible();
+	await expect(mochi).not.toContainText("dexscreener");
+	await expect(mochi).not.toContainText("ago");
 });
 
 test("positions page renders empty, error and stale states without fabricating numbers", async ({

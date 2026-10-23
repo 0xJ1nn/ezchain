@@ -119,7 +119,7 @@ def _snapshot(
     *,
     chain: str,
     token: str,
-    price: str,
+    price: str | None,
     observed_at: datetime,
     symbol: str = "TKN",
 ) -> None:
@@ -130,7 +130,7 @@ def _snapshot(
             token_address=token,
             symbol=symbol,
             name=symbol,
-            price_usd=Decimal(price),
+            price_usd=None if price is None else Decimal(price),
             source="test",
             observed_at=observed_at,
         )
@@ -295,10 +295,465 @@ def test_empty_account_reports_defined_zero_and_no_alerts(
     assert alerts["alerts"] == []
 
 
+def test_paper_account_is_incomplete_when_one_mark_is_unknown(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="100",
+        price="2",
+        fee="0.6",
+        at=START,
+    )
+    _snapshot(session, chain=CHAIN, token=TOKEN_A, price="3", observed_at=utcnow(), symbol="AAA")
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_B,
+        side="buy",
+        quantity="10",
+        price="10",
+        fee="0.3",
+        at=START,
+    )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is False
+    assert body["marks_unknown"] is True
+    assert body["equity_usd"] is None
+    assert body["unrealized_usd"] is None
+    assert body["cash_usd"] == "9699.1"
+    assert body["known_market_value_usd"] == "300"
+    assert body["unpriced_positions"] == [
+        {
+            "chain": CHAIN,
+            "token_address": TOKEN_B,
+            "symbol": TOKEN_B,
+            "quantity": "10",
+        }
+    ]
+
+    assets = {row["token_address"]: row for row in body["by_asset"] if row["kind"] == "position"}
+    assert assets[TOKEN_A]["market_value_usd"] == "300"
+    assert assets[TOKEN_A]["share_pct"] is None
+    assert assets[TOKEN_A]["mark_status"] == "known"
+    assert assets[TOKEN_B]["mark_usd"] is None
+    assert assets[TOKEN_B]["market_value_usd"] is None
+    assert assets[TOKEN_B]["share_pct"] is None
+    assert assets[TOKEN_B]["mark_status"] == "unknown"
+    assert assets[TOKEN_B]["quantity"] == "10"
+
+    cash = next(row for row in body["by_asset"] if row["kind"] == "cash")
+    assert cash["chain"] == "settlement"
+    assert cash["symbol"] == "USD"
+    assert cash["quantity"] == "9699.1"
+    assert cash["market_value_usd"] == "9699.1"
+    assert cash["share_pct"] is None
+    assert cash["source"] is None
+
+    chains = {row["chain"]: row for row in body["by_chain"]}
+    assert chains[CHAIN]["unpriced_assets"] == 1
+    assert chains[CHAIN]["market_value_usd"] is None
+    assert chains[CHAIN]["share_pct"] is None
+    assert chains["settlement"]["market_value_usd"] == "9699.1"
+    assert chains["settlement"]["share_pct"] is None
+
+    # The performance read model must withhold the same totals for the same ledger.
+    performance = _client(client_for).get("/api/v1/paper/performance").json()
+    assert performance["equity_usd"] is None
+    assert performance["unrealized_usd"] is None
+
+
+def test_paper_account_unpriced_asset_never_reports_a_mark_source(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """A snapshot may exist with no price; its source must not label the row as priced."""
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="10",
+        price="2",
+        fee="0",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        price=None,
+        observed_at=utcnow(),
+        symbol="NOMARK",
+    )
+    # A second, priced position proves the fix withholds the source per row and does not
+    # blank every source: the snapshot source ("test") still labels a row that has a mark.
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_B,
+        side="buy",
+        quantity="1",
+        price="1",
+        fee="0",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_B,
+        price="2",
+        observed_at=utcnow(),
+        symbol="PRICED",
+    )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is False
+    assert body["marks_unknown"] is True
+    row = next(row for row in body["by_asset"] if row["kind"] == "position")
+    assert row["symbol"] == "NOMARK"
+    assert row["mark_usd"] is None
+    assert row["market_value_usd"] is None
+    assert row["share_pct"] is None
+    assert row["mark_status"] == "unknown"
+    assert row["source"] is None
+    assert body["unpriced_positions"] == [
+        {
+            "chain": CHAIN,
+            "token_address": TOKEN_A,
+            "symbol": "NOMARK",
+            "quantity": "10",
+        }
+    ]
+    position = body["positions"][0]
+    assert position["token_address"] == TOKEN_A
+    assert position["mark_usd"] is None
+    assert position["market_value_usd"] is None
+    # The snapshot row exists with source "test"; the source belongs to a mark, so a
+    # null-price snapshot must not leak it through the positions read model.
+    assert position["source"] is None
+
+    priced = next(row for row in body["positions"] if row["token_address"] == TOKEN_B)
+    assert priced["source"]["name"] == "test"
+    priced_asset = next(row for row in body["by_asset"] if row["token_address"] == TOKEN_B)
+    assert priced_asset["source"]["name"] == "test"
+
+
+def test_paper_account_composition_keeps_eleven_positions_across_chains(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+    chains = ("base", "solana", "ethereum")
+    tokens = [f"0x{index:040x}" for index in range(1, 12)]
+    for index, token in enumerate(tokens):
+        chain = chains[index % len(chains)]
+        _trade(
+            session,
+            chain=chain,
+            token=token,
+            side="buy",
+            quantity="10",
+            price="10",
+            fee="0",
+            at=START,
+        )
+        _snapshot(
+            session,
+            chain=chain,
+            token=token,
+            price="10",
+            observed_at=utcnow(),
+            symbol=f"T{index:02d}",
+        )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is True
+    assert body["marks_unknown"] is False
+    assert body["cash_usd"] == "8900"
+    assert body["known_market_value_usd"] == "1100"
+    assert body["equity_usd"] == "10000"
+    assert body["unrealized_usd"] == "0"
+    assert body["unpriced_positions"] == []
+    assert len(body["positions"]) == 11
+
+    position_rows = [row for row in body["by_asset"] if row["kind"] == "position"]
+    assert len(body["by_asset"]) == 12  # eleven positions plus cash
+    assert len(position_rows) == 11
+    assert {row["token_address"] for row in position_rows} == set(tokens)
+    assert {row["token_address"] for row in body["positions"]} == set(tokens)
+    assert len(body["by_chain"]) == 4  # three position chains plus settlement
+
+    chains_by_name = {row["chain"]: row for row in body["by_chain"]}
+    assert chains_by_name["base"]["assets"] == 4
+    assert chains_by_name["base"]["market_value_usd"] == "400"
+    assert chains_by_name["base"]["share_pct"] == "4.00"
+    assert chains_by_name["solana"]["assets"] == 4
+    assert chains_by_name["solana"]["share_pct"] == "4.00"
+    assert chains_by_name["ethereum"]["assets"] == 3
+    assert chains_by_name["ethereum"]["share_pct"] == "3.00"
+    assert chains_by_name["settlement"]["share_pct"] == "89.00"
+
+    # Every server row reconciles to the server total; nothing was dropped or summed here.
+    assert sum(Decimal(row["market_value_usd"]) for row in body["by_asset"]) == Decimal(
+        body["equity_usd"]
+    )
+    assert sum(Decimal(row["market_value_usd"]) for row in body["by_chain"]) == Decimal(
+        body["equity_usd"]
+    )
+    assert sum(Decimal(row["share_pct"]) for row in body["by_asset"]) == Decimal("100.00")
+
+
+def test_paper_account_composition_single_position(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="10",
+        price="1",
+        fee="0",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        price="1.5",
+        observed_at=utcnow(),
+        symbol="ONE",
+    )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is True
+    assert body["cash_usd"] == "9990"
+    assert Decimal(body["known_market_value_usd"]) == Decimal("15")
+    assert Decimal(body["equity_usd"]) == Decimal("10005")
+    assert len(body["positions"]) == 1
+    assert body["unpriced_positions"] == []
+
+    position_rows = [row for row in body["by_asset"] if row["kind"] == "position"]
+    assert len(body["by_asset"]) == 2
+    assert len(position_rows) == 1
+    assert position_rows[0]["token_address"] == TOKEN_A
+    assert Decimal(position_rows[0]["market_value_usd"]) == Decimal("15")
+    assert position_rows[0]["share_pct"] == "0.15"
+    cash_row = next(row for row in body["by_asset"] if row["kind"] == "cash")
+    assert cash_row["share_pct"] == "99.85"
+
+    chains_by_name = {row["chain"]: row for row in body["by_chain"]}
+    assert len(body["by_chain"]) == 2
+    assert chains_by_name[CHAIN]["assets"] == 1
+    assert Decimal(chains_by_name[CHAIN]["market_value_usd"]) == Decimal("15")
+    assert chains_by_name[CHAIN]["share_pct"] == "0.15"
+    assert chains_by_name["settlement"]["share_pct"] == "99.85"
+    assert sum(Decimal(row["market_value_usd"]) for row in body["by_asset"]) == Decimal(
+        body["equity_usd"]
+    )
+    assert sum(Decimal(row["share_pct"]) for row in body["by_asset"]) == Decimal("100.00")
+
+
+def test_paper_account_withholds_shares_when_equity_is_not_positive(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """A zero denominator yields no share, never a 0% or infinite number."""
+    _genesis(session, amount="100")
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="100",
+        price="1",
+        fee="0",
+        at=START,
+    )
+    _snapshot(session, chain=CHAIN, token=TOKEN_A, price="1", observed_at=utcnow())
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="sell",
+        quantity="100",
+        price="1",
+        fee="100",
+        avg_cost="1",
+        at=START,
+    )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is True
+    assert body["cash_usd"] == "0"
+    assert body["equity_usd"] == "0"
+    assert body["positions"] == []
+    assert all(row["share_pct"] is None for row in body["by_asset"])
+    assert all(row["share_pct"] is None for row in body["by_chain"])
+    cash_row = next(row for row in body["by_asset"] if row["kind"] == "cash")
+    assert cash_row["market_value_usd"] == "0"
+    assert cash_row["share_pct"] is None
+
+
+def test_paper_account_all_unknown_marks_withhold_equity(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="10",
+        price="2",
+        fee="0.06",
+        at=START,
+    )
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_B,
+        side="buy",
+        quantity="10",
+        price="10",
+        fee="0.3",
+        at=START,
+    )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is False
+    assert body["equity_usd"] is None
+    assert body["unrealized_usd"] is None
+    assert body["known_market_value_usd"] == "0"
+    assert {row["token_address"] for row in body["unpriced_positions"]} == {TOKEN_A, TOKEN_B}
+    assert all(
+        row["market_value_usd"] is None and row["share_pct"] is None
+        for row in body["by_asset"]
+        if row["kind"] == "position"
+    )
+
+
+def test_paper_account_flat_account_is_complete_cash_only(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is True
+    assert body["marks_unknown"] is False
+    assert body["equity_usd"] == "10000"
+    assert body["unrealized_usd"] == "0"
+    assert body["known_market_value_usd"] == "0"
+    assert body["unpriced_positions"] == []
+    assert body["positions"] == []
+    assert body["by_chain"] == [
+        {
+            "chain": "settlement",
+            "assets": 1,
+            "unpriced_assets": 0,
+            "market_value_usd": "10000",
+            "share_pct": "100.00",
+            "mark_status": "known",
+        }
+    ]
+    assert body["by_asset"] == [
+        {
+            "chain": "settlement",
+            "token_address": None,
+            "symbol": "USD",
+            "kind": "cash",
+            "quantity": "10000",
+            "mark_usd": "1",
+            "market_value_usd": "10000",
+            "share_pct": "100.00",
+            "source": None,
+            "mark_status": "known",
+        }
+    ]
+
+
+def test_paper_account_composition_reconciles_across_chains(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="100",
+        price="2",
+        fee="0.6",
+        at=START,
+    )
+    _snapshot(session, chain=CHAIN, token=TOKEN_A, price="3", observed_at=utcnow(), symbol="AAA")
+    _trade(
+        session,
+        chain="solana",
+        token=TOKEN_B,
+        side="buy",
+        quantity="20",
+        price="5",
+        fee="0.3",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain="solana",
+        token=TOKEN_B,
+        price="6",
+        observed_at=utcnow(),
+        symbol="BBB",
+    )
+
+    body = client_for(paper_router.router).get("/api/v1/paper/account").json()
+
+    assert body["complete"] is True
+    assert body["equity_usd"] == "10119.1"
+    assert body["unrealized_usd"] == "120"
+    assert body["known_market_value_usd"] == "420"
+    assert body["unpriced_positions"] == []
+
+    assets = {row["token_address"]: row for row in body["by_asset"] if row["kind"] == "position"}
+    assert assets[TOKEN_A]["share_pct"] == "2.96"
+    assert assets[TOKEN_B]["share_pct"] == "1.19"
+    cash = next(row for row in body["by_asset"] if row["kind"] == "cash")
+    assert cash["share_pct"] == "95.85"
+
+    chains = {row["chain"]: row for row in body["by_chain"]}
+    assert chains[CHAIN]["market_value_usd"] == "300"
+    assert chains[CHAIN]["share_pct"] == "2.96"
+    assert chains["solana"]["market_value_usd"] == "120"
+    assert chains["solana"]["share_pct"] == "1.19"
+    assert chains["settlement"]["share_pct"] == "95.85"
+
+    # The server rows reconcile to the server total; the client never sums them.
+    assert sum(Decimal(row["market_value_usd"]) for row in body["by_asset"]) == Decimal(
+        body["equity_usd"]
+    )
+    assert sum(Decimal(row["market_value_usd"]) for row in body["by_chain"]) == Decimal(
+        body["equity_usd"]
+    )
+    assert sum(Decimal(row["share_pct"]) for row in body["by_asset"]) == Decimal("100.00")
+
+
 def test_attribution_share_is_of_absolute_realized(
     client_for: Callable[..., TestClient], session: Session
 ) -> None:
     _genesis(session)
+
     # A: +39.04 realized.
     _trade(
         session,

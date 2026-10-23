@@ -21,6 +21,10 @@ function isStale(observedAt: string | null | undefined) {
 	return age === null || age > STALE_AFTER_SECONDS;
 }
 
+function markCountLabel(count: number) {
+	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
+}
+
 /** Rejected attempts are the only risk-decision records this build exposes. */
 function rejectionSummary(orders: PaperOrderRecord[]) {
 	const rejected = orders.filter((order) => order.status === "rejected");
@@ -128,7 +132,13 @@ export default async function RiskPage() {
 				<Stat
 					label="Equity"
 					value={account ? formatUsd(account.equity_usd) : "—"}
-					meta={account ? "PAPER · server snapshot" : "unavailable"}
+					meta={
+						account
+							? account.marks_unknown
+								? `equity unavailable — ${markCountLabel(account.unpriced_positions.length)}`
+								: "PAPER · server snapshot"
+							: "unavailable"
+					}
 				/>
 				<Stat
 					label="Cash"
