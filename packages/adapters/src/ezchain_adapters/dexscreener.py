@@ -39,7 +39,7 @@ MAX_CONCURRENT_CHAINS = 4
 # Safety cap for one ``tokens()`` call; it is not the API's response-pair cap.
 MAX_DISCOVERY_ADDRESSES = MAX_BATCH * 4
 
-SortMode = Literal["trending", "liquidity", "new"]
+SortMode = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
 CoverageReason = Literal["pairs", "no_pairs", "error"]
 
 SAFETY_UNKNOWN = {"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"}
@@ -349,19 +349,52 @@ def chain_addresses(chain_id: str, hints: list[dict[str, Any]]) -> list[str]:
 
 
 def _sort_rows(rows: list[MarketRow], sort: SortMode) -> list[MarketRow]:
-    """Sort within one chain. Unknown values sort last and stay ``None`` on the row."""
+    """Sort within one chain with a deterministic tie-breaker.
+
+    Unknown values always sort last and stay ``None`` on the row. The final pair address
+    key makes every order total: two pages of the same snapshot cannot swap equal rows.
+    """
     if sort == "new":
         return sorted(
             rows,
             key=lambda row: (
+                row.pair_created_at is not None,
                 (row.pair_created_at or row.source.observed_at).timestamp(),
                 row.liquidity_usd is not None,
                 _known(row.liquidity_usd),
+                row.pair_address,
+            ),
+            reverse=True,
+        )
+    if sort == "pair_age":
+        # Oldest listing first; unknown age last. Pair age is the direction here, so a
+        # filter like ``min_pair_age_minutes`` pairs naturally with this sort.
+        return sorted(
+            rows,
+            key=lambda row: (
+                row.pair_created_at is None,
+                (row.pair_created_at or row.source.observed_at).timestamp(),
+                row.pair_address,
+            ),
+        )
+    if sort == "change_h24":
+        return sorted(
+            rows,
+            key=lambda row: (
+                row.price_change_h24 is not None,
+                _known(row.price_change_h24),
+                row.volume_24h_usd is not None,
+                _known(row.volume_24h_usd),
+                row.pair_address,
             ),
             reverse=True,
         )
     if sort == "liquidity":
-        return sorted(rows, key=_rank, reverse=True)
+        return sorted(
+            rows,
+            key=lambda row: (*_rank(row), row.pair_address),
+            reverse=True,
+        )
     return sorted(
         rows,
         key=lambda row: (
@@ -369,6 +402,7 @@ def _sort_rows(rows: list[MarketRow], sort: SortMode) -> list[MarketRow]:
             _known(row.volume_24h_usd),
             row.liquidity_usd is not None,
             _known(row.liquidity_usd),
+            row.pair_address,
         ),
         reverse=True,
     )

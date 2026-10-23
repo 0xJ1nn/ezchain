@@ -12,6 +12,8 @@ import {
 	type MarketOverview,
 	type MarketQuery,
 	type MarketRow,
+	type MarketSort,
+	type MarketSortSemantics,
 	type PairInfo,
 	type Quote,
 	type QuoteQuery,
@@ -516,16 +518,91 @@ export function fixtureMarketOverview(): MarketOverview {
 	};
 }
 
+function sortRows(rows: MarketRow[], sort: MarketSort): MarketRow[] {
+	const number = (value: string | null): number | null => {
+		if (value === null || value === "") return null;
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	};
+	const created = (row: MarketRow): number | null => {
+		if (!row.pair_created_at) return null;
+		const parsed = Date.parse(row.pair_created_at);
+		return Number.isFinite(parsed) ? parsed : null;
+	};
+	return [...rows].sort((left, right) => {
+		const tie = `${left.chain}:${left.pair_address}`.localeCompare(
+			`${right.chain}:${right.pair_address}`,
+		);
+		if (sort === "liquidity") {
+			const a = number(left.liquidity_usd);
+			const b = number(right.liquidity_usd);
+			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
+			return b - a || tie;
+		}
+		if (sort === "new") {
+			const a = created(left);
+			const b = created(right);
+			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
+			return b - a || tie;
+		}
+		if (sort === "pair_age") {
+			const a = created(left);
+			const b = created(right);
+			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
+			return a - b || tie;
+		}
+		if (sort === "change_h24") {
+			const a = number(left.price_change_h24);
+			const b = number(right.price_change_h24);
+			if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
+			return b - a || tie;
+		}
+		const a = number(left.volume_24h_usd);
+		const b = number(right.volume_24h_usd);
+		if (a === null || b === null) return a === null ? 1 : b === null ? -1 : tie;
+		return b - a || tie;
+	});
+}
+
+function roundRobin(groups: MarketRow[][]): MarketRow[] {
+	const merged: MarketRow[] = [];
+	let depth = 0;
+	while (true) {
+		let added = false;
+		for (const group of groups) {
+			if (depth < group.length) {
+				merged.push(group[depth]);
+				added = true;
+			}
+		}
+		if (!added) return merged;
+		depth += 1;
+	}
+}
+
 export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 	const chain = query.chain ?? "all";
 	checkChain(chain);
 	const sort = query.sort ?? "trending";
-	const limit = Math.min(100, Math.max(1, query.limit ?? 50));
+	const requestedLimit = Number(query.limit ?? 50);
+	const limit = Number.isFinite(requestedLimit)
+		? Math.min(100, Math.max(1, Math.trunc(requestedLimit)))
+		: 50;
+	const requestedOffset = Number(query.offset ?? 0);
+	const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.trunc(requestedOffset)) : 0;
 	const search = (query.q ?? "").trim().toLowerCase();
+	const minLiquidity = nonNegativeParam(query.minLiquidityUsd);
+	const minVolume = nonNegativeParam(query.minVolume24hUsd);
+	const minChange = finiteParam(query.minChangeH24);
+	const maxChange = finiteParam(query.maxChangeH24);
+	const minAge = nonNegativeParam(query.minPairAgeMinutes);
+	const maxAge = nonNegativeParam(query.maxPairAgeMinutes);
+	const dex = (query.dex ?? "").trim().toLowerCase();
 
 	const now = Date.now();
 	const source = fixtureSource(now, 4);
-	const rows = SEEDS.filter((seed) => chain === "all" || seed.chain === chain)
+	const chainSeeds = SEEDS.filter((seed) => chain === "all" || seed.chain === chain);
+	const discovered = chainSeeds
 		.filter((seed) => {
 			if (!search) return true;
 			return (
@@ -536,19 +613,123 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 		})
 		.map((seed) => rowFromSeed(seed, source));
 
-	const sorted = [...rows].sort((a, b) => {
-		if (sort === "liquidity") {
-			return Number(b.liquidity_usd) - Number(a.liquidity_usd);
+	const unknownExcluded: Record<string, number> = {};
+	const rows = discovered.filter((row) => {
+		const unknown = new Set<string>();
+		if (minLiquidity !== null && row.liquidity_usd === null) unknown.add("liquidity_usd");
+		if (minVolume !== null && row.volume_24h_usd === null) unknown.add("volume_24h_usd");
+		if ((minChange !== null || maxChange !== null) && row.price_change_h24 === null) {
+			unknown.add("price_change_h24");
 		}
-		if (sort === "new") {
-			const aTime = a.pair_created_at ? Date.parse(a.pair_created_at) : 0;
-			const bTime = b.pair_created_at ? Date.parse(b.pair_created_at) : 0;
-			return bTime - aTime;
+		if ((minAge !== null || maxAge !== null) && row.pair_created_at === null) {
+			unknown.add("pair_created_at");
 		}
-		return Number(b.volume_24h_usd) - Number(a.volume_24h_usd);
+		if (unknown.size > 0) {
+			for (const field of unknown) {
+				unknownExcluded[field] = (unknownExcluded[field] ?? 0) + 1;
+			}
+			return false;
+		}
+		const liquidity = numberValue(row.liquidity_usd);
+		if (minLiquidity !== null && liquidity !== null && liquidity < minLiquidity) return false;
+		const volume = numberValue(row.volume_24h_usd);
+		if (minVolume !== null && volume !== null && volume < minVolume) return false;
+		const change = numberValue(row.price_change_h24);
+		if (minChange !== null && change !== null && change < minChange) return false;
+		if (maxChange !== null && change !== null && change > maxChange) return false;
+		if (row.pair_created_at !== null) {
+			const ageMinutes = Math.max(0, (now - Date.parse(row.pair_created_at)) / 60_000);
+			if (minAge !== null && ageMinutes < minAge) return false;
+			if (maxAge !== null && ageMinutes > maxAge) return false;
+		}
+		if (dex && row.dex.toLowerCase() !== dex) return false;
+		return true;
 	});
 
-	return { rows: sorted.slice(0, limit), source, stale: false };
+	const semantics: MarketSortSemantics =
+		chain === "all" && !search ? "per_chain_round_robin" : "global_sort";
+	const ordered =
+		semantics === "per_chain_round_robin"
+			? roundRobin(
+					CHAIN_REGISTRY.map((item) =>
+						sortRows(
+							rows.filter((row) => row.chain === item.id),
+							sort,
+						),
+					).filter((group) => group.length > 0),
+				)
+			: sortRows(rows, sort);
+	const total = ordered.length;
+	const page = ordered.slice(offset, offset + limit);
+	const hasMore = offset + page.length < total;
+	const coverage =
+		search.length > 0
+			? null
+			: (chain === "all" ? CHAIN_REGISTRY : CHAIN_REGISTRY.filter((item) => item.id === chain)).map(
+					(item) => {
+						const returned = discovered.filter((row) => row.chain === item.id).length;
+						return {
+							chain: item.id,
+							requested: SEEDS.filter((seed) => seed.chain === item.id).length,
+							returned,
+							reason: returned > 0 ? ("pairs" as const) : ("no_pairs" as const),
+						};
+					},
+				);
+
+	return {
+		rows: page,
+		source,
+		stale: false,
+		coverage,
+		ordered_by: semantics === "per_chain_round_robin" ? "chain_round_robin" : "global_sort",
+		sort,
+		sort_semantics: semantics,
+		offset,
+		limit,
+		total,
+		has_more: hasMore,
+		next_offset: hasMore ? offset + page.length : null,
+		applied_filters: {
+			chain,
+			q: search || null,
+			dex: dex || null,
+			min_liquidity_usd: minLiquidity === null ? null : String(minLiquidity),
+			min_volume_24h_usd: minVolume === null ? null : String(minVolume),
+			min_change_h24: minChange === null ? null : String(minChange),
+			max_change_h24: maxChange === null ? null : String(maxChange),
+			min_pair_age_minutes: minAge,
+			max_pair_age_minutes: maxAge,
+			unknown_excluded: unknownExcluded,
+		},
+		population: {
+			chains_scanned: chain === "all" ? CHAIN_REGISTRY.length : 1,
+			addresses_requested: null,
+			rows_discovered: discovered.length,
+			rows_after_filters: total,
+			rows_returned: page.length,
+			truncated: false,
+			sort,
+			sort_semantics: semantics,
+		},
+	};
+}
+
+function finiteParam(value: string | number | undefined): number | null {
+	if (value === undefined || value === "") return null;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+function nonNegativeParam(value: string | number | undefined): number | null {
+	const parsed = finiteParam(value);
+	return parsed === null || parsed < 0 ? null : parsed;
+}
+
+function numberValue(value: string | null): number | null {
+	if (value === null || value === "") return null;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
 }
 
 function findSeed(chain: string, address: string): Seed {

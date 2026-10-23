@@ -12,6 +12,62 @@
 	flex: 1 1 100%;
 }
 
+.chips {
+	gap: 6px;
+}
+
+.chip {
+	font-family: var(--mono);
+	font-size: 10.5px;
+}
+
+.footer {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px 16px;
+	flex-wrap: wrap;
+}
+
+/* Result population and the real pager share one footer row. */
+.pager {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px 16px;
+	flex-wrap: wrap;
+}
+
+.pager .btn[aria-disabled="true"] {
+	opacity: 0.5;
+	cursor: default;
+	pointer-events: none;
+}
+
+/* On narrow screens the filter controls stack, but the summary row above them keeps the
+   active-filter and result counts visible. */
+.filterPanel {
+	border-bottom: 1px solid var(--line);
+}
+
+.filterSummary {
+	display: none;
+}
+
+.filterForm {
+	border-bottom: 0;
+}
+
+@media (max-width: 760px) {
+	.filterSummary {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+		padding: 8px 10px;
+		font-size: 11px;
+	}
+}
+
 /* The main table still needs horizontal scrolling once secondary columns are hidden. */
 .swipeHint {
 	display: none;

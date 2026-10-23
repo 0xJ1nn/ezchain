@@ -522,7 +522,9 @@ async def test_successful_scan_stays_within_upstream_call_budget(
 
     upstream_calls = 4 + token_route.call_count + pairs_route.call_count
     assert token_route.call_count <= len(CHAINS)
-    assert upstream_calls <= 30
+    # Every registered chain now has a seed, plus four hint feeds and at most two
+    # shared-address fallback lookups (Base/Optimism WETH).
+    assert upstream_calls <= len(CHAINS) + 4 + 2
     assert result.attempted == tuple(chain.id for chain in CHAINS)
 
 
@@ -578,8 +580,13 @@ def test_overview_and_stored_endpoints(
 
     stored = client.get("/api/v1/markets/stored", params={"chain": "all", "limit": 50})
     assert stored.status_code == 200
-    rows = stored.json()
-    assert len(rows) == 2
+    stored_body = stored.json()
+    rows = stored_body["rows"]
+    assert stored_body["total"] == 2
+    assert stored_body["offset"] == 0
+    assert stored_body["limit"] == 50
+    assert stored_body["has_more"] is False
+    assert stored_body["next_offset"] is None
     assert rows[0]["liquidity_usd"] == "500000"
     assert all(isinstance(row["price_usd"], str) for row in rows)
     assert rows[0]["source"] == "dexscreener"
@@ -588,8 +595,21 @@ def test_overview_and_stored_endpoints(
     assert "dex" not in rows[0]
     assert "url" not in rows[0]
 
+    first_page = client.get(
+        "/api/v1/markets/stored", params={"chain": "all", "limit": 1, "offset": 0}
+    ).json()
+    second_page = client.get(
+        "/api/v1/markets/stored", params={"chain": "all", "limit": 1, "offset": 1}
+    ).json()
+    assert first_page["total"] == 2
+    assert first_page["has_more"] is True
+    assert first_page["next_offset"] == 1
+    assert second_page["has_more"] is False
+    assert second_page["next_offset"] is None
+    assert first_page["rows"][0]["token_address"] != second_page["rows"][0]["token_address"]
+
     solana = client.get("/api/v1/markets/stored", params={"chain": "solana"})
-    assert [row["token_address"] for row in solana.json()] == [SOL_TOKEN]
+    assert [row["token_address"] for row in solana.json()["rows"]] == [SOL_TOKEN]
 
     unknown = client.get("/api/v1/markets/stored", params={"chain": "not-a-chain"})
     assert unknown.status_code == 404

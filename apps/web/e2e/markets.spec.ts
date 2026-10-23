@@ -60,10 +60,13 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(firstRow.locator("td").nth(9)).toHaveText("unknown");
 	await expect(marketTable.locator("tbody tr td:nth-child(10)")).toHaveCount(12);
 
-	// Trending is the API's 24h-volume order.
+	// All-chain trending is an honest per-chain round robin, not a global ranking.
 	await expect(firstRow).toContainText("BONK");
-	const pepeRow = marketTable.locator("tbody tr").nth(1);
-	await expect(pepeRow).toContainText("PEPE");
+	await expect(page.getByText("PER-CHAIN ROUND ROBIN", { exact: true })).toBeVisible();
+	const secondRow = marketTable.locator("tbody tr").nth(1);
+	await expect(secondRow).toContainText("PEPE");
+	const thirdRow = marketTable.locator("tbody tr").nth(2);
+	await expect(thirdRow).toContainText("AERO");
 
 	// Pair age is a listing age; a fresh pair says so instead of pretending to be old.
 	const mochiRow = marketTable.locator("tbody tr").filter({ hasText: "MOCHI" });
@@ -77,7 +80,9 @@ test("markets renders the fixture screener with source, age and real filters", a
 	);
 	await expect(marketTable.locator("tbody tr td:first-child a")).toHaveCount(12);
 
-	await expect(page.getByText(/12 rows · limit 50 · source Fixture/)).toBeVisible();
+	await expect(page.getByText(/12 of 12 markets · showing 1–12/)).toBeVisible();
+	await expect(page.getByText(/page 1 of 1/)).toBeVisible();
+	await expect(page.getByText(/limit 50 · source Fixture/)).toBeVisible();
 
 	// Chain filter is a URL query param and refetches server-side.
 	await chainTabGroup.getByRole("link", { name: "Base" }).click();
@@ -98,16 +103,19 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(marketTable.locator("tbody tr")).toHaveCount(1);
 	await expect(marketTable.locator("tbody tr").first()).toContainText("BONK");
 
-	// Sort is a URL query param; liquidity order puts UNI (largest pool) first.
+	// Sort is a URL query param. All-chain liquidity stays per-chain round robin.
 	await page.goto("/markets?sort=liquidity");
 	await expect(page.getByLabel("Sort markets")).toHaveValue("liquidity");
+	await expect(marketTable.locator("tbody tr").first()).toContainText("WIF");
+	await page.goto("/markets?sort=liquidity&chain=ethereum");
+	await expect(page.getByText("GLOBAL SORT", { exact: true })).toBeVisible();
 	await expect(marketTable.locator("tbody tr").first()).toContainText("UNI");
 
 	// Empty state is a reason code, not a zero row.
 	await page.goto("/markets?q=zzzz");
 	await expect(page.getByText("EMPTY_RESULT")).toBeVisible();
-	await expect(page.getByText(/Nothing matched/)).toBeVisible();
-	await expect(page.getByRole("link", { name: "Reset filters" })).toBeVisible();
+	await expect(page.getByText(/No rows matched: Search: “zzzz”/)).toBeVisible();
+	await expect(page.getByRole("link", { name: "Reset filters" }).first()).toBeVisible();
 
 	// API failures print the reason code; they never fall back to fixtures.
 	await page.goto("/markets?chain=nope");
@@ -116,6 +124,82 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(page.locator("table")).toHaveCount(0);
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
+});
+
+test("markets filters round-trip through chips and the pager is real", async ({ page }) => {
+	const marketTable = page.locator("table").first();
+
+	// A filter submitted from the bar is URL-encoded and appears as a removable chip.
+	await page.goto("/markets");
+	await page.getByLabel("Minimum liquidity in USD").fill("10000000");
+	await page.getByLabel("Minimum 24h volume in USD").fill("20000000");
+	await page.getByLabel("Minimum 24h change percent").fill("-10");
+	await page.getByLabel("Maximum 24h change percent").fill("20");
+	await page.getByLabel("Minimum pair age in minutes").fill("60");
+	await page.getByLabel("Maximum pair age in minutes").fill("10000000");
+	await page.getByLabel("DEX").fill("uniswap");
+	await page.getByRole("button", { name: "Apply" }).click();
+
+	await expect(page).toHaveURL(/min_liquidity_usd=10000000/);
+	await expect(page).toHaveURL(/min_volume_24h_usd=20000000/);
+	await expect(page).toHaveURL(/min_change_h24=-10/);
+	await expect(page).toHaveURL(/max_change_h24=20/);
+	await expect(page).toHaveURL(/min_pair_age_minutes=60/);
+	await expect(page).toHaveURL(/max_pair_age_minutes=10000000/);
+	await expect(page).toHaveURL(/dex=uniswap/);
+	await expect(page.getByRole("link", { name: /Remove filter Liquidity/ })).toBeVisible();
+	await expect(page.getByRole("link", { name: /Remove filter DEX/ })).toBeVisible();
+
+	await page.getByRole("link", { name: /Remove filter Liquidity/ }).click();
+	await expect(page).not.toHaveURL(/min_liquidity_usd/);
+	await expect(page.getByRole("link", { name: /Remove filter Liquidity/ })).toHaveCount(0);
+
+	// First/middle/last pages: totals stay the filtered count, no hardcoded 1/1.
+	await page.goto("/markets?limit=5");
+	await expect(marketTable.locator("tbody tr")).toHaveCount(5);
+	await expect(page.getByText(/5 of 12 markets · showing 1–5/)).toBeVisible();
+	await expect(page.getByText(/showing 1–5/)).toBeVisible();
+	await expect(page.getByText(/page 1 of 3/)).toBeVisible();
+	await expect(page.getByText("← Prev")).toBeVisible();
+
+	await page.getByRole("link", { name: /Next/ }).click();
+	await expect(page).toHaveURL(/offset=5/);
+	await expect(marketTable.locator("tbody tr")).toHaveCount(5);
+	await expect(page.getByText(/showing 6–10/)).toBeVisible();
+	await expect(page.getByText(/page 2 of 3/)).toBeVisible();
+
+	await page.getByRole("link", { name: /Next/ }).click();
+	await expect(page).toHaveURL(/offset=10/);
+	await expect(marketTable.locator("tbody tr")).toHaveCount(2);
+	await expect(page.getByText(/2 of 12 markets · showing 11–12/)).toBeVisible();
+	await expect(page.getByText(/page 3 of 3/)).toBeVisible();
+	await expect(page.getByText("Next →")).toBeVisible();
+
+	await page.getByRole("link", { name: /Prev/ }).click();
+	await expect(page).toHaveURL(/offset=5/);
+	await expect(page.getByText(/page 2 of 3/)).toBeVisible();
+
+	// An empty result names the filter that removed every row.
+	await page.goto("/markets?min_liquidity_usd=5000000000");
+	await expect(page.getByText("EMPTY_RESULT")).toBeVisible();
+	await expect(page.getByText(/No rows matched: Liquidity ≥ \$5\.00B/)).toBeVisible();
+	await expect(page.getByRole("link", { name: "Reset filters" }).first()).toBeVisible();
+});
+
+test("markets mobile filter panel keeps the result count visible", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/markets?chain=base");
+
+	const panel = page.getByTestId("market-filters");
+	const summary = panel.locator("div").first();
+	await expect(summary).toBeVisible();
+	await expect(summary).toContainText("Filters");
+	await expect(summary).toContainText("1 active");
+	await expect(summary).toContainText("4 of 4 markets");
+
+	const search = panel.getByRole("searchbox", { name: "Search symbol, name or address" });
+	await expect(search).toBeVisible();
+	await expect(page.getByText(/4 of 4 markets/).first()).toBeVisible();
 });
 
 test("markets shows the live/fixture mode banner honestly", async ({ page }) => {
@@ -267,6 +351,37 @@ async function startMockApi(): Promise<MockApi> {
 					observed_at: new Date().toISOString(),
 				},
 				stale: false,
+				coverage: null,
+				ordered_by: "global_sort",
+				sort: url.searchParams.get("sort") ?? "trending",
+				sort_semantics: "global_sort",
+				offset: Number(url.searchParams.get("offset") ?? "0"),
+				limit: Number(url.searchParams.get("limit") ?? "50"),
+				total: 1,
+				has_more: false,
+				next_offset: null,
+				applied_filters: {
+					chain: chain ?? "all",
+					q,
+					dex: url.searchParams.get("dex"),
+					min_liquidity_usd: url.searchParams.get("min_liquidity_usd"),
+					min_volume_24h_usd: url.searchParams.get("min_volume_24h_usd"),
+					min_change_h24: url.searchParams.get("min_change_h24"),
+					max_change_h24: url.searchParams.get("max_change_h24"),
+					min_pair_age_minutes: null,
+					max_pair_age_minutes: null,
+					unknown_excluded: {},
+				},
+				population: {
+					chains_scanned: null,
+					addresses_requested: null,
+					rows_discovered: 1,
+					rows_after_filters: 1,
+					rows_returned: 1,
+					truncated: false,
+					sort: url.searchParams.get("sort") ?? "trending",
+					sort_semantics: "global_sort",
+				},
 			});
 			return;
 		}
@@ -303,11 +418,38 @@ test("fixture mode returns fixture rows without touching the network", async () 
 		expect(webMode()).toBe("fixture");
 		const list = await getMarkets({ chain: "base" });
 		expect(list.rows).toHaveLength(4);
+		expect(list.total).toBe(4);
+		expect(list.has_more).toBe(false);
+		expect(list.next_offset).toBeNull();
+		expect(list.sort_semantics).toBe("global_sort");
 		expect(list.source.name).toBe("fixture");
 		expect(list.stale).toBe(false);
 
 		const searched = await getMarkets({ q: "bonk" });
 		expect(searched.rows.map((row) => row.symbol)).toEqual(["BONK"]);
+
+		// Fixture parity: filtering, totals and offset paging match the API contract.
+		const first = await getMarkets({ limit: 5 });
+		const second = await getMarkets({ limit: 5, offset: 5 });
+		const third = await getMarkets({ limit: 5, offset: 10 });
+		expect(first.total).toBe(12);
+		expect(first.has_more).toBe(true);
+		expect(first.next_offset).toBe(5);
+		expect(first.rows).toHaveLength(5);
+		expect(second.rows).toHaveLength(5);
+		expect(third.rows).toHaveLength(2);
+		expect(third.has_more).toBe(false);
+		expect(third.next_offset).toBeNull();
+		const paged = [...first.rows, ...second.rows, ...third.rows].map(
+			(row) => `${row.chain}:${row.pair_address}`,
+		);
+		expect(new Set(paged).size).toBe(12);
+
+		const liquid = await getMarkets({ minLiquidityUsd: "10000000", chain: "solana" });
+		expect(liquid.rows.map((row) => row.symbol)).toEqual(["WIF", "JUP"]);
+		expect(liquid.total).toBe(2);
+		expect(liquid.applied_filters.min_liquidity_usd).toBe("10000000");
+		expect(liquid.applied_filters.unknown_excluded).toEqual({});
 
 		await expect(getMarkets({ chain: "nope" })).rejects.toMatchObject({
 			code: "CHAIN_NOT_FOUND",
@@ -323,9 +465,31 @@ test("live mode fetches the API and never falls back to fixtures", async () => {
 			expect(webMode()).toBe("live");
 			const list = await getMarkets({ chain: "all", sort: "trending", limit: 50 });
 			expect(list.rows.map((row) => row.symbol)).toEqual(["LIVEONLY"]);
+			expect(list.total).toBe(1);
 			expect(list.source.name).toBe("dexscreener");
 			expect(api.requests[0]).toContain("/api/v1/markets");
 			expect(api.requests[0]).toContain("sort=trending");
+
+			await getMarkets({
+				chain: "base",
+				offset: 10,
+				minLiquidityUsd: "1000000",
+				minVolume24hUsd: "2000000",
+				minChangeH24: "-5",
+				maxChangeH24: "25",
+				minPairAgeMinutes: 60,
+				maxPairAgeMinutes: 1440,
+				dex: "uniswap",
+			});
+			const filteredRequest = api.requests.at(-1) ?? "";
+			expect(filteredRequest).toContain("offset=10");
+			expect(filteredRequest).toContain("min_liquidity_usd=1000000");
+			expect(filteredRequest).toContain("min_volume_24h_usd=2000000");
+			expect(filteredRequest).toContain("min_change_h24=-5");
+			expect(filteredRequest).toContain("max_change_h24=25");
+			expect(filteredRequest).toContain("min_pair_age_minutes=60");
+			expect(filteredRequest).toContain("max_pair_age_minutes=1440");
+			expect(filteredRequest).toContain("dex=uniswap");
 
 			// Upstream 500: a reason code, not fixture rows.
 			await expect(getMarkets({ q: "boom" })).rejects.toMatchObject({

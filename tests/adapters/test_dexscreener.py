@@ -481,6 +481,136 @@ async def test_single_chain_discovery_drops_other_chain_hints(
 
 
 @respx.mock
+async def test_all_chain_solana_rows_survive_empty_hint_feeds(
+    dexscreener: DexScreenerClient,
+) -> None:
+    # Promotional feeds are optional. The canonical Solana seeds alone must produce rows.
+    for path in (
+        "/token-profiles/latest/v1",
+        "/token-boosts/latest/v1",
+        "/token-boosts/top/v1",
+        "/community-takeovers/latest/v1",
+    ):
+        respx.get(f"{BASE}{path}").mock(return_value=httpx.Response(200, json=[]))
+
+    by_address = {
+        address.lower(): {
+            "chainId": "solana",
+            "dexId": "raydium",
+            "pairAddress": f"sol-pair-{index}",
+            "baseToken": {"address": address, "symbol": symbol, "name": symbol},
+            "quoteToken": {
+                "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "symbol": "USDC",
+                "name": "USD Coin",
+            },
+            "priceUsd": "1.5",
+            "liquidity": {"usd": 1_000_000},
+            "volume": {"h24": 500_000},
+            "priceChange": {"h24": 2.5},
+            "pairCreatedAt": 1_700_000_000_000,
+        }
+        for index, (address, symbol) in enumerate(
+            zip(SEED_TOKENS["solana"], ("SOL", "USDC", "BONK", "JUP"), strict=True)
+        )
+    }
+    requested: list[str] = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        addresses = _addresses(request)
+        requested.extend(addresses)
+        selected = [by_address[address.lower()] for address in addresses if address.lower() in by_address]
+        return httpx.Response(200, json={"pairs": selected})
+
+    respx.get(url__regex=TOKENS_URL).mock(side_effect=respond)
+
+    async with dexscreener as client:
+        rows, _source, coverage = await client.discover_markets(chain="all", limit=1000)
+
+    requested_lower = {address.lower() for address in requested}
+    assert {address.lower() for address in SEED_TOKENS["solana"]} <= requested_lower
+    solana_rows = [row for row in rows if row.chain == "solana"]
+    assert {row.symbol for row in solana_rows} == {"SOL", "USDC", "BONK", "JUP"}
+    assert next(item for item in coverage or [] if item.chain == "solana").reason == "pairs"
+
+
+@respx.mock
+async def test_change_h24_sort_keeps_unknown_last(dexscreener: DexScreenerClient) -> None:
+    pairs = [
+        make_change_pair("0xa", "A", h24="10"),
+        make_change_pair("0xb", "B", h24="-5"),
+        make_change_pair("0xc", "C"),
+        make_change_pair("0xd", "D", h24="5"),
+    ]
+    respx.get(f"{BASE}/latest/dex/search").mock(
+        return_value=httpx.Response(200, json={"pairs": pairs})
+    )
+
+    async with dexscreener as client:
+        rows, _ = await client.list_markets(query="TEST", chain="all", sort="change_h24", limit=10)
+
+    assert [row.symbol for row in rows] == ["A", "D", "B", "C"]
+    assert rows[-1].price_change_h24 is None
+
+
+@respx.mock
+async def test_pair_age_sort_is_oldest_first_and_unknown_last(
+    dexscreener: DexScreenerClient,
+) -> None:
+    pairs = [
+        make_change_pair("0xa", "A", created_at=1_700_000_000_000),
+        make_change_pair("0xb", "B", created_at=1_600_000_000_000),
+        make_change_pair("0xc", "C", created_at=None),
+        make_change_pair("0xd", "D", created_at=1_650_000_000_000),
+    ]
+    respx.get(f"{BASE}/latest/dex/search").mock(
+        return_value=httpx.Response(200, json={"pairs": pairs})
+    )
+
+    async with dexscreener as client:
+        rows, _ = await client.list_markets(query="TEST", chain="all", sort="pair_age", limit=10)
+
+    assert [row.symbol for row in rows] == ["B", "D", "A", "C"]
+    assert rows[-1].pair_created_at is None
+
+
+@respx.mock
+async def test_new_sort_keeps_unknown_pair_age_last(dexscreener: DexScreenerClient) -> None:
+    pairs = [
+        make_change_pair("0xa", "A", created_at=1_600_000_000_000),
+        make_change_pair("0xb", "B", created_at=None),
+        make_change_pair("0xc", "C", created_at=1_700_000_000_000),
+    ]
+    respx.get(f"{BASE}/latest/dex/search").mock(
+        return_value=httpx.Response(200, json={"pairs": pairs})
+    )
+
+    async with dexscreener as client:
+        rows, _ = await client.list_markets(query="TEST", chain="all", sort="new", limit=10)
+
+    assert [row.symbol for row in rows] == ["C", "A", "B"]
+    assert rows[-1].pair_created_at is None
+
+
+def make_change_pair(
+    address: str,
+    symbol: str,
+    *,
+    h24: str | None = None,
+    created_at: int | None = 1_700_000_000_000,
+) -> dict[str, Any]:
+    pair = _valid_pair()
+    pair["pairAddress"] = f"pair-{address}"
+    pair["baseToken"] = {"address": address, "symbol": symbol, "name": symbol}
+    pair["priceChange"] = {} if h24 is None else {"h24": h24}
+    if created_at is None:
+        pair.pop("pairCreatedAt")
+    else:
+        pair["pairCreatedAt"] = created_at
+    return pair
+
+
+@respx.mock
 async def test_429_sets_a_cooldown_and_fails_fast(
     dexscreener: DexScreenerClient, clock: Any
 ) -> None:

@@ -8,6 +8,7 @@ import {
 	isLiveMode,
 	type ApiError,
 	type Chain,
+	type MarketList,
 	type MarketRow,
 	type MarketSort,
 } from "@/lib/api";
@@ -17,8 +18,8 @@ import {
 	chainInitial,
 	changeText,
 	changeTone,
-	formatUsdPrice,
 	formatUsdCompact,
+	formatUsdPrice,
 	initials,
 	pairAgeLabel,
 	shortAddress,
@@ -30,10 +31,14 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
+const DEFAULT_LIMIT = 50;
+
 const SORTS: { id: MarketSort; label: string }[] = [
 	{ id: "trending", label: "24h volume (trending)" },
 	{ id: "liquidity", label: "Liquidity" },
 	{ id: "new", label: "Newest pair" },
+	{ id: "change_h24", label: "24h change" },
+	{ id: "pair_age", label: "Pair age (oldest first)" },
 ];
 
 function one(value: string | string[] | undefined): string {
@@ -41,13 +46,40 @@ function one(value: string | string[] | undefined): string {
 }
 
 function isSort(value: string): value is MarketSort {
-	return value === "trending" || value === "liquidity" || value === "new";
+	return SORTS.some((sort) => sort.id === value);
+}
+
+function sortLabel(value: MarketSort): string {
+	return SORTS.find((sort) => sort.id === value)?.label ?? value;
+}
+
+function readText(value: string, max = 80): string {
+	return value.trim().slice(0, max);
+}
+
+function readUnsigned(value: string): string {
+	const text = value.trim();
+	if (!text) return "";
+	const parsed = Number(text);
+	return Number.isFinite(parsed) && parsed >= 0 ? text : "";
+}
+
+function readSigned(value: string): string {
+	const text = value.trim();
+	if (!text) return "";
+	return Number.isFinite(Number(text)) ? text : "";
 }
 
 function readLimit(value: string): number {
 	const parsed = Number.parseInt(value, 10);
-	if (!Number.isFinite(parsed)) return 50;
+	if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
 	return Math.min(100, Math.max(1, parsed));
+}
+
+function readOffset(value: string): number {
+	const parsed = Number.parseInt(value, 10);
+	if (!Number.isFinite(parsed) || parsed < 0) return 0;
+	return parsed;
 }
 
 interface MarketParams {
@@ -55,17 +87,116 @@ interface MarketParams {
 	q: string;
 	sort: MarketSort;
 	limit: number;
+	offset: number;
+	minLiquidityUsd: string;
+	minVolume24hUsd: string;
+	minChangeH24: string;
+	maxChangeH24: string;
+	minPairAgeMinutes: string;
+	maxPairAgeMinutes: string;
+	dex: string;
 }
 
 function marketsHref(params: MarketParams, patch: Partial<MarketParams> = {}): string {
+	// Any filter change starts a new page unless the caller asks for a specific offset.
 	const merged = { ...params, ...patch };
+	if (!("offset" in patch)) merged.offset = 0;
 	const query = new URLSearchParams();
 	if (merged.chain !== "all") query.set("chain", merged.chain);
 	if (merged.q) query.set("q", merged.q);
 	if (merged.sort !== "trending") query.set("sort", merged.sort);
-	if (merged.limit !== 50) query.set("limit", String(merged.limit));
+	if (merged.limit !== DEFAULT_LIMIT) query.set("limit", String(merged.limit));
+	if (merged.offset > 0) query.set("offset", String(merged.offset));
+	if (merged.minLiquidityUsd) query.set("min_liquidity_usd", merged.minLiquidityUsd);
+	if (merged.minVolume24hUsd) query.set("min_volume_24h_usd", merged.minVolume24hUsd);
+	if (merged.minChangeH24) query.set("min_change_h24", merged.minChangeH24);
+	if (merged.maxChangeH24) query.set("max_change_h24", merged.maxChangeH24);
+	if (merged.minPairAgeMinutes) query.set("min_pair_age_minutes", merged.minPairAgeMinutes);
+	if (merged.maxPairAgeMinutes) query.set("max_pair_age_minutes", merged.maxPairAgeMinutes);
+	if (merged.dex) query.set("dex", merged.dex);
 	const suffix = query.toString();
 	return suffix ? `/markets?${suffix}` : "/markets";
+}
+
+interface FilterChip {
+	key: keyof MarketParams;
+	label: string;
+	href: string;
+}
+
+function filterChips(params: MarketParams, labelFor: (id: string) => string): FilterChip[] {
+	const chips: FilterChip[] = [];
+	if (params.chain !== "all") {
+		chips.push({
+			key: "chain",
+			label: `Chain: ${labelFor(params.chain)}`,
+			href: marketsHref(params, { chain: "all" }),
+		});
+	}
+	if (params.q) {
+		chips.push({
+			key: "q",
+			label: `Search: “${params.q}”`,
+			href: marketsHref(params, { q: "" }),
+		});
+	}
+	if (params.minLiquidityUsd) {
+		chips.push({
+			key: "minLiquidityUsd",
+			label: `Liquidity ≥ ${formatUsdCompact(params.minLiquidityUsd)}`,
+			href: marketsHref(params, { minLiquidityUsd: "" }),
+		});
+	}
+	if (params.minVolume24hUsd) {
+		chips.push({
+			key: "minVolume24hUsd",
+			label: `Volume ≥ ${formatUsdCompact(params.minVolume24hUsd)}`,
+			href: marketsHref(params, { minVolume24hUsd: "" }),
+		});
+	}
+	if (params.minChangeH24) {
+		chips.push({
+			key: "minChangeH24",
+			label: `24h change ≥ ${changeText(params.minChangeH24)}`,
+			href: marketsHref(params, { minChangeH24: "" }),
+		});
+	}
+	if (params.maxChangeH24) {
+		chips.push({
+			key: "maxChangeH24",
+			label: `24h change ≤ ${changeText(params.maxChangeH24)}`,
+			href: marketsHref(params, { maxChangeH24: "" }),
+		});
+	}
+	if (params.minPairAgeMinutes) {
+		chips.push({
+			key: "minPairAgeMinutes",
+			label: `Pair age ≥ ${params.minPairAgeMinutes}m`,
+			href: marketsHref(params, { minPairAgeMinutes: "" }),
+		});
+	}
+	if (params.maxPairAgeMinutes) {
+		chips.push({
+			key: "maxPairAgeMinutes",
+			label: `Pair age ≤ ${params.maxPairAgeMinutes}m`,
+			href: marketsHref(params, { maxPairAgeMinutes: "" }),
+		});
+	}
+	if (params.dex) {
+		chips.push({
+			key: "dex",
+			label: `DEX: ${params.dex}`,
+			href: marketsHref(params, { dex: "" }),
+		});
+	}
+	if (params.sort !== "trending") {
+		chips.push({
+			key: "sort",
+			label: `Sort: ${sortLabel(params.sort)}`,
+			href: marketsHref(params, { sort: "trending" }),
+		});
+	}
+	return chips;
 }
 
 function TokenCell({ row }: { row: MarketRow }) {
@@ -119,6 +250,27 @@ function ErrorPanel({ error, retryHref }: { error: ApiError; retryHref: string }
 	);
 }
 
+function PopulationLine({ list }: { list: MarketList }) {
+	const population = list.population;
+	const excluded = Object.values(list.applied_filters.unknown_excluded).reduce(
+		(total, count) => total + count,
+		0,
+	);
+	return (
+		<span className="small muted">
+			{population.chains_scanned === null
+				? "Global search"
+				: `${population.chains_scanned} chains scanned`}
+			{population.addresses_requested !== null
+				? ` · ${population.addresses_requested} addresses requested`
+				: ""}
+			{` · ${population.rows_discovered} rows discovered`}
+			{population.truncated ? " · discovery cap reached" : ""}
+			{excluded > 0 ? ` · ${excluded} unknown value(s) excluded` : ""}
+		</span>
+	);
+}
+
 export default async function MarketsPage({
 	searchParams,
 }: {
@@ -127,16 +279,37 @@ export default async function MarketsPage({
 	const raw = await searchParams;
 	const params: MarketParams = {
 		chain: one(raw.chain) || "all",
-		q: one(raw.q).slice(0, 80),
+		q: readText(one(raw.q)),
 		sort: isSort(one(raw.sort)) ? (one(raw.sort) as MarketSort) : "trending",
 		limit: readLimit(one(raw.limit)),
+		offset: readOffset(one(raw.offset)),
+		minLiquidityUsd: readUnsigned(one(raw.min_liquidity_usd)),
+		minVolume24hUsd: readUnsigned(one(raw.min_volume_24h_usd)),
+		minChangeH24: readSigned(one(raw.min_change_h24)),
+		maxChangeH24: readSigned(one(raw.max_change_h24)),
+		minPairAgeMinutes: readUnsigned(one(raw.min_pair_age_minutes)),
+		maxPairAgeMinutes: readUnsigned(one(raw.max_pair_age_minutes)),
+		dex: readText(one(raw.dex)),
 	};
 
 	const [chainsOutcome, marketsOutcome] = await Promise.all([
 		getChains()
 			.then((chains) => ({ ok: true as const, chains }))
 			.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
-		getMarkets({ chain: params.chain, q: params.q, sort: params.sort, limit: params.limit })
+		getMarkets({
+			chain: params.chain,
+			q: params.q || undefined,
+			sort: params.sort,
+			limit: params.limit,
+			offset: params.offset,
+			minLiquidityUsd: params.minLiquidityUsd || undefined,
+			minVolume24hUsd: params.minVolume24hUsd || undefined,
+			minChangeH24: params.minChangeH24 || undefined,
+			maxChangeH24: params.maxChangeH24 || undefined,
+			minPairAgeMinutes: params.minPairAgeMinutes || undefined,
+			maxPairAgeMinutes: params.maxPairAgeMinutes || undefined,
+			dex: params.dex || undefined,
+		})
 			.then((list) => ({ ok: true as const, list }))
 			.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
 	]);
@@ -147,6 +320,24 @@ export default async function MarketsPage({
 	const error = marketsOutcome.ok ? null : marketsOutcome.error;
 	const labelFor = (id: string) => chains.find((chain) => chain.id === id)?.name ?? id;
 	const refreshHref = marketsHref(params);
+	const chips = filterChips(params, labelFor);
+	const filterNames = chips.filter((chip) => chip.key !== "sort").map((chip) => chip.label);
+	const semantics =
+		list?.sort_semantics === "per_chain_round_robin"
+			? "per-chain round robin"
+			: "global sort";
+	const semanticsTitle =
+		list?.sort_semantics === "per_chain_round_robin"
+			? "Each chain is sorted independently, then the chains are interleaved. This is not one global ranking."
+			: "Rows are ranked globally across the selected population.";
+	const total = list?.total ?? 0;
+	const returned = list?.rows.length ?? 0;
+	const start = returned === 0 ? 0 : params.offset + 1;
+	const end = params.offset + returned;
+	const page = Math.floor(params.offset / params.limit) + 1;
+	const pageCount = Math.max(1, Math.ceil(total / params.limit));
+	const hasPrevious = params.offset > 0;
+	const nextOffset = list?.next_offset ?? null;
 
 	return (
 		<AppShell active="markets">
@@ -202,27 +393,55 @@ export default async function MarketsPage({
 				)}
 			</div>
 
+			{chips.length > 0 && (
+				<div className={`row mb-12 ${styles.chips}`} aria-label="Active filters">
+					{chips.map((chip) => (
+						<Link
+							key={chip.key}
+							className={`chip ${styles.chip}`}
+							href={chip.href}
+							aria-label={`Remove filter ${chip.label}`}
+						>
+							{chip.label}
+							<span aria-hidden="true">×</span>
+						</Link>
+					))}
+					<Link className="small" href="/markets">
+						Clear all
+					</Link>
+				</div>
+			)}
+
 			{error && <ErrorPanel error={error} retryHref={refreshHref} />}
 
 			{!error && list && (
 				<Panel
 					flush
 					action={
-						list.stale ? (
-							<Badge tone="warn">STALE</Badge>
-						) : (
-							<Badge tone="ghost">{isLiveMode() ? "live fetch" : "fixture data"}</Badge>
-						)
+						<div className="row">
+							<Badge tone="ghost" title={semanticsTitle}>
+								{list.sort_semantics === "per_chain_round_robin"
+									? "PER-CHAIN ROUND ROBIN"
+									: "GLOBAL SORT"}
+							</Badge>
+							{list.stale ? (
+								<Badge tone="warn">STALE</Badge>
+							) : (
+								<Badge tone="ghost">
+									{isLiveMode() ? "live fetch" : "fixture data"}
+								</Badge>
+							)}
+						</div>
 					}
 					footer={
-						<div className="between">
+						<div className={styles.footer}>
 							<span>
-								{list.rows.length} rows · limit {params.limit} · source{" "}
-								{sourceLabel(list.source.name)} · sorted by{" "}
-								{SORTS.find((sort) => sort.id === params.sort)?.label.toLowerCase()}
+								{returned} of {total} markets · showing {start}–{end} · page {page} of{" "}
+								{pageCount} · limit {list.limit} · source {sourceLabel(list.source.name)} ·
+								sorted by {sortLabel(list.sort).toLowerCase()}
 							</span>
 							<span>
-								page 1/1 ·{" "}
+								Order: {semantics} ·{" "}
 								{list.stale
 									? "the API marked this snapshot stale"
 									: `observed ${ageLabel(list.source.observed_at)} ago`}
@@ -230,50 +449,174 @@ export default async function MarketsPage({
 						</div>
 					}
 				>
-					<form className="table-toolbar" action="/markets" method="get" role="search">
-						{params.chain !== "all" && <input type="hidden" name="chain" value={params.chain} />}
-						{params.limit !== 50 && (
-							<input type="hidden" name="limit" value={String(params.limit)} />
-						)}
-						<label className="field" style={{ minWidth: 220, flex: "1 1 240px" }}>
-							<span className="small muted">Search symbol, name or address</span>
-							<input
-								className="input mono"
-								type="search"
-								name="q"
-								defaultValue={params.q}
-								placeholder="BONK or DezXAZ…"
-								aria-label="Search symbol, name or address"
-								maxLength={80}
-							/>
-						</label>
-						<label className="field" style={{ minWidth: 190 }}>
-							<span className="small muted">Sort</span>
-							<select
-								className="select"
-								name="sort"
-								defaultValue={params.sort}
-								aria-label="Sort markets"
-							>
-								{SORTS.map((sort) => (
-									<option key={sort.id} value={sort.id}>
-										{sort.label}
-									</option>
-								))}
-							</select>
-						</label>
-						<button className="btn" type="submit">
-							Apply
-						</button>
-						{params.q && (
-							<Link className="btn ghost sm" href={marketsHref(params, { q: "" })}>
-								Clear search
-							</Link>
-						)}
-						<span className={styles.toolbarNote}>
-							Filters are URL query params; the server re-fetches on every change.
-						</span>
-					</form>
+					<div className={styles.filterPanel} data-testid="market-filters">
+						<div className={styles.filterSummary}>
+							<span className="strong">Filters</span>
+							<span>{chips.length} active</span>
+							<span className="muted">
+								{returned} of {total} markets
+							</span>
+						</div>
+						<form
+							className={`table-toolbar ${styles.filterForm}`}
+							action="/markets"
+							method="get"
+							role="search"
+						>
+							{params.limit !== DEFAULT_LIMIT && (
+								<input type="hidden" name="limit" value={String(params.limit)} />
+							)}
+							<label className="field" style={{ minWidth: 140 }}>
+								<span className="small muted">Chain</span>
+								<select
+									className="select"
+									name="chain"
+									defaultValue={params.chain}
+									aria-label="Filter by chain"
+								>
+									<option value="all">All chains</option>
+									{chains.map((chain) => (
+										<option key={chain.id} value={chain.id}>
+											{chain.name}
+										</option>
+									))}
+								</select>
+							</label>
+							<label className="field" style={{ minWidth: 220, flex: "1 1 240px" }}>
+								<span className="small muted">Search symbol, name or address</span>
+								<input
+									className="input mono"
+									type="search"
+									name="q"
+									defaultValue={params.q}
+									placeholder="BONK or DezXAZ…"
+									aria-label="Search symbol, name or address"
+									maxLength={80}
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 190 }}>
+								<span className="small muted">Sort</span>
+								<select
+									className="select"
+									name="sort"
+									defaultValue={params.sort}
+									aria-label="Sort markets"
+								>
+									{SORTS.map((sort) => (
+										<option key={sort.id} value={sort.id}>
+											{sort.label}
+										</option>
+									))}
+								</select>
+							</label>
+							<label className="field" style={{ minWidth: 130 }}>
+								<span className="small muted">Min liquidity (USD)</span>
+								<input
+									className="input mono"
+									type="number"
+									inputMode="decimal"
+									min="0"
+									step="any"
+									name="min_liquidity_usd"
+									defaultValue={params.minLiquidityUsd}
+									placeholder="100000"
+									aria-label="Minimum liquidity in USD"
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 130 }}>
+								<span className="small muted">Min volume 24h (USD)</span>
+								<input
+									className="input mono"
+									type="number"
+									inputMode="decimal"
+									min="0"
+									step="any"
+									name="min_volume_24h_usd"
+									defaultValue={params.minVolume24hUsd}
+									placeholder="250000"
+									aria-label="Minimum 24h volume in USD"
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 110 }}>
+								<span className="small muted">24h change ≥ %</span>
+								<input
+									className="input mono"
+									type="number"
+									inputMode="decimal"
+									step="any"
+									name="min_change_h24"
+									defaultValue={params.minChangeH24}
+									placeholder="-100"
+									aria-label="Minimum 24h change percent"
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 110 }}>
+								<span className="small muted">24h change ≤ %</span>
+								<input
+									className="input mono"
+									type="number"
+									inputMode="decimal"
+									step="any"
+									name="max_change_h24"
+									defaultValue={params.maxChangeH24}
+									placeholder="100"
+									aria-label="Maximum 24h change percent"
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 115 }}>
+								<span className="small muted">Pair age ≥ min</span>
+								<input
+									className="input mono"
+									type="number"
+									inputMode="numeric"
+									min="0"
+									step="1"
+									name="min_pair_age_minutes"
+									defaultValue={params.minPairAgeMinutes}
+									placeholder="60"
+									aria-label="Minimum pair age in minutes"
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 115 }}>
+								<span className="small muted">Pair age ≤ min</span>
+								<input
+									className="input mono"
+									type="number"
+									inputMode="numeric"
+									min="0"
+									step="1"
+									name="max_pair_age_minutes"
+									defaultValue={params.maxPairAgeMinutes}
+									placeholder="1440"
+									aria-label="Maximum pair age in minutes"
+								/>
+							</label>
+							<label className="field" style={{ minWidth: 120 }}>
+								<span className="small muted">DEX</span>
+								<input
+									className="input mono"
+									name="dex"
+									defaultValue={params.dex}
+									placeholder="uniswap"
+									aria-label="DEX"
+									maxLength={80}
+								/>
+							</label>
+							<button className="btn" type="submit">
+								Apply
+							</button>
+							{chips.length > 0 && (
+								<Link className="btn ghost sm" href="/markets">
+									Reset filters
+								</Link>
+							)}
+							<span className={styles.toolbarNote}>
+								Filters are URL query params; the server re-fetches on every change.
+								Unknown liquidity, volume, change or pair age is excluded when its filter
+								is set — never treated as zero.
+							</span>
+						</form>
+					</div>
 
 					<div className={`small muted ${styles.swipeHint}`}>Swipe to see more columns</div>
 
@@ -281,15 +624,29 @@ export default async function MarketsPage({
 						<div className="panel-body">
 							<div className="row mb-8">
 								<Badge tone="warn">EMPTY_RESULT</Badge>
-								<span className="small muted">No market rows matched this request.</span>
+								<span className="small muted">
+									{total > 0
+										? `Page ${page} is past the last result.`
+										: "No market rows matched this request."}
+								</span>
 							</div>
 							<p className="small muted">
-								{params.q
-									? `Nothing matched “${params.q}”${params.chain !== "all" ? ` on ${labelFor(params.chain)}` : ""}. DexScreener may not index this token yet.`
-									: "The feed returned no pairs for this chain. That is an empty result, not a zero price."}
+								{filterNames.length > 0
+									? `No rows matched: ${filterNames.join(" · ")}. Unknown values are excluded by these filters, never treated as zero.`
+									: total > 0
+										? `${total} rows matched, but this page is beyond the end. Use Prev or reset the page.`
+										: "The feed returned no pairs for this chain. That is an empty result, not a zero price."}
 							</p>
 							<div className="row mt-12">
-								<Link className="btn sm" href={marketsHref(params, { q: "", chain: "all" })}>
+								{hasPrevious && (
+									<Link
+										className="btn sm"
+										href={marketsHref(params, { offset: Math.max(0, params.offset - params.limit) })}
+									>
+										← Previous
+									</Link>
+								)}
+								<Link className="btn sm" href="/markets">
 									Reset filters
 								</Link>
 							</div>
@@ -365,6 +722,43 @@ export default async function MarketsPage({
 							</table>
 						</div>
 					)}
+
+					<div className={`table-foot ${styles.pager}`}>
+						<PopulationLine list={list} />
+						<div className="btn-group" role="navigation" aria-label="Market pages">
+							{hasPrevious ? (
+								<Link
+									className="btn sm"
+									rel="prev"
+									href={marketsHref(params, {
+										offset: Math.max(0, params.offset - params.limit),
+									})}
+								>
+									← Prev
+								</Link>
+							) : (
+								<span className="btn sm" aria-disabled="true">
+									← Prev
+								</span>
+							)}
+							<span className="btn sm" aria-current="page">
+								Page {page} of {pageCount}
+							</span>
+							{nextOffset !== null ? (
+								<Link
+									className="btn sm"
+									rel="next"
+									href={marketsHref(params, { offset: nextOffset })}
+								>
+									Next →
+								</Link>
+							) : (
+								<span className="btn sm" aria-disabled="true">
+									Next →
+								</span>
+							)}
+						</div>
+					</div>
 				</Panel>
 			)}
 

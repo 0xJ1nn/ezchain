@@ -8,10 +8,12 @@ on the chains ezCHAIN advertises.
 Seeds are only used for discovery (no search query); they never produce a price without a
 real pair returned by the API, and an absent chain simply yields no rows.
 
-Recorded against the public DexScreener API on 2026-10-22. Osmosis, Cosmos Hub and
-Moonbeam returned no indexed pairs that day, so their seeds are canonical on-chain
-identifiers (``uosmo``, ``uatom``, WGLMR) rather than verified API hits; they stay so
-discovery picks the chains up if DexScreener coverage returns.
+Recorded against the public DexScreener API on 2026-10-22. Solana uses its four canonical
+majors (wrapped SOL, USDC, BONK, JUP) rather than a promotional-feed hint, so an empty
+profile/boost/takeover response cannot erase the chain from an all-chain browse. Osmosis,
+Cosmos Hub and Moonbeam returned no indexed pairs that day, so their seeds are canonical
+on-chain identifiers (``uosmo``, ``uatom``, WGLMR) rather than verified API hits; they stay
+so discovery picks the chains up if DexScreener coverage returns.
 
 The Blast, Mantle, Linea, Scroll and zkSync seeds were verified the same day with
 ``/latest/dex/tokens``: every address below returned indexed pairs on its own chain
@@ -50,6 +52,12 @@ SEED_TOKENS: dict[str, tuple[str, ...]] = {
     "avalanche": (
         "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",  # WAVAX
         "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",  # USDC
+    ),
+    "solana": (
+        "So11111111111111111111111111111111111111112",  # SOL (wrapped)
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+        "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
+        "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  # JUP
     ),
     "sui": (
         "0x2::sui::SUI",  # SUI

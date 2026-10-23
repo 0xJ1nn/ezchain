@@ -9,6 +9,7 @@ from ezchain_adapters.registry import BY_ID
 from ezchain_adapters.seeds import SEED_TOKENS, seed_addresses
 
 REQUIRED_CHAINS = {
+    "solana",
     "ethereum",
     "base",
     "arbitrum",
@@ -52,6 +53,16 @@ def test_seed_addresses_are_clean_and_unique(chain: str) -> None:
         assert address
         assert address == address.strip()
     assert len(addresses) == len({address.lower() for address in addresses})
+
+
+def test_solana_seeds_are_the_canonical_majors() -> None:
+    addresses = {address.lower() for address in SEED_TOKENS["solana"]}
+    assert addresses == {
+        "so11111111111111111111111111111111111111112",  # SOL
+        "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v",  # USDC
+        "dezxaz8z7pnrnrjjz3wxborgixca6xjnb7yab1ppb263",  # BONK
+        "jupyiwryjfskupiha7hker8vutaefosybkedznsdvcn",  # JUP
+    }
 
 
 def test_all_chains_dedupe_shared_addresses() -> None:
