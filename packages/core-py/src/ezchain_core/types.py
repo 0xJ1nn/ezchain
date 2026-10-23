@@ -7,14 +7,25 @@ Decimal inside the domain. No floats cross a money path.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
 Mode = Literal["paper", "live"]
 Side = Literal["buy", "sell"]
-QuoteKind = Literal["jupiter", "paper_mark"]
-StrategyKind = Literal["momentum", "dip", "dca", "threshold"]
+# One literal per executable quote provider plus the non-executable DexScreener mark.
+# The registry's per-chain ladder decides which of these a chain may produce.
+QuoteKind = Literal[
+    "jupiter",
+    "kyberswap",
+    "velora",
+    "lifi",
+    "cetus",
+    "stonfi",
+    "osmosis_sqs",
+    "paper_mark",
+]
+StrategyKind = Literal["momentum", "dip", "dca", "threshold", "graph"]
 StrategyStatus = Literal["active", "paused"]
 
 
@@ -169,6 +180,54 @@ class TokenSnapshot:
             "pair_created_at": None
             if self.pair_created_at is None
             else self.pair_created_at.isoformat(),
+        }
+
+
+@dataclass(frozen=True)
+class Candle:
+    """One OHLCV bar of a token's history.
+
+    ``open_time`` is the bar's start on the timeframe grid and is always UTC.
+    ``timeframe_seconds`` travels with the bar so a consumer (indicator, backtest) never
+    has to guess the bar length or re-derive it from a label. ``volume`` is the quote
+    (USD) volume when the source reports it; ``None`` means unknown, never zero.
+
+    ``close_time`` is exclusive: a bar is closed once ``close_time <= now``. A bar whose
+    ``close_time`` is still in the future is the *forming* bar and must not be used to
+    compute an indicator or a backtest return.
+    """
+
+    open_time: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal | None
+    timeframe_seconds: int
+
+    @property
+    def close_time(self) -> datetime:
+        """Bar end (exclusive)."""
+        start = (
+            self.open_time.astimezone(UTC)
+            if self.open_time.tzinfo is not None
+            else self.open_time.replace(tzinfo=UTC)
+        )
+        return start + timedelta(seconds=self.timeframe_seconds)
+
+    def is_closed(self, now: datetime) -> bool:
+        return self.close_time <= now
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "open_time": self.open_time.isoformat(),
+            "close_time": self.close_time.isoformat(),
+            "timeframe_seconds": self.timeframe_seconds,
+            "open": str(self.open),
+            "high": str(self.high),
+            "low": str(self.low),
+            "close": str(self.close),
+            "volume": None if self.volume is None else str(self.volume),
         }
 
 

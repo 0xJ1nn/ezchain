@@ -56,13 +56,10 @@ test("the web proxy forwards mutations and drops the browser credential", async 
 		idempotency_key: "proxy-e2e-1",
 	};
 
-	const response = await request.post(
-		"http://127.0.0.1:3100/api/v1/paper/orders?trace=1",
-		{
-			headers: { authorization: "Bearer browser-supplied-token" },
-			data: payload,
-		},
-	);
+	const response = await request.post("/api/v1/paper/orders?trace=1", {
+		headers: { authorization: "Bearer browser-supplied-token" },
+		data: payload,
+	});
 
 	expect(response.status()).toBe(200);
 	expect(response.headers()["x-request-id"]).toBe("upstream-request-1");
@@ -75,7 +72,7 @@ test("the web proxy forwards mutations and drops the browser credential", async 
 	expect(forwarded.contentType).toContain("application/json");
 	expect(JSON.parse(forwarded.body)).toEqual(payload);
 
-	const read = await request.get("http://127.0.0.1:3100/api/v1/markets?chain=solana");
+	const read = await request.get("/api/v1/markets?chain=solana");
 	expect(read.status()).toBe(200);
 	expect(seen[1].method).toBe("GET");
 	expect(seen[1].url).toBe("/api/v1/markets?chain=solana");

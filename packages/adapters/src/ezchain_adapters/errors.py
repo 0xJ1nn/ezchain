@@ -29,3 +29,14 @@ class RateLimited(AdapterError):
 
 class NoRoute(AdapterError):
     code = "NO_SELL_ROUTE"
+
+    def __init__(self, message: str, *, detail: str | None = None, code: str | None = None) -> None:
+        super().__init__(message, detail=detail)
+        if code is not None:
+            self.code = code
+
+
+class CandlesUnsupported(AdapterError):
+    """This chain or timeframe has no candle provider. Never fabricate history."""
+
+    code = "CANDLES_UNSUPPORTED_CHAIN"

@@ -70,19 +70,26 @@ def buy_entries(
     price_usd: Decimal,
     fee_bps: int,
     notional_usd: Decimal | None = None,
+    fee_usd: Decimal | None = None,
 ) -> tuple[LedgerEntry, ...]:
     """Journal for a buy: position +notional, cash -notional, fee expensed from cash.
 
     ``notional_usd`` is the quoted USD amount actually paid. It is passed explicitly when
     the implied ``quantity * price_usd`` cannot reproduce the quote exactly (a price is a
     ratio and may be non-terminating). The position leg then carries the exact cash cost.
+
+    ``fee_usd`` is passed explicitly when the venue quote already carries a cost (pool or
+    aggregator fee plus gas): the caller has resolved the bps-versus-quote maximum and the
+    journal must book that exact number, not a second estimate of it.
     """
     if quantity <= 0 or price_usd <= 0:
         raise ValueError("quantity and price must be positive")
     notional = quantity * price_usd if notional_usd is None else notional_usd
     if notional <= 0:
         raise ValueError("notional must be positive")
-    fee = bps_fee(notional, fee_bps)
+    fee = bps_fee(notional, fee_bps) if fee_usd is None else fee_usd
+    if fee < 0:
+        raise ValueError("fee cannot be negative")
     entries = (
         LedgerEntry(
             position_account(chain, token_address),
@@ -109,6 +116,7 @@ def sell_entries(
     fee_bps: int,
     proceeds_usd: Decimal | None = None,
     cost_basis_usd: Decimal | None = None,
+    fee_usd: Decimal | None = None,
 ) -> tuple[LedgerEntry, ...]:
     """Journal for a sell: cash +proceeds, position -cost basis, fee expensed from cash.
 
@@ -122,7 +130,9 @@ def sell_entries(
     proceeds = quantity * price_usd if proceeds_usd is None else proceeds_usd
     if proceeds <= 0:
         raise ValueError("proceeds must be positive")
-    fee = bps_fee(proceeds, fee_bps)
+    fee = bps_fee(proceeds, fee_bps) if fee_usd is None else fee_usd
+    if fee < 0:
+        raise ValueError("fee cannot be negative")
     cost_basis = quantity * avg_cost_usd if cost_basis_usd is None else cost_basis_usd
     if cost_basis < 0:
         raise ValueError("cost basis cannot be negative")

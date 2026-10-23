@@ -17,19 +17,23 @@ from .money import bps_fee
 from .risk import RiskLimits, evaluate_order
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
+    Candle,
     MarketRow,
     OrderRequest,
     PairInfo,
     PositionState,
     PositionView,
     Quote,
+    QuoteKind,
     RiskDecision,
+    Side,
     SourceRef,
     TokenSnapshot,
     utcnow,
 )
 
 __all__ = [
+    "Candle",
     "LedgerEntry",
     "MarketRow",
     "OrderRequest",
@@ -37,8 +41,10 @@ __all__ = [
     "PositionState",
     "PositionView",
     "Quote",
+    "QuoteKind",
     "RiskDecision",
     "RiskLimits",
+    "Side",
     "SourceRef",
     "StrategyDecision",
     "StrategySpec",

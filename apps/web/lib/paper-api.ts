@@ -51,6 +51,68 @@ export type PaperResult<T> =
 	| { ok: true; mode: PaperApiMode; data: T }
 	| { ok: false; mode: PaperApiMode; error: { code: string; message: string } };
 
+/** One order attempt as the API returns it. A rejected row carries its reason codes. */
+export interface PaperOrderRecord {
+	id: string;
+	chain: string;
+	token_address: string;
+	side: string;
+	amount_usd: string;
+	status: string;
+	reason: string | null;
+	quote_kind: string | null;
+	created_at: string;
+	filled_at: string | null;
+}
+
+export interface PaperFillRecord {
+	id: string;
+	order_id: string;
+	chain: string;
+	token_address: string;
+	side: string;
+	quantity: string;
+	price_usd: string;
+	notional_usd: string;
+	fee_usd: string;
+	quote_kind: string;
+	created_at: string;
+}
+
+export interface ReconciliationCheck {
+	id: string;
+	ok: boolean;
+	detail: string;
+}
+
+export interface ReconciliationTotals {
+	genesis_usd: string;
+	cash_usd: string;
+	fills_cash_usd: string;
+	open_positions: number;
+	fills: number;
+	filled_orders: number;
+	orphan_fills: number;
+	filled_orders_without_single_fill: number;
+	negative_cash: number;
+	negative_positions: number;
+	quote_kinds: Record<string, number>;
+}
+
+export interface Reconciliation {
+	ok: boolean;
+	checks: ReconciliationCheck[];
+	as_of: string;
+	totals: ReconciliationTotals;
+}
+
+export interface KillSwitchState {
+	active: boolean;
+	reason: string | null;
+	updated_at: string | null;
+	scope: "strategy";
+}
+
 export interface StrategyInput {
 	name: string;
 	chain: string;
@@ -79,8 +141,6 @@ export class PaperApiError extends Error {
 	}
 }
 
-const API_URL = process.env.EZCHAIN_API_URL ?? "http://127.0.0.1:8000";
-
 export function webMode(): PaperApiMode {
 	return process.env.EZCHAIN_WEB_MODE === "fixture" ? "fixture" : "live";
 }
@@ -88,8 +148,10 @@ export function webMode(): PaperApiMode {
 function apiBase() {
 	// On the server Next needs an absolute URL. In the browser the server-side proxy at
 	// /api/[...path] forwards to the API and injects the bearer token, so a relative path
-	// keeps working on any origin without exposing the token.
-	return typeof window === "undefined" ? API_URL : "";
+	// keeps working on any origin without exposing the token. Read the env per call so a
+	// server runtime that swaps configuration (tests, sidecar reload) is observed.
+	if (typeof window !== "undefined") return "";
+	return (process.env.EZCHAIN_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 }
 
 interface ErrorEnvelope {
@@ -269,6 +331,77 @@ export async function getPaperSnapshot(): Promise<PaperSnapshot> {
 	const [account, positions] = await Promise.all([getPaperAccount(), getPaperPositions()]);
 	return { mode: webMode(), account, positions };
 }
+
+function boundedLimit(limit: number): number {
+	return Math.min(200, Math.max(1, Math.floor(limit)));
+}
+
+export async function getPaperOrders(limit = 100): Promise<PaperResult<PaperOrderRecord[]>> {
+	const bounded = boundedLimit(limit);
+	return capture(async () => {
+		if (webMode() === "fixture") {
+			const fixtures = await import("./ops-fixtures");
+			return fixtures.fixtureOrders(bounded);
+		}
+		return request<PaperOrderRecord[]>(`/paper/orders?limit=${bounded}`);
+	});
+}
+
+export async function getPaperFills(limit = 100): Promise<PaperResult<PaperFillRecord[]>> {
+	const bounded = boundedLimit(limit);
+	return capture(async () => {
+		if (webMode() === "fixture") {
+			const fixtures = await import("./ops-fixtures");
+			return fixtures.fixtureFills(bounded);
+		}
+		return request<PaperFillRecord[]>(`/paper/fills?limit=${bounded}`);
+	});
+}
+
+/**
+ * Read-only proof that the journal, fills and orders agree. Fixture mode does not invent
+ * a reconciliation report: the endpoint runs database checks that a preview cannot prove.
+ */
+export async function getReconciliation(): Promise<PaperResult<Reconciliation>> {
+	return capture(async () => {
+		if (webMode() === "fixture") {
+			throw new PaperApiError(
+				"FIXTURE_NOT_PROBED",
+				"Reconciliation is computed from the paper database and is not probed in fixture mode.",
+			);
+		}
+		return request<Reconciliation>("/paper/reconciliation");
+	});
+}
+
+export async function getKillSwitch(): Promise<PaperResult<KillSwitchState>> {
+	return capture(async () => {
+		if (webMode() === "fixture") {
+			return {
+				active: false,
+				reason: null,
+				updated_at: null,
+				scope: "strategy",
+			};
+		}
+		return request<KillSwitchState>("/system/kill-switch");
+	});
+}
+
+/**
+ * Arm or release the persisted strategy switch. Like every mutation this always reaches
+ * the API, including from a fixture build: a preview must never invent an operator action.
+ */
+export async function setKillSwitch(
+	active: boolean,
+	reason: string,
+): Promise<KillSwitchState> {
+	return request<KillSwitchState>("/system/kill-switch", {
+		method: "POST",
+		body: JSON.stringify({ active, reason }),
+	});
+}
+
 
 export async function getStrategies(): Promise<PaperResult<Strategy[]>> {
 	return capture(async () => {

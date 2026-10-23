@@ -62,6 +62,9 @@ class _ExactDecimal(TypeDecorator[Decimal]):
 
 
 MONEY = _ExactDecimal(38, 8)
+# Unit prices of long-tail tokens reach 1e-10 USD; eight decimals would round a mark (and
+# every position value derived from it) by tens of percent. Prices keep eighteen.
+PRICE = _ExactDecimal(38, 18)
 QUANTITY = _ExactDecimal(38, 18)
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
@@ -129,7 +132,7 @@ class PaperFillRow(Base):
     token_address: Mapped[str] = mapped_column(String(160), index=True)
     side: Mapped[str] = mapped_column(String(8))
     quantity: Mapped[Decimal] = mapped_column(QUANTITY)
-    price_usd: Mapped[Decimal] = mapped_column(MONEY)
+    price_usd: Mapped[Decimal] = mapped_column(PRICE)
     notional_usd: Mapped[Decimal] = mapped_column(MONEY)
     fee_usd: Mapped[Decimal] = mapped_column(MONEY)
     quote_kind: Mapped[str] = mapped_column(String(24))
@@ -164,6 +167,22 @@ class StrategyRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
+class BacktestRow(Base):
+    """An immutable backtest artifact: the request and the result it produced.
+
+    ``strategy_id`` is an opaque historical string, not a foreign key: deleting a
+    strategy must never delete or rewrite the measurements that were made from it.
+    """
+
+    __tablename__ = "backtests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    request: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
 class SystemFlagRow(Base):
     """Small persisted operator switches. Values are JSON so a flag can grow fields."""
 
@@ -185,7 +204,7 @@ class MarketSnapshotRow(Base):
     token_address: Mapped[str] = mapped_column(String(160))
     symbol: Mapped[str] = mapped_column(String(40))
     name: Mapped[str] = mapped_column(String(160))
-    price_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    price_usd: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
     liquidity_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     volume_24h_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     price_change_m5: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
@@ -195,3 +214,38 @@ class MarketSnapshotRow(Base):
     source: Mapped[str] = mapped_column(String(40))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+
+
+class MarketCandleRow(Base):
+    """One closed OHLCV bar per (chain, token, timeframe, open_time).
+
+    History, not a snapshot: bars are additive and a re-fetch of the same bar updates it
+    in place (the venue may revise a just-closed bar). Prices use the exact decimal type so
+    an indicator never sees a float, and ``volume`` stays nullable because unknown is not
+    zero. The forming bar is never stored — the service drops it before writing.
+    """
+
+    __tablename__ = "market_candles"
+    __table_args__ = (
+        UniqueConstraint(
+            "chain",
+            "token_address",
+            "timeframe",
+            "open_time",
+            name="uq_market_candle_bar",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    chain: Mapped[str] = mapped_column(String(40))
+    token_address: Mapped[str] = mapped_column(String(160))
+    pool_address: Mapped[str] = mapped_column(String(160))
+    timeframe: Mapped[str] = mapped_column(String(8))
+    open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    open: Mapped[Decimal] = mapped_column(PRICE)
+    high: Mapped[Decimal] = mapped_column(PRICE)
+    low: Mapped[Decimal] = mapped_column(PRICE)
+    close: Mapped[Decimal] = mapped_column(PRICE)
+    volume: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    source: Mapped[str] = mapped_column(String(40))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

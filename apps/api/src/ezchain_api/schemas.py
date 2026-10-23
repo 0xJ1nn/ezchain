@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+import math
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -19,7 +20,11 @@ class CapabilitiesOut(BaseModel):
     browse: bool
     paper_execute: bool
     live_execute: bool
+    # The primary provider a chain's badge names, plus the full fallback ladder.
     quote_kind: str
+    quote_providers: list[str]
+    executable_quotes: bool
+    candles: bool
 
 
 class ChainOut(BaseModel):
@@ -153,6 +158,30 @@ class TokenOut(BaseModel):
     stale: bool
 
 
+class CandleOut(BaseModel):
+    """One closed OHLCV bar. Prices are decimal strings; unknown volume is null."""
+
+    open_time: str
+    close_time: str
+    timeframe_seconds: int
+    open: str
+    high: str
+    low: str
+    close: str
+    volume: str | None = None
+
+
+class CandlesOut(BaseModel):
+    chain: str
+    token_address: str
+    timeframe: Literal["1m", "5m", "15m", "1h", "4h", "1d"]
+    pool_address: str | None = None
+    candles: list[CandleOut]
+    source: SourceOut
+    stale: bool
+    reason: str | None = None
+
+
 class QuoteOut(BaseModel):
     chain: str
     token_in: str
@@ -182,10 +211,38 @@ class PaperOrderIn(BaseModel):
     amount_usd: Decimal = Field(gt=0)
     idempotency_key: str = Field(min_length=8, max_length=120)
 
+    @field_validator("amount_usd", mode="before")
+    @classmethod
+    def finite_before_parse(cls, value: object) -> object:
+        """Reject `1e400` (a JSON float that becomes infinity) before Decimal parsing."""
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("amount_usd must be finite")
+        if isinstance(value, Decimal) and not value.is_finite():
+            raise ValueError("amount_usd must be finite")
+        return value
+
     @field_validator("amount_usd")
     @classmethod
     def cents(cls, value: Decimal) -> Decimal:
-        return value.quantize(Decimal("0.01"))
+        if not value.is_finite():
+            raise ValueError("amount_usd must be finite")
+        try:
+            quantized = value.quantize(Decimal("0.01"))
+        except InvalidOperation as exc:
+            raise ValueError("amount_usd is outside the supported range") from exc
+        if quantized <= 0:
+            raise ValueError("amount_usd must be > 0")
+        return quantized
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def ascii_key(cls, value: str) -> str:
+        """Keys cross process and log boundaries; non-ASCII/control bytes are refused."""
+        if not value.isascii():
+            raise ValueError("idempotency_key must be ASCII")
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("idempotency_key must not contain control characters")
+        return value
 
 
 class OrderOut(BaseModel):
@@ -291,7 +348,7 @@ class StrategyIn(BaseModel):
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
     token_symbol: str = Field(min_length=1, max_length=40)
-    kind: Literal["momentum", "dip", "dca", "threshold"]
+    kind: Literal["momentum", "dip", "dca", "threshold", "graph"]
     params: dict[str, Any] = Field(default_factory=dict)
     status: Literal["active", "paused"] = "active"
 
@@ -323,3 +380,73 @@ class StrategyRunOut(BaseModel):
     inputs: dict[str, Any]
     order_id: str | None = None
     created_at: str
+
+
+class GraphValidateIn(BaseModel):
+    """The document is checked by the core validator, not by Pydantic here.
+
+    ``Any`` is deliberate: a malformed document must produce the graph's own
+    ``STRATEGY_GRAPH_INVALID`` envelope, not Pydantic's field-error list.
+    """
+
+    graph: Any = None
+
+
+class GraphDryRunIn(BaseModel):
+    graph: Any = None
+    chain: str = Field(min_length=2, max_length=40)
+    token_address: str = Field(min_length=8, max_length=160)
+    max_position_usd: Decimal | None = Field(default=None, gt=0)
+
+
+class BacktestIn(BaseModel):
+    """A backtest request. Exactly one of ``graph`` / ``strategy_id`` names the graph."""
+
+    graph: Any = None
+    strategy_id: str | None = Field(default=None, min_length=1, max_length=36)
+    chain: str | None = Field(default=None, min_length=2, max_length=40)
+    token_address: str | None = Field(default=None, min_length=8, max_length=160)
+    timeframe: Literal["1m", "5m", "15m", "1h", "4h", "1d"]
+    bars: int = Field(ge=1, le=1000)
+    fee_bps: int = Field(ge=0, le=10_000)
+    slippage_bps: int = Field(ge=0, le=10_000)
+    starting_cash_usd: Decimal = Field(gt=0)
+
+    @model_validator(mode="after")
+    def one_graph_source(self) -> BacktestIn:
+        if (self.graph is None) == (self.strategy_id is None):
+            raise ValueError("provide exactly one of graph or strategy_id")
+        return self
+
+
+class BacktestOut(BaseModel):
+    id: str
+    created_at: str
+    label: str
+    request: dict[str, Any]
+    data_source: str
+    fill_model: str
+    metrics: dict[str, Any]
+    equity: list[dict[str, Any]]
+    trades: list[dict[str, Any]]
+    node_hits: dict[str, int]
+    final_cash_usd: str | None = None
+    final_quantity: str | None = None
+    final_equity_usd: str | None = None
+    warmup_bars: dict[str, int] | None = None
+
+
+class StrategyPerformanceOut(BaseModel):
+    strategy_id: str
+    label: Literal["PAPER"] = "PAPER"
+    realized_pnl_usd: str
+    unrealized_pnl_usd: str | None = None
+    fees_usd: str
+    trades: int
+    wins: int
+    losses: int
+    win_rate_pct: str | None = None
+    open_quantity: str
+    avg_cost_usd: str | None = None
+    mark_usd: str | None = None
+    equity_curve: list[dict[str, str]]

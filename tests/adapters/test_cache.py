@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from conftest import FakeClock
 
 from ezchain_adapters.cache import MISSING, BoundedTTLCache
+
+from .conftest import FakeClock
 
 
 def test_cached_value_round_trips_including_none(clock: FakeClock) -> None:

@@ -12,13 +12,21 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import cast
 
 TOLERANCE = Decimal("0.01")
+# Position quantity is persisted at 8 decimal places; anything smaller is rounding.
+QUANTITY_TOLERANCE = Decimal("0.00000001")
 
 ALLOWED_ORDER_STATUSES = frozenset({"pending", "filled", "rejected", "cancelled", "expired"})
 ALLOWED_ORDER_SIDES = frozenset({"buy", "sell"})
+
+# The engine logs this reason when the operator kill switch stops a strategy decision
+# (``services/engine/src/ezchain_engine/scheduler.py``). ``ORDER_EXECUTOR_UNAVAILABLE`` is
+# the documented fallback when no order service is wired at all.
+KILL_SWITCH_REASONS = frozenset({"KILL_SWITCH_ACTIVE"})
 
 # Invariant ids are stable API for reports and issue dedupe. Never rename one silently.
 ORDER_INVARIANTS = (
@@ -48,7 +56,33 @@ STRATEGY_INVARIANTS = (
     "strategy.run_log_non_empty",
     "strategy.run_order_filled",
 )
-RECONCILIATION_INVARIANTS = ("reconciliation.ok",)
+RECONCILIATION_INVARIANTS = ("reconciliation.ok", "reconciliation.missing")
+LEDGER_INVARIANTS = ("ledger.positions_match_fills", "ledger.cash_matches_fills")
+RACE_INVARIANTS = (
+    "race.no_oversell",
+    "race.quantity_non_negative",
+    "race.cash_non_negative",
+)
+KILLSWITCH_INVARIANTS = (
+    "killswitch.blocks_strategy",
+    "killswitch.allows_manual_order",
+    "killswitch.restored",
+)
+MATRIX_INVARIANTS = ("matrix.chain_flow",)
+FUZZ_INVARIANTS = (
+    "fuzz.no_server_error",
+    "fuzz.rejects_invalid",
+    "fuzz.no_fill",
+    "fuzz.error_body",
+    "fuzz.delete_twice",
+)
+AUTH_INVARIANTS = (
+    "auth.missing_token_rejected",
+    "auth.wrong_token_rejected",
+    "auth.error_body",
+    "auth.no_mutation",
+    "auth.control_valid",
+)
 HTTP_INVARIANTS = ("http.no_unexpected_5xx", "http.no_connection_errors")
 LATENCY_INVARIANTS = (
     "latency.reads_p95",
@@ -159,6 +193,27 @@ def check_order(order: Mapping[str, object], *, scenario: str) -> list[Finding]:
     return findings
 
 
+def _timestamp(value: object) -> datetime | None:
+    """Parse an ISO-8601 timestamp, tolerating a trailing ``Z`` and a numeric value."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return datetime.fromtimestamp(float(value), tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 def check_orders_and_fills(
     orders: Sequence[Mapping[str, object]],
     fills: Sequence[Mapping[str, object]],
@@ -203,6 +258,13 @@ def check_orders_and_fills(
 
     fills_by_order: dict[str, int] = {}
     seen_fill_ids: set[str] = set()
+    # The API returns the newest N rows for both orders and fills. A fill whose created_at
+    # predates the oldest order in the page is outside the truncated window, which is not
+    # evidence of corruption; a fill newer than that with no order is.
+    order_times = [
+        parsed for order in orders if (parsed := _timestamp(order.get("created_at"))) is not None
+    ]
+    oldest_order_at = min(order_times) if order_times else None
     for fill in fills:
         fill_id = _text(fill.get("id"))
         if fill_id is not None:
@@ -233,6 +295,10 @@ def check_orders_and_fills(
             continue
         fills_by_order[order_id] = fills_by_order.get(order_id, 0) + 1
         if order_id not in order_by_id and (order_ids is None or order_id in order_ids):
+            fill_at = _timestamp(fill.get("created_at"))
+            if oldest_order_at is not None and fill_at is not None and fill_at < oldest_order_at:
+                # Older than the truncated order page: not proof of a missing order.
+                continue
             findings.append(
                 Finding(
                     code="FILL_ORDER_MISSING",
@@ -691,9 +757,23 @@ def check_reconciliation(
     *,
     scenario: str,
 ) -> list[Finding]:
-    """``GET /paper/reconciliation`` is optional; 404 is a skip, any other failure is not."""
+    """``GET /paper/reconciliation`` is mandatory: a 404 is a failure, not a skip.
+
+    The endpoint is the API's own proof that the journal, fills and orders agree. A
+    harness that treats its absence as "not applicable" cannot claim ledger truth, so a
+    missing endpoint fails the run with ``RECONCILIATION_MISSING``.
+    """
     if status == 404:
-        return []
+        return [
+            Finding(
+                code="RECONCILIATION_MISSING",
+                scenario=scenario,
+                invariant="reconciliation.missing",
+                summary="GET /api/v1/paper/reconciliation does not exist",
+                expected="HTTP 200 with ok=true; the reconciliation endpoint is mandatory",
+                actual="HTTP 404",
+            )
+        ]
     if status is None:
         return [
             Finding(
@@ -701,7 +781,7 @@ def check_reconciliation(
                 scenario=scenario,
                 invariant="reconciliation.ok",
                 summary="reconciliation endpoint did not answer",
-                expected="200 with ok=true, or 404 when the endpoint does not exist",
+                expected="200 with ok=true",
                 actual="transport error",
             )
         ]
@@ -712,7 +792,7 @@ def check_reconciliation(
                 scenario=scenario,
                 invariant="reconciliation.ok",
                 summary="reconciliation endpoint returned a non-200 status",
-                expected="200 or 404",
+                expected="200",
                 actual=str(status),
             )
         ]
@@ -1179,6 +1259,227 @@ def check_quote(payload: Mapping[str, object], *, scenario: str) -> list[Finding
     return findings
 
 
+def check_oversell(
+    *,
+    scenario: str,
+    held_quantity: Decimal,
+    sold_quantity: Decimal,
+    final_quantity: Decimal | None = None,
+    cash_usd: Decimal | None = None,
+    tolerance: Decimal = QUANTITY_TOLERANCE,
+) -> list[Finding]:
+    """Concurrent full-size sells may never sell more than was held.
+
+    ``held_quantity`` is what the position held before the concurrent sells, ``sold`` is
+    the sum of the quantities on the fills they produced, and ``final_quantity`` is what
+    the position reports afterwards (``None`` when the position is gone).
+    """
+    findings: list[Finding] = []
+    if sold_quantity - held_quantity > tolerance:
+        findings.append(
+            Finding(
+                code="RACE_OVERSELL",
+                scenario=scenario,
+                invariant="race.no_oversell",
+                summary="concurrent sells sold more than the position held",
+                expected=f"at most {held_quantity} sold",
+                actual=f"{sold_quantity} sold",
+            )
+        )
+    observed_final = Decimal(0) if final_quantity is None else final_quantity
+    if observed_final + tolerance < Decimal(0):
+        findings.append(
+            Finding(
+                code="RACE_NEGATIVE_POSITION",
+                scenario=scenario,
+                invariant="race.quantity_non_negative",
+                summary="the position quantity went negative after concurrent sells",
+                expected="quantity >= 0",
+                actual=str(observed_final),
+            )
+        )
+    if cash_usd is not None and cash_usd < 0:
+        findings.append(
+            Finding(
+                code="RACE_NEGATIVE_CASH",
+                scenario=scenario,
+                invariant="race.cash_non_negative",
+                summary="paper cash went negative after concurrent sells",
+                expected="cash_usd >= 0",
+                actual=str(cash_usd),
+            )
+        )
+    return findings
+
+
+def _run_reason(run: Mapping[str, object] | None) -> str | None:
+    """The decision reason of a strategy run, with its structured ``error_code``."""
+    if run is None:
+        return None
+    reason = _text(run.get("reason"))
+    inputs = _mapping(run.get("inputs")) or {}
+    error_code = _text(inputs.get("error_code"))
+    return reason or error_code
+
+
+def _blocked_by_kill_switch(run: Mapping[str, object] | None) -> bool:
+    """True when a run row records the kill switch stopping an order.
+
+    Two documented shapes exist. ``services/engine`` raises ``ExecutionBlocked`` before the
+    API is called, which logs ``hold`` / ``KILL_SWITCH_ACTIVE``. The order service's own
+    defence in depth rejects a strategy-attributed order instead, which the engine records
+    as ``hold`` / ``ORDER_REJECTED`` with ``inputs.order_reason = KILL_SWITCH_ACTIVE``.
+    """
+    if run is None or _text(run.get("action")) != "hold":
+        return False
+    reason = _text(run.get("reason"))
+    inputs = _mapping(run.get("inputs")) or {}
+    if reason in KILL_SWITCH_REASONS:
+        return True
+    if reason == "ORDER_REJECTED":
+        order_reason = _text(inputs.get("order_reason")) or ""
+        return any(code in order_reason for code in KILL_SWITCH_REASONS)
+    return False
+
+
+def check_killswitch_run(
+    run: Mapping[str, object] | None,
+    *,
+    persisted_runs: Sequence[Mapping[str, object]],
+    orders_created: int,
+    scenario: str,
+) -> list[Finding]:
+    """An armed kill switch must log a hold with its documented reason and place no order.
+
+    ``run`` is the ``POST /strategies/{id}/run`` response (the fresh decision) and
+    ``persisted_runs`` is ``GET /strategies/{id}/runs`` — the run log is the durable proof,
+    so the check accepts a hold that either source records.
+    """
+    findings: list[Finding] = []
+    candidates: list[Mapping[str, object]] = [item for item in (run, *persisted_runs) if item]
+    blocked = [item for item in candidates if _blocked_by_kill_switch(item)]
+    if not blocked:
+        observed = [
+            f"action={item.get('action')!r} reason={_run_reason(item)!r}" for item in candidates
+        ]
+        findings.append(
+            Finding(
+                code="KILLSWITCH_NOT_LOGGED",
+                scenario=scenario,
+                invariant="killswitch.blocks_strategy",
+                summary="an armed kill switch did not produce a hold/KILL_SWITCH_ACTIVE decision",
+                expected="a run logged with action=hold and reason=KILL_SWITCH_ACTIVE",
+                actual="; ".join(observed) or "no run row",
+            )
+        )
+    if orders_created:
+        findings.append(
+            Finding(
+                code="KILLSWITCH_ORDER_PLACED",
+                scenario=scenario,
+                invariant="killswitch.blocks_strategy",
+                summary="a strategy placed an order while the kill switch was armed",
+                expected="no order from a strategy run while armed",
+                actual=f"{orders_created} order(s) created",
+            )
+        )
+    return findings
+
+
+def check_killswitch_allows_manual_order(
+    order: Mapping[str, object] | None,
+    *,
+    status_code: int | None,
+    scenario: str,
+) -> list[Finding]:
+    """A manual paper order stays allowed while the switch is armed (documented scope)."""
+    if order is None:
+        return [
+            Finding(
+                code="KILLSWITCH_MANUAL_ORDER_REFUSED",
+                scenario=scenario,
+                invariant="killswitch.allows_manual_order",
+                summary="a manual paper order did not return a readable order",
+                expected="HTTP 201 with an order body",
+                actual=f"HTTP {status_code}",
+            )
+        ]
+    reason = _text(order.get("reason")) or ""
+    if any(code in reason for code in KILL_SWITCH_REASONS):
+        return [
+            Finding(
+                code="KILLSWITCH_MANUAL_ORDER_BLOCKED",
+                scenario=scenario,
+                invariant="killswitch.allows_manual_order",
+                summary="the kill switch blocked a manual paper order",
+                expected="manual orders are outside the strategy-scoped switch",
+                actual=f"reason={reason!r}",
+            )
+        ]
+    return []
+
+
+def check_killswitch_state(
+    state: Mapping[str, object] | None,
+    *,
+    expected_active: bool,
+    scenario: str,
+    restored: bool = False,
+) -> list[Finding]:
+    """The switch must be exactly where the harness expects it (armed, or restored)."""
+    if state is None:
+        return [
+            Finding(
+                code="KILLSWITCH_STATE_UNREADABLE",
+                scenario=scenario,
+                invariant="killswitch.restored" if restored else "killswitch.blocks_strategy",
+                summary="the kill switch state could not be read",
+                expected=f"active={expected_active}",
+                actual="no readable state",
+            )
+        ]
+    active = state.get("active")
+    if active is expected_active:
+        return []
+    return [
+        Finding(
+            code="KILLSWITCH_NOT_RESTORED" if restored else "KILLSWITCH_NOT_ARMED",
+            scenario=scenario,
+            invariant="killswitch.restored" if restored else "killswitch.blocks_strategy",
+            summary=(
+                "the kill switch was not restored to its previous state"
+                if restored
+                else "the kill switch did not arm"
+            ),
+            expected=f"active={expected_active}",
+            actual=f"active={active!r}",
+        )
+    ]
+
+
+def check_position_closed(
+    quantity: Decimal | None,
+    *,
+    scenario: str,
+    label: str,
+    tolerance: Decimal = QUANTITY_TOLERANCE,
+) -> list[Finding]:
+    """After selling the full position, no quantity may remain (``None`` means gone)."""
+    remaining = Decimal(0) if quantity is None else quantity
+    if abs(remaining) <= tolerance:
+        return []
+    return [
+        Finding(
+            code="MATRIX_POSITION_NOT_CLOSED",
+            scenario=scenario,
+            invariant="matrix.chain_flow",
+            summary=f"the position {label} did not close after a full-size sell",
+            expected="quantity 0",
+            actual=str(remaining),
+        )
+    ]
+
+
 def self_test() -> None:
     """Fast, network-free sanity check used by ``--self-test``."""
     order = {"id": "o1", "status": "filled", "side": "buy", "amount_usd": "1.00"}
@@ -1203,5 +1504,51 @@ def self_test() -> None:
     }
     assert check_positions([position], scenario="self") == []
     assert check_account(account, scenario="self") == []
-    assert check_reconciliation(404, None, scenario="self") == []
+    assert check_reconciliation(200, {"ok": True}, scenario="self") == []
+    # The endpoint is mandatory: a 404 is a failure, not a skip.
+    missing = check_reconciliation(404, None, scenario="self")
+    assert missing and missing[0].invariant == "reconciliation.missing"
     assert check_idempotency({"id": "o1"}, {"id": "o1"}, [fill], scenario="self") == []
+
+    assert (
+        check_oversell(
+            scenario="self",
+            held_quantity=Decimal("2"),
+            sold_quantity=Decimal("2"),
+            final_quantity=None,
+            cash_usd=Decimal("97"),
+        )
+        == []
+    )
+    assert check_oversell(
+        scenario="self",
+        held_quantity=Decimal("2"),
+        sold_quantity=Decimal("4"),
+        final_quantity=Decimal("-2"),
+        cash_usd=Decimal("-1"),
+    )
+    blocked_run = {
+        "id": "r1",
+        "action": "hold",
+        "reason": "KILL_SWITCH_ACTIVE",
+        "inputs": {"error_code": "KILL_SWITCH_ACTIVE"},
+    }
+    assert (
+        check_killswitch_run(blocked_run, persisted_runs=[], orders_created=0, scenario="self")
+        == []
+    )
+    assert check_killswitch_run(
+        {"id": "r2", "action": "buy", "reason": "DCA_BUY"},
+        persisted_runs=[],
+        orders_created=1,
+        scenario="self",
+    )
+    assert check_killswitch_state({"active": True}, expected_active=True, scenario="self") == []
+    assert (
+        check_killswitch_state(
+            {"active": False}, expected_active=False, scenario="self", restored=True
+        )
+        == []
+    )
+    assert check_position_closed(Decimal("0"), scenario="self", label="base:0xaa") == []
+    assert check_position_closed(Decimal("0.5"), scenario="self", label="base:0xaa")

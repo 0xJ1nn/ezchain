@@ -1,5 +1,10 @@
 # AGENTS.md — AI & developer instructions
 
+> **Maintainer workflow:** if the maintainer invokes **“leader go”** or **“leader mode”**,
+> read the maintainer's local, untracked orchestration brief if one is present in the
+> working tree. If it is absent, ask the maintainer; do not invent a process. Internal
+> orchestration and review material is intentionally not part of this public repository.
+>
 > **Canonical engineering rules:** [`project.md`](project.md) is the single source of truth
 > for how ezCHAIN is developed. Read it before every meaningful task.
 >
@@ -36,7 +41,7 @@ Before changing anything for a non-trivial task, **stop and inspect**:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — deployables, boundaries, data flow
 - [`README.md`](README.md) — what the project is
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — relevant ADRs
-- [`.state/CURRENT_TASK.md`](.state/CURRENT_TASK.md) — current task and handoff
+- maintainer-local task/handoff notes (deliberately not part of this public repository)
 - `git status`, current branch, relevant source and tests
 
 **The code is truth. Documentation can be stale. Read the code. If they disagree, fix the

@@ -1,10 +1,11 @@
 # TODO — ezCHAIN P0 + M1 close-out
 
-Status as of **2026-10-22**. The app is a **PAPER stack with production operations**:
-continuous 22/25-chain market observation, Jupiter paper quotes on Solana, an append-only
-paper ledger, strategy CRUD/scheduler, migrations, bearer auth, observability and a stress
-harness. There are no keys, no signing and no live execution. Wallet/automation/system
-pages remain fixtures or placeholders. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
+Status as of **2026-10-23**. The app is a **PAPER stack with production operations**:
+continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
+ledger, declarative and visual graph strategies, backtests, strategy CRUD/scheduler,
+migrations through `0006_backtests`, bearer auth, observability, a complete operator
+surface and a full-code stress harness. There are no keys, no signing and no live
+execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
 Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 [`docs/CONTRACT.md`](CONTRACT.md), [`docs/PLAN-LIVE-PAPER.md`](PLAN-LIVE-PAPER.md),
@@ -26,14 +27,14 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Ops: Alembic 0001–0003 (fresh + legacy), bearer auth + CSRF proxy,
+- [x] Ops: Alembic 0001–0006 (fresh + legacy), bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
-- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (static; build/up not verified).
+- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0006`).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
 - [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
-- [ ] Supervised `docker compose up --build` on a host with Docker.
+- [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0006` is pending.
 - [ ] Per-user auth/RBAC; `/metrics` exposure decision.
-- [ ] Live dashboard history/attribution/wallets (#57); EVM venue (#59).
+- [ ] Live dashboard equity history and live wallets (#57); EVM venue (#59).
 
 ## Now — P0 live paper slice
 
@@ -50,48 +51,45 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [ ] Engine repository boundary (#58).
 - [ ] EVM venue adapter to replace `paper_mark` (#59).
 
-Known P0 limits: non-Solana paper fills are capped `paper_mark`; no strategy PnL per row;
-no live execution. See `docs/PLAN-LIVE-PAPER.md`.
+Known P0 limits: chains without a keyless quote provider use capped `paper_mark`; the
+strategy *list* has no per-row PnL (per-strategy performance is available); no live
+execution. See `docs/PLAN-LIVE-PAPER.md`.
 
 ## Now — M1
 
-### 1. Wallets + wallet detail — #10 (next)
+### 1. Wallets + wallet detail — #10 (surface done, backend open)
 
-- `/wallets`: multi-wallet cards, custody tiers, per-chain balances, sync state, policy.
-- `/wallets/[id]` or `/wallets/[id]` with wallet detail: balances, allowances, activity,
-  policy, key custody, sweep.
-- Fixtures only. No key material, no signing, no live balances.
-- Wireframe: `design/wireframe/08-wallets.html`, `09-wallet-detail.html`.
-- Evidence: `wallets-wireframe-vs-implementation.png`, `wallet-detail-*.png`, mobile.
+- `/wallets`: real paper-account truth and an explicit custody status; no dead "Add
+  wallet" control. The wallet metadata/signing backend is the live-executor slice.
+- `/wallets/[id]`: not built; no dead link points at it.
+- No key material, no signing, no live balances.
+- Remaining: wallet metadata registry, watch-only sync and the live custody flow.
 
-### 2. Automations + builder — #11
+### 2. Automations + builder — #11 (done as strategy scheduler)
 
-- `/automations`, `/automations/builder`.
-- List/status/last run/pause/log; trigger → conditions → actions; scope; dry run.
-- Wireframe: `10-automations.html`, `11-automation-builder.html`.
-- Dry run is labelled `SIMULATED`, never live.
+- `/automations` shows the real strategy scheduler: status, interval, last run and links
+  to each strategy. A generic trigger/action object is not part of this build.
+- The graph builder is `/strategies/builder`; no separate automation builder is claimed.
 
-### 3. Strategies + strategy detail + signals — #12
+### 3. Strategies + strategy detail + signals — #12 (done)
 
-- `/strategies`, `/strategies/[id]`, `/signals`.
-- Installed plugins only; manifest, params, grants, paper-gate evidence, intents, logs.
-- No strategy code in-tree; no alpha or profitability promise.
-- Wireframe: `12-strategies.html`, `13-strategy-detail.html`, `14-signals.html`.
+- `/strategies` and `/strategies/[id]`: real CRUD, graph builder, runs, pause/resume.
+- `/signals`: live market movers with source and age; no safety or alpha claim.
+- Plugin manifests/grants/live promotion remain later work.
 
-### 4. Risk + alerts — #13
+### 4. Risk + alerts — #13 (done for PAPER)
 
-- `/risk`, `/alerts`.
-- Exposure, limits, drawdown, breakers, kill-switch scope; alert rules/channels/quiet
-  hours/delivery log.
-- Kill switch reachable in ≤ 2 interactions from anywhere.
-- Wireframe: `17-risk.html`, `15-alerts.html`.
+- `/risk`: server limits, positions/marks, rejected attempts and the persisted kill switch.
+- `/alerts`: server-derived reconciliation/mark/rejection/kill-switch alerts; no delivery
+  channel exists yet and the page says so.
+- Kill switch is reachable from the sidebar and dashboard.
 
-### 5. Remaining system pages + component gallery — #14
+### 5. Remaining system pages + component gallery — #14 (done)
 
-- `/chains`, `/integrations`, `/settings`, `/security`, `/developer`, `/operations`,
-  `/workspace`, `/states`, `/mobile`, `/components`.
-- Reuse shell and primitives; no new design system.
-- Wireframe: `20-` through `29-`.
+- Every sidebar route is implemented; the placeholder catch-all is removed and unknown
+  routes return 404. `/states`, `/mobile` and `/components` are real galleries.
+- `/wallets` and `/security` state custody/live limits honestly rather than inventing a
+  backend.
 
 ### 6. Remaining position-tile states — #8
 
@@ -108,8 +106,9 @@ no live execution. See `docs/PLAN-LIVE-PAPER.md`.
       (`design/wireframe/28-mobile.html`). The shared `ui.css` has `col-hide-sm`; a proper
       card primitive is still missing.
 - [ ] Real filters/search/watchlist. Preview-only today; watchlists are #33.
-- [ ] Position detail route. Tiles link to `/positions/...`, which currently renders the
-      generic “not implemented” page. The real route is part of #8/#10 scope.
+- [ ] Position tiles/tables do not link anywhere yet; the dead `/positions/...`
+      route is gone and dashboard rows link to `/tokens/{chain}/{address}`. Add a real
+      token/detail link to the tile and table when their view models carry chain + token.
 - [ ] #36 deterministic local gate: Playwright concurrency/port collisions and the
       `next build` cache need one clean run.
 - [ ] #39 review the audit-drafted ADR-0014–0019 and `ROADMAP.md` before treating them as

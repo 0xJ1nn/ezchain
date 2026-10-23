@@ -6,7 +6,7 @@ const nav = [
 		label: "Overview",
 		items: [
 			{ id: "dashboard", href: "/", label: "Dashboard", glyph: "▤" },
-			{ id: "positions", href: "/positions", label: "Positions", glyph: "▥", badge: "4" },
+			{ id: "positions", href: "/positions", label: "Positions", glyph: "▥" },
 			{ id: "markets", href: "/markets", label: "Markets", glyph: "◫" },
 			{ id: "performance", href: "/performance", label: "Performance", glyph: "◔" },
 		],
@@ -22,7 +22,7 @@ const nav = [
 	{
 		label: "Automate",
 		items: [
-			{ id: "automations", href: "/automations", label: "Automations", glyph: "⟳", badge: "3" },
+			{ id: "automations", href: "/automations", label: "Automations", glyph: "⟳" },
 			{ id: "strategies", href: "/strategies", label: "Strategies", glyph: "◇" },
 			{ id: "signals", href: "/signals", label: "Signals", glyph: "⌁" },
 			{ id: "backtests", href: "/backtests", label: "Backtests", glyph: "∿" },
@@ -32,7 +32,7 @@ const nav = [
 		label: "Protect",
 		items: [
 			{ id: "risk", href: "/risk", label: "Risk", glyph: "◈" },
-			{ id: "alerts", href: "/alerts", label: "Alerts", glyph: "◉", badge: "2" },
+			{ id: "alerts", href: "/alerts", label: "Alerts", glyph: "◉" },
 		],
 	},
 	{
@@ -63,12 +63,12 @@ export function Topbar() {
 				</Link>
 				<span className="brand-tag">Workstation</span>
 			</div>
-			<button className="ws-chip" type="button" title="Switch workspace">
+			<Link className="ws-chip" href="/workspace" title="Workspace">
 				<span className="avatar" style={{ width: 18, height: 18, fontSize: 8 }}>
-					JW
+					OP
 				</span>
-				Personal workspace <span className="muted">▾</span>
-			</button>
+				Personal workspace
+			</Link>
 			<form className="search" role="search" action="/markets">
 				<input
 					type="search"
@@ -89,14 +89,14 @@ export function Topbar() {
 			</span>
 			<span className="spacer" />
 			<Link className="icon-btn" href="/alerts" title="Alerts" aria-label="Alerts">
-				◉<span className="count">2</span>
+				◉
 			</Link>
 			<Link className="kill" href="/risk" title="Kill switch: halt new risk (k)">
 				KILL SWITCH
 			</Link>
-			<span className="avatar" title="Account menu">
-				JW
-			</span>
+			<Link className="avatar" href="/workspace" title="Workspace">
+				OP
+			</Link>
 		</header>
 	);
 }
@@ -121,7 +121,6 @@ export function Sidebar({ active }: { active: string }) {
 									{item.glyph}
 								</span>
 								<span className="t">{item.label}</span>
-								{item.badge && <span className="badge">{item.badge}</span>}
 							</Link>
 						);
 					})}
@@ -132,7 +131,7 @@ export function Sidebar({ active }: { active: string }) {
 				<Link href="/components">Components</Link>
 				<Link href="/mobile">Mobile</Link>
 				<div className="micro" style={{ marginTop: 8 }}>
-					v0.1.0 · P0
+					P0 · paper · no keys
 				</div>
 			</div>
 		</nav>
@@ -207,7 +206,7 @@ export function AppShell({ active, children }: { active: string; children: React
 				</span>
 				<span className="spacer" />
 				<span className="meta">
-					{fixture ? "P0 · fixture mode" : "P0 · DexScreener + Jupiter"}
+					{fixture ? "P0 · fixture mode" : "P0 · DexScreener + multi-chain quotes"}
 				</span>
 			</div>
 			<Topbar />

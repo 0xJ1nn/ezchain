@@ -34,12 +34,23 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument("--mode", choices=MODES, default="smoke")
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default="smoke",
+        help=(
+            "smoke, soak, idempotency, chaos, matrix, fuzz, race, killswitch, or all "
+            "(all = smoke + idempotency + fuzz + race + killswitch + matrix)"
+        ),
+    )
     parser.add_argument(
         "--duration",
         type=float,
         default=None,
-        help="seconds (default: smoke/chaos 30, idempotency 60, soak 300)",
+        help=(
+            "seconds of load per mode (default: soak 300, idempotency 60, others 30); "
+            "matrix runs one pass over every paper chain and ignores it"
+        ),
     )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
@@ -52,7 +63,12 @@ def _parser() -> argparse.ArgumentParser:
         default="1",
         help="paper notional used by the strategy scenario (default: 1)",
     )
-    parser.add_argument("--strategy-kind", choices=STRATEGY_KINDS, default="dca")
+    parser.add_argument(
+        "--strategy-kind",
+        choices=STRATEGY_KINDS,
+        default="dca",
+        help="strategy rule kind for the lifecycle; 'all' runs momentum, dip, dca and threshold",
+    )
     parser.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR))
     parser.add_argument(
         "--file-issues",

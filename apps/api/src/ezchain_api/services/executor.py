@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import DexScreenerClient, QuoteRouter
 from ezchain_core import OrderRequest
 from ezchain_engine import OrderRejected
 
@@ -22,12 +22,12 @@ class PaperOrderExecutor:
         session_factory: Callable[[], Session],
         settings: Settings,
         dexscreener: DexScreenerClient,
-        jupiter: JupiterClient,
+        quotes: QuoteRouter,
     ) -> None:
         self._session_factory = session_factory
         self._settings = settings
         self._dexscreener = dexscreener
-        self._jupiter = jupiter
+        self._quotes = quotes
 
     async def place_order(self, request: OrderRequest) -> str:
         with self._session_factory() as session:
@@ -36,7 +36,7 @@ class PaperOrderExecutor:
                 request,
                 self._settings,
                 self._dexscreener,
-                self._jupiter,
+                self._quotes,
             )
             if row.status != "filled":
                 raise OrderRejected(row.reason, order_id=row.id)

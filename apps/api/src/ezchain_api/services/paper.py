@@ -8,16 +8,19 @@ entries, never read from a mutable scalar.
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import PAPER_MARK, DexScreenerClient, QuoteRouter
 from ezchain_core import (
     LedgerEntry,
     OrderRequest,
@@ -41,7 +44,6 @@ from ezchain_core.ledger import (
 
 from ..config import Settings
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow, new_id
-from .quotes import get_quote
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -104,7 +106,7 @@ def _domain_entry(row: LedgerEntryRow) -> LedgerEntry:
 
 
 @dataclass(frozen=True)
-class _Replay:
+class Replay:
     cash: Decimal
     realized: Decimal
     daily_realized: Decimal
@@ -112,7 +114,32 @@ class _Replay:
     realized_by_account: dict[str, Decimal]
 
 
-def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) -> _Replay:
+def group_position_delta(rows: list[LedgerEntryRow]) -> Decimal:
+    """The trade result of one order group: its cash delta plus its position delta.
+
+    A group without a position leg (genesis) is not a trade and therefore contributes
+    nothing. A buy group's result is ``-fee``; a sell group's result is
+    ``proceeds - cost_basis - fee``. This is additive across groups, so it does not depend
+    on replay order and reconciles with cash plus the cost basis of open positions.
+    """
+    position_rows = [row for row in rows if row.account.startswith(POSITION_PREFIX)]
+    if not position_rows:
+        return Decimal(0)
+    cash_delta = sum((row.usd_value for row in rows if row.account == cash_account()), Decimal(0))
+    return cash_delta + sum((row.usd_value for row in position_rows), Decimal(0))
+
+
+def ledger_rows(session: Session) -> list[LedgerEntryRow]:
+    """Every ledger entry in journal order (oldest first). Public read-only access."""
+    return _ledger_rows(session)
+
+
+def project_ledger(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) -> Replay:
+    """Project cash, positions and realized PnL from ledger rows (CONTRACT I1)."""
+    return _replay(rows, day_start=day_start)
+
+
+def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) -> Replay:
     """Project balances, positions and realized PnL from ledger rows.
 
     Per-position net realized is derived per order group: a group's cash deltas plus its
@@ -138,10 +165,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
         position_rows = [row for row in group if row.account.startswith(POSITION_PREFIX)]
         if not position_rows:
             continue
-        cash_delta = sum(
-            (row.usd_value for row in group if row.account == cash_account()), Decimal(0)
-        )
-        delta = cash_delta + sum((row.usd_value for row in position_rows), Decimal(0))
+        delta = group_position_delta(group)
         for row in position_rows:
             realized_by_account[row.account] = (
                 realized_by_account.get(row.account, Decimal(0)) + delta
@@ -152,7 +176,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
             if observed is not None and observed >= day_start:
                 daily += delta
 
-    return _Replay(
+    return Replay(
         cash=cash,
         realized=sum(realized_by_account.values(), Decimal(0)),
         daily_realized=daily,
@@ -161,7 +185,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
     )
 
 
-def _open_positions(replay: _Replay) -> int:
+def _open_positions(replay: Replay) -> int:
     return sum(1 for quantity, _ in replay.positions.values() if quantity > 0)
 
 
@@ -231,7 +255,7 @@ def _source_ref(row: MarketSnapshotRow) -> SourceRef:
 
 
 def _position_views(
-    replay: _Replay, snapshots: dict[tuple[str, str], MarketSnapshotRow]
+    replay: Replay, snapshots: dict[tuple[str, str], MarketSnapshotRow]
 ) -> list[dict[str, Any]]:
     views: list[dict[str, Any]] = []
     for account, (quantity, cost) in replay.positions.items():
@@ -293,6 +317,11 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
     }
 
 
+def daily_realized_pnl(session: Session) -> Decimal:
+    """Net realized PnL booked since UTC midnight, from the ledger only."""
+    return _replay(_ledger_rows(session), day_start=_day_start()).daily_realized
+
+
 def orders(session: Session, limit: int = 50) -> list[PaperOrderRow]:
     return list(
         session.scalars(
@@ -322,7 +351,23 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
         min_pair_age_minutes=settings.min_pair_age_minutes,
         min_liquidity_usd=settings.min_liquidity_usd,
         paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
+        max_price_impact_pct=settings.max_price_impact_pct,
     )
+
+
+def _fill_fee(notional: Decimal, quote: Quote, settings: Settings) -> Decimal:
+    """The fill's fee: the larger of the platform fee and the quote's own cost.
+
+    A ``paper_mark`` carries no venue cost, so the platform's flat paper fee is the whole
+    fee. An executable quote already pays a pool/aggregator fee and gas, reported as
+    ``quote.fee_usd``: charging the bps fee *on top* would bill the same liquidity twice,
+    and charging only the bps fee would hide a 0.25% LI.FI fee or three dollars of gas.
+    The maximum of the two is never less than either honest number and never their sum.
+    """
+    platform = bps_fee(notional, settings.paper_fee_bps)
+    if quote.kind == PAPER_MARK:
+        return platform
+    return max(platform, quote.fee_usd)
 
 
 def _find_order(session: Session, idempotency_key: str) -> PaperOrderRow | None:
@@ -382,6 +427,27 @@ def _reject_new(
     return order
 
 
+def _reject_after_quote(
+    session: Session,
+    payload: OrderRequest,
+    reason: str,
+    *,
+    snapshot: TokenSnapshot,
+    quote: Quote,
+) -> PaperOrderRow:
+    """Persist a rejection that has a quote, so the refused size stays replayable."""
+    order, created = _claim_or_existing(session, payload)
+    if not created:
+        return order
+    record_snapshot(session, snapshot)
+    order.status = "rejected"
+    order.reason = reason
+    order.quote_kind = quote.kind
+    order.quote_json = quote.to_dict()
+    session.commit()
+    return order
+
+
 def _mark_rejected(session: Session, order: PaperOrderRow, reason: str) -> PaperOrderRow:
     order.status = "rejected"
     order.reason = reason
@@ -410,9 +476,18 @@ async def place_order(
     payload: OrderRequest,
     settings: Settings,
     dexscreener: DexScreenerClient,
-    jupiter: JupiterClient,
+    quotes: QuoteRouter,
 ) -> PaperOrderRow:
-    """Place a paper order: quote, risk, fill and journal in one transaction."""
+    """Place a paper order: quote, risk, fill and journal in one transaction.
+
+    Cash, the open-position count and every position are one paper account, so the fill
+    window is serialized per *account*, not per token. The quote happens outside a
+    transaction (it is network I/O); the replay, order claim and journal then run under one
+    in-process lock, and PostgreSQL additionally takes a transaction-scoped advisory lock
+    so the guard holds across API processes. A sell whose quoted quantity is no longer
+    held is rejected ``POSITION_CHANGED`` rather than resized against a stale quote: the
+    trader retries with a fresh, executable size.
+    """
     ensure_genesis(session, settings.paper_starting_cash_usd)
     existing = _find_order(session, payload.idempotency_key)
     if existing is not None:
@@ -423,10 +498,17 @@ async def place_order(
     if payload.strategy_id is not None and read_kill_switch(session, settings).active:
         return _reject_new(session, payload, "KILL_SWITCH_ACTIVE")
 
-    replay = _replay(_ledger_rows(session), day_start=_day_start())
     account = position_account(payload.chain, payload.token_address)
-    held_qty, held_cost = replay.positions.get(account, (Decimal(0), Decimal(0)))
+    held_qty = Decimal(0)
+    if payload.side == "sell":
+        # Size the quote from a read-only snapshot, then close the transaction before the
+        # network call. The authoritative read happens again under the position lock.
+        held_qty, _ = _replay(_ledger_rows(session)).positions.get(
+            account, (Decimal(0), Decimal(0))
+        )
 
+    # Do not hold a transaction open across the quote network call.
+    session.rollback()
     snapshot = await dexscreener.get_token(payload.chain, payload.token_address)
 
     if payload.side == "sell":
@@ -436,124 +518,162 @@ async def place_order(
         if quantity is None or quantity <= 0:
             return _reject_new(session, payload, "PRICE_UNKNOWN", snapshot=snapshot)
         assert snapshot.price_usd is not None
-        quote = await get_quote(
+        quote = await quotes.quote(
             chain=payload.chain,
             token_address=payload.token_address,
             side="sell",
             amount_usd=quantity * snapshot.price_usd,
             quantity=quantity,
-            dexscreener=dexscreener,
-            jupiter=jupiter,
-            settings=settings,
         )
     else:
-        quote = await get_quote(
+        quote = await quotes.quote(
             chain=payload.chain,
             token_address=payload.token_address,
             side="buy",
             amount_usd=payload.amount_usd,
             quantity=None,
-            dexscreener=dexscreener,
-            jupiter=jupiter,
-            settings=settings,
         )
 
     snapshot = _attach_quote_price(snapshot, quote)
 
-    order, created = _claim_or_existing(session, payload)
-    if not created:
-        return order
-    record_snapshot(session, snapshot)
+    with _serialized_paper_fill(session):
+        # Replay under the lock: this is the only position view the fill may use.
+        replay = _replay(_ledger_rows(session), day_start=_day_start())
+        held_qty, held_cost = replay.positions.get(account, (Decimal(0), Decimal(0)))
 
-    if payload.side == "sell":
-        fill_quantity = min(quote.amount_in, held_qty)
-        if fill_quantity <= 0:
-            return _mark_rejected(session, order, "INSUFFICIENT_POSITION")
-        notional = (
-            quote.amount_out if fill_quantity == quote.amount_in else fill_quantity * quote.price
-        )
-    else:
-        fill_quantity = quote.amount_out
-        notional = quote.amount_in
-    if fill_quantity <= 0 or notional <= 0:
-        return _mark_rejected(session, order, "NO_ROUTE")
-
-    position_mark = snapshot.price_usd if snapshot.price_usd is not None else quote.price
-    request = OrderRequest(
-        chain=payload.chain,
-        token_address=payload.token_address,
-        side=payload.side,
-        amount_usd=notional,
-        idempotency_key=payload.idempotency_key,
-        strategy_id=payload.strategy_id,
-    )
-    allowed, reasons = evaluate_order(
-        request=request,
-        snapshot=snapshot,
-        quote=quote,
-        current_position_value_usd=held_qty * position_mark,
-        open_positions=_open_positions(replay),
-        daily_realized_pnl_usd=replay.daily_realized,
-        limits=limits_from_settings(settings),
-    )
-    fee = bps_fee(notional, settings.paper_fee_bps)
-    if allowed and payload.side == "buy" and replay.cash < notional + fee:
-        allowed = False
-        reasons = ("INSUFFICIENT_CASH",)
-
-    if not allowed:
-        order.quote_kind = quote.kind
-        order.quote_json = quote.to_dict()
-        return _mark_rejected(session, order, ",".join(reasons))
-
-    stamp = utcnow()
-    if payload.side == "buy":
-        entries = buy_entries(
-            chain=payload.chain,
-            token_address=payload.token_address,
-            quantity=fill_quantity,
-            price_usd=quote.price,
-            fee_bps=settings.paper_fee_bps,
-            notional_usd=notional,
-        )
-    else:
-        avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
-        if fill_quantity == held_qty:
-            basis = held_cost
+        if payload.side == "sell":
+            if held_qty <= 0:
+                return _reject_after_quote(
+                    session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot, quote=quote
+                )
+            # Never fill a quantity that another writer already spent. A smaller quote is
+            # fine (the position grew); a larger quote is stale and must be re-priced.
+            if quote.amount_in > held_qty + MONEY_QUANTUM:
+                return _reject_after_quote(
+                    session, payload, "POSITION_CHANGED", snapshot=snapshot, quote=quote
+                )
+            fill_quantity = min(quote.amount_in, held_qty)
+            notional = (
+                quote.amount_out
+                if fill_quantity == quote.amount_in
+                else fill_quantity * quote.price
+            )
         else:
-            basis = min((fill_quantity * avg_cost).quantize(MONEY_QUANTUM), held_cost)
-        entries = sell_entries(
-            chain=payload.chain,
-            token_address=payload.token_address,
-            quantity=fill_quantity,
-            price_usd=quote.price,
-            avg_cost_usd=avg_cost,
-            fee_bps=settings.paper_fee_bps,
-            proceeds_usd=notional,
-            cost_basis_usd=basis,
-        )
+            fill_quantity = quote.amount_out
+            notional = quote.amount_in
 
-    session.add(
-        PaperFillRow(
-            id=new_id(),
-            order_id=order.id,
+        order, created = _claim_or_existing(session, payload)
+        if not created:
+            return order
+        record_snapshot(session, snapshot)
+
+        if fill_quantity <= 0 or notional <= 0:
+            order.quote_kind = quote.kind
+            order.quote_json = quote.to_dict()
+            return _mark_rejected(session, order, "NO_ROUTE")
+
+        position_mark = snapshot.price_usd if snapshot.price_usd is not None else quote.price
+        request = OrderRequest(
             chain=payload.chain,
             token_address=payload.token_address,
             side=payload.side,
-            quantity=fill_quantity,
-            price_usd=quote.price,
-            notional_usd=notional,
-            fee_usd=fee,
-            quote_kind=quote.kind,
-            created_at=stamp,
+            amount_usd=notional,
+            idempotency_key=payload.idempotency_key,
+            strategy_id=payload.strategy_id,
         )
-    )
-    for entry in entries:
-        session.add(LedgerEntryRow(**entry.to_row(order.id, created_at=stamp)))
+        allowed, reasons = evaluate_order(
+            request=request,
+            snapshot=snapshot,
+            quote=quote,
+            current_position_value_usd=held_qty * position_mark,
+            open_positions=_open_positions(replay),
+            daily_realized_pnl_usd=replay.daily_realized,
+            limits=limits_from_settings(settings),
+        )
+        fee = _fill_fee(notional, quote, settings)
+        if allowed and payload.side == "buy" and replay.cash < notional + fee:
+            allowed = False
+            reasons = ("INSUFFICIENT_CASH",)
 
-    order.status = "filled"
-    order.filled_at = stamp
-    order.quote_kind = quote.kind
-    order.quote_json = quote.to_dict()
-    session.commit()
-    return order
+        if not allowed:
+            order.quote_kind = quote.kind
+            order.quote_json = quote.to_dict()
+            return _mark_rejected(session, order, ",".join(reasons))
+
+        stamp = utcnow()
+        if payload.side == "buy":
+            entries = buy_entries(
+                chain=payload.chain,
+                token_address=payload.token_address,
+                quantity=fill_quantity,
+                price_usd=quote.price,
+                fee_bps=settings.paper_fee_bps,
+                notional_usd=notional,
+                fee_usd=fee,
+            )
+        else:
+            avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
+            if fill_quantity == held_qty:
+                basis = held_cost
+            else:
+                basis = min((fill_quantity * avg_cost).quantize(MONEY_QUANTUM), held_cost)
+            entries = sell_entries(
+                chain=payload.chain,
+                token_address=payload.token_address,
+                quantity=fill_quantity,
+                price_usd=quote.price,
+                avg_cost_usd=avg_cost,
+                fee_bps=settings.paper_fee_bps,
+                proceeds_usd=notional,
+                cost_basis_usd=basis,
+                fee_usd=fee,
+            )
+
+        session.add(
+            PaperFillRow(
+                id=new_id(),
+                order_id=order.id,
+                chain=payload.chain,
+                token_address=payload.token_address,
+                side=payload.side,
+                quantity=fill_quantity,
+                price_usd=quote.price,
+                notional_usd=notional,
+                fee_usd=fee,
+                quote_kind=quote.kind,
+                created_at=stamp,
+            )
+        )
+        for entry in entries:
+            session.add(LedgerEntryRow(**entry.to_row(order.id, created_at=stamp)))
+
+        order.status = "filled"
+        order.filled_at = stamp
+        order.quote_kind = quote.kind
+        order.quote_json = quote.to_dict()
+        session.commit()
+        return order
+
+
+# One paper account means one fill window. Serializing every fill is deliberately
+# boring: it makes cash, open-position count and every position agree at commit time.
+# The quote network call stays outside this lock.
+_PAPER_ORDER_LOCK = threading.Lock()
+
+
+@contextmanager
+def _serialized_paper_fill(session: Session) -> Iterator[None]:
+    """Serialize the read-claim-fill window for the single paper account.
+
+    PostgreSQL adds an advisory transaction lock so two API processes cannot both spend
+    the same cash or position. SQLite tests and the single-process API use the in-process
+    lock. READ COMMITTED is required: each statement must see the winner's committed rows
+    after the advisory lock is granted.
+    """
+    with _PAPER_ORDER_LOCK:
+        bind = session.get_bind()
+        if bind.dialect.name == "postgresql":
+            session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": "paper:account"}
+            )
+        yield

@@ -113,7 +113,7 @@ ezCHAIN is that platform. It deliberately contains no edge.
 | 7 | **Fire-and-forget accounting** | v2 `paper_engine.py` cache-first writes; v3 ledger drift detected in UI instead of prevented | I1 |
 | 8 | **Duplicate pipelines per mode/strategy** | v2 seven exit engines, 26 exit reasons; v1 paper vs live fee math | I2, I10 |
 | 9 | **Research in the product tree** | pumpbot 44 `live_*.py`, 214 MB pickles, 322 MB repo; v2 ~100 `_tmp_*.py`; v3 `scripts/` junk drawer | lab code in separate repo/package with data lake; CI blocks `_tmp_*` |
-| 10 | **Doc/code drift** | every repo; v3 doc says 9 microservices, one process; pumpbot docs describe deleted lanes | same-PR doc updates, `.state/` for status |
+| 10 | **Doc/code drift** | every repo; v3 doc says 9 microservices, one process; pumpbot docs describe deleted lanes | same-PR doc updates; maintainer-local status notes |
 | 11 | **"WebSocket" that polls / dead notification transport** | v1 `ws_feeds.py`; v3 `/ws` returns 404 while UI has no client | one transport, tested end-to-end |
 | 12 | **Config sprawl / clobbering** | v1 five `set_config` replacers; pumpbot 200 constants; v3 346 KB settings | I7 |
 | 13 | **Unbounded blocking work in the event loop** | pumpbot SQLite "database is locked", 6.6 GB WAL; v1 threads sharing one state dict | queues + budgets (I11) |

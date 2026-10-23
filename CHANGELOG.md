@@ -7,6 +7,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Paper account read models**: `GET /api/v1/paper/ledger`, `/performance`,
+  `/attribution`, `/limits`, `/alerts` and `/export/{orders,fills,ledger}.csv` project the
+  append-only ledger into UI-facing read models (cash, equity, realized/unrealized PnL,
+  per-token attribution, risk limits, derived operator alerts and CSV exports). Every
+  number is server-computed; an unknown mark is `null`, and no endpoint mutates state.
+- **Graph strategies are live on the PAPER path**: `GET /api/v1/graph/catalogue`,
+  `POST /api/v1/graph/validate`, `POST /api/v1/graph/dry-run`,
+  `POST /api/v1/backtests` (+ list/read), and
+  `GET /api/v1/strategies/{id}/performance`. The scheduler builds a real `EvalContext`
+  (live snapshot, closed candles, ledger position/account, run-log variables) and maps
+  `GraphDecision` onto the existing order path; buy uses `amount_usd`, sell uses
+  `sell_fraction × position value` and never oversells. Backtests are immutable rows in
+  the new `backtests` table (`0006_backtests`, forward-only). Validation and dry-run
+  keep unknown values `null`; the dry run never places an order. Live signing/execution
+  still does not exist.
+- **Operator UI routes**: every sidebar destination now renders a real surface backed by
+  the typed API clients or an explicit labelled FIXTURE/empty/error state. Adds
+  performance, wallets, activity, reports (browser CSV), automations, signals, backtests
+  status, risk with a persisted kill-switch control, derived alerts, chains/coverage,
+  integrations, settings, security, developer, operations (health/ready/metrics/
+  reconciliation), workspace and the state/component/mobile galleries. The placeholder
+  catch-all route is removed; unknown routes return 404.
+
 - `docs/evidence/p0-production/`: live market/paper/strategy/auth/API-down/restart and
   stress evidence for the PAPER production operations.
 - `docs/PRODUCTION-READINESS.md`: verified vs unverified matrix, operator checklist and the

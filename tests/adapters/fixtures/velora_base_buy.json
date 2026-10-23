@@ -1,0 +1,68 @@
+{
+ "priceRoute": {
+  "bestRoute": [
+   {
+    "percent": 100,
+    "swaps": [
+     {
+      "destDecimals": 18,
+      "destToken": "0x4200000000000000000000000000000000000006",
+      "srcDecimals": 6,
+      "srcToken": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "swapExchanges": [
+       {
+        "data": {
+         "apiGo": true,
+         "blockNumber": 52948353,
+         "gasUSD": "0.002740",
+         "path": [
+          {
+           "currentFee": "150",
+           "fee": "500",
+           "tickSpacing": "100",
+           "tokenIn": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+           "tokenOut": "0x4200000000000000000000000000000000000006"
+          }
+         ],
+         "source": "L1"
+        },
+        "destAmount": "41772625698527951",
+        "exchange": "aerodromeslipstream",
+        "percent": 100,
+        "poolAddresses": [
+         "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59"
+        ],
+        "poolIdentifiers": [
+         "aerodromeslipstream_0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59"
+        ],
+        "srcAmount": "100000000",
+        "targetExchange": "0x1b2b6ce813b99b840fe632c63bca5394938ef01e"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "blockNumber": 52948353,
+  "contractAddress": "0x59C7C832e96D2568bea6db468C1aAdcbbDa08A52",
+  "contractMethod": "simpleSwap",
+  "destAmount": "41772625698527951",
+  "destDecimals": 18,
+  "destToken": "0x4200000000000000000000000000000000000006",
+  "destUSD": "100.1248065368",
+  "gasCost": "295300",
+  "gasCostUSD": "0.004380",
+  "hmac": "6f4c96d9356b7687320dd4bf1028ee710dea5eb2",
+  "maxImpactReached": false,
+  "network": 8453,
+  "partner": "ezchain",
+  "partnerFee": 0,
+  "side": "SELL",
+  "srcAmount": "100000000",
+  "srcDecimals": 6,
+  "srcToken": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+  "srcUSD": "99.9612000000",
+  "tokenTransferProxy": "0x93aAAe79a53759cD164340E4C8766E4Db5331cD7",
+  "version": "5"
+ }
+}

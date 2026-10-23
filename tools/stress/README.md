@@ -23,6 +23,11 @@ tools/stress/run.sh --mode smoke --duration 30
 tools/stress/run.sh --mode soak --duration 300 --concurrency 4
 tools/stress/run.sh --mode idempotency --duration 60
 tools/stress/run.sh --mode chaos --duration 30
+tools/stress/run.sh --mode fuzz
+tools/stress/run.sh --mode race --concurrency 8
+tools/stress/run.sh --mode killswitch
+tools/stress/run.sh --mode matrix
+tools/stress/run.sh --mode all --duration 30
 ```
 
 `run.sh` finds the shared venv (`EZCHAIN_PYTHON`, `./.venv`, the main worktree's venv, or
@@ -38,16 +43,16 @@ PYTHONPATH=packages/core-py/src:packages/adapters/src:apps/api/src:services/engi
 | option | default | meaning |
 |---|---|---|
 | `--base-url` | `http://127.0.0.1:8000` | API origin; credentials and paths are refused |
-| `--mode` | `smoke` | `smoke`, `soak`, `idempotency`, `chaos` |
-| `--duration` | 30 smoke/chaos, 60 idempotency, 300 soak | seconds |
-| `--concurrency` | `4` | worker threads |
+| `--mode` | `smoke` | `smoke`, `soak`, `idempotency`, `chaos`, `fuzz`, `race`, `killswitch`, `matrix`, `all` |
+| `--duration` | 30 smoke/fuzz/race/killswitch/matrix/all, 60 idempotency, 300 soak | seconds of load per timed mode |
+| `--concurrency` | `4` | worker threads (the race uses up to 8 concurrent sells) |
 | `--seed` | `0` | deterministic ids and jitter |
 | `--chain` | discover | chain id |
 | `--token` | discover | token address; requires `--chain` |
 | `--token-symbol` | row symbol or `STRESS` | display only |
 | `--order-usd` | `1` | paper notional per order |
 | `--strategy-order-usd` | `1` | notional used by the strategy lifecycle; set above `max_order_usd` to exercise a rejection |
-| `--strategy-kind` | `dca` | `momentum`, `dip`, `dca`, `threshold` |
+| `--strategy-kind` | `dca` | `momentum`, `dip`, `dca`, `threshold`, `all` |
 | `--report-dir` | `tools/stress/reports` | JSON + Markdown evidence |
 | `--file-issues` | off | create GitHub issues for failures |
 | `--repo` | none | `owner/name`, required for filing/dry-run |
@@ -81,7 +86,8 @@ non-loopback host; use HTTPS or a loopback address. There is deliberately no
 
 - **smoke** — one full flow (markets, chains, token, buy/sell quotes, one paper buy, a sell
   when a position exists, strategy create → pause → run-now refusal → resume → run → runs
-  → delete), then low-rate reads until `--duration` expires.
+  → delete), then low-rate reads until `--duration` expires. `--strategy-kind all` walks
+  momentum, dip, dca and threshold in the same run.
 - **soak** — concurrent workers alternate paper buys and sells, with periodic quote and
   market reads, for the full duration. Order creation is capped at 180 so the invariant
   window stays inside the API's 200-row history cap; after the cap workers continue reads.
@@ -91,6 +97,43 @@ non-loopback host; use HTTPS or a loopback address. There is deliberately no
 - **chaos** — retry/backoff against a deliberately invalid path (`404`) and an unreachable
   loopback port (`127.0.0.1:1`), then repeated valid `/health` and paper-account reads. It
   proves the failure was recorded and paper state still reconciles.
+- **fuzz** — every mutation on the invalid-input list must be refused with a `4xx` and a
+  JSON error body, must never be a `5xx` and must never create a fill. Cases cover
+  negative/zero/NaN/`Infinity`/`1e400`/empty `amount_usd`, `side: "hold"`, an unknown chain,
+  a 10 kB token address, missing/overlong/non-ASCII idempotency keys, extra unknown fields,
+  a wrong content type, a non-JSON body, invalid strategy kinds and params (typo'd keys,
+  `interval_minutes: 0`, `sell_above_usd <= buy_below_usd`), `PATCH` on an unknown strategy
+  id and `DELETE` twice (204 then a clean 404).
+- **race** — with a position open, `min(--concurrency, 8)` workers open their connections,
+  wait on a barrier and fire distinct full-size sells at the same instant. At most the held
+  quantity may be sold, the position may never go negative, cash may never go negative and
+  reconciliation must stay ok. The report records what was held, what was attempted and
+  what actually filled.
+- **killswitch** — reads the current switch state, arms it, runs a strategy whose
+  thresholds are derived from the live mark so it *wants* to trade (sell while holding,
+  buy while flat), and asserts the run logs `hold` / `KILL_SWITCH_ACTIVE` (or the API's
+  defence-in-depth `hold` / `ORDER_REJECTED` with `order_reason: KILL_SWITCH_ACTIVE`) and
+  places no order. A manual paper order must still be allowed. The exact previous state is
+  restored in `finally`, then read back to prove it.
+- **matrix** — reads `GET /api/v1/chains`, and for every chain with
+  `capabilities.paper_execute: true` discovers the most liquid token from
+  `GET /api/v1/markets?chain=X&limit=5`, reads token + buy quote, places one paper buy of
+  `--order-usd`, reads a sell quote, sells the full position, and requires the position to
+  close to zero. Chains with no market rows are `no_data` (never a failure). A rejection
+  whose reason is entirely documented risk codes (`LIQUIDITY_TOO_LOW`, `PAIR_TOO_YOUNG`,
+  `PAPER_MARK_LIMIT`, `QUOTE_STALE`, ...) is recorded as a `rejected:<reason>` skip row; a
+  `5xx` or an undocumented rejection is a failure. The Markdown report has one row per
+  chain: chain, token, quote kind, buy status, sell status, status and reason.
+- **all** — `smoke`, `idempotency`, `fuzz`, `race`, `killswitch`, `matrix` in that order.
+  `soak` and `chaos` stay explicit because they are long and deliberately degrade.
+
+If a scenario discovers that paper state can no longer be read consistently (an oversold
+position makes every later replay a `5xx`), later scenarios in the same run are skipped with
+that reason instead of burying the finding under cascade errors.
+
+Order budget: the load modes may create at most 180 orders per run so the order/fill window
+stays inside the API's 200-row cap. The matrix has a separate allowance of 60 so it can still
+walk every chain when it runs last in `--mode all`.
 
 ## What is checked
 
@@ -105,7 +148,28 @@ Pure functions in `tools/stress/checks.py`, covered by `tests/stress/test_checks
   equity equals cash plus known position market values; no NaN or infinity.
 - a created strategy has a non-empty run log after `POST /run`.
 - a run that claims `buy`/`sell` must point at a **filled** order; a rejected order must log `hold` / `ORDER_REJECTED` (`strategy.run_order_filled`). Set `--strategy-order-usd 1500` to exercise this.
-- `GET /paper/reconciliation` is optional: `404` is a skip, otherwise it must report ok.
+- `GET /paper/reconciliation` is **mandatory**: a `404` fails with `reconciliation.missing`;
+  otherwise it must report `ok` (`reconciliation.ok`).
+- **independent ledger recompute** (`tools/stress/ledger.py`, pure): from this run's own
+  fills only, per token `sum(buy quantity) - sum(sell quantity)` must equal the position
+  quantity change between the before/after snapshots, and
+  `sum(sell notional) - sum(buy notional) - sum(fees)` must equal the cash change
+  (tolerance `$0.01`). The window is scoped to the tokens and order ids this run created; a
+  fill from another writer inside the window becomes a `concurrent_writer_suspected` skip,
+  and a fill missing from the 200-row window becomes `fills_window_incomplete`. With the API's
+  inline engine enabled, strategies created by this run can place their own orders; the
+  harness cannot attribute those through the read API, so it reports the skip instead of
+  arithmetic it cannot prove. Disable the inline scheduler for an isolated recompute.
+- auth negatives when `EZCHAIN_STRESS_API_TOKEN` is set: the same valid mutation without an
+  `Authorization` header must be `401`, with a wrong token `401`/`403`, neither may create an
+  order, and the same body with the configured token must succeed (`auth.*`). Without a
+  token these invariants are skipped with an explicit reason.
+- fuzz: `4xx` + JSON error body, no `5xx`, no fill, and `DELETE` twice ends in `204` then `404`.
+- oversell race: `race.no_oversell`, `race.quantity_non_negative`, `race.cash_non_negative`.
+- kill switch: `killswitch.blocks_strategy`, `killswitch.allows_manual_order`,
+  `killswitch.restored`.
+- chain matrix: `matrix.chain_flow` (buy filled, sell filled, position closed, or a
+  documented risk rejection / `no_data`).
 - no unexpected 5xx and no connection errors outside chaos.
 - p50/p95/p99 per endpoint group against the configured budgets.
 
@@ -218,21 +282,26 @@ body.
 
 - **Paper only.** `GET /api/v1/paper/account` must report `mode == "paper"`; otherwise
   exit `2` with `REFUSING_NON_PAPER`, before any mutation.
-- **No credentials.** The CLI has no token/auth/key option. The HTTP client sends only
-  `User-Agent` and `Accept`; it never sends `Authorization`. `--token` is a token
-  **address**, not an API token.
+- **No credentials on the command line.** There is deliberately no `--api-token`, key or
+  secret flag (tokens in shell history or a process list are a leak). When the API requires
+  auth, the bearer token is read from `EZCHAIN_STRESS_API_TOKEN` and sent as
+  `Authorization: Bearer …`; see [Auth-enabled API](#auth-enabled-api). It is never printed,
+  written to a report, or included in an issue body, and it is refused over plain HTTP to a
+  non-loopback host. Every `--token` flag in this document is a token **address**, not an
+  API token.
 - **No signing, no live venue.** Only the paper API is called. There is no executor,
   custodian or venue adapter in this tool.
 - **Allowlisted paths.** Reads are limited to `/health`, chains, markets, tokens, quotes,
-  paper reads and strategies; mutations are limited to paper orders and strategy CRUD/run.
-  The chaos scenario is the only caller that bypasses the path allowlist, and only for a
-  fixed invalid path.
+  paper reads and strategies; mutations are limited to paper orders, strategy CRUD/run and
+  the single `/api/v1/system/kill-switch` path. The chaos scenario is the only caller that
+  bypasses the path allowlist, and only for a fixed invalid path.
 - **No process or fault injection.** The harness never kills or restarts a service, never
   writes to the database and never makes the API return a 5xx. It cannot exhaust memory or
   disk.
-- **Cleanup.** A created strategy is deleted in `finally`, even after a failed run. Paper
-  orders are append-only by design and are not deleted; they are paper evidence, not real
-  money.
+- **Cleanup.** A created strategy is deleted in `finally`, even after a failed run. The kill
+  switch is restored to the exact state observed before the run, in `finally`, and read back
+  to prove it. Paper orders are append-only by design and are not deleted; they are paper
+  evidence, not real money.
 - **No issue spam.** Filing is opt-in, one issue per fingerprint, open issues are checked
   first, and a passing run files nothing.
 
@@ -242,10 +311,22 @@ body.
   mislabelled deployment; point it only at a paper API.
 - There is no server-side fault injection. Chaos covers retry/backoff and failure
   recording, not a killed executor or a 500 injection.
-- Upstream market data can be slow or rate limited. `429` is recorded as a skip; a `5xx` or
-  a read over budget is a failure. Raise `--read-p95-ms` only with a documented reason.
-- Order/fill checks use the newest 200 rows and this run's ids. The 180-order cap keeps a
-  run inside that window.
+- Upstream market data can be slow or rate limited. A `429` on an order or quote is retried
+  with backoff (the same idempotency key, so a retry cannot duplicate an order); a throttle
+  that outlives the backoff, a `5xx` or a read over budget is a failure. Raise
+  `--read-p95-ms` only with a documented reason.
+- An idempotent `GET` that hits a reset keep-alive connection is retried once on a fresh
+  connection (`safety.transport_retries` in the report). A real outage fails both attempts.
+- Order/fill checks use the newest 200 rows and this run's ids. The load modes cap
+  themselves at 180 orders; the race and matrix have small allowances of their own. When a
+  run does exceed the window, a fill whose timestamp predates the oldest order in the page
+  is treated as off-window rather than as a missing order, and the ledger recompute reports
+  `fills_window_incomplete`.
+- The race scenario is a real concurrency test, not a timing trick: it aligns the sells on a
+  barrier, but whether a given product build has an oversell window still depends on where
+  its request handling yields. An oversell, once observed, is reported with the quantities
+  held, attempted and filled. When the paper ledger is left inconsistent, the remaining
+  scenarios in the run are skipped with that reason instead of cascading.
 - `--file-issues` dedupes against open issues only and needs `gh` auth on the machine that
   runs the schedule.
 

@@ -5,8 +5,10 @@ permission for uncontrolled development: each item becomes a focused issue befor
 starts (`project.md` §30).
 
 The current code is the **PAPER stack with production operations**: 22/25 chain market
-observation, a paper ledger, user strategies, migrations, auth, observability and a stress
-harness. Live execution, keys, wallets and automations are not built.
+observation, per-chain quote ladders, a paper ledger, declarative and visual graph
+strategies, a backtester, migrations, auth, observability, a complete operator surface and
+a full-code stress harness. Live execution, keys, wallet custody and a live UI are not
+built; the unmerged live-executor foundation has a blocked review and is not a claim.
 
 ## Done — P0: Live paper slice
 
@@ -36,13 +38,13 @@ create a strategy and watch it place paper orders. Every number carries source, 
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
 - [x] Production ops: Alembic 0001–0003, genesis/fill uniqueness, bearer auth + CSRF
   proxy, `/healthz`/`/readyz`/`/metrics`, JSON logs, runtime-only image deps.
-- [x] Runnable PAPER Compose stack and Caddy edge; Docker build/up **not verified** here.
+- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0006**.
 - [x] Stress harness (smoke/soak/idempotency/chaos) with deduplicated issue filing;
   #71 detected and closed by #72.
 - [x] Web truth: fixture badges, DCA/dip vocabulary, Playwright build guard.
-- [ ] Docker build/`compose up` on a machine with a container runtime.
+- [ ] Re-drill Docker build/`compose up` at the current migration head (historical 0003 drill recorded).
 - [ ] Per-user auth/RBAC; one deployment token today.
-- [ ] Dashboard equity history/attribution/risk/wallets remain fixture previews (#57).
+- [ ] Dashboard equity-snapshot history remains absent; wallets have no backend yet (#57).
 - [ ] EVM/venue execution and executor/vault (out of paper scope).
 
 ## Current — M1: UI close-out
@@ -51,24 +53,23 @@ Finish the fixture-driven surfaces and make the gate trustworthy.
 
 **Done:** shell/dashboard (#16), positions + four tile states (#18), markets (#21),
 token + fail-closed SCAM (#22), render harness (#15), mobile overflow (#23), cross-page
-constants (#38), evidence (#24). `docs/TODO.md` is the working checklist.
+constants (#38), evidence (#24), strategies/graph builder/signals (#12), risk/alerts
+(#13), automations as the real scheduler (#11), every system page (#14), performance,
+activity/ledger, reports, chains, operations and the gallery routes. The placeholder
+catch-all is gone.
 
 **Next:**
 
-- Wallets + wallet detail (#10) — next.
-- Automations + builder (#11).
-- Strategies/strategy detail/signals (#12).
-- Risk + alerts (#13).
-- Remaining system pages + component gallery (#14).
-- Remaining tile states: trail-armed, banked, laddered, dust, stale, closed, quarantined
-  (#8).
+- Remaining position-tile states: trail-armed, banked, laddered, dust, stale, closed,
+  quarantined (#8) — the live table and server `PositionView` are already real.
+- Wallet metadata/custody and the live-executor hardening slice (blocked review).
+- Watchlists and real discovery filters (#33).
+- Dark "Instrument" visual pass from `design/BRIEF.md`.
 - Make `tools/ci.sh` deterministic; the same commit must not pass and fail (#36).
-- Keep every fixture labelled and every unimplemented route explicit.
 
 **Known M1 gaps:** responsive tables still scroll instead of becoming cards; markets
-filters/watchlist are preview-only (#33); position detail links to the generic placeholder;
-the dark “Instrument” visual pass is still pending; ADR-0014–0019 and this roadmap need
-maintainer review (#39).
+watchlists are absent (#33); the dark “Instrument” visual pass is still pending;
+ADR-0014–0019 and this roadmap need maintainer review (#39).
 
 Exit: `main` renders the full M1 surface at 1440 and 390 px with no external requests,
 `bash tools/ci.sh` is green on five consecutive runs, and no screen implies live data.

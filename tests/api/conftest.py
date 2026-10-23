@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from fastapi import APIRouter, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -21,6 +22,7 @@ import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
 from ezchain_api.config import Settings, get_settings
 from ezchain_api.db import Base
 from ezchain_api.deps import get_session
+from ezchain_api.errors import request_validation_error
 
 
 @pytest.fixture
@@ -61,6 +63,9 @@ def session(engine: Engine) -> Iterator[Session]:
 def client_for(session: Session, settings: Settings) -> Callable[..., TestClient]:
     def _make(router: APIRouter, overrides: dict[Any, Any] | None = None) -> TestClient:
         app = FastAPI()
+        # Mirror the production handler so a non-finite rejected input is a JSON 422,
+        # never a 500 while FastAPI serializes the error.
+        app.add_exception_handler(RequestValidationError, request_validation_error)
         app.include_router(router)
         app.dependency_overrides[get_session] = lambda: session
         app.dependency_overrides[get_settings] = lambda: settings

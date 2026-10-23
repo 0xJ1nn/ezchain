@@ -22,7 +22,7 @@ from .config import RunConfig
 from .http import Harness
 from .issues import fingerprint
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_FAILURE_SAMPLES = 5
 
 
@@ -150,6 +150,7 @@ def build_report(
         "findings_total": len(findings),
         "findings_occurrences": sum(harness.finding_occurrences(f) for f in findings),
         "failure_samples": samples,
+        "sections": harness.sections,
         "created_ids": {
             "orders": sorted(harness.created_order_ids),
             "strategies": harness.created_strategy_ids,
@@ -160,8 +161,10 @@ def build_report(
         "error": error,
         "safety": {
             "paper_mode_verified": True,
-            "auth_headers_sent": False,
+            "auth_headers_sent": harness.api_token_configured,
+            "auth_token_source": "EZCHAIN_STRESS_API_TOKEN (redacted from every artifact)",
             "signing_or_keys": False,
+            "transport_retries": harness.transport_retries,
             "read_paths": [
                 "/health",
                 "/api/v1/chains",
@@ -173,8 +176,9 @@ def build_report(
                 "/api/v1/paper/positions",
                 "/api/v1/paper/orders",
                 "/api/v1/paper/fills",
-                "/api/v1/paper/reconciliation (optional)",
+                "/api/v1/paper/reconciliation",
                 "/api/v1/strategies",
+                "/api/v1/system/kill-switch",
             ],
             "mutation_paths": [
                 "POST /api/v1/paper/orders",
@@ -182,16 +186,183 @@ def build_report(
                 "PATCH /api/v1/strategies/{id}",
                 "DELETE /api/v1/strategies/{id}",
                 "POST /api/v1/strategies/{id}/run",
+                "POST /api/v1/system/kill-switch (killswitch mode; previous state restored)",
             ],
             "limits": [
                 "the harness never kills processes, restarts services or injects server faults",
                 "chaos uses only a deliberately invalid path and an unreachable loopback port",
                 "no live venue, signing operation or key material is ever involved",
                 "order/fill invariants use the newest 200 rows and the order ids this run created",
+                "the kill switch is restored to its previous state in a finally block",
+                "fuzz cases are invalid or malformed payloads; they never reach a live venue",
             ],
         },
     }
     return report
+
+
+def _section_rows(report: Mapping[str, object], name: str) -> list[Mapping[str, object]]:
+    sections = _as_mapping(report.get("sections"))
+    rows: list[Mapping[str, object]] = []
+    for item in _as_sequence(sections.get(name)):
+        mapping = _as_mapping(item)
+        if mapping:
+            rows.append(mapping)
+    return rows
+
+
+def _render_ledger(lines: list[str], report: Mapping[str, object]) -> None:
+    rows = _section_rows(report, "ledger")
+    if not rows:
+        return
+    ledger = rows[0]
+    lines.extend(["", "## Ledger recompute (independent of the API)", ""])
+    lines.append(f"- {_as_str(ledger.get('detail'), 'no fills observed')}")
+    lines.append(
+        f"- Cash before/after: {_as_str(ledger.get('cash_before'), '-')} → "
+        f"{_as_str(ledger.get('cash_after'), '-')}"
+    )
+    skip = ledger.get("skip")
+    if skip is not None:
+        lines.append(f"- **Skipped:** `{_as_str(skip)}`")
+    tokens = _as_sequence(ledger.get("tokens"))
+    if not tokens:
+        lines.append("")
+        lines.append("No token was traded, so there is no position delta to prove.")
+        return
+    lines.extend(
+        [
+            "",
+            "| chain:token | buys | sells | expected Δqty | observed Δqty | ok |",
+            "|---|---:|---:|---:|---:|---|",
+        ]
+    )
+    for item in tokens:
+        row = _as_mapping(item)
+        label = f"{_as_str(row.get('chain'))}:{_as_str(row.get('token_address'))}"
+        buys = _as_str(row.get("buy_quantity"), "0")
+        sells = _as_str(row.get("sell_quantity"), "0")
+        expected = _as_str(row.get("expected_delta"), "0")
+        observed = _as_str(row.get("observed_delta"), "0")
+        ok = "yes" if row.get("ok") is True else "**no**"
+        lines.append(f"| {label} | {buys} | {sells} | {expected} | {observed} | {ok} |")
+
+
+def _render_matrix(lines: list[str], report: Mapping[str, object]) -> None:
+    rows = _section_rows(report, "matrix")
+    if not rows:
+        return
+    lines.extend(
+        [
+            "",
+            "## Chain matrix",
+            "",
+            "| chain | token | quote_kind | buy | sell | status | reason |",
+            "|---|---|---|---|---|---|---|",
+        ]
+    )
+    for row in rows:
+        token = _as_str(row.get("symbol") or row.get("token")) or "-"
+        quote_kind = _as_str(row.get("quote_kind")) or "unknown"
+        buy = _as_str(row.get("buy")) or "-"
+        sell = _as_str(row.get("sell")) or "-"
+        status = _as_str(row.get("status")) or "-"
+        reason = _as_str(row.get("reason")) or "-"
+        chain = _as_str(row.get("chain"))
+        lines.append(f"| {chain} | {token} | {quote_kind} | {buy} | {sell} | {status} | {reason} |")
+    statuses: dict[str, int] = {}
+    for row in rows:
+        key = _as_str(row.get("status"), "unknown")
+        statuses[key] = statuses.get(key, 0) + 1
+    summary = ", ".join(f"{key}={count}" for key, count in sorted(statuses.items()))
+    lines.append("")
+    lines.append(f"Totals: {summary}")
+
+
+def _render_fuzz(lines: list[str], report: Mapping[str, object]) -> None:
+    rows = _section_rows(report, "fuzz")
+    if not rows:
+        return
+    failed = sum(1 for row in rows if row.get("ok") is not True)
+    lines.extend(
+        [
+            "",
+            "## Fuzz matrix",
+            "",
+            f"{len(rows)} case(s), {failed} not as expected.",
+            "",
+            "| case | expected | status | ok | detail |",
+            "|---|---|---:|---|---|",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| `{_as_str(row.get('case_id'))}` | {_as_str(row.get('expected'))} | "
+            f"{_as_str(row.get('status'), '-')} | {'yes' if row.get('ok') is True else '**no**'} | "
+            f"{_as_str(row.get('detail'), '')} |"
+        )
+
+
+def _render_auth(lines: list[str], report: Mapping[str, object]) -> None:
+    rows = _section_rows(report, "auth")
+    if not rows:
+        return
+    lines.extend(
+        [
+            "",
+            "## Auth negatives",
+            "",
+            "| case | status | ok | detail |",
+            "|---|---:|---|---|",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| {_as_str(row.get('case'))} | {_as_str(row.get('status'), '-')} | "
+            f"{'yes' if row.get('ok') is True else '**no**'} | {_as_str(row.get('detail'), '')} |"
+        )
+
+
+def _render_race_and_killswitch(lines: list[str], report: Mapping[str, object]) -> None:
+    race = _section_rows(report, "race")
+    if race:
+        row = race[0]
+        lines.extend(
+            [
+                "",
+                "## Oversell race",
+                "",
+                f"- Held: {_as_str(row.get('held_quantity'), '-')} · sold: "
+                f"{_as_str(row.get('sold_quantity'), '-')} · final: "
+                f"{_as_str(row.get('final_quantity'), 'gone')}",
+                f"- Concurrent full-size sells: {_as_str(row.get('concurrent_sells'), '-')} "
+                f"({_as_str(row.get('sell_orders_created'), '0')} order(s) created)",
+                f"- Cash after: {_as_str(row.get('cash_usd'), '-')}",
+            ]
+        )
+    killswitch = _section_rows(report, "killswitch")
+    if killswitch:
+        lines.extend(["", "## Kill switch", "", "| step | detail |", "|---|---|"])
+        for row in killswitch:
+            step = _as_str(row.get("step"))
+            if step == "blocked":
+                detail = (
+                    f"action={_as_str(row.get('action'), '-')} "
+                    f"reason={_as_str(row.get('reason'), '-')} "
+                    f"orders_created={_as_str(row.get('orders_created'), '0')}"
+                )
+            elif step == "manual_order":
+                detail = (
+                    f"HTTP {_as_str(row.get('status_code'), '-')} "
+                    f"status={_as_str(row.get('status'), '-')} "
+                    f"reason={_as_str(row.get('reason'), '-')}"
+                )
+            else:
+                detail = (
+                    f"previous active={_as_str(row.get('previous_active'))} "
+                    f"reason={_as_str(row.get('previous_reason'), '-')}"
+                )
+            lines.append(f"| {step} | {detail} |")
 
 
 def render_markdown(report: Mapping[str, object]) -> str:
@@ -270,6 +441,12 @@ def render_markdown(report: Mapping[str, object]) -> str:
             f"{_as_str(item.get('detail'))} |"
         )
 
+    _render_ledger(lines, report)
+    _render_matrix(lines, report)
+    _render_fuzz(lines, report)
+    _render_auth(lines, report)
+    _render_race_and_killswitch(lines, report)
+
     lines.extend(
         [
             "",
@@ -281,7 +458,7 @@ def render_markdown(report: Mapping[str, object]) -> str:
         ]
     )
     if not samples:
-        lines.append("None. Every check passed.")
+        lines.extend(["None. Every check passed.", ""])
     for sample in samples:
         item = _as_mapping(sample)
         lines.extend(

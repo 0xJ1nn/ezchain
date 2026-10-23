@@ -9,10 +9,12 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
+    "test:live": "playwright test --config playwright.live.config.ts",
     "shots": "playwright test"
   },
   "dependencies": {
     "@ezchain/ui": "workspace:*",
+    "@xyflow/react": "12.12.0",
     "next": "15.5.28",
     "react": "19.3.1",
     "react-dom": "19.3.1"

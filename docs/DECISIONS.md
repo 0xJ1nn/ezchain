@@ -421,3 +421,158 @@ replayed or audited** after deletion — the inputs and reason codes are gone. A
 needs to investigate a strategy's behaviour must pause it instead of deleting it. A future
 archive-before-delete feature needs its own ADR and storage decision.
 
+
+---
+
+## ADR-0023 — Visual graph strategies are declarative typed documents
+
+**Date:** 2026-10-22 · **Status:** Accepted (maintainer instruction: "Unreal Engine
+Blueprint-level strategy builder", 2026-10-22)
+
+**Context:** P0 ships four fixed rule kinds (momentum, dip, DCA, threshold). Traders need
+to compose their own logic — indicators, crosses, exits, cooldowns — without writing code
+and without the platform shipping alpha. A node editor is the established way to do this
+(Unreal Blueprints, Kryll, Composer), but a graph must not become a back door for code
+execution, look-ahead bias or a second execution path.
+
+**Decision:** add strategy kind `graph`. A graph is a typed JSON document
+(`ezchain.graph/1`, [STRATEGY-GRAPH.md](STRATEGY-GRAPH.md)) validated against one node
+catalogue in `ezchain_core.graph` and evaluated by one pure, deterministic evaluator that
+the paper engine and the backtester share. Data is three-valued (unknown is never zero;
+an unknown branch condition does nothing). Candles reach the graph only after they close.
+Orders produced by a graph are intents that still pass risk → quote → order → fill →
+journal. The UI renders the palette from the catalogue the API serves; it never redefines
+node semantics.
+
+**Consequences:** traders build and backtest their own strategies; the repository still
+contains no strategy. Every graph run persists its trace so wires can show the real last
+values and runs can be replayed. Adding a node type is a core change with tests, not a UI
+change. Arbitrary code strategies stay in the plugin SDK, isolated per
+[STRATEGY-SDK.md](STRATEGY-SDK.md).
+
+---
+
+## ADR-0024 — OHLCV history comes from GeckoTerminal, stored as closed bars
+
+**Date:** 2026-10-22 · **Status:** Accepted
+
+**Context:** indicators and backtests need bar history; the stack stores only the current
+DexScreener snapshot per token. Recording our own ticks would take days before a
+strategy could warm up and would have gaps whenever the API is down.
+
+**Decision:** fetch per-pool OHLCV from the keyless GeckoTerminal public API (the most
+liquid DexScreener pair, priced for our token), rate-limited and cached in a
+`market_candles` table keyed by chain, token, timeframe and open time. Only closed bars are
+served. Bars carry their source and fetch time; a stale or missing series is unknown and
+fails closed. Chains GeckoTerminal does not index report `CANDLES_UNSUPPORTED_CHAIN`.
+
+**Consequences:** strategies warm up immediately and backtests have months of history.
+The candle source is a third-party index, not the chain; backtests name it in their
+result. A future `services/ingest` (M2) can replace or cross-check the source behind the
+same table.
+
+---
+
+## ADR-0025 — Every chain with a keyless quote source fills at a real executable quote
+
+**Date:** 2026-10-22 · **Status:** Accepted (supersedes the blanket `paper_mark` of ADR-0020)
+
+**Context:** ADR-0020 gave Solana a real Jupiter quote and every other chain a DexScreener
+mark. A mark fill has no price impact, no route and no gas, so a paper PnL on Base or
+Arbitrum was optimistic in a way no live order could reproduce. The 2026-10-22 probe found
+keyless, keyless-forever quote APIs for 19 of the 25 registered chains; the remaining six
+have no free quote source at all.
+
+**Options:** (a) keep the mark everywhere except Solana, (b) implement an on-chain
+`Quoter.quoteExactInputSingle` eth_call for the long tail, (c) route each chain to the best
+keyless HTTP quote source and keep the mark only where none exists.
+
+**Decision:** (c). The quote ladder lives on `ChainMeta.quote_providers` in
+`packages/adapters` — `kyberswap → velora → lifi` on the EVM majors, `lifi` alone on
+Mantle/Scroll/zkSync/Cronos/Celo/Metis, `cetus` on Sui, `stonfi` on TON, `osmosis_sqs` on
+Osmosis, `jupiter` on Solana. Chains with no source (Blast, Fantom, Moonbeam, Aptos, Tron,
+NEAR, Cosmos Hub) keep the capped `paper_mark` exactly as ADR-0020 defined it. The API asks
+a `QuoteRouter`; no chain-name literal exists outside `packages/adapters`.
+
+Rules that ride with it:
+
+- A sell is quoted in the sell direction (`token → stable`, sized by quantity); a buy quote
+  is never inverted.
+- A buy is only valid when the received size also has a full-size sell quote from the same
+  venue — an entry with no executable exit is not an entry (ADR-0015).
+- Provider fees and gas are declared in `Quote.fee_usd`. The fill pays
+  `max(paper_fee_bps, fee_usd)`, never their sum.
+- A buy with a quoted impact above `EZCHAIN_MAX_PRICE_IMPACT_PCT` (default 5%) is rejected
+  with `PRICE_IMPACT_TOO_HIGH`. A sell is never blocked by impact.
+- When every rung fails, the order fails closed with `NO_ROUTE`. A chain with an executable
+  ladder never silently degrades to a mark.
+- `live_execute` stays `false` on every chain: these are quotes, not a signing path.
+
+**Consequences:** paper fills now carry direction-specific size, impact, route and cost on
+19 chains. The platform inherits five third-party availability surfaces; each provider has
+its own token bucket, 10 s response cache and 60 s circuit breaker, and the ladder absorbs a
+dead rung. LI.FI's free tier (75 requests / 2 h) cannot serve a hot loop, so it is only a
+primary on the six chains with no alternative. Osmosis decimals come from a table because
+GeckoTerminal does not index the network; an unlisted denom fails closed. Chains without a
+free source stay marked, and the UI badge reads `paper_mark` for them — truthful, not
+hopeful.
+
+---
+
+## ADR-0026 — Live execution through a separate executor with a local vault
+
+**Date:** 2026-10-22 · **Status:** Accepted (maintainer instruction: "makes paper and real
+trades flawlessly", 2026-10-22)
+
+**Context:** the paper stack is production-ready; traders need the same pipeline to move
+real funds. Keys are the highest-value asset (SECURITY.md §1) and four previous bots lost
+trust by mixing keys, strategy code and accounting in one process.
+
+**Decision:** implement [LIVE-EXECUTION.md](LIVE-EXECUTION.md): a separate
+`services/executor` process is the only key holder (Argon2id + AES-256-GCM vault, keys
+generated or CLI-imported, never exported, never typed into the browser); the API sends it
+HMAC-authenticated intents; venue adapters build transactions (Jupiter on Solana,
+KyberSwap on major EVM chains), every transaction is simulated before signing, fills come
+from receipts and post to a separate live ledger. LIVE is armed by the owner with an L4
+gesture and TOTP, expires, and is capped by conservative live limits; strategies need a
+passed paper gate and an explicit promotion.
+
+**Consequences:** new runtime dependencies with binary components (`solders`,
+`eth-account`, `cryptography`, `argon2-cffi`, `pyotp`) are confined to the executor image
+(and `pyotp`/`argon2-cffi` to the API for auth). Live chains are a capability subset; the
+rest stay paper-only and say so. Real-fund testing beyond simulation and forked chains is
+an owner action with a small funded wallet; automated tests never move real funds.
+
+---
+
+## ADR-0027 — Paper fills serialize per account; stale sell sizes are rejected
+
+**Date:** 2026-10-23 · **Status:** Accepted (concurrency hardening; no invariant change)
+
+**Context:** the paper order service replayed the ledger, sized a sell and committed the
+fill without a cross-request lock. Four concurrent full-size sells could each see the same
+held quantity and fill it; two buys on different tokens could each pass the same cash check.
+The stress harness reproduced both (`race.no_oversell`, negative cash), and a negative
+position also made later reads fail. The quote itself is network I/O and must not hold a
+database transaction open.
+
+**Decision:** the quote happens outside a transaction. The replay, order claim, risk check,
+fill and journal then run inside one **account-scoped** critical section: an in-process
+lock plus, on PostgreSQL, a transaction-scoped `pg_advisory_xact_lock` on `paper:account`.
+This is deliberately coarser than a per-token lock because cash, the open-position count and
+daily realized PnL belong to the account, not the token. A sell whose quoted quantity is
+larger than the quantity still held is rejected `POSITION_CHANGED`; it is never resized
+against a stale quote. The rejected order persists the quote (`quote_kind`, `quote_json`) so
+the refusal is replayable. The database must run at READ COMMITTED (the default): after the
+advisory lock is granted, each statement sees the previous winner's committed rows.
+
+The quote ladder also gets a total deadline of 8 s and a 5 s per-provider/exit attempt.
+Exhausting the budget fails closed with `NO_ROUTE`/`TIMEOUT`; it never degrades to a mark or
+returns an open connection. The paper-mark path is inside the same budget.
+
+**Consequences:** paper orders are serialized across the whole account, so throughput is
+bounded but every fill is consistent. A trader who races a changing position gets an
+explicit `POSITION_CHANGED` and retries with a fresh quote. The in-process lock covers the
+single-worker API and SQLite tests; the advisory lock covers multiple API processes. A
+future per-account sharding scheme needs its own ADR and must keep cash and open positions
+in the same serialization domain.

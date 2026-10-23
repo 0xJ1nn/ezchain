@@ -23,6 +23,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
+from ezchain_adapters import QuoteRouter
 from ezchain_api.config import Settings
 from ezchain_api.db import Base
 from ezchain_api.models import PaperFillRow, PaperOrderRow, StrategyRow
@@ -30,8 +31,14 @@ from ezchain_api.services.executor import PaperOrderExecutor
 from ezchain_core.types import PairInfo, SourceRef, TokenSnapshot
 from ezchain_engine import evaluate_strategy
 
-CHAIN = "base"
+# A mark-only chain: this test proves the idempotency claim, not the venue. An executable
+# chain would need a live quote provider here and would test something else entirely.
+CHAIN = "blast"
 TOKEN = "0x0000000000000000000000000000000000000abc"
+
+
+def _router(source: StaticDex) -> QuoteRouter:
+    return QuoteRouter(providers=[], dexscreener=source)  # type: ignore[arg-type]
 
 
 def _snapshot() -> TokenSnapshot:
@@ -153,11 +160,11 @@ async def test_concurrent_evaluation_places_one_order_for_the_window(tmp_path: P
     source_b = StaticDex()
     barrier = Barrier()
     executor_a = BarrierExecutor(
-        PaperOrderExecutor(factory_a, settings, source_a, None),  # type: ignore[arg-type]
+        PaperOrderExecutor(factory_a, settings, source_a, _router(source_a)),
         barrier,
     )
     executor_b = BarrierExecutor(
-        PaperOrderExecutor(factory_b, settings, source_b, None),  # type: ignore[arg-type]
+        PaperOrderExecutor(factory_b, settings, source_b, _router(source_b)),
         barrier,
     )
     now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)

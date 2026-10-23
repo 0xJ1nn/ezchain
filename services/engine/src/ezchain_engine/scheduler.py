@@ -32,6 +32,12 @@ from ezchain_core.strategy import evaluate_strategy as evaluate_plan
 from ezchain_core.types import OrderRequest, PositionState, StrategyKind, TokenSnapshot, utcnow
 
 from .engine import should_run
+from .graph import (
+    GraphContextBuilder,
+    evaluate_graph_strategy,
+    latest_graph_vars,
+    serialize_graph_vars,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +238,7 @@ async def evaluate_strategy(
     dexscreener: TokenSource,
     order_executor: OrderExecutor,
     *,
+    graph_runtime: GraphContextBuilder | None = None,
     now: datetime | None = None,
 ) -> RunResult:
     """Run one strategy once.
@@ -251,15 +258,21 @@ async def evaluate_strategy(
             inputs={"status": strategy.status},
         )
 
+    graph_vars: dict[str, str | None] | None = None
+    if strategy.kind == "graph":
+        graph_vars = serialize_graph_vars(latest_graph_vars(session, strategy.id))
+
     try:
         interval = interval_minutes(cast(StrategyKind, strategy.kind), dict(strategy.params or {}))
     except StrategyValidationError as exc:
-        decision = StrategyDecision(
-            "hold",
-            Decimal(0),
-            "INVALID_PARAMS",
-            {"kind": strategy.kind, "error": exc.code, "message": exc.message},
-        )
+        inputs: dict[str, Any] = {
+            "kind": strategy.kind,
+            "error": exc.code,
+            "message": exc.message,
+        }
+        if graph_vars is not None:
+            inputs["graph_vars"] = graph_vars
+        decision = StrategyDecision("hold", Decimal(0), "INVALID_PARAMS", inputs)
         row = _record(session, strategy, decision, now=now, touch_last_run=True)
         return _result(strategy, decision, row)
 
@@ -270,16 +283,14 @@ async def evaluate_strategy(
             if last_run_at is None
             else (_aware(now) - _aware(last_run_at)).total_seconds() / 60
         )
-        decision = StrategyDecision(
-            "hold",
-            Decimal(0),
-            "INTERVAL_NOT_ELAPSED",
-            {
-                "kind": strategy.kind,
-                "interval_minutes": interval,
-                "minutes_since_last_run": elapsed,
-            },
-        )
+        inputs = {
+            "kind": strategy.kind,
+            "interval_minutes": interval,
+            "minutes_since_last_run": elapsed,
+        }
+        if graph_vars is not None:
+            inputs["graph_vars"] = graph_vars
+        decision = StrategyDecision("hold", Decimal(0), "INTERVAL_NOT_ELAPSED", inputs)
         row = _record(session, strategy, decision, now=now, touch_last_run=False)
         return _result(strategy, decision, row)
 
@@ -287,30 +298,80 @@ async def evaluate_strategy(
         snapshot = await dexscreener.get_token(strategy.chain, strategy.token_address)
     except Exception as exc:  # fail closed: no snapshot, no order
         logger.warning("strategy %s market data unavailable: %s", strategy.id, type(exc).__name__)
-        decision = StrategyDecision(
-            "hold",
-            Decimal(0),
-            "MARKET_DATA_UNAVAILABLE",
-            {
-                "kind": strategy.kind,
-                "chain": strategy.chain,
-                "token_address": strategy.token_address,
-                "error": type(exc).__name__,
-            },
-        )
+        inputs = {
+            "kind": strategy.kind,
+            "chain": strategy.chain,
+            "token_address": strategy.token_address,
+            "error": type(exc).__name__,
+        }
+        if graph_vars is not None:
+            inputs["graph_vars"] = graph_vars
+        decision = StrategyDecision("hold", Decimal(0), "MARKET_DATA_UNAVAILABLE", inputs)
         row = _record(session, strategy, decision, now=now, touch_last_run=False)
         return _result(strategy, decision, row)
 
-    position = position_state(
-        session, strategy.chain, strategy.token_address, strategy.token_symbol
-    )
-    decision = evaluate_plan(
-        spec_from_row(strategy),
-        snapshot,
-        position_quantity=position.quantity,
-        position_avg_cost_usd=position.avg_cost_usd,
-        now=now,
-    )
+    if strategy.kind == "graph":
+        if graph_runtime is None:
+            decision = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "GRAPH_RUNTIME_UNAVAILABLE",
+                {
+                    "kind": "graph",
+                    "chain": strategy.chain,
+                    "token_address": strategy.token_address,
+                    "graph_vars": graph_vars or {},
+                },
+            )
+            row = _record(session, strategy, decision, now=now, touch_last_run=False)
+            return _result(strategy, decision, row)
+        try:
+            decision = await evaluate_graph_strategy(
+                session, strategy, snapshot, graph_runtime, now=now
+            )
+        except StrategyValidationError as exc:
+            decision = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "INVALID_PARAMS",
+                {
+                    "kind": "graph",
+                    "error": exc.code,
+                    "message": exc.message,
+                    "graph_vars": graph_vars or {},
+                },
+            )
+            row = _record(session, strategy, decision, now=now, touch_last_run=False)
+            return _result(strategy, decision, row)
+        except Exception as exc:  # fail closed: no candles/ledger, no order
+            logger.warning(
+                "strategy %s graph context unavailable: %s", strategy.id, type(exc).__name__
+            )
+            decision = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "GRAPH_CONTEXT_UNAVAILABLE",
+                {
+                    "kind": "graph",
+                    "chain": strategy.chain,
+                    "token_address": strategy.token_address,
+                    "error": type(exc).__name__,
+                    "graph_vars": graph_vars or {},
+                },
+            )
+            row = _record(session, strategy, decision, now=now, touch_last_run=False)
+            return _result(strategy, decision, row)
+    else:
+        position = position_state(
+            session, strategy.chain, strategy.token_address, strategy.token_symbol
+        )
+        decision = evaluate_plan(
+            spec_from_row(strategy),
+            snapshot,
+            position_quantity=position.quantity,
+            position_avg_cost_usd=position.avg_cost_usd,
+            now=now,
+        )
 
     order_id: str | None = None
     if decision.action in ("buy", "sell"):
@@ -425,12 +486,14 @@ class StrategyScheduler:
         dexscreener: TokenSource,
         order_executor: OrderExecutor,
         *,
+        graph_runtime: GraphContextBuilder | None = None,
         interval_seconds: float = 30.0,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self._session_factory = session_factory
         self._dexscreener = dexscreener
         self._order_executor = order_executor
+        self._graph_runtime = graph_runtime
         self._interval_seconds = max(1.0, interval_seconds)
         self._now = now
         self._stop = asyncio.Event()
@@ -470,6 +533,7 @@ class StrategyScheduler:
                             strategy,
                             self._dexscreener,
                             self._order_executor,
+                            graph_runtime=self._graph_runtime,
                             now=now,
                         )
                     )
@@ -497,6 +561,7 @@ class StrategyScheduler:
 __all__ = [
     "ExecutionBlocked",
     "ExecutorUnavailable",
+    "GraphContextBuilder",
     "KillSwitchExecutor",
     "OrderExecutor",
     "OrderRejected",

@@ -4,6 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The gate must be hermetic. A developer running `verify.sh --live` exports the deployment
+# token for the live steps; unit tests assert the unset development default, so remove it
+# (and any signing secret) from the test environment. The caller's environment is not
+# modified: this script runs in a child shell.
+unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET
+
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 step "1/6 agent stubs"
@@ -23,18 +29,22 @@ node tools/check-secrets.mjs
 
 step "6/6 runtime gates (when present)"
 ran=0
-if command -v ruff >/dev/null 2>&1 && [ -f pyproject.toml ]; then
-  ruff check .
-  ruff format --check .
-  ran=1
-fi
-if command -v mypy >/dev/null 2>&1 && [ -f pyproject.toml ]; then
-  mypy --strict packages services apps/api
-  ran=1
-fi
-if command -v pytest >/dev/null 2>&1 && [ -d tests ]; then
-  pytest -q
-  ran=1
+# The project venv is the gate. Global tools run only when no venv exists, so the same
+# commit cannot pass on one machine and fail on another because of a stray global ruff.
+if [ ! -x .venv/bin/python ]; then
+  if command -v ruff >/dev/null 2>&1 && [ -f pyproject.toml ]; then
+    ruff check packages apps/api services
+    ruff format --check packages apps/api services
+    ran=1
+  fi
+  if command -v mypy >/dev/null 2>&1 && [ -f pyproject.toml ]; then
+    mypy --strict packages services apps/api
+    ran=1
+  fi
+  if command -v pytest >/dev/null 2>&1 && [ -d tests ]; then
+    pytest -q
+    ran=1
+  fi
 fi
 if [ -x .venv/bin/ruff ]; then
   .venv/bin/ruff check packages apps/api services

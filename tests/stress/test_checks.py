@@ -151,8 +151,11 @@ def test_account_equity_reconciles_with_known_market_values() -> None:
     assert findings[0].actual == "101"
 
 
-def test_reconciliation_404_is_a_skip() -> None:
-    assert check_reconciliation(404, None, scenario="t") == []
+def test_reconciliation_404_is_a_failure() -> None:
+    # The endpoint became mandatory: its absence means ledger truth is unproven.
+    findings = check_reconciliation(404, None, scenario="t")
+    assert [finding.invariant for finding in findings] == ["reconciliation.missing"]
+    assert findings[0].code == "RECONCILIATION_MISSING"
 
 
 def test_reconciliation_must_report_ok() -> None:
@@ -351,3 +354,33 @@ def test_strategy_run_log_must_not_be_empty() -> None:
 
 def test_self_test_is_green() -> None:
     self_test()
+
+
+def test_a_fill_older_than_the_truncated_order_page_is_not_a_missing_order() -> None:
+    """Both pages are newest-first and capped; an older fill's order may be off-page."""
+    orders = [
+        {"id": "o2", "side": "buy", "status": "rejected", "created_at": "2026-01-01T00:02:00Z"}
+    ]
+    fills = [
+        {
+            "id": "f1",
+            "order_id": "o1",
+            "created_at": "2026-01-01T00:01:00+00:00",
+        }
+    ]
+    assert check_orders_and_fills(orders, fills, scenario="t") == []
+
+
+def test_a_fill_newer_than_the_order_page_must_have_its_order() -> None:
+    orders = [
+        {"id": "o2", "side": "buy", "status": "rejected", "created_at": "2026-01-01T00:02:00Z"}
+    ]
+    fills = [
+        {
+            "id": "f9",
+            "order_id": "missing",
+            "created_at": "2026-01-01T00:03:00+00:00",
+        }
+    ]
+    findings = check_orders_and_fills(orders, fills, scenario="t")
+    assert [finding.code for finding in findings] == ["FILL_ORDER_MISSING"]

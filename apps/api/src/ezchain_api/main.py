@@ -5,19 +5,37 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from typing import Any, cast
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-from ezchain_adapters import DexScreenerClient, JupiterClient
+from ezchain_adapters import (
+    CetusClient,
+    DecimalsResolver,
+    DexScreenerClient,
+    GeckoTerminalClient,
+    HttpQuoteProvider,
+    JsonApiClient,
+    JupiterClient,
+    KyberSwapClient,
+    LifiClient,
+    OsmosisSqsClient,
+    QuoteRouter,
+    StonfiClient,
+    VeloraClient,
+)
 from ezchain_engine import KillSwitchExecutor, StrategyScheduler
 
 from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
+from .errors import request_validation_error
 from .observability import ObservabilityMiddleware, configure_logging
-from .routers import markets, paper, strategies, system
+from .routers import account, backtests, graph, markets, paper, strategies, system
 from .services.executor import PaperOrderExecutor
+from .services.graph import PaperGraphRuntime
 from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
 from .services.system_flags import read_kill_switch, seed_kill_switch
@@ -33,11 +51,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_kill_switch(session, settings)
 
     dexscreener = DexScreenerClient()
+    gecko = GeckoTerminalClient()
+    decimals = DecimalsResolver(gecko)
     jupiter = JupiterClient()
-    await dexscreener.__aenter__()
-    await jupiter.__aenter__()
+    # One instance per provider: each owns its own bucket, cache and circuit breaker, so a
+    # provider that starts failing cannot slow the ones that still answer.
+    providers: list[HttpQuoteProvider] = [
+        KyberSwapClient(decimals=decimals),
+        VeloraClient(decimals=decimals),
+        LifiClient(decimals=decimals),
+        CetusClient(decimals=decimals),
+        StonfiClient(decimals=decimals),
+        OsmosisSqsClient(decimals=decimals),
+        jupiter,
+    ]
+    clients: list[JsonApiClient] = [dexscreener, gecko, *providers]
+    for client in clients:
+        await client.__aenter__()
     app.state.dexscreener = dexscreener
-    app.state.jupiter = jupiter
+    # Candle history uses the same GeckoTerminal client as decimals resolution.
+    app.state.geckoterminal = gecko
+    app.state.quote_router = QuoteRouter(providers=providers, dexscreener=dexscreener)
 
     def kill_switch_active() -> bool:
         """Read the persisted flag per order so arming applies across processes."""
@@ -45,10 +79,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return read_kill_switch(session, settings).active
 
     executor = KillSwitchExecutor(
-        PaperOrderExecutor(session_factory(), settings, dexscreener, jupiter),
+        PaperOrderExecutor(session_factory(), settings, dexscreener, app.state.quote_router),
         kill_switch_active,
     )
     app.state.order_executor = executor
+
+    # One context builder for the scheduler and the HTTP dry run. It owns candle and
+    # ledger reads; the engine only sees the frozen EvalContext contract.
+    graph_runtime = PaperGraphRuntime(gecko, dexscreener, settings.data_mode)
+    app.state.graph_runtime = graph_runtime
 
     scheduler: StrategyScheduler | None = None
     scheduler_task: asyncio.Task[None] | None = None
@@ -57,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             session_factory(),
             dexscreener,
             executor,
+            graph_runtime=graph_runtime,
             interval_seconds=settings.engine_interval_seconds,
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
@@ -84,8 +124,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             scheduler.stop()
         if scheduler_task is not None:
             await scheduler_task
-        await dexscreener.__aexit__(None, None, None)
-        await jupiter.__aexit__(None, None, None)
+        for client in clients:
+            await client.__aexit__(None, None, None)
 
 
 def create_app() -> FastAPI:
@@ -108,10 +148,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(ObservabilityMiddleware)
+
+    app.add_exception_handler(RequestValidationError, cast(Any, request_validation_error))
+
     app.include_router(system.router)
     app.include_router(markets.router)
     app.include_router(paper.router)
+    app.include_router(account.router)
     app.include_router(strategies.router)
+    app.include_router(graph.router)
+    app.include_router(backtests.router)
     return app
 
 

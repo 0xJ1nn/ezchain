@@ -7,12 +7,13 @@ positions, automations, signals, backtests and a strategy plugin SDK. It ships w
 strategies** — the platform, not the alpha, is the product.
 
 > Status: **PAPER stack — production operations**. Continuous all-chain market
-> observation, an append-only paper ledger with positions/PnL, user-defined declarative
-> strategies, persisted kill switch, reconciliation, bearer-authenticated mutations,
-> Alembic migrations, structured logs/metrics and a stress harness. There are **no keys,
-> no signing, no live execution and no fiat rail**. Verified vs unverified is recorded in
-> [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); wallet, automation and
-> system pages remain labelled fixture surfaces.
+> observation, per-chain quote ladders, an append-only paper ledger with positions/PnL,
+> user-defined declarative and visual graph strategies, a backtester, persisted kill
+> switch, reconciliation, bearer-authenticated mutations, Alembic migrations,
+> structured logs/metrics, a complete operator surface and a stress harness. There are
+> **no keys, no signing, no live execution and no fiat rail**. Verified vs unverified is
+> recorded in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live
+> executor foundation is deliberately unmerged until its review blockers are closed.
 
 ## Why this exists
 
@@ -32,7 +33,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | Path | What |
 |---|---|
 | `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
-| `apps/web/` | Next.js UI: shell, dashboard, positions, markets, token page, strategies |
+| `apps/web/` | Next.js UI: dashboard, positions, markets, token page, strategies, visual graph builder, performance, activity/ledger, reports, risk, alerts, chains, operations |
 | `apps/api/` | FastAPI edge: live markets, quotes, paper orders, strategy CRUD/run |
 | `services/engine/` | Declarative strategy evaluator and scheduler (inline in P0) |
 | `packages/core-py/` | Domain, append-only ledger, paper accounting, risk, strategy rules |
@@ -127,10 +128,11 @@ runs `alembic upgrade head`, then starts the API, web and Caddy. The API does **
 create tables itself (`EZCHAIN_AUTO_CREATE_SCHEMA=false`); a failed migration stops the
 rollout before the API starts.
 
-**Verification status:** the Dockerfiles, Compose file, Caddyfile and YAML were reviewed
-statically; a Docker image build/`compose up` was not run in this environment (no Docker
-runtime). Treat the first deployment as a maintainer-supervised smoke test, not as
-already-observed behavior.
+**Verification status (2026-10-22):** the Dockerfiles, Compose file, Caddyfile and YAML were
+built and run on Docker 29.9.2 / Compose v5.6.1. `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d`
+succeeded; all five services healthy; migration exited 0 at head `0003_paper_fill_order`;
+`/healthz` and `/readyz` 200; paper BUY filled through the edge; restart and backup drills passed.
+See [docs/evidence/p0-production/docker-up.md](docs/evidence/p0-production/docker-up.md).
 
 | URL | What |
 |---|---|

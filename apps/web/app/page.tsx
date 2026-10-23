@@ -1,39 +1,86 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
-import { EquityChart } from "@/components/equity-chart";
-import { Badge, ButtonLink, LiveDot, Meter, Panel, Stat, TokenAvatar } from "@/components/ui";
+import { Badge, ButtonLink, Panel, Stat, TokenAvatar } from "@/components/ui";
 import {
-	activity,
-	attribution,
-	automations,
-	chains,
-	equity,
-	openPositions,
-	risk,
-	signals,
-	wallets,
-} from "@/lib/dashboard-fixtures";
-import { formatUsd } from "@/lib/live-format";
-import { getPaperSnapshot } from "@/lib/paper-api";
+	getMarketOverview,
+	getPaperAlerts,
+	getPaperLimits,
+	getPaperOrders,
+} from "@/lib/account-api";
+import { asApiError, getChains, getMarkets } from "@/lib/api";
+import {
+	ageLabel,
+	changeText,
+	changeTone,
+	formatAmount,
+	formatUsd,
+	formatUsdPrice,
+	initials,
+	shortAddress,
+	sourceLabel,
+} from "@/lib/live-format";
+import { getPaperSnapshot, getStrategies } from "@/lib/paper-api";
 
-function FixtureBadge() {
-	return <Badge tone="ghost">FIXTURE</Badge>;
+type Failure = {
+	ok: false;
+	code?: string;
+	message?: string;
+	error?: { code: string; message: string };
+};
+
+function failure(result: Failure) {
+	const code = result.code ?? result.error?.code ?? "UNAVAILABLE";
+	const message = result.message ?? result.error?.message ?? "The read is unavailable.";
+	return (
+		<div className="note">
+			<Badge tone="warn">{code}</Badge> {message}
+		</div>
+	);
+}
+
+function SectionBadge({ live }: { live: boolean }) {
+	return <Badge tone="ghost">{live ? "PAPER" : "FIXTURE"}</Badge>;
+}
+
+function money(value: string | null | undefined, signed = false) {
+	if (value === null || value === undefined || value === "") return "—";
+	const amount = Number(value);
+	if (!Number.isFinite(amount)) return "—";
+	return signed && amount > 0 ? `+${formatUsd(String(amount))}` : formatUsd(String(amount));
 }
 
 export default async function DashboardPage() {
-	const snapshot = await getPaperSnapshot();
-	const account = snapshot.account.ok ? snapshot.account.data : null;
+	const [snapshot, strategies, marketsOutcome, chainsOutcome, limits, alerts, orders, overview] =
+		await Promise.all([
+			getPaperSnapshot(),
+			getStrategies(),
+			getMarkets({ limit: 5, sort: "trending" })
+				.then((list) => ({ ok: true as const, list }))
+				.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
+			getChains()
+				.then((rows) => ({ ok: true as const, rows }))
+				.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
+			getPaperLimits(),
+			getPaperAlerts(),
+			getPaperOrders(5),
+			getMarketOverview(),
+		]);
+
 	const live = snapshot.mode === "live";
-	const liveKpi = live && account !== null;
-	const equityValue = liveKpi ? formatUsd(account.equity_usd) : equity.value;
-	const realizedValue = liveKpi ? formatUsd(account.realized_usd) : equity.realized;
-	const unrealizedValue = liveKpi ? formatUsd(account.unrealized_usd) : equity.unrealized;
-	const exposureValue = liveKpi
-		? formatUsd(String(Number(account.equity_usd) - Number(account.cash_usd)))
-		: equity.exposure;
-	const liveMeta = liveKpi
-		? `${account.positions.length} paper position${account.positions.length === 1 ? "" : "s"}`
-		: null;
+	const account = snapshot.account.ok ? snapshot.account.data : null;
+	const positions = account?.positions ?? [];
+	const strategyRows = strategies.ok ? strategies.data : [];
+	const marketRows = marketsOutcome.ok ? marketsOutcome.list.rows.slice(0, 5) : [];
+	const marketSource = marketsOutcome.ok ? marketsOutcome.list.source : null;
+	const marketStale = marketsOutcome.ok ? marketsOutcome.list.stale : false;
+	const chainRows = chainsOutcome.ok ? chainsOutcome.rows : [];
+	const limitRows = limits.ok ? limits.data : null;
+	const alertRows = alerts.ok ? alerts.data.alerts : [];
+	const orderRows = orders.ok ? orders.data : [];
+	const chainTotal = overview.ok ? overview.data.totals.chains : chainRows.length;
+	const chainCovered = overview.ok ? overview.data.totals.covered : null;
+	const killSwitch = limitRows?.kill_switch.active ?? false;
+	const unknownMark = positions.some((position) => position.mark_usd === null);
 
 	return (
 		<AppShell active="dashboard">
@@ -43,13 +90,13 @@ export default async function DashboardPage() {
 					<h1>Dashboard</h1>
 					<p className="sub">
 						One screen to answer: am I safe, am I up, and is anything broken? Every number is
-						labelled with its mode and source.
+						labelled with its mode and source. Unknown values are —, never zero.
 					</p>
 				</div>
 				<div className="page-actions">
-					<span className="chip">{live ? "Live paper account" : "Fixture snapshot"}</span>
-					<Link className="btn" href="/ledger">
-						Export
+					<Badge tone={live ? "info" : "ghost"}>{live ? "LIVE PAPER API" : "FIXTURE"}</Badge>
+					<Link className="btn" href="/performance">
+						Performance
 					</Link>
 					<Link className="btn primary" href="/markets">
 						New order
@@ -57,205 +104,162 @@ export default async function DashboardPage() {
 				</div>
 			</header>
 
-			<section className="kpi-band mb-12">
+			<section className="kpi-band mb-12" aria-label="Paper account">
 				<Stat
 					hero
 					label="Equity"
-					value={equityValue}
-					meta={liveKpi ? liveMeta : (
-						<>
-							<span className="delta up">{equity.delta}</span> 24h ·{" "}
-							<span className="mono">{equity.sol}</span>
-						</>
-					)}
+					value={account && !unknownMark ? money(account.equity_usd) : "—"}
+					meta={
+						account
+							? unknownMark
+								? "unknown mark excluded · never zero"
+								: `${positions.length} open position${positions.length === 1 ? "" : "s"} · paper`
+							: "account unavailable"
+					}
 				/>
+				<Stat label="Cash" value={account ? money(account.cash_usd) : "—"} meta="ledger cash · USD" />
 				<Stat
 					label="Realized"
-					value={realizedValue}
-					tone={liveKpi && Number(account.realized_usd) < 0 ? "err" : "ok"}
-					meta={liveKpi ? "paper · fees included" : equity.realizedMeta}
+					value={account ? money(account.realized_usd, true) : "—"}
+					tone={account && Number(account.realized_usd) < 0 ? "err" : "ok"}
+					meta="closed trades · fees included"
 				/>
 				<Stat
 					label="Unrealized"
-					value={unrealizedValue}
-					tone={liveKpi && Number(account.unrealized_usd) < 0 ? "err" : equity.unrealizedTone}
-					meta={liveKpi ? "paper · known marks" : equity.unrealizedMeta}
+					value={account && !unknownMark ? money(account.unrealized_usd, true) : "—"}
+					tone={account && !unknownMark && Number(account.unrealized_usd) < 0 ? "err" : "ok"}
+					meta={unknownMark ? "unknown mark excluded" : "known marks only"}
 				/>
 				<Stat
-					label="Drawdown"
-					value={liveKpi ? "—" : equity.drawdown}
-					meta={liveKpi ? "not computed in P0" : equity.drawdownMeta}
-				/>
-				<Stat
-					label="Exposure"
-					value={exposureValue}
-					meta={liveKpi ? "cash + known marks" : equity.exposureMeta}
-					title="Includes wallet balances, not only the four open positions"
+					label="Risk"
+					value={killSwitch ? "HALTED" : limitRows ? "OPEN" : "—"}
+					tone={killSwitch ? "err" : "ok"}
+					meta={limitRows ? "kill switch · strategy scope" : "limits unavailable"}
 				/>
 				<Stat
 					label="Mode"
-					value={liveKpi ? "PAPER" : equity.mode}
-					meta={<Badge>{liveKpi ? "paper only" : equity.modeMeta}</Badge>}
+					value={account ? account.mode.toUpperCase() : "—"}
+					meta={<Badge tone="ghost">no keys · no live money</Badge>}
 				/>
 			</section>
 
 			<div className="split">
 				<div className="stack">
 					<Panel
-						title="Equity"
-						sub={live ? "fixture history · live account KPI above" : "USD · after fees · paper"}
-						action={
-							<>
-								<FixtureBadge />
-								<div className="seg">
-									<button type="button">1D</button>
-									<button type="button" aria-pressed="true">
-										1W
-									</button>
-									<button type="button">1M</button>
-									<button type="button">ALL</button>
-								</div>
-							</>
-						}
-					>
-						<div className="chart-scroll">
-							<EquityChart />
-						</div>
-						<div className="between mt-8">
-							<div className="chart-legend">
-								<span>
-									<i style={{ borderColor: "var(--ink)" }} />
-									Equity
-								</span>
-								<span>
-									<i style={{ borderColor: "var(--line-2)" }} />
-									Cost basis
-								</span>
-								<span>
-									<i style={{ borderColor: "var(--err)" }} />
-									Max drawdown −6.2%
-								</span>
-							</div>
-							<span className="small muted">Marks: 1s · snapshots hourly</span>
-						</div>
-					</Panel>
-
-					<Panel
 						title="Open positions"
-						sub={live ? "fixture preview · see /positions for live" : "4 · sorted by next action"}
-						action={<><FixtureBadge /><ButtonLink href="/positions" size="sm">All positions</ButtonLink></>}
+						sub={`${positions.length} from the ledger · paper`}
+						action={<><SectionBadge live={live} /><ButtonLink href="/positions" size="sm">All positions</ButtonLink></>}
 						flush
-						footer={
-							<div className="between">
-								<span>* last executable value; not marked to zero.</span>
-								<Link href="/positions">Open the tile grid →</Link>
-							</div>
-						}
 					>
-						<div className="table-wrap">
-							<table className="table">
-								<thead>
-									<tr>
-										<th>Token</th>
-										<th>State</th>
-										<th className="num" title="Realized + unrealized for this position">PnL</th>
-										<th className="num">Value</th>
-										<th className="col-hide-sm">Next</th>
-										<th className="col-hide-sm">Mark</th>
-										<th />
-									</tr>
-								</thead>
-								<tbody>
-									{openPositions.map((p) => (
-										<tr className="rowlink" key={p.id}>
-											<td>
-												<span className="row">
-													<TokenAvatar size="sm">{p.symbol}</TokenAvatar>
-													<span>
-														<span className="strong">{p.name}</span>
-														<span className="sub" style={{ display: "block" }}>
-															{p.chain} · {p.strategy}
-														</span>
-													</span>
-												</span>
-											</td>
-											<td>
-												<Badge tone={p.stateTone}>{p.state}</Badge>
-											</td>
-											<td
-												className={`num ${
-													p.pnlPct.startsWith("+")
-														? "ok"
-														: p.pnlPct.startsWith("−")
-															? "err"
-															: "muted"
-												}`}
-											>
-												{p.pnlPct}
-												{p.pnlUsd && <span className="sub pnl-sub">{p.pnlUsd}</span>}
-											</td>
-											<td className={`num ${p.valueTone === "muted" ? "muted" : ""}`}>
-												{p.value}
-											</td>
-											<td className={`small col-hide-sm ${p.nextTone === "err" ? "err" : ""}`}>
-												{p.next}
-											</td>
-											<td className="col-hide-sm">
-												<span className={`small ${p.markTone === "dead" ? "err" : ""}`}>
-													<LiveDot tone={p.markTone} />
-													{p.markAge}
-												</span>
-											</td>
-											<td className="right">
-												<Link className="btn sm" href={`/positions/${p.id}`}>
-													Open
-												</Link>
-											</td>
+						{!snapshot.account.ok ? (
+							<div className="panel-body">{failure(snapshot.account)}</div>
+						) : positions.length === 0 ? (
+							<div className="panel-body">
+								<div className="note">
+									<strong>The paper account is flat.</strong> Browse a market and place a paper
+									order to open the first position. Unknown values stay —.
+								</div>
+								<div className="row mt-12">
+									<ButtonLink href="/markets" variant="primary">Browse markets</ButtonLink>
+								</div>
+							</div>
+						) : (
+							<div className="table-wrap">
+								<table className="table">
+									<thead>
+										<tr>
+											<th>Token</th>
+											<th className="col-hide-sm">Chain</th>
+											<th className="num">Quantity</th>
+											<th className="num">Mark</th>
+											<th className="num">Value</th>
+											<th className="num">Unrealized</th>
+											<th className="col-hide-sm">Source</th>
 										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
+									</thead>
+									<tbody>
+										{positions.map((position) => (
+											<tr key={`${position.chain}:${position.token_address}`}>
+												<td>
+													<Link className="row" href={`/tokens/${position.chain}/${position.token_address}`}>
+														<TokenAvatar size="sm">{initials(position.symbol)}</TokenAvatar>
+														<span>
+															<span className="strong">{position.symbol}</span>
+															<span className="sub" style={{ display: "block" }}>
+																{shortAddress(position.token_address)}
+															</span>
+														</span>
+													</Link>
+												</td>
+												<td className="col-hide-sm">{position.chain}</td>
+												<td className="num mono">{formatAmount(position.quantity)}</td>
+												<td className="num mono">{formatUsdPrice(position.mark_usd)}</td>
+												<td className="num mono">{money(position.market_value_usd)}</td>
+												<td className={`num mono ${position.unrealized_usd && Number(position.unrealized_usd) < 0 ? "err" : ""}`}>
+													{position.unrealized_usd === null ? "—" : money(position.unrealized_usd, true)}
+												</td>
+												<td className="col-hide-sm small">
+													{position.source ? `${sourceLabel(position.source.name)} · ${ageLabel(position.source.observed_at)}` : "—"}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
 					</Panel>
 
 					<Panel
-						title="PnL attribution"
-						sub="7 days · after fees · paper"
-						action={<><FixtureBadge /><ButtonLink href="/ledger" size="sm">Ledger</ButtonLink></>}
+						title="Strategies"
+						sub={`${strategyRows.filter((row) => row.status === "active").length} active · scheduler-owned`}
+						action={<><SectionBadge live={live} /><ButtonLink href="/strategies" size="sm">All strategies</ButtonLink></>}
 						flush
-						footer="Attribution uses realized cash PnL; unrealized is excluded. Share is net PnL ÷ total net PnL and can exceed 100% when another strategy loses."
 					>
-						<div className="table-wrap">
-							<table className="table compact">
-								<thead>
-									<tr>
-										<th>Strategy</th>
-										<th className="col-hide-sm">Mode</th>
-										<th className="num col-hide-sm">Trades</th>
-										<th className="num col-hide-sm">Win rate</th>
-										<th className="num col-hide-sm">Fees</th>
-										<th className="num">Net PnL</th>
-										<th className="num">Share</th>
-									</tr>
-								</thead>
-								<tbody>
-									{attribution.map((row) => (
-										<tr key={row.strategy}>
-											<td>{row.strategy}</td>
-											<td className="col-hide-sm">
-												<Badge tone={row.strategy === "Manual" ? "ghost" : "default"}>
-													{row.mode}
-												</Badge>
-											</td>
-											<td className="num col-hide-sm">{row.trades}</td>
-											<td className="num col-hide-sm">{row.winRate}</td>
-											<td className="num col-hide-sm">{row.fees}</td>
-											<td className={`num ${row.netTone}`}>{row.netPnl}</td>
-											<td className="num">{row.share}</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
+						{!strategies.ok ? (
+							<div className="panel-body">{failure(strategies)}</div>
+						) : strategyRows.length === 0 ? (
+							<div className="panel-body">
+								<div className="note">
+									No strategies yet. The platform ships no alpha; create a rule set or draw a
+									graph, then watch it run in paper.
+								</div>
+								<div className="row mt-12">
+									<ButtonLink href="/strategies" variant="primary">Create a strategy</ButtonLink>
+								</div>
+							</div>
+						) : (
+							<div className="stack-sm">
+								{strategyRows.slice(0, 5).map((strategy) => (
+									<div className="list-row" key={strategy.id} style={{ padding: "9px 12px" }}>
+										<Badge tone={strategy.status === "active" ? "ok" : "warn"}>{strategy.status}</Badge>
+										<span className="grow">
+											<Link className="title" href={`/strategies/${strategy.id}`}>{strategy.name}</Link>
+											<span className="sub">
+												{strategy.kind} · {strategy.token_symbol} · {strategy.chain}
+											</span>
+										</span>
+										<span className="small muted">
+											{strategy.last_run_at ? `last ${ageLabel(strategy.last_run_at)}` : "never run"}
+										</span>
+									</div>
+								))}
+							</div>
+						)}
+					</Panel>
+
+					<Panel
+						title="Account history"
+						sub="No equity snapshots are stored yet"
+						action={<SectionBadge live={live} />}
+					>
+						<div className="note">
+							The ledger is the source of truth, but ezCHAIN does not persist a periodic
+							equity curve yet. The performance page shows realized PnL from the ledger rather
+							than inventing a line.
+						</div>
+						<div className="row mt-12">
+							<ButtonLink href="/performance" size="sm">Paper performance</ButtonLink>
+							<ButtonLink href="/ledger" size="sm">Activity</ButtonLink>
 						</div>
 					</Panel>
 				</div>
@@ -263,151 +267,151 @@ export default async function DashboardPage() {
 				<div className="stack">
 					<Panel
 						title="Risk"
-						sub="fixture preview"
-						action={<><FixtureBadge /><ButtonLink href="/risk" size="sm">Limits</ButtonLink></>}
+						sub={limitRows ? "server limits · paper" : "limits unavailable"}
+						action={<><SectionBadge live={live} /><ButtonLink href="/risk" size="sm">Risk</ButtonLink></>}
 					>
-						<div className="stack-sm">
-							<div className="between small">
-								<span>Daily loss</span>
-								<span className="mono">{risk.dailyLoss}</span>
+						{!limits.ok ? (
+							<div className="panel-body">{failure(limits)}</div>
+						) : limitRows ? (
+							<div className="stack-sm">
+								<div className="between small"><span>Max order</span><span className="mono">{formatUsd(limitRows.max_order_usd)}</span></div>
+								<div className="between small"><span>Max position</span><span className="mono">{formatUsd(limitRows.max_position_usd)}</span></div>
+								<div className="between small"><span>Max open positions</span><span className="mono">{limitRows.max_open_positions}</span></div>
+								<div className="between small"><span>Daily loss cap</span><span className="mono">{formatUsd(limitRows.max_daily_loss_usd)}</span></div>
+								<div className="between small"><span>Paper fee</span><span className="mono">{limitRows.paper_fee_bps} bps</span></div>
+								<div className="hr" />
+								<div className="list-row">
+									<Badge tone={killSwitch ? "err" : "ok"}>{killSwitch ? "ARMED" : "OFF"}</Badge>
+									<span className="grow">
+										<span className="title">Kill switch</span>
+										<span className="sub">strategy-originated execution</span>
+									</span>
+									<ButtonLink href="/risk" size="sm">Open</ButtonLink>
+								</div>
 							</div>
-							<Meter width={risk.dailyLossWidth} tone="warn" label="Daily loss" valueText="$42 of $250" />
-							<div className="between small">
-								<span>Exposure</span>
-								<span
-									className="mono"
-									title="Includes wallet balances, not only the four open positions"
-								>
-									{risk.exposure}
-								</span>
+						) : null}
+					</Panel>
+
+					<Panel
+						title="Alerts"
+						sub={alerts.ok ? `${alertRows.length} derived` : "unavailable"}
+						action={<><SectionBadge live={live} /><ButtonLink href="/alerts" size="sm">All</ButtonLink></>}
+						flush
+					>
+						{!alerts.ok ? (
+							<div className="panel-body">{failure(alerts)}</div>
+						) : alertRows.length === 0 ? (
+							<div className="panel-body">
+								<div className="note">No alerts. Reconciliation, marks and rejected orders are clean.</div>
 							</div>
-							<Meter width={risk.exposureWidth} label="Exposure" valueText="38% of the 60% cap, including wallet balances" />
-							<div className="between small">
-								<span>Single-token cap</span>
-								<span className="mono">{risk.singleToken}</span>
-							</div>
-							<Meter width={risk.singleTokenWidth} tone="ok" label="Single-token cap" valueText="Bonk 3.7% of the 10% cap" />
-							<div className="hr" />
-							<div className="list-row">
-								<Badge tone="ok">OK</Badge>
-								<span className="grow">
-									<span className="title">All 6 breakers closed</span>
-									<span className="sub">fixture snapshot</span>
-								</span>
-							</div>
-							<div className="list-row">
-								<Badge tone="warn">1</Badge>
-								<span className="grow">
-									<span className="title">Token without a sell route</span>
-									<span className="sub">Scamcoin · blocks new intents for the token</span>
-								</span>
-								<ButtonLink href="/positions" size="sm">Review</ButtonLink>
-							</div>
-							<Link className="btn danger block mt-8" href="/risk">
-								Open kill switch
-							</Link>
-							<div className="micro center">halts new risk · does not auto-sell</div>
+						) : (
+							alertRows.slice(0, 4).map((alert) => (
+								<div className="list-row" style={{ padding: "9px 12px" }} key={alert.id}>
+									<Badge tone={alert.severity === "critical" ? "err" : alert.severity === "warning" ? "warn" : "ghost"}>
+										{alert.severity}
+									</Badge>
+									<span className="grow">
+										<span className="title">{alert.title}</span>
+										<span className="sub">{alert.detail}</span>
+									</span>
+								</div>
+							))
+						)}
+					</Panel>
+
+					<Panel
+						title="Market watch"
+						sub={
+							!marketsOutcome.ok
+								? "markets unavailable"
+								: marketStale
+									? "stale source"
+									: `${sourceLabel(marketSource?.name)} · ${ageLabel(marketSource?.observed_at)}`
+						}
+						action={<><SectionBadge live={live} /><ButtonLink href="/markets" size="sm">Markets</ButtonLink></>}
+						flush
+					>
+						{!marketsOutcome.ok ? (
+							<div className="panel-body">{failure(marketsOutcome)}</div>
+						) : (
+						<div className="table-wrap">
+							<table className="table compact">
+								<thead>
+									<tr><th>Token</th><th className="num">Price</th><th className="num col-hide-sm">24h</th><th className="num col-hide-sm">Liquidity</th></tr>
+								</thead>
+								<tbody>
+									{marketRows.map((row) => (
+										<tr key={`${row.chain}:${row.pair_address}`}>
+											<td>
+												<Link href={`/tokens/${row.chain}/${row.base_token}`}>
+													<span className="strong">{row.symbol}</span>
+													<span className="sub" style={{ display: "block" }}>{row.chain}</span>
+												</Link>
+											</td>
+											<td className="num mono">{formatUsdPrice(row.price_usd)}</td>
+											<td className={`num mono col-hide-sm ${changeTone(row.price_change_h24)}`}>{changeText(row.price_change_h24)}</td>
+											<td className="num mono col-hide-sm">{row.liquidity_usd ? formatUsd(row.liquidity_usd) : "—"}</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
 						</div>
-					</Panel>
-
-					<Panel
-						title="Automations"
-						sub="3 active"
-						action={<><FixtureBadge /><ButtonLink href="/automations" size="sm">All</ButtonLink></>}
-						flush
-					>
-						{automations.map((a) => (
-							<div className="list-row" style={{ padding: "9px 12px" }} key={a.title}>
-								<Badge tone={a.tone}>{a.status}</Badge>
-								<span className="grow">
-									<span className="title">{a.title}</span>
-									<span className="sub">{a.sub}</span>
-								</span>
-								<ButtonLink href={a.href} size="sm">{a.action}</ButtonLink>
-							</div>
-						))}
-					</Panel>
-
-					<Panel
-						title="Signals"
-						sub="routed"
-						action={<><FixtureBadge /><ButtonLink href="/signals" size="sm">Feed</ButtonLink></>}
-						flush
-					>
-						{signals.map((s) => (
-							<div className="list-row" style={{ padding: "9px 12px" }} key={s.title}>
-								<Badge tone={s.tone}>{s.tag}</Badge>
-								<span className="grow">
-									<span className="title">{s.title}</span>
-									<span className="sub">{s.sub}</span>
-								</span>
-							</div>
-						))}
+						)}
 					</Panel>
 
 					<Panel
 						title="Chains"
-						sub="3 connected"
-						action={<><FixtureBadge /><ButtonLink href="/chains" size="sm">Health</ButtonLink></>}
-						flush
+						sub={chainCovered === null ? `${chainTotal} registered` : `${chainCovered}/${chainTotal} with fresh data`}
+						action={<><SectionBadge live={live} /><ButtonLink href="/chains" size="sm">Coverage</ButtonLink></>}
 					>
-						{chains.map((c) => (
-							<div className="list-row" style={{ padding: "9px 12px" }} key={c.name}>
-								<span className="chain">
-									<span className="sq">{c.initial}</span>
-									{c.name}
-								</span>
-								<span className="grow small muted">{c.detail}</span>
-								<Badge tone={c.tone}>{c.status}</Badge>
+						{!chainsOutcome.ok ? (
+							failure(chainsOutcome)
+						) : (
+							<div className="note">
+								Market observation, quote ladders and candle capability are per-chain. A chain
+								with no data is reported as <span className="mono">no_data</span>, never zero.
+								{overview.ok ? ` ${overview.data.totals.snapshots} persisted snapshots.` : ""}
 							</div>
-						))}
+						)}
+						<div className="row mt-12">
+							<ButtonLink href="/chains" size="sm">Chain registry</ButtonLink>
+							<ButtonLink href="/integrations" size="sm">Providers</ButtonLink>
+						</div>
 					</Panel>
 				</div>
 			</div>
 
-			<section className="grid cols-2 mt-16">
-				<Panel
-					title="Wallets"
-					sub="4 wallets · 2 custody tiers"
-					action={<><FixtureBadge /><ButtonLink href="/wallets" size="sm">Manage</ButtonLink></>}
-					flush
-				>
-					{wallets.map((w) => (
-						<div className="wallet-row" key={w.name}>
-							<span className="avatar-lg">{w.initial}</span>
-							<span className="grow">
-								<span className="title strong">{w.name}</span>
-								<span className="sub">{w.chains}</span>
-							</span>
-							<Badge tone={w.badgeTone}>{w.badge}</Badge>
-							<span className="bal">
-								<span className="v">{w.value}</span>
-								<span className="sub">{w.sync}</span>
-							</span>
-						</div>
-					))}
-				</Panel>
-
-				<Panel
-					title="Recent activity"
-					sub="ledger view"
-					action={<><FixtureBadge /><ButtonLink href="/ledger" size="sm">All</ButtonLink></>}
-					flush
-				>
-					{activity.map((a) => (
-						<div className="list-row" style={{ padding: "9px 12px" }} key={a.title}>
-							<Badge tone={a.actionTone}>{a.action}</Badge>
-							<span className="grow">
-								<span className="title">{a.title}</span>
-								<span className="sub">{a.sub}</span>
-							</span>
-							<span className={`mono small ${a.amountTone === "ok" ? "ok" : ""}`}>
-								{a.amount}
-							</span>
-						</div>
-					))}
-				</Panel>
-			</section>
+			<Panel
+				title="Recent paper orders"
+				sub={orders.ok ? `${orderRows.length} newest` : "unavailable"}
+				action={<><SectionBadge live={live} /><ButtonLink href="/ledger" size="sm">Activity</ButtonLink></>}
+				flush
+				footer="Orders are append-only evidence. A rejection carries its reason code; it is never shown as a fill."
+			>
+				{!orders.ok ? (
+					<div className="panel-body">{failure(orders)}</div>
+				) : orderRows.length === 0 ? (
+					<div className="panel-body"><div className="note">No paper orders yet.</div></div>
+				) : (
+					<div className="table-wrap">
+						<table className="table">
+							<thead><tr><th>Side</th><th>Token</th><th className="num">Amount</th><th>Status</th><th className="col-hide-sm">Reason</th><th className="col-hide-sm">Age</th></tr></thead>
+							<tbody>
+								{orderRows.map((order) => (
+									<tr key={order.id}>
+										<td><Badge tone={order.side === "buy" ? "info" : "default"}>{order.side}</Badge></td>
+										<td><Link href={`/tokens/${order.chain}/${order.token_address}`}>{order.chain} · {shortAddress(order.token_address)}</Link></td>
+										<td className="num mono">{formatUsd(order.amount_usd)}</td>
+										<td><Badge tone={order.status === "filled" ? "ok" : order.status === "rejected" ? "err" : "warn"}>{order.status}</Badge></td>
+										<td className="col-hide-sm small">{order.reason ?? "—"}</td>
+										<td className="col-hide-sm small">{ageLabel(order.created_at)}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				)}
+			</Panel>
 		</AppShell>
 	);
 }
