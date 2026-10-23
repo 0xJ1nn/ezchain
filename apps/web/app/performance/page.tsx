@@ -17,6 +17,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function markCountLabel(count: number) {
+	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
+}
+
 function demoError<T>(mode: PaperSnapshot["mode"], message: string): PaperResult<T> {
 	return { ok: false, mode, error: { code: "FIXTURE_DEMO_ERROR", message } };
 }
@@ -58,6 +62,10 @@ export default async function PerformancePage({
 
 	const account = accountResult.ok ? accountResult.data : null;
 	const fills = fillResult.ok ? fillResult.data : [];
+	const marksUnknown = account?.marks_unknown ?? performance?.equity_usd === null;
+	const unpricedCount = account?.unpriced_positions.length ?? 0;
+	const withheldLabel =
+		unpricedCount > 0 ? `equity unavailable — ${markCountLabel(unpricedCount)}` : "equity unavailable";
 	const error = !accountResult.ok
 		? accountResult.error
 		: !orderResult.ok
@@ -113,8 +121,14 @@ export default async function PerformancePage({
 			<section className="kpi-band mb-12" aria-label="Paper account performance">
 				<Stat
 					label="Equity"
-					value={performance?.equity_usd ? formatUsd(performance.equity_usd) : account ? formatUsd(account.equity_usd) : "—"}
-					meta={performance?.equity_usd === null ? "unknown mark excluded · never zero" : "PAPER · cash + known marks"}
+					value={
+						performance
+							? formatUsd(performance.equity_usd)
+							: account
+								? formatUsd(account.equity_usd)
+								: "—"
+					}
+					meta={marksUnknown ? withheldLabel : "PAPER · cash + known marks"}
 				/>
 				<Stat
 					label="Cash"
@@ -129,9 +143,27 @@ export default async function PerformancePage({
 				/>
 				<Stat
 					label="Unrealized"
-					value={performance?.unrealized_usd ? formatUsd(performance.unrealized_usd) : account ? formatUsd(account.unrealized_usd) : "—"}
-					tone={performance && performance.unrealized_usd && Number(performance.unrealized_usd) < 0 ? "err" : "ok"}
-					meta={performance?.unrealized_usd === null ? "unknown mark excluded" : "PAPER · known marks only"}
+					value={
+						performance
+							? formatUsd(performance.unrealized_usd)
+							: account
+								? formatUsd(account.unrealized_usd)
+								: "—"
+					}
+					tone={
+						(performance?.unrealized_usd ?? account?.unrealized_usd) !== null &&
+						(performance?.unrealized_usd ?? account?.unrealized_usd) !== undefined &&
+						Number(performance?.unrealized_usd ?? account?.unrealized_usd) < 0
+							? "err"
+							: "ok"
+					}
+					meta={
+						marksUnknown
+							? `unrealized unavailable — ${
+									unpricedCount > 0 ? markCountLabel(unpricedCount) : "open mark unknown"
+								}`
+							: "PAPER · known marks only"
+					}
 				/>
 				<Stat
 					label="Fills"

@@ -49,6 +49,7 @@ ACCOUNT_INVARIANTS = (
     "account.decimals",
     "account.cash_non_negative",
     "account.equity_matches",
+    "account.equity_complete",
 )
 MARKET_INVARIANTS = ("markets.shape", "chains.shape", "token.shape", "quote.shape")
 STRATEGY_INVARIANTS = (
@@ -531,26 +532,28 @@ def check_account(
     """Cash/equity/PnL are finite decimals, cash is non-negative and equity reconciles."""
     findings: list[Finding] = []
 
-    def required(key: str) -> Decimal | None:
+    def parsed_field(key: str, *, nullable: bool) -> Decimal | None:
         raw = account.get(key)
         parsed = _decimal(raw)
-        if parsed is None:
+        if parsed is None and (raw is not None or not nullable):
             findings.append(
                 Finding(
                     code="ACCOUNT_DECIMAL_INVALID",
                     scenario=scenario,
                     invariant="account.decimals",
                     summary=f"account field {key} is not a finite decimal",
-                    expected="finite decimal string",
+                    expected="finite decimal string"
+                    if not nullable
+                    else "null or finite decimal string",
                     actual=repr(raw),
                 )
             )
         return parsed
 
-    cash = required("cash_usd")
-    equity = required("equity_usd")
-    required("realized_usd")
-    required("unrealized_usd")
+    cash = parsed_field("cash_usd", nullable=False)
+    equity = parsed_field("equity_usd", nullable=True)
+    parsed_field("realized_usd", nullable=False)
+    parsed_field("unrealized_usd", nullable=True)
 
     positions_raw = _sequence(account.get("positions"))
     if positions_raw is None:
@@ -596,6 +599,7 @@ def check_account(
         )
 
     known_market_value = Decimal(0)
+    unpriced = 0
     for position in positions:
         raw = position.get("market_value_usd")
         parsed = _decimal(raw)
@@ -612,9 +616,84 @@ def check_account(
             )
         elif parsed is not None:
             known_market_value += parsed
+        else:
+            unpriced += 1
+
+    marks_unknown = unpriced > 0
+    complete_raw = account.get("complete")
+    complete = complete_raw if isinstance(complete_raw, bool) else None
+    if complete_raw is not None and complete is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_COMPLETE_INVALID",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account complete flag is not a boolean",
+                expected="true or false",
+                actual=repr(complete_raw),
+            )
+        )
+    if complete is not None and complete != (not marks_unknown):
+        findings.append(
+            Finding(
+                code="ACCOUNT_COMPLETE_MISMATCH",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account completeness disagrees with its open position marks",
+                expected=f"complete={not marks_unknown} ({unpriced} unpriced position(s))",
+                actual=f"complete={complete}",
+            )
+        )
+    if equity is not None and marks_unknown:
+        findings.append(
+            Finding(
+                code="ACCOUNT_EQUITY_PARTIAL",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account reports equity while an open position has no mark",
+                expected="equity_usd null",
+                actual=str(equity),
+            )
+        )
+    if equity is None and complete is True:
+        findings.append(
+            Finding(
+                code="ACCOUNT_EQUITY_WITHHELD",
+                scenario=scenario,
+                invariant="account.equity_complete",
+                summary="account withholds equity although every open mark is known",
+                expected="equity_usd present",
+                actual="equity_usd is null",
+            )
+        )
+
+    known_raw = account.get("known_market_value_usd")
+    known_parsed = _decimal(known_raw)
+    if known_raw is not None and known_parsed is None:
+        findings.append(
+            Finding(
+                code="ACCOUNT_DECIMAL_INVALID",
+                scenario=scenario,
+                invariant="account.decimals",
+                summary="account field known_market_value_usd is not a finite decimal",
+                expected="null or finite decimal string",
+                actual=repr(known_raw),
+            )
+        )
+    elif known_parsed is not None and abs(known_parsed - known_market_value) > tolerance:
+        findings.append(
+            Finding(
+                code="ACCOUNT_KNOWN_VALUE_MISMATCH",
+                scenario=scenario,
+                invariant="account.equity_matches",
+                summary="known_market_value_usd disagrees with the priced positions",
+                expected=str(known_market_value),
+                actual=str(known_parsed),
+            )
+        )
 
     if cash is not None and equity is not None:
-        expected_equity = cash + known_market_value
+        expected_equity = cash + (known_parsed if known_parsed is not None else known_market_value)
         if abs(equity - expected_equity) > tolerance:
             findings.append(
                 Finding(
@@ -1504,6 +1583,19 @@ def self_test() -> None:
     }
     assert check_positions([position], scenario="self") == []
     assert check_account(account, scenario="self") == []
+    unpriced = {**position, "mark_usd": None, "market_value_usd": None, "unrealized_usd": None}
+    withheld = {
+        "cash_usd": "97",
+        "equity_usd": None,
+        "realized_usd": "0",
+        "unrealized_usd": None,
+        "complete": False,
+        "marks_unknown": True,
+        "known_market_value_usd": "0",
+        "positions": [unpriced],
+    }
+    assert check_account(withheld, scenario="self") == []
+    assert check_account({**withheld, "equity_usd": "97"}, scenario="self")
     assert check_reconciliation(200, {"ok": True}, scenario="self") == []
     # The endpoint is mandatory: a 404 is a failure, not a skip.
     missing = check_reconciliation(404, None, scenario="self")

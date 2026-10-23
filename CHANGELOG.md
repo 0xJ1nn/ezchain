@@ -190,6 +190,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **Paper equity fails closed on unknown marks** (#96, #108):
+  `GET /api/v1/paper/account` now returns `equity_usd: null` and `unrealized_usd: null`
+  when any open position has no mark, and exposes `complete`, `marks_unknown`,
+  `known_market_value_usd`, `unpriced_positions` plus server-computed `by_chain` and
+  `by_asset` composition. The dashboard shows the composition, with cash as a labelled USD
+  settlement row, instead of an understated single total; graph contexts receive null
+  equity rather than a partial sum.
 - The market monitor now refreshes marks for open paper positions after each scan,
   including quote-side tokens that discovery would not store, bounded by
   `max_open_positions` (#88).

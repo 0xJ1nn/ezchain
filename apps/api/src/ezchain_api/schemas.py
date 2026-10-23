@@ -288,11 +288,63 @@ class PositionOut(BaseModel):
     mode: str = "paper"
 
 
+class PaperUnpricedPositionOut(BaseModel):
+    """An open position whose mark is unknown: it is never valued at zero."""
+
+    chain: str
+    token_address: str
+    symbol: str
+    quantity: str
+
+
+class PaperAssetCompositionOut(BaseModel):
+    """One asset's server-computed contribution to the paper account.
+
+    ``share_pct`` is null whenever equity is incomplete or non-positive. Cash is the USD
+    settlement row (``kind = "cash"``); its value is always known, but its share is still
+    withheld while the equity denominator is unknown.
+    """
+
+    chain: str
+    token_address: str | None = None
+    symbol: str
+    kind: Literal["position", "cash"]
+    quantity: str
+    mark_usd: str | None = None
+    market_value_usd: str | None = None
+    share_pct: str | None = None
+    source: SourceOut | None = None
+    mark_status: Literal["known", "unknown"]
+
+
+class PaperChainCompositionOut(BaseModel):
+    """One chain's server-computed total. Native quantity lives on the asset row.
+
+    ``market_value_usd`` is null when any asset on the chain is unpriced: a partial chain
+    total is never presented as the chain's value.
+    """
+
+    chain: str
+    assets: int
+    unpriced_assets: int = 0
+    market_value_usd: str | None = None
+    share_pct: str | None = None
+    mark_status: Literal["known", "unknown"]
+
+
 class PaperAccountOut(BaseModel):
+    """The paper account read model. Equity is withheld when any open mark is unknown."""
+
     cash_usd: str
-    equity_usd: str
+    equity_usd: str | None = None
     realized_usd: str
-    unrealized_usd: str
+    unrealized_usd: str | None = None
+    complete: bool
+    marks_unknown: bool
+    known_market_value_usd: str
+    unpriced_positions: list[PaperUnpricedPositionOut]
+    by_chain: list[PaperChainCompositionOut]
+    by_asset: list[PaperAssetCompositionOut]
     positions: list[PositionOut]
     mode: str = "paper"
 

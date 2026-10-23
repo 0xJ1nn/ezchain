@@ -17,10 +17,10 @@ from sqlalchemy.orm import Session
 
 from ezchain_api.config import Settings, get_settings
 from ezchain_api.deps import get_dexscreener, get_geckoterminal
-from ezchain_api.models import PaperOrderRow, StrategyRow, StrategyRunRow
+from ezchain_api.models import LedgerEntryRow, PaperOrderRow, StrategyRow, StrategyRunRow
 from ezchain_api.routers import graph
 from ezchain_api.services.graph import PaperGraphRuntime, build_tick
-from ezchain_core import Candle, PairInfo, SourceRef, TokenSnapshot
+from ezchain_core import Candle, PairInfo, SourceRef, TokenSnapshot, buy_entries, genesis_entries
 
 CHAIN = "ethereum"
 TOKEN = "0x0000000000000000000000000000000000000abc"
@@ -263,6 +263,37 @@ def test_dry_run_keeps_an_unknown_price_null(
     assert body["decision"]["action"] == "hold"
     assert body["decision"]["reason"] == "UNKNOWN_CONDITION"
     assert body["context"]["price_usd"] is None
+
+
+def test_dry_run_withholds_equity_when_an_open_mark_is_unknown(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """The engine context must receive null equity, never a partial portfolio sum."""
+    for entry in genesis_entries(Decimal("10000")):
+        session.add(LedgerEntryRow(**entry.to_row("genesis", created_at=NOW)))
+    for entry in buy_entries(
+        chain=CHAIN,
+        token_address="0x0000000000000000000000000000000000000def",
+        quantity=Decimal("5"),
+        price_usd=Decimal("2"),
+        fee_bps=0,
+        notional_usd=Decimal("10"),
+        fee_usd=Decimal("0"),
+    ):
+        session.add(LedgerEntryRow(**entry.to_row("graph-trade", created_at=NOW)))
+    session.commit()
+
+    client = build(client_for, snapshots=FakeSnapshots(price="1.00"))
+    response = client.post(
+        "/api/v1/graph/dry-run",
+        json={"graph": price_gate_doc(), "chain": CHAIN, "token_address": TOKEN},
+    )
+
+    assert response.status_code == 200
+    account = response.json()["context"]["account"]
+    assert account["cash_usd"] == "9990"
+    assert account["equity_usd"] is None
+    assert account["open_positions"] == 1
 
 
 def test_dry_run_refuses_an_invalid_graph(client_for: Callable[..., TestClient]) -> None:

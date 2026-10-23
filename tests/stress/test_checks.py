@@ -151,6 +151,30 @@ def test_account_equity_reconciles_with_known_market_values() -> None:
     assert findings[0].actual == "101"
 
 
+def test_account_with_an_unknown_mark_withholds_equity() -> None:
+    unknown = position(mark_usd=None, market_value_usd=None, unrealized_usd=None)
+    withheld = account(
+        positions=[position(), unknown],
+        equity_usd=None,
+        unrealized_usd=None,
+        complete=False,
+        marks_unknown=True,
+        known_market_value_usd="3",
+    )
+    assert check_account(withheld, scenario="t") == []
+
+    partial = check_account(withheld | {"equity_usd": "100"}, scenario="t")
+    assert any(finding.code == "ACCOUNT_EQUITY_PARTIAL" for finding in partial)
+
+    mislabelled = check_account(withheld | {"complete": True}, scenario="t")
+    assert any(finding.code == "ACCOUNT_COMPLETE_MISMATCH" for finding in mislabelled)
+
+
+def test_account_that_withholds_a_complete_equity_is_a_finding() -> None:
+    findings = check_account(account(equity_usd=None, complete=True), scenario="t")
+    assert any(finding.code == "ACCOUNT_EQUITY_WITHHELD" for finding in findings)
+
+
 def test_reconciliation_404_is_a_failure() -> None:
     # The endpoint became mandatory: its absence means ledger truth is unproven.
     findings = check_reconciliation(404, None, scenario="t")
