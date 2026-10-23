@@ -1,0 +1,80 @@
+{
+  "name": "@ezchain/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ezCHAIN native desktop shell (Linux, macOS, Windows)",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist:dir": "electron-builder --linux dir",
+    "dist:linux": "electron-builder --linux AppImage deb"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.ezchain.workstation",
+    "productName": "ezCHAIN",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend",
+        "to": "backend"
+      },
+      {
+        "from": "build/web.tar.gz",
+        "to": "web.tar.gz"
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Finance",
+      "icon": "resources/icon.png",
+      "artifactName": "ezCHAIN-${version}-${arch}.${ext}",
+      "maintainer": "ezCHAIN contributors <0xJ1nn@users.noreply.github.com>",
+      "syncDesktopName": true,
+      "executableArgs": []
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libayatana-appindicator3-1"
+      ]
+    },
+    "executableName": "ezchain"
+  },
+  "author": {
+    "name": "ezCHAIN contributors",
+    "email": "0xJ1nn@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/0xJ1nn/ezchain",
+  "desktopName": "ezchain.desktop",
+  "license": "AGPL-3.0-or-later"
+}

@@ -65,9 +65,20 @@ iteration speed without lying about the topology.
 | `services/executor` | Python | key custody, signing, broadcast, fill confirmation | 1 per key shard |
 | `services/ingest` | Python (Rust only if measured) | market/chain streams, normalization, candles | per source, N |
 | `migrate` | Python | one-shot Alembic | run-to-completion |
+| `apps/desktop` | TypeScript / Electron + Python | native shell, private sidecar supervision, tray/background | 1 per desktop user |
 
 Single-node default = one `core` container (api+engine) + `executor` + `ingest` + data
 services. The same images scale out unchanged.
+
+### Desktop deployment
+
+`apps/desktop` is a native Electron shell for a single user. It starts the same FastAPI
+edge and the traced Next.js server as private loopback sidecars, with an embedded SQLite
+database at `~/.config/ezCHAIN/ezchain.db` instead of Postgres. Both sidecars bind
+`127.0.0.1` on ephemeral ports; the renderer gets no token or Node access. Closing the
+window hides to the tray and the sidecars keep running; a watchdog restarts either one on
+crash. AppImage and `.deb` are built from the repository; macOS/Windows targets need a
+build on their own host. See [DESKTOP.md](DESKTOP.md).
 
 ## 3. Module map (monorepo)
 

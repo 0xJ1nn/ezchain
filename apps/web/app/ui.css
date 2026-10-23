@@ -198,11 +198,11 @@ main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 }
 .panel-head {
   display: flex; align-items: center; gap: 8px; padding: 9px 12px;
-  border-bottom: 1px solid var(--line); min-height: 38px;
+  border-bottom: 1px solid var(--line); min-height: 38px; min-width: 0;
 }
 .panel-head h2, .panel-head h3 { font-size: 12px; letter-spacing: .01em; font-weight: 650; }
 .panel-head .sub { color: var(--muted); font-size: 11px; }
-.panel-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.panel-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
 .panel-body { padding: 12px; }
 .panel-body.flush { padding: 0; }
 .panel-foot { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
@@ -425,8 +425,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .tile-note { padding: 5px 11px 7px; font-size: 10px; color: var(--muted); border-top: 1px dashed var(--line); }
 
 /* ---------- KPI / steps / misc ---------- */
-.kpi-band { display: flex; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
-.kpi-band .stat { flex: 1 1 0; border-right: 1px solid var(--line); }
+.kpi-band { display: flex; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; max-width: 100%; }
+.kpi-band .stat { flex: 1 1 0; border-right: 1px solid var(--line); min-width: 0; }
+.kpi-band .stat .value, .kpi-band .stat .meta { overflow-wrap: anywhere; }
 .kpi-band .stat:last-child { border-right: 0; }
 
 .steps { display: flex; align-items: center; gap: 0; }
@@ -514,6 +515,18 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 @media (max-width: 1439px) {
   .cols-3.tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 1200px) {
+  /* The desktop shell can be tiled narrower than 1440; wrap the page actions and KPIs
+     instead of clipping them. */
+  .page-head { flex-wrap: wrap; gap: 10px 16px; }
+  .page-actions { margin-left: 0; flex-wrap: wrap; }
+  .kpi-band { flex-wrap: wrap; }
+  .kpi-band .stat { flex: 1 1 30%; }
+  .topbar .ws-chip, .topbar .chain.chip, .topbar .chip { display: none; }
+  .topbar .search { flex: 1 1 220px; max-width: 420px; }
+  .panel-head { flex-wrap: wrap; row-gap: 6px; }
+  .panel-head .right { flex-wrap: wrap; justify-content: flex-end; }
 }
 @media (max-width: 1100px) {
   body { grid-template-columns: 64px minmax(0, 1fr); }

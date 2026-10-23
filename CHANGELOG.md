@@ -7,6 +7,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Native desktop app (Linux verified)**: an Electron shell with a frozen FastAPI
+  sidecar on embedded SQLite and a traced Next.js server, both bound to private loopback
+  ports. A native window replaces the browser tab; closing hides to the tray, a watchdog
+  restarts crashed sidecars, and the database/logs/token live under
+  `~/.config/ezCHAIN/`. AppImage and `.deb` build with `bash tools/build-desktop.sh
+  --package`. macOS and Windows targets are configured but not built. See
+  `docs/DESKTOP.md` and `docs/evidence/desktop/linux-app.md`. No keys, signing or live
+  execution are added.
 - **Paper account read models**: `GET /api/v1/paper/ledger`, `/performance`,
   `/attribution`, `/limits`, `/alerts` and `/export/{orders,fills,ledger}.csv` project the
   append-only ledger into UI-facing read models (cash, equity, realized/unrealized PnL,

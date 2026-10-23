@@ -58,6 +58,23 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 6. **Measured, not vibes.** Backtests and paper gates are mandatory before live; claims
    name their data population and harness.
 
+## Native desktop app
+
+ezCHAIN also ships as a native Linux desktop app: a real window with a bundled Next
+server and a frozen FastAPI sidecar on an embedded SQLite database. It needs no Docker,
+Postgres or separately started API, never exposes a public listener, and stays alive in
+the tray with sidecar supervision.
+
+```bash
+bash tools/build-desktop.sh --package
+# AppImage and .deb land in apps/desktop/dist/
+```
+
+See [docs/DESKTOP.md](docs/DESKTOP.md) for install, data/log paths, recovery and
+cross-platform status. The AppImage launch, trader flow, persistence and sidecar recovery
+are verified on Linux. The `.deb` is built but its install flow was not exercised; macOS
+and Windows are not built or verified.
+
 ## Quick start — live paper slice
 
 Requires Node 22 + pnpm 9, Python 3.11 and Postgres 16.

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EZCHAIN_", env_file=".env", extra="ignore")
 
     app_name: str = "ezchain-api"
-    environment: Literal["dev", "test", "prod"] = "dev"
+    environment: Literal["dev", "test", "prod", "desktop"] = "dev"
     database_url: str = DEFAULT_DATABASE_URL
     # Dev/test convenience only. Prod refuses this flag (see ``_validate_production``).
     auto_create_schema: bool = True
