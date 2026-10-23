@@ -99,9 +99,9 @@ Deliver a `design/tokens.json` + CSS variables:
 ## 8. Density and layout
 
 - 12-column grid, 24px gutters, 1440px max content width; full-bleed charts allowed.
-- Tiles: 3-up ≥1440, 2-up 1024–1439, 1-up <1024.
+- Tiles: 3-up at ≥1440, 2-up at 1101–1439; 5/6-column grids → 3-up at 769–1100; 1-up at ≤768.
 - Tables: 40px rows comfortable, 32px compact; 12px cell padding; sticky header.
-- Sidebar 240px expanded / 64px rail; topbar 56px.
+- Sidebar 240px expanded / 72px user-collapsed rail; no automatic rail at 1100px; topbar 52px.
 - Charts get at least 160px height in a tile; full page 320–480px.
 
 ## 9. Interaction and motion

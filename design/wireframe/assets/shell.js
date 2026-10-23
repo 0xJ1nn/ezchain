@@ -3,10 +3,13 @@
 (() => {
   const page = document.body.dataset.page || "";
   const nav = [
+    ["Discovery", [
+      ["markets", "06-markets.html", "Browse", "◫"],
+      ["signals", "14-signals.html", "Signals", "⌁"],
+    ]],
     ["Overview", [
       ["dashboard", "03-dashboard.html", "Dashboard", "▤"],
       ["positions", "04-positions.html", "Positions", "▥"],
-      ["markets", "06-markets.html", "Markets", "◫"],
       ["performance", "19a-performance.html", "Performance", "◔"],
     ]],
     ["Trade", [
@@ -17,7 +20,6 @@
     ["Automate", [
       ["automations", "10-automations.html", "Automations", "⟳"],
       ["strategies", "12-strategies.html", "Strategies", "◇"],
-      ["signals", "14-signals.html", "Signals", "⌁"],
       ["backtests", "16-backtests.html", "Backtests", "∿"],
     ]],
     ["Protect", [
@@ -53,7 +55,7 @@
       Personal workspace <span class="muted">▾</span>
     </button>
     <form class="search" role="search" action="06-markets.html">
-      <input type="search" placeholder="Search token, wallet, strategy, position…" aria-label="Search">
+      <input type="search" placeholder="Search markets (symbol, name or address)" aria-label="Search markets (symbol, name or address)">
     </form>
     <span class="chain chip" title="Active chain filter">⬡ All chains <span class="muted">▾</span></span>
     <span class="mode paper" title="Execution mode"><span class="dot"></span>PAPER</span>

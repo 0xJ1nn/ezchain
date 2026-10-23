@@ -4,6 +4,17 @@ import { Panel } from "@/components/ui";
 
 const groups = [
 	{
+		title: "Discovery",
+		links: [
+			["/markets", "Browse markets"],
+			["/signals", "Signals"],
+		],
+	},
+	{
+		title: "Overview",
+		links: [["/performance", "Performance"]],
+	},
+	{
 		title: "Trade",
 		links: [
 			["/wallets", "Wallets"],
@@ -16,7 +27,6 @@ const groups = [
 		links: [
 			["/automations", "Automations"],
 			["/strategies", "Strategies"],
-			["/signals", "Signals"],
 			["/backtests", "Backtests"],
 		],
 	},
@@ -58,8 +68,9 @@ export default function MorePage() {
 					<div className="crumbs">More</div>
 					<h1>More</h1>
 					<p className="sub">
-						Everything that does not fit in the bottom nav. The mobile shell keeps Home,
-						Positions, Markets and Automate one tap away; this page holds the rest.
+						Browse and Signals are the primary discovery surfaces and stay one tap away in
+						the bottom nav. Performance, Automate, Trade, Protect and System live here under
+						More. Reference galleries are design documentation, not production surfaces.
 					</p>
 				</div>
 			</header>
@@ -83,16 +94,24 @@ export default function MorePage() {
 				))}
 			</div>
 
-			<Panel title="Chain filter & sync" sub="moved here on mobile" className="mt-16">
+			<Panel title="Chain filter & sync" sub="open the market browser" className="mt-16">
 				<div className="row">
-					<span className="chip">⬡ All chains</span>
-					<span className="chip">{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}</span>
+					<Link
+						className="chain chip"
+						href="/markets"
+						title="Open the multi-chain market browser"
+					>
+						<span aria-hidden="true">⬡</span> All chains
+					</Link>
+					<span className="source chip" title="Market data source">
+						{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}
+					</span>
 					<span className="badge">PAPER</span>
 				</div>
 				<p className="note mt-12">
 					{fixture
-						? "This is the labelled fixture shell. The chain registry is real; the chip is display-only here."
-						: "The chain registry and market source are live. The chip is display-only; the Markets page owns the real chain filter and sync state."}
+						? "This is the labelled fixture shell. The chain registry is real; open Markets to filter it by chain."
+						: "The chain registry and market source are live. Chain filtering lives on the Markets page; open it to change the visible chains."}
 				</p>
 			</Panel>
 		</AppShell>
