@@ -322,7 +322,7 @@ export default async function PerformancePage({
 								</table>
 							</div>
 						) : (
-							<div className="panel-body"><div className="note">No token attribution yet. Per-strategy attribution is not exposed by this API build; this table is per token, never invented.</div></div>
+							<div className="panel-body"><div className="note">No token attribution yet. Per-strategy performance is available from the strategy detail endpoint; this table is per token and shared-position attribution is not invented.</div></div>
 						)}
 					</Panel>
 

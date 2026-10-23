@@ -91,7 +91,7 @@ const seeds: MarketSeed[] = [
 		spark: [18, 17, 19, 20, 18, 21, 22, 20, 23, 22, 24, 23],
 		position: {
 			kind: "open",
-			href: "/positions/bonk",
+			href: "/positions",
 			badge: "RIDING",
 			badgeTone: "info",
 			value: pct(42.6),
@@ -159,7 +159,7 @@ const seeds: MarketSeed[] = [
 		spark: [10, 12, 11, 14, 16, 15, 18, 17, 19, 21, 20, 22],
 		position: {
 			kind: "open",
-			href: "/positions/mochi",
+			href: "/positions",
 			badge: "ENTERING",
 			badgeTone: "info",
 			value: `${usd(25)} in`,
@@ -191,7 +191,7 @@ const seeds: MarketSeed[] = [
 		sparkTone: "err",
 		position: {
 			kind: "open",
-			href: "/positions/scamcoin",
+			href: "/positions",
 			badge: "UNSELLABLE",
 			badgeTone: "err",
 			value: pct(-96.2),
@@ -218,7 +218,7 @@ const seeds: MarketSeed[] = [
 		spark: [24, 23, 24, 22, 21, 22, 20, 19, 20, 18, 19, 18],
 		position: {
 			kind: "open",
-			href: "/positions/aerodrome",
+			href: "/positions",
 			badge: "PRE-BANK",
 			badgeTone: "default",
 			value: pct(-8.3),
