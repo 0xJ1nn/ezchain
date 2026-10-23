@@ -27,7 +27,7 @@ No private keys, no signing, no real funds, no fiat rail, no copy-trading.
 6. Unknown, stale or route-less data fails closed with a reason code; no fixture is
    presented as live.
 7. `pytest`, `pnpm lint/typecheck/build/test` and `bash tools/ci.sh` are green.
-8. `docs/`, `CHANGELOG.md`, `.state/` and the ADR log match the code.
+8. `docs/`, `CHANGELOG.md` and the ADR log match the code; local maintainer notes are not part of the repository.
 
 ## Non-goals
 
@@ -230,7 +230,7 @@ service and the same risk policy.
 | P0.5 | swarm E | paper ticket/positions/strategies web surfaces, e2e | markets/token pages, shell |
 
 Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.css`,
-`lib/format.ts`, `docs/**`, `pyproject.toml`, `.state/**`.
+`lib/format.ts`, `docs/**`, `pyproject.toml`.
 
 ## Phases
 

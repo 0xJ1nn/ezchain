@@ -1,10 +1,11 @@
 # TODO — ezCHAIN P0 + M1 close-out
 
-Status as of **2026-10-22**. The app is a **PAPER stack with production operations**:
-continuous 22/25-chain market observation, Jupiter paper quotes on Solana, an append-only
-paper ledger, strategy CRUD/scheduler, migrations, bearer auth, observability and a stress
-harness. There are no keys, no signing and no live execution. Wallet/automation/system
-pages remain fixtures or placeholders. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
+Status as of **2026-10-23**. The app is a **PAPER stack with production operations**:
+continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
+ledger, declarative and visual graph strategies, backtests, strategy CRUD/scheduler,
+migrations through `0006_backtests`, bearer auth, observability, a complete operator
+surface and a full-code stress harness. There are no keys, no signing and no live
+execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
 Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 [`docs/CONTRACT.md`](CONTRACT.md), [`docs/PLAN-LIVE-PAPER.md`](PLAN-LIVE-PAPER.md),
@@ -26,14 +27,14 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Ops: Alembic 0001–0003 (fresh + legacy), bearer auth + CSRF proxy,
+- [x] Ops: Alembic 0001–0006 (fresh + legacy), bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
 - [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (static; build/up not verified).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
 - [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
-- [ ] Supervised `docker compose up --build` on a host with Docker.
+- [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0006` is pending.
 - [ ] Per-user auth/RBAC; `/metrics` exposure decision.
-- [ ] Live dashboard history/attribution/wallets (#57); EVM venue (#59).
+- [ ] Live dashboard equity history and live wallets (#57); EVM venue (#59).
 
 ## Now — P0 live paper slice
 
@@ -50,8 +51,9 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [ ] Engine repository boundary (#58).
 - [ ] EVM venue adapter to replace `paper_mark` (#59).
 
-Known P0 limits: non-Solana paper fills are capped `paper_mark`; no strategy PnL per row;
-no live execution. See `docs/PLAN-LIVE-PAPER.md`.
+Known P0 limits: chains without a keyless quote provider use capped `paper_mark`; the
+strategy *list* has no per-row PnL (per-strategy performance is available); no live
+execution. See `docs/PLAN-LIVE-PAPER.md`.
 
 ## Now — M1
 

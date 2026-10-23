@@ -41,7 +41,7 @@ Before changing anything for a non-trivial task, **stop and inspect**:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — deployables, boundaries, data flow
 - [`README.md`](README.md) — what the project is
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — relevant ADRs
-- [`.state/CURRENT_TASK.md`](.state/CURRENT_TASK.md) — current task and handoff
+- maintainer-local task/handoff notes (deliberately not part of this public repository)
 - `git status`, current branch, relevant source and tests
 
 **The code is truth. Documentation can be stale. Read the code. If they disagree, fix the

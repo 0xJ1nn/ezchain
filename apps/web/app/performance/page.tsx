@@ -125,7 +125,7 @@ export default async function PerformancePage({
 					label="Realized"
 					value={performance ? formatUsd(performance.realized_usd) : account ? formatUsd(account.realized_usd) : "—"}
 					tone={performance && Number(performance.realized_usd) < 0 ? "err" : "ok"}
-					meta={performance ? `PAPER · after ${formatUsd(performance.fees_usd)} fees` : "account unavailable"}
+					meta={performance ? `PAPER · total ${formatUsd(performance.fees_usd)} fees paid` : "account unavailable"}
 				/>
 				<Stat
 					label="Unrealized"

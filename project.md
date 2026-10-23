@@ -108,7 +108,7 @@ Before modifying code for any non-trivial task, stop and inspect:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — deployables, boundaries, data flow
 - [`README.md`](README.md) — what the project is
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — relevant ADRs
-- [`.state/CURRENT_TASK.md`](.state/CURRENT_TASK.md) — current task and handoff
+- maintainer-local task/handoff notes (not part of this public repository)
 - `git status`, current branch, relevant source and tests
 
 Also inspect the actual repository rather than trusting documentation blindly. The code
@@ -949,7 +949,7 @@ Keep track of current version, branch, active task, open bugs, open features, te
 debt, gate status, known regressions and next release. The maintainer should always be
 able to answer: **"What state is ezCHAIN currently in?"**
 
-`.state/CURRENT_TASK.md` and `.state/PR_LOG.md` are the lightweight dashboard.
+Maintainer-local task and PR notes are the lightweight dashboard; they are not part of the public repository.
 
 ---
 

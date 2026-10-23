@@ -55,7 +55,7 @@ The UI test performed, through the rendered app:
 ## Release gate
 
 The same flow is part of `bash tools/verify.sh --live`. On candidate `744f32d` the full
-gate passed: `ci: ok` (1044 Python + 94 Playwright), `stress: PASS` (0 findings) and the
+gate passed: `ci: ok` (1045 Python + 94 Playwright), `stress: PASS` (0 findings) and the
 live UI spec `4 passed`.
 
 ## Not covered by this drill

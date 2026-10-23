@@ -3,26 +3,28 @@
 Scope: disposable PostgreSQL 16, real API with bearer auth, live DexScreener and
 GeckoTerminal reads. Paper only; no keys, signing or live funds.
 
-## Command
+## Release gate (the candidate evidence)
+
+Candidate commit `744f32ddaf238ce3beeb49e53ffc4880f8781e92`, clean working tree
+(`git_dirty: false` in the report), target `http://127.0.0.1:8001`:
+
+```bash
+bash tools/verify.sh --live
+# ci: ok (1045 Python + 94 Playwright)
+# stress: PASS — 0 unique finding(s)
+# live UI: 4 passed — routes, markets/token, paper buy/sell, graph builder
+# verify: ok (live)
+```
+
+## Standalone stress drill
+
+The same `--mode all` suite can be run alone for a longer or isolated drill:
 
 ```bash
 EZCHAIN_STRESS_API_TOKEN=... \
   tools/stress/run.sh --mode all --duration 5 --concurrency 4 \
   --base-url http://127.0.0.1:8001 \
   --chain base --token 0x4200000000000000000000000000000000000006 --token-symbol WETH
-```
-
-## Observed result
-
-Candidate commit `744f32ddaf238ce3beeb49e53ffc4880f8781e92`, clean working tree
-(`git_dirty: false` in the report), run via the release gate:
-
-```bash
-bash tools/verify.sh --live
-# ci: ok (1044 Python + 94 Playwright)
-# stress: PASS — 0 unique finding(s)
-# live UI: 4 passed — routes, markets/token, paper buy/sell, graph builder
-# verify: ok (live)
 ```
 
 The run exercised, in order: smoke (full flow), idempotency, fuzz (27 invalid-input

@@ -10,7 +10,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
-DEFAULT_DATABASE_URL = "postgresql+psycopg://jinultimate@localhost:5432/ezchain"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/ezchain"
 DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 MIN_PROD_TOKEN_LENGTH = 32
 

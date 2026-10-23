@@ -38,13 +38,13 @@ create a strategy and watch it place paper orders. Every number carries source, 
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
 - [x] Production ops: Alembic 0001–0003, genesis/fill uniqueness, bearer auth + CSRF
   proxy, `/healthz`/`/readyz`/`/metrics`, JSON logs, runtime-only image deps.
-- [x] Runnable PAPER Compose stack and Caddy edge; Docker build/up **not verified** here.
+- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0006**.
 - [x] Stress harness (smoke/soak/idempotency/chaos) with deduplicated issue filing;
   #71 detected and closed by #72.
 - [x] Web truth: fixture badges, DCA/dip vocabulary, Playwright build guard.
-- [ ] Docker build/`compose up` on a machine with a container runtime.
+- [ ] Re-drill Docker build/`compose up` at the current migration head (historical 0003 drill recorded).
 - [ ] Per-user auth/RBAC; one deployment token today.
-- [ ] Dashboard equity history/attribution/risk/wallets remain fixture previews (#57).
+- [ ] Dashboard equity-snapshot history remains absent; wallets have no backend yet (#57).
 - [ ] EVM/venue execution and executor/vault (out of paper scope).
 
 ## Current — M1: UI close-out
@@ -68,9 +68,8 @@ catch-all is gone.
 - Make `tools/ci.sh` deterministic; the same commit must not pass and fail (#36).
 
 **Known M1 gaps:** responsive tables still scroll instead of becoming cards; markets
-filters/watchlist are preview-only (#33); position detail links to the generic placeholder;
-the dark “Instrument” visual pass is still pending; ADR-0014–0019 and this roadmap need
-maintainer review (#39).
+watchlists are absent (#33); the dark “Instrument” visual pass is still pending;
+ADR-0014–0019 and this roadmap need maintainer review (#39).
 
 Exit: `main` renders the full M1 surface at 1440 and 390 px with no external requests,
 `bash tools/ci.sh` is green on five consecutive runs, and no screen implies live data.
