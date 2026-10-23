@@ -149,8 +149,12 @@ export interface PaperOrderInput {
 	chain: string;
 	token_address: string;
 	side: Side;
-	/** Decimal string in USD, quantised by the API. */
-	amount_usd: string;
+	/**
+	 * Decimal string in USD, quantised by the API. Omit on a buy to let the API resolve
+	 * the size from the persisted policy and server equity. A sell must state it.
+	 */
+	amount_usd?: string;
+	risk_profile?: "low" | "mid" | "high";
 	idempotency_key: string;
 }
 
@@ -163,6 +167,7 @@ export interface PaperOrder {
 	status: string;
 	reason: string | null;
 	quote_kind: string | null;
+	risk_profile?: string | null;
 	created_at: string;
 	filled_at: string | null;
 }

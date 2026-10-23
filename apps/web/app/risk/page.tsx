@@ -10,6 +10,7 @@ import {
 	getPaperSnapshot,
 	type PaperOrderRecord,
 } from "@/lib/paper-api";
+import { getTradePolicy } from "@/lib/trade-policy";
 import { KillSwitchControl } from "./kill-switch";
 
 export const dynamic = "force-dynamic";
@@ -33,13 +34,16 @@ function rejectionSummary(orders: PaperOrderRecord[]) {
 }
 
 export default async function RiskPage() {
-	const [snapshot, killSwitchResult, ordersResult, limitsResult] = await Promise.all([
-		getPaperSnapshot(),
-		getKillSwitch(),
-		getPaperOrders(100),
-		getPaperLimits(),
-	]);
+	const [snapshot, killSwitchResult, ordersResult, limitsResult, policyResult] =
+		await Promise.all([
+			getPaperSnapshot(),
+			getKillSwitch(),
+			getPaperOrders(100),
+			getPaperLimits(),
+			getTradePolicy(),
+		]);
 	const limits = limitsResult.ok ? limitsResult.data : null;
+	const policy = policyResult.ok ? policyResult.data : null;
 	const mode = snapshot.mode;
 	const account = snapshot.account.ok ? snapshot.account.data : null;
 	const positions = snapshot.positions.ok ? snapshot.positions.data : [];
@@ -179,6 +183,118 @@ export default async function RiskPage() {
 					</div>
 				) : (
 					<Unavailable title="Limits unavailable" code={limitsResult.ok ? "UNAVAILABLE" : limitsResult.code} message={limitsResult.ok ? "No limits returned." : limitsResult.message} />
+				)}
+			</Panel>
+
+			<Panel
+				title="Trade sizing policy"
+				sub={
+					policy
+						? policy.source === "persisted"
+							? "persisted · API"
+							: "config defaults · not yet saved"
+						: "unavailable"
+				}
+				action={
+					mode === "fixture" ? (
+						<FixtureBadge />
+					) : (
+						<Badge tone="ghost">/api/v1/settings/trade-policy</Badge>
+					)
+				}
+				className="mb-12"
+				footer={
+					policy ? (
+						<span>
+							Sizes are resolved by the API from server equity, never by this page. A
+							resolved size is not risk approval: existing order, position and paper-mark
+							gates still apply. <Link href="/settings">Edit the policy in Settings</Link>.
+						</span>
+					) : undefined
+				}
+			>
+				{policy ? (
+					<div className="stack">
+						<div className="grid cols-4">
+							<div className="between small">
+								<span>Envelope minimum</span>
+								<span className="mono">{formatUsd(policy.min_amount_usd)}</span>
+							</div>
+							<div className="between small">
+								<span>Envelope minimum %</span>
+								<span className="mono">{policy.min_pct_equity}%</span>
+							</div>
+							<div className="between small">
+								<span>Envelope maximum</span>
+								<span className="mono">{formatUsd(policy.max_amount_usd)}</span>
+							</div>
+							<div className="between small">
+								<span>Envelope maximum %</span>
+								<span className="mono">
+									{policy.max_pct_equity === null ? "—" : `${policy.max_pct_equity}%`}
+								</span>
+							</div>
+						</div>
+						<div className="table-wrap">
+							<table className="table compact">
+								<thead>
+									<tr>
+										<th>Profile</th>
+										<th className="num">Min · USD</th>
+										<th className="num col-hide-sm">Min · %</th>
+										<th className="num">Max · USD</th>
+										<th className="num col-hide-sm">Max · %</th>
+										<th className="num">Server preview</th>
+									</tr>
+								</thead>
+								<tbody>
+									{(["low", "mid", "high"] as const).map((profile) => {
+										const limits = policy.profiles[profile];
+										const preview = policy.previews[profile];
+										return (
+											<tr key={profile}>
+												<td>
+													<span className="strong">{profile}</span>
+													{profile === policy.default_profile && (
+														<Badge tone="ghost">default</Badge>
+													)}
+												</td>
+												<td className="num mono">{formatUsd(limits.min_amount_usd)}</td>
+												<td className="num mono col-hide-sm">{limits.min_pct_equity}%</td>
+												<td className="num mono">{formatUsd(limits.max_amount_usd)}</td>
+												<td className="num mono col-hide-sm">
+													{limits.max_pct_equity === null
+														? "—"
+														: `${limits.max_pct_equity}%`}
+												</td>
+												<td className="num">
+													{preview.reason ? (
+														<Badge tone="warn">{preview.reason}</Badge>
+													) : (
+														<span className="mono">{formatUsd(preview.amount_usd)}</span>
+													)}
+												</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+						<p className="small muted">
+							Previewed against {formatUsd(policy.equity_usd)} server equity.
+							{policy.updated_at
+								? ` Last saved ${policy.updated_at}${
+										policy.updated_by ? ` by ${policy.updated_by}` : ""
+									}.`
+								: " No persisted row yet."}
+						</p>
+					</div>
+				) : (
+					<Unavailable
+						title="Trade policy unavailable"
+						code={policyResult.ok ? "UNAVAILABLE" : policyResult.error.code}
+						message={policyResult.ok ? "No policy returned." : policyResult.error.message}
+					/>
 				)}
 			</Panel>
 

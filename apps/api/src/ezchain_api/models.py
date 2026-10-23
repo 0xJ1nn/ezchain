@@ -117,6 +117,7 @@ class PaperOrderRow(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     quote_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    risk_profile: Mapped[str | None] = mapped_column(String(8), nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -207,6 +208,22 @@ class ApiKeyRow(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AppSettingRow(Base):
+    """One namespaced settings document, audited by timestamp and principal.
+
+    The trade-policy document lives here rather than in the ledger: a setting is not a
+    money movement and must never change a ledger replay. Values are JSON with decimal
+    strings, so a policy reads back exactly as the API returned it.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    updated_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
 class SystemFlagRow(Base):

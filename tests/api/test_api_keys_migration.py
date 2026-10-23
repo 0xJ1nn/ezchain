@@ -30,9 +30,13 @@ def test_api_keys_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     config.set_main_option("sqlalchemy.url", url)
     config.attributes["database_url"] = url
     engine = create_engine(url)
-    # The Postgres-only baseline cannot run on SQLite; seed the table 0007 alters.
+    # The Postgres-only baseline cannot run on SQLite; seed the table 0007 alters, plus
+    # ``paper_orders`` because a later trade-policy revision adds a column to it.
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
+        connection.execute(
+            text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, amount_usd TEXT)")
+        )
     command.stamp(config, "0007_strategy_plugins")
     command.upgrade(config, "head")
     try:

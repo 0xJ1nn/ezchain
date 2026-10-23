@@ -21,7 +21,17 @@ from .ledger import (
     sell_entries,
 )
 from .money import bps_fee
-from .risk import RiskLimits, evaluate_order
+from .risk import (
+    PROFILE_NAMES,
+    RiskLimits,
+    TradeSizeLimits,
+    TradeSizePolicy,
+    TradeSizeResolution,
+    effective_trade_size_limits,
+    evaluate_order,
+    resolve_trade_size,
+    validate_trade_policy,
+)
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
     Candle,
@@ -40,6 +50,7 @@ from .types import (
 )
 
 __all__ = [
+    "PROFILE_NAMES",
     "Candle",
     "GateCheck",
     "GateEvidence",
@@ -60,10 +71,14 @@ __all__ = [
     "StrategyDecision",
     "StrategySpec",
     "TokenSnapshot",
+    "TradeSizeLimits",
+    "TradeSizePolicy",
+    "TradeSizeResolution",
     "assert_balanced",
     "bps_fee",
     "buy_entries",
     "cash_account",
+    "effective_trade_size_limits",
     "evaluate_gate",
     "evaluate_order",
     "evaluate_strategy",
@@ -73,6 +88,8 @@ __all__ = [
     "realized_account",
     "realized_pnl",
     "replay_position",
+    "resolve_trade_size",
     "sell_entries",
     "utcnow",
+    "validate_trade_policy",
 ]

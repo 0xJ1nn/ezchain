@@ -61,6 +61,7 @@ export interface PaperOrderRecord {
 	status: string;
 	reason: string | null;
 	quote_kind: string | null;
+	risk_profile?: string | null;
 	created_at: string;
 	filled_at: string | null;
 }
@@ -160,7 +161,7 @@ interface ErrorEnvelope {
 	detail?: { code?: string; message?: string } | string;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`${apiBase()}/api/v1${path}`, {
 		...init,
 		cache: "no-store",
@@ -197,7 +198,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	return (await response.json()) as T;
 }
 
-async function capture<T>(work: () => Promise<T>): Promise<PaperResult<T>> {
+export async function capture<T>(work: () => Promise<T>): Promise<PaperResult<T>> {
 	const mode = webMode();
 	try {
 		return { ok: true, mode, data: await work() };
@@ -308,7 +309,7 @@ export async function getPaperAccount(): Promise<PaperResult<PaperAccount>> {
 				positions: clonePositions(fixturePaperAccount.positions),
 			};
 		}
-		return request<PaperAccount>("/paper/account");
+		return apiRequest<PaperAccount>("/paper/account");
 	});
 }
 
@@ -317,7 +318,7 @@ export async function getPaperPositions(): Promise<PaperResult<PaperPosition[]>>
 		if (webMode() === "fixture") {
 			return clonePositions(fixturePaperPositions);
 		}
-		return request<PaperPosition[]>("/paper/positions");
+		return apiRequest<PaperPosition[]>("/paper/positions");
 	});
 }
 
@@ -343,7 +344,7 @@ export async function getPaperOrders(limit = 100): Promise<PaperResult<PaperOrde
 			const fixtures = await import("./ops-fixtures");
 			return fixtures.fixtureOrders(bounded);
 		}
-		return request<PaperOrderRecord[]>(`/paper/orders?limit=${bounded}`);
+		return apiRequest<PaperOrderRecord[]>(`/paper/orders?limit=${bounded}`);
 	});
 }
 
@@ -354,7 +355,7 @@ export async function getPaperFills(limit = 100): Promise<PaperResult<PaperFillR
 			const fixtures = await import("./ops-fixtures");
 			return fixtures.fixtureFills(bounded);
 		}
-		return request<PaperFillRecord[]>(`/paper/fills?limit=${bounded}`);
+		return apiRequest<PaperFillRecord[]>(`/paper/fills?limit=${bounded}`);
 	});
 }
 
@@ -370,7 +371,7 @@ export async function getReconciliation(): Promise<PaperResult<Reconciliation>> 
 				"Reconciliation is computed from the paper database and is not probed in fixture mode.",
 			);
 		}
-		return request<Reconciliation>("/paper/reconciliation");
+		return apiRequest<Reconciliation>("/paper/reconciliation");
 	});
 }
 
@@ -384,7 +385,7 @@ export async function getKillSwitch(): Promise<PaperResult<KillSwitchState>> {
 				scope: "strategy",
 			};
 		}
-		return request<KillSwitchState>("/system/kill-switch");
+		return apiRequest<KillSwitchState>("/system/kill-switch");
 	});
 }
 
@@ -396,7 +397,7 @@ export async function setKillSwitch(
 	active: boolean,
 	reason: string,
 ): Promise<KillSwitchState> {
-	return request<KillSwitchState>("/system/kill-switch", {
+	return apiRequest<KillSwitchState>("/system/kill-switch", {
 		method: "POST",
 		body: JSON.stringify({ active, reason }),
 	});
@@ -411,7 +412,7 @@ export async function getStrategies(): Promise<PaperResult<Strategy[]>> {
 				params: { ...strategy.params },
 			}));
 		}
-		const rows = await request<Strategy[]>("/strategies");
+		const rows = await apiRequest<Strategy[]>("/strategies");
 		return rows.map(normalizeStrategy);
 	});
 }
@@ -425,7 +426,7 @@ export async function getStrategy(id: string): Promise<PaperResult<Strategy>> {
 			}
 			return { ...found, params: { ...found.params } };
 		}
-		return normalizeStrategy(await request<Strategy>(`/strategies/${id}`));
+		return normalizeStrategy(await apiRequest<Strategy>(`/strategies/${id}`));
 	});
 }
 
@@ -437,7 +438,7 @@ export async function getStrategyRuns(id: string): Promise<PaperResult<StrategyR
 				.sort((a, b) => b.created_at.localeCompare(a.created_at))
 				.map((run) => ({ ...run, inputs: { ...run.inputs } }));
 		}
-		return request<StrategyRun[]>(`/strategies/${id}/runs`);
+		return apiRequest<StrategyRun[]>(`/strategies/${id}/runs`);
 	});
 }
 
@@ -448,9 +449,9 @@ export async function getAllStrategyRuns(): Promise<PaperResult<StrategyRun[]>> 
 				.sort((a, b) => b.created_at.localeCompare(a.created_at))
 				.map((run) => ({ ...run, inputs: { ...run.inputs } }));
 		}
-		const strategies = await request<Strategy[]>("/strategies");
+		const strategies = await apiRequest<Strategy[]>("/strategies");
 		const runs = await Promise.all(
-			strategies.map((strategy) => request<StrategyRun[]>(`/strategies/${strategy.id}/runs`)),
+			strategies.map((strategy) => apiRequest<StrategyRun[]>(`/strategies/${strategy.id}/runs`)),
 		);
 		return runs.flat().sort((a, b) => b.created_at.localeCompare(a.created_at));
 	});
@@ -460,7 +461,7 @@ export async function getAllStrategyRuns(): Promise<PaperResult<StrategyRun[]>> 
 // store in the strategy client; the API is never touched.
 export async function createStrategy(input: StrategyInput): Promise<Strategy> {
 	return normalizeStrategy(
-		await request<Strategy>("/strategies", {
+		await apiRequest<Strategy>("/strategies", {
 			method: "POST",
 			body: JSON.stringify(input),
 		}),
@@ -469,7 +470,7 @@ export async function createStrategy(input: StrategyInput): Promise<Strategy> {
 
 export async function patchStrategy(id: string, patch: StrategyPatch): Promise<Strategy> {
 	return normalizeStrategy(
-		await request<Strategy>(`/strategies/${id}`, {
+		await apiRequest<Strategy>(`/strategies/${id}`, {
 			method: "PATCH",
 			body: JSON.stringify(patch),
 		}),
@@ -477,11 +478,11 @@ export async function patchStrategy(id: string, patch: StrategyPatch): Promise<S
 }
 
 export async function deleteStrategy(id: string): Promise<void> {
-	await request<void>(`/strategies/${id}`, { method: "DELETE" });
+	await apiRequest<void>(`/strategies/${id}`, { method: "DELETE" });
 }
 
 export async function runStrategy(id: string): Promise<StrategyRun> {
-	return request<StrategyRun>(`/strategies/${id}/run`, { method: "POST" });
+	return apiRequest<StrategyRun>(`/strategies/${id}/run`, { method: "POST" });
 }
 
 function normalizeStrategy(row: Strategy): Strategy {

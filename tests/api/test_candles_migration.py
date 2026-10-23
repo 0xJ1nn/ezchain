@@ -89,9 +89,13 @@ def test_market_candles_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     config = _config(url)
     engine = create_engine(url)
     # 0003 uses Postgres-only DDL, so start a SQLite database at 0003 and run the tail.
-    # The strategies table is seeded because a later revision adds columns to it.
+    # The strategies table is seeded because a later revision adds columns to it;
+    # ``paper_orders`` is seeded because the trade-policy revision alters it.
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
+        connection.execute(
+            text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, amount_usd TEXT)")
+        )
     command.stamp(config, "0003_paper_fill_order")
     command.upgrade(config, "head")
     try:

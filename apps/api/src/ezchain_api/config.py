@@ -10,6 +10,8 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from ezchain_core import TradeSizeLimits, TradeSizePolicy, validate_trade_policy
+
 DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/ezchain"
 DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 MIN_PROD_TOKEN_LENGTH = 32
@@ -69,6 +71,29 @@ class Settings(BaseSettings):
     # Execution-cost ceiling for a new position, as a ratio (0.05 = 5%). Applies to
     # executable quotes only; a paper_mark reports no impact and a sell is never blocked.
     max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
+    # Server-derived trade sizing. The four top-level fields are the workspace envelope;
+    # each profile may only tighten it (validated at boot and on every settings write).
+    # Defaults are conservative and preserve the existing manual path: the default mid
+    # profile resolves to $150 at $10k equity, while the existing $1000 order gate and
+    # the $250 paper-mark gate still apply unchanged.
+    trade_default_profile: Literal["low", "mid", "high"] = "mid"
+    trade_min_amount_usd: Decimal = Field(default=Decimal("10"), ge=0)
+    trade_min_pct_equity: Decimal = Field(default=Decimal("0.10"), ge=0, le=100)
+    trade_max_amount_usd: Decimal = Field(default=Decimal("1000"), ge=0)
+    trade_max_pct_equity: Decimal = Field(default=Decimal("5"), ge=0, le=100)
+    trade_low_min_amount_usd: Decimal = Field(default=Decimal("10"), ge=0)
+    trade_low_min_pct_equity: Decimal = Field(default=Decimal("0.10"), ge=0, le=100)
+    trade_low_max_amount_usd: Decimal = Field(default=Decimal("50"), ge=0)
+    trade_low_max_pct_equity: Decimal = Field(default=Decimal("1"), ge=0, le=100)
+    trade_mid_min_amount_usd: Decimal = Field(default=Decimal("10"), ge=0)
+    trade_mid_min_pct_equity: Decimal = Field(default=Decimal("0.10"), ge=0, le=100)
+    trade_mid_max_amount_usd: Decimal = Field(default=Decimal("150"), ge=0)
+    trade_mid_max_pct_equity: Decimal = Field(default=Decimal("2"), ge=0, le=100)
+    trade_high_min_amount_usd: Decimal = Field(default=Decimal("10"), ge=0)
+    trade_high_min_pct_equity: Decimal = Field(default=Decimal("0.10"), ge=0, le=100)
+    trade_high_max_amount_usd: Decimal = Field(default=Decimal("500"), ge=0)
+    trade_high_max_pct_equity: Decimal = Field(default=Decimal("5"), ge=0, le=100)
+
     # Paper-to-live promotion gate (ADR-0009). Computed, never auto-promoted.
     paper_gate_min_days: int = Field(default=14, ge=1, le=365)
     paper_gate_min_intents: int = Field(default=100, ge=1)
@@ -84,6 +109,46 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def _validate_trade_policy_defaults(self) -> Settings:
+        errors = validate_trade_policy(self.trade_size_policy)
+        if errors:
+            raise ValueError("invalid trade sizing defaults: " + ", ".join(errors))
+        return self
+
+    @property
+    def trade_size_policy(self) -> TradeSizePolicy:
+        """The config-derived policy. Persisted settings replace it field-for-field."""
+        return TradeSizePolicy(
+            limits=TradeSizeLimits(
+                min_amount_usd=self.trade_min_amount_usd,
+                min_pct_equity=self.trade_min_pct_equity,
+                max_amount_usd=self.trade_max_amount_usd,
+                max_pct_equity=self.trade_max_pct_equity,
+            ),
+            profiles={
+                "low": TradeSizeLimits(
+                    min_amount_usd=self.trade_low_min_amount_usd,
+                    min_pct_equity=self.trade_low_min_pct_equity,
+                    max_amount_usd=self.trade_low_max_amount_usd,
+                    max_pct_equity=self.trade_low_max_pct_equity,
+                ),
+                "mid": TradeSizeLimits(
+                    min_amount_usd=self.trade_mid_min_amount_usd,
+                    min_pct_equity=self.trade_mid_min_pct_equity,
+                    max_amount_usd=self.trade_mid_max_amount_usd,
+                    max_pct_equity=self.trade_mid_max_pct_equity,
+                ),
+                "high": TradeSizeLimits(
+                    min_amount_usd=self.trade_high_min_amount_usd,
+                    min_pct_equity=self.trade_high_min_pct_equity,
+                    max_amount_usd=self.trade_high_max_amount_usd,
+                    max_pct_equity=self.trade_high_max_pct_equity,
+                ),
+            },
+            default_profile=self.trade_default_profile,
+        )
 
     @model_validator(mode="after")
     def _validate_production(self) -> Settings:

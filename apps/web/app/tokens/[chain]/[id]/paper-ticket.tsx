@@ -12,6 +12,7 @@ import {
 	type Side,
 } from "@/lib/api";
 import { ageLabel, formatAmount, formatPrice, formatUsd, quoteKindLabel, sourceLabel } from "@/lib/live-format";
+import type { RiskProfile, TradePolicyView } from "@/lib/trade-policy";
 import styles from "./token.module.css";
 
 type TicketState =
@@ -49,6 +50,10 @@ export function PaperTicket({
 	amount,
 	quote,
 	quoteReason,
+	profile,
+	policy,
+	policyError,
+	fixturePolicy,
 }: {
 	chain: string;
 	tokenAddress: string;
@@ -57,19 +62,25 @@ export function PaperTicket({
 	amount: string;
 	quote: Quote | null;
 	quoteReason: Reason | null;
+	profile: RiskProfile;
+	policy: TradePolicyView | null;
+	policyError: string | null;
+	fixturePolicy: boolean;
 }) {
 	const router = useRouter();
 	const pathname = usePathname();
 	const [pending, startTransition] = useTransition();
 	const [localSide, setLocalSide] = useState<Side>(side);
 	const [localAmount, setLocalAmount] = useState(amount);
+	const [localProfile, setLocalProfile] = useState<RiskProfile>(profile);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [state, setState] = useState<TicketState>({ kind: "idle" });
 	const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 
+	const serverPreview = policy?.previews[localProfile] ?? null;
 	const quoteIdentity = quote
-		? `${quote.side}|${quote.amount_in}|${quote.token_out}|${quote.source.observed_at}`
-		: `no-quote|${side}|${amount}`;
+		? `${quote.side}|${quote.amount_in}|${quote.token_out}|${quote.source.observed_at}|${localProfile}`
+		: `no-quote|${side}|${amount}|${localProfile}`;
 
 	// New selection => new idempotency key. A retry of the same selection reuses it.
 	useEffect(() => {
@@ -82,18 +93,31 @@ export function PaperTicket({
 	const quoteUsd = quote?.side === "buy" ? quote.amount_in : amount;
 	const matches =
 		quote !== null && quote.side === localSide && sameAmount(localAmount, quoteUsd);
-	const amountValid = /^\d+(\.\d{1,2})?$/.test(localAmount.trim()) && Number(localAmount) > 0;
 
-	function preview() {
-		if (!amountValid) {
+	function selectedQuery(amountValue: string): URLSearchParams {
+		const query = new URLSearchParams({ side: localSide, amount: amountValue });
+		if (localSide === "buy") query.set("profile", localProfile);
+		return query;
+	}
+
+	function preview(amountOverride?: string) {
+		const candidate = (amountOverride ?? localAmount).trim();
+		if (!/^\d+(\.\d{1,2})?$/.test(candidate) || Number(candidate) <= 0) {
 			setFormError("Enter a positive USD amount with at most 2 decimals.");
 			return;
 		}
 		setFormError(null);
-		const query = new URLSearchParams({ side: localSide, amount: localAmount.trim() });
+		if (amountOverride !== undefined) setLocalAmount(candidate);
+		const query = selectedQuery(candidate);
 		startTransition(() => {
 			router.push(`${pathname}?${query.toString()}`);
 		});
+	}
+
+	function useServerSize() {
+		const resolved = serverPreview?.amount_usd;
+		if (!resolved) return;
+		preview(resolved);
 	}
 
 	async function confirm() {
@@ -105,6 +129,7 @@ export function PaperTicket({
 				token_address: tokenAddress,
 				side: quote.side === "sell" ? "sell" : "buy",
 				amount_usd: localAmount,
+				...(quote.side === "buy" && policy ? { risk_profile: localProfile } : {}),
 				idempotency_key: idempotencyKey,
 			});
 			if (order.status === "rejected" || order.status === "cancelled") {
@@ -179,6 +204,69 @@ export function PaperTicket({
 						autoComplete="off"
 					/>
 				</label>
+
+				{localSide === "buy" && (
+					<div className="note">
+						<div className="between" style={{ gap: 12 }}>
+							<label className="field" style={{ maxWidth: 220 }}>
+								<span>Risk profile · server sized</span>
+								<select
+									className="select"
+									value={localProfile}
+									onChange={(event) => {
+										setLocalProfile(event.target.value as RiskProfile);
+										setFormError(null);
+									}}
+									aria-label="Risk profile for this paper buy"
+								>
+									<option value="low">low · conservative</option>
+									<option value="mid">mid · default</option>
+									<option value="high">high · aggressive</option>
+								</select>
+							</label>
+							<span className="small muted" style={{ maxWidth: 320 }}>
+								The API resolves a size from current equity and this profile. A manual
+								amount is validated against the same bounds, never resized.
+							</span>
+						</div>
+						{policy ? (
+							serverPreview ? (
+								serverPreview.reason ? (
+									<div className="small warn mt-8">
+										<Badge tone="warn">{serverPreview.reason}</Badge> No automatic size
+										can be derived. A manual amount may still fit the limits.
+									</div>
+								) : (
+									<div className="row small mt-8">
+										<Badge tone="ok">SERVER PREVIEW</Badge>
+										{fixturePolicy && <Badge tone="warn">FIXTURE SAMPLE</Badge>}
+										<span className="mono">{formatUsd(serverPreview.amount_usd)}</span>
+										<span className="muted">
+											at {formatUsd(serverPreview.equity_usd)} equity
+										</span>
+										<button
+											className="btn sm"
+											type="button"
+											onClick={useServerSize}
+											disabled={pending}
+										>
+											Use this size
+										</button>
+									</div>
+								)
+							) : (
+								<span className="small muted mt-8">No server preview returned.</span>
+							)
+						) : (
+							<span className="small muted mt-8">
+								Persisted policy unavailable
+								{policyError ? ` (${policyError})` : ""}; the API still validates a
+								manual amount against its default profile.
+							</span>
+						)}
+					</div>
+				)}
+
 				<div className="row">
 					<button className="btn" type="submit" disabled={pending}>
 						{pending ? "Previewing…" : "Preview quote"}
@@ -243,7 +331,7 @@ export function PaperTicket({
 
 			<div className="small muted" id="paper-ticket-hint">
 				{blockReason ??
-					"Confirm POSTs /api/v1/paper/orders with this browser-generated idempotency key. Paper only — no keys, no signing."}
+					"Confirm POSTs /api/v1/paper/orders with this browser-generated idempotency key and, for a buy, the selected risk profile. Paper only — no keys, no signing."}
 				{idempotencyKey && (
 					<span className={`mono ${styles.idem}`}>idem {idempotencyKey.slice(0, 8)}…</span>
 				)}
@@ -259,6 +347,7 @@ export function PaperTicket({
 					<div className="small">
 						{state.order.side.toUpperCase()} {formatUsd(state.order.amount_usd)} ·{" "}
 						{state.order.quote_kind ? quoteKindLabel(state.order.quote_kind) : "PAPER"} ·{" "}
+						{state.order.risk_profile ? `profile ${state.order.risk_profile} · ` : ""}
 						{state.order.filled_at ? `filled ${state.order.filled_at}` : `created ${state.order.created_at}`}
 					</div>
 					<div className="small muted mt-8">

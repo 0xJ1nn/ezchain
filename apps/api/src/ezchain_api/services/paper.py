@@ -27,6 +27,7 @@ from ezchain_core import (
     PositionView,
     Quote,
     RiskLimits,
+    Side,
     SourceRef,
     TokenSnapshot,
     bps_fee,
@@ -44,6 +45,7 @@ from ezchain_core.ledger import (
 
 from ..config import Settings
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow, new_id
+from . import trade_policy
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -386,6 +388,7 @@ def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | Non
         side=payload.side,
         amount_usd=payload.amount_usd,
         status="pending",
+        risk_profile=payload.risk_profile,
         strategy_id=payload.strategy_id,
         created_at=utcnow(),
     )
@@ -469,6 +472,132 @@ def _sized_sell(
     if mark is None or mark <= 0:
         return None
     return min(payload.amount_usd / mark, held_qty)
+
+
+def _reject_manual_size(
+    session: Session,
+    *,
+    chain: str,
+    token_address: str,
+    side: Side,
+    amount_usd: Decimal | None,
+    risk_profile: str | None,
+    idempotency_key: str,
+    reason: str,
+) -> PaperOrderRow:
+    """Persist a size refusal before any quote. The requested amount is never resized.
+
+    A refusal has no resolved notional, so an omitted automatic amount is stored as
+    ``0`` and the reason code is the authoritative record that no size was derived.
+    """
+    return _reject_new(
+        session,
+        OrderRequest(
+            chain=chain,
+            token_address=token_address,
+            side=side,
+            amount_usd=Decimal(0) if amount_usd is None else amount_usd,
+            idempotency_key=idempotency_key,
+            risk_profile=risk_profile,
+        ),
+        reason,
+    )
+
+
+async def place_manual_order(
+    session: Session,
+    *,
+    chain: str,
+    token_address: str,
+    side: Side,
+    amount_usd: Decimal | None,
+    risk_profile: str | None,
+    idempotency_key: str,
+    settings: Settings,
+    dexscreener: DexScreenerClient,
+    quotes: QuoteRouter,
+) -> PaperOrderRow:
+    """Resolve the manual order's size before any quote, then place it.
+
+    A buy with no amount is sized from the persisted policy and *server* equity. A
+    refusal is persisted as a rejected order before the quote exists, so there is no
+    silent default and no quote/fill to explain away. A sell is an exit: it requires an
+    explicit amount and keeps the existing rule that size limits never trap a position.
+    """
+    ensure_genesis(session, settings.paper_starting_cash_usd)
+    existing = _find_order(session, idempotency_key)
+    if existing is not None:
+        return existing
+
+    if side == "sell":
+        if amount_usd is None or amount_usd <= 0:
+            return _reject_manual_size(
+                session,
+                chain=chain,
+                token_address=token_address,
+                side="sell",
+                amount_usd=amount_usd,
+                risk_profile=None,
+                idempotency_key=idempotency_key,
+                reason="AMOUNT_REQUIRED",
+            )
+        return await place_order(
+            session,
+            OrderRequest(
+                chain=chain,
+                token_address=token_address,
+                side="sell",
+                amount_usd=amount_usd,
+                idempotency_key=idempotency_key,
+                risk_profile=None,
+            ),
+            settings,
+            dexscreener,
+            quotes,
+        )
+
+    # Local import avoids the paper -> account_read -> paper import cycle at module load.
+    from .account_read import equity_usd as account_equity_usd
+
+    record = trade_policy.load_trade_policy(session, settings)
+    resolution = trade_policy.quantize_resolution(
+        trade_policy.resolve_order_size(
+            equity_usd=account_equity_usd(session),
+            record=record,
+            profile=risk_profile,
+            manual_amount_usd=amount_usd,
+        )
+    )
+    if not resolution.ok or resolution.amount_usd is None:
+        return _reject_manual_size(
+            session,
+            chain=chain,
+            token_address=token_address,
+            side="buy",
+            amount_usd=amount_usd,
+            # An unknown profile has no resolvable name; store NULL rather than an
+            # arbitrary client string in a column reserved for stable profile names.
+            risk_profile=resolution.profile,
+            idempotency_key=idempotency_key,
+            reason=resolution.reason or "SIZE_UNKNOWN",
+        )
+
+    # The resolver's amount is already the order notional at cent precision; it was
+    # re-checked against the same limits after quantization. Nothing resizes it again.
+    return await place_order(
+        session,
+        OrderRequest(
+            chain=chain,
+            token_address=token_address,
+            side="buy",
+            amount_usd=resolution.amount_usd,
+            idempotency_key=idempotency_key,
+            risk_profile=resolution.profile,
+        ),
+        settings,
+        dexscreener,
+        quotes,
+    )
 
 
 async def place_order(

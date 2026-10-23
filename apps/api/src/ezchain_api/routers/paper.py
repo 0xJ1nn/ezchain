@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
-from ezchain_core import OrderRequest
 
 from ..config import Settings, get_settings
 from ..deps import get_dexscreener, get_quote_router, get_session
@@ -45,6 +44,7 @@ def _order(row: PaperOrderRow) -> OrderOut:
         status=row.status,
         reason=row.reason,
         quote_kind=row.quote_kind,
+        risk_profile=row.risk_profile,
         created_at=_dt(row.created_at),
         filled_at=None if row.filled_at is None else _dt(row.filled_at),
     )
@@ -112,15 +112,19 @@ async def create_order(
             status_code=404,
             detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {payload.chain}"},
         )
-    request = OrderRequest(
-        chain=payload.chain,
-        token_address=payload.token_address,
-        side=payload.side,
-        amount_usd=payload.amount_usd,
-        idempotency_key=payload.idempotency_key,
-    )
     try:
-        row = await paper.place_order(session, request, settings, dexscreener, quotes)
+        row = await paper.place_manual_order(
+            session,
+            chain=payload.chain,
+            token_address=payload.token_address,
+            side=payload.side,
+            amount_usd=payload.amount_usd,
+            risk_profile=payload.risk_profile,
+            idempotency_key=payload.idempotency_key,
+            settings=settings,
+            dexscreener=dexscreener,
+            quotes=quotes,
+        )
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
     return _order(row)

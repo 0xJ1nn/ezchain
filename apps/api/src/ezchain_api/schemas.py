@@ -8,6 +8,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ezchain_core import TradeSizeLimits, TradeSizePolicy, validate_trade_policy
+
+# Stable profile names, shared by the order ticket, the settings payload and the resolver.
+RiskProfile = Literal["low", "mid", "high"]
+
 
 class ErrorBody(BaseModel):
     code: str
@@ -208,7 +213,12 @@ class PaperOrderIn(BaseModel):
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
     side: Literal["buy", "sell"]
-    amount_usd: Decimal = Field(gt=0)
+    # Omitted on a buy means "resolve from the persisted policy and server equity".
+    # A sell is an exit and must state its notional explicitly. The profile is an open
+    # string here so an unknown value is a recorded PROFILE_UNKNOWN refusal, not a
+    # silent fallback to the default profile.
+    amount_usd: Decimal | None = Field(default=None, gt=0)
+    risk_profile: str | None = Field(default=None, min_length=1, max_length=32)
     idempotency_key: str = Field(min_length=8, max_length=120)
 
     @field_validator("amount_usd", mode="before")
@@ -223,7 +233,9 @@ class PaperOrderIn(BaseModel):
 
     @field_validator("amount_usd")
     @classmethod
-    def cents(cls, value: Decimal) -> Decimal:
+    def cents(cls, value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return None
         if not value.is_finite():
             raise ValueError("amount_usd must be finite")
         try:
@@ -233,6 +245,12 @@ class PaperOrderIn(BaseModel):
         if quantized <= 0:
             raise ValueError("amount_usd must be > 0")
         return quantized
+
+    @model_validator(mode="after")
+    def sell_needs_an_amount(self) -> PaperOrderIn:
+        if self.side == "sell" and self.amount_usd is None:
+            raise ValueError("amount_usd is required for a sell")
+        return self
 
     @field_validator("idempotency_key")
     @classmethod
@@ -256,6 +274,7 @@ class OrderOut(BaseModel):
     status: str
     reason: str | None = None
     quote_kind: str | None = None
+    risk_profile: str | None = None
     created_at: str
     filled_at: str | None = None
 
@@ -341,6 +360,123 @@ class KillSwitchIn(BaseModel):
         if not self.active and not (self.reason or "").strip():
             raise ValueError("releasing the kill switch requires a reason")
         return self
+
+
+class TradeSizeLimitsModel(BaseModel):
+    """Absolute + percentage-of-equity bounds. Decimal serialises as a JSON string."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_amount_usd: Decimal = Field(ge=0)
+    min_pct_equity: Decimal = Field(ge=0, le=100)
+    max_amount_usd: Decimal | None = Field(default=None, ge=0)
+    max_pct_equity: Decimal | None = Field(default=None, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def finite_and_ordered(self) -> TradeSizeLimitsModel:
+        values = (
+            self.min_amount_usd,
+            self.min_pct_equity,
+            self.max_amount_usd,
+            self.max_pct_equity,
+        )
+        if any(value is not None and not value.is_finite() for value in values):
+            raise ValueError("trade limits must be finite")
+        if self.max_amount_usd is not None and self.min_amount_usd > self.max_amount_usd:
+            raise ValueError("min_amount_usd must be <= max_amount_usd")
+        if self.max_pct_equity is not None and self.min_pct_equity > self.max_pct_equity:
+            raise ValueError("min_pct_equity must be <= max_pct_equity")
+        return self
+
+
+class TradeProfilesModel(BaseModel):
+    """The three stable profile names. Unknown or missing names are a 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    low: TradeSizeLimitsModel
+    mid: TradeSizeLimitsModel
+    high: TradeSizeLimitsModel
+
+
+class TradePolicyFields(BaseModel):
+    """The workspace envelope and its profiles, without persistence metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_profile: RiskProfile
+    min_amount_usd: Decimal = Field(ge=0)
+    min_pct_equity: Decimal = Field(ge=0, le=100)
+    max_amount_usd: Decimal | None = Field(default=None, ge=0)
+    max_pct_equity: Decimal | None = Field(default=None, ge=0, le=100)
+    profiles: TradeProfilesModel
+
+    @model_validator(mode="after")
+    def valid_policy(self) -> TradePolicyFields:
+        for value in (
+            self.min_amount_usd,
+            self.min_pct_equity,
+            self.max_amount_usd,
+            self.max_pct_equity,
+        ):
+            if value is not None and not value.is_finite():
+                raise ValueError("trade policy values must be finite")
+        policy = self.to_core()
+        errors = validate_trade_policy(policy)
+        if errors:
+            raise ValueError("invalid trade policy: " + ", ".join(errors))
+        return self
+
+    def to_core(self) -> TradeSizePolicy:
+        def limits(model: TradeSizeLimitsModel) -> TradeSizeLimits:
+            return TradeSizeLimits(
+                min_amount_usd=model.min_amount_usd,
+                min_pct_equity=model.min_pct_equity,
+                max_amount_usd=model.max_amount_usd,
+                max_pct_equity=model.max_pct_equity,
+            )
+
+        return TradeSizePolicy(
+            limits=TradeSizeLimits(
+                min_amount_usd=self.min_amount_usd,
+                min_pct_equity=self.min_pct_equity,
+                max_amount_usd=self.max_amount_usd,
+                max_pct_equity=self.max_pct_equity,
+            ),
+            profiles={
+                "low": limits(self.profiles.low),
+                "mid": limits(self.profiles.mid),
+                "high": limits(self.profiles.high),
+            },
+            default_profile=self.default_profile,
+        )
+
+
+class TradePolicyIn(TradePolicyFields):
+    pass
+
+
+class TradeSizePreviewOut(BaseModel):
+    profile: RiskProfile
+    amount_usd: Decimal | None = None
+    reason: str | None = None
+    manual: bool = False
+    equity_usd: Decimal | None = None
+    limits: TradeSizeLimitsModel | None = None
+
+
+class TradeProfilePreviewsOut(BaseModel):
+    low: TradeSizePreviewOut
+    mid: TradeSizePreviewOut
+    high: TradeSizePreviewOut
+
+
+class TradePolicyOut(TradePolicyFields):
+    source: Literal["default", "persisted"]
+    updated_at: str | None = None
+    updated_by: str | None = None
+    equity_usd: Decimal | None = None
+    previews: TradeProfilePreviewsOut
 
 
 class StrategyIn(BaseModel):

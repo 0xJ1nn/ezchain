@@ -300,6 +300,17 @@ def performance(session: Session) -> dict[str, Any]:
     }
 
 
+def equity_usd(session: Session) -> Decimal | None:
+    """Server equity for sizing, or ``None`` when an open mark is unknown.
+
+    ``performance`` already applies the fail-closed rule: one missing mark makes the
+    portfolio total unknowable. Sizing must see that same null, never a total that
+    silently values the unknown position at zero.
+    """
+    value = performance(session)["equity_usd"]
+    return None if value is None else Decimal(str(value))
+
+
 def attribution(session: Session) -> list[dict[str, Any]]:
     _, _, _, books = _ledger_view(session)
     total_abs = sum((abs(book.realized_usd) for book in books), ZERO)

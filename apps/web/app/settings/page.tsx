@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
-import { Fact, ModeBadge } from "@/components/ops";
+import { Fact, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel } from "@/components/ui";
 import {
 	apiHostOnly,
@@ -8,13 +8,16 @@ import {
 	publicUrlConfigured,
 	webMode,
 } from "@/lib/runtime";
+import { getTradePolicy } from "@/lib/trade-policy";
+import { TradePolicyForm } from "./trade-policy-form";
 
 export const dynamic = "force-dynamic";
 
 const DOCS = "https://github.com/0xJ1nn/ezchain/blob/main";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
 	const mode = webMode();
+	const policy = await getTradePolicy();
 
 	return (
 		<AppShell active="settings">
@@ -23,9 +26,9 @@ export default function SettingsPage() {
 					<div className="crumbs">System / Settings</div>
 					<h1>Settings</h1>
 					<p className="sub">
-						Safe runtime facts for this deployment. Configuration is read from the server
-						environment; this page has no controls that would pretend to change a process it
-						cannot reach.
+						Runtime facts for this deployment plus the persisted trade-sizing policy. The
+						policy is enforced by the API before a quote; this page cannot compute or
+						override a size in the browser.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -38,6 +41,20 @@ export default function SettingsPage() {
 					</Link>
 				</div>
 			</header>
+
+			{policy.ok ? (
+				<div className="mb-12">
+					<TradePolicyForm initial={policy.data} mode={mode} />
+				</div>
+			) : (
+				<div className="mb-12">
+					<Unavailable
+						title="Trade policy unavailable"
+						code={policy.error.code}
+						message={policy.error.message}
+					/>
+				</div>
+			)}
 
 			<div className="grid cols-2">
 				<Panel title="Runtime" sub="read on the server">
@@ -102,8 +119,9 @@ export default function SettingsPage() {
 
 				<Panel title="Server-side configuration" sub="one home">
 					<p className="small muted">
-						These are process environment keys owned by the API, not editable in the browser.
-						They are listed by name so an operator can find them in the deployment docs.
+						These are process environment keys owned by the API. The trade policy has one
+						persisted override; the values below are the boot defaults used when no row has
+						been saved.
 					</p>
 					<div className="stack-sm small mono mt-12">
 						<div>EZCHAIN_DATABASE_URL</div>
@@ -115,21 +133,29 @@ export default function SettingsPage() {
 						<div>EZCHAIN_MAX_DAILY_LOSS_USD</div>
 						<div>EZCHAIN_MAX_QUOTE_AGE_SECONDS</div>
 						<div>EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS</div>
+						<div>EZCHAIN_TRADE_DEFAULT_PROFILE</div>
+						<div>EZCHAIN_TRADE_MIN_AMOUNT_USD</div>
+						<div>EZCHAIN_TRADE_MIN_PCT_EQUITY</div>
+						<div>EZCHAIN_TRADE_MAX_AMOUNT_USD</div>
+						<div>EZCHAIN_TRADE_MAX_PCT_EQUITY</div>
+						<div>EZCHAIN_TRADE_&lt;PROFILE&gt;_MIN_AMOUNT_USD</div>
+						<div>EZCHAIN_TRADE_&lt;PROFILE&gt;_MAX_PCT_EQUITY</div>
 					</div>
 					<p className="note mt-12">
-						Values are validated at API boot and are intentionally not echoed to a public
-						browser surface.
+						Values are validated at API boot and are intentionally not echoed as a secret.
+						The persisted policy is the authoritative sizing input.
 					</p>
 				</Panel>
 
 				<Panel title="What is not here" sub="honest boundary">
 					<div className="list">
 						<div className="list-row">
-							<Badge tone="warn">NO SAVE</Badge>
+							<Badge tone="ghost">SERVER</Badge>
 							<span className="grow">
-								<span className="title">Editable settings form</span>
+								<span className="title">Order size, equity and previews</span>
 								<span className="sub">
-									No settings mutation endpoint exists; a form would be a dead control.
+									Resolved by <span className="mono">/api/v1/settings/trade-policy</span>{" "}
+									and the paper ledger. The browser only renders the response.
 								</span>
 							</span>
 						</div>
@@ -169,9 +195,9 @@ export default function SettingsPage() {
 
 			<Panel title="Change summary" sub="server process" className="mt-16">
 				<p className="small muted">
-					Changing any key above requires a deliberate deployment change and a process
-					restart. This page cannot show a pending change because it has no write path. Health
-					and migration state are on{" "}
+					The trade policy is saved to one <span className="mono">app_settings</span> row with
+					an audit timestamp and principal. Other runtime keys still require a deliberate
+					deployment change and a process restart. Health and migration state are on{" "}
 					<Link href="/operations">Operations</Link>.
 				</p>
 			</Panel>

@@ -33,7 +33,18 @@ from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .errors import request_validation_error
 from .observability import ObservabilityMiddleware, configure_logging
-from .routers import account, agent, backtests, graph, markets, paper, plugins, strategies, system
+from .routers import (
+    account,
+    agent,
+    backtests,
+    graph,
+    markets,
+    paper,
+    plugins,
+    strategies,
+    system,
+)
+from .routers import settings as settings_router
 from .services.executor import PaperOrderExecutor
 from .services.graph import PaperGraphRuntime
 from .services.market_monitor import MarketMonitor
@@ -175,6 +186,7 @@ def create_app() -> FastAPI:
     app.include_router(markets.router)
     app.include_router(paper.router)
     app.include_router(account.router)
+    app.include_router(settings_router.router)
     app.include_router(strategies.router)
     app.include_router(graph.router)
     app.include_router(backtests.router)

@@ -28,6 +28,7 @@ import {
 	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
+import { getTradePolicy, type RiskProfile } from "@/lib/trade-policy";
 import { PaperTicket } from "./paper-ticket";
 import styles from "./token.module.css";
 
@@ -43,6 +44,10 @@ function readAmount(value: string): string {
 	const raw = value.trim();
 	if (/^\d+(\.\d{1,2})?$/.test(raw) && Number(raw) > 0) return raw;
 	return "100";
+}
+
+function readProfile(value: string): RiskProfile | null {
+	return value === "low" || value === "mid" || value === "high" ? value : null;
 }
 
 function reasonMessage(reason: Reason): string {
@@ -144,17 +149,23 @@ export default async function TokenPage({
 	}
 	const token = tokenResult.snapshot;
 
-	const [quoteResult, chainsResult] = await Promise.all([
+	const [quoteResult, chainsResult, policyResult] = await Promise.all([
 		getQuote({ chain, token: token.address, side, amountUsd: amount })
 			.then((quote) => ({ quote, reason: null as Reason | null }))
 			.catch((error: unknown) => ({ quote: null as Quote | null, reason: asApiError(error).toReason() })),
 		getChains()
 			.then((chains) => chains)
 			.catch(() => [] as Chain[]),
+		getTradePolicy(),
 	]);
 
 	const quote = quoteResult.quote;
 	const quoteReason = quoteResult.reason;
+	const policy = policyResult.ok ? policyResult.data : null;
+	const policyError = policyResult.ok
+		? null
+		: `${policyResult.error.code}: ${policyResult.error.message}`;
+	const profile = readProfile(one(raw.profile)) ?? policy?.default_profile ?? "mid";
 	const chainMeta = chainsResult.find((candidate) => candidate.id === chain);
 	const chainLabel = chainMeta?.name ?? chain;
 	const sourceName = token.source?.name;
@@ -531,7 +542,7 @@ export default async function TokenPage({
 					<Panel
 						title="Paper trade ticket"
 						action={<Badge tone="ghost">PAPER</Badge>}
-						footer="Paper only. The ticket sends chain, token, side, USD amount and a browser-generated idempotency key. No key material is collected."
+						footer="Paper only. The ticket sends chain, token, side, USD amount, the selected buy profile and a browser-generated idempotency key. No key material is collected."
 					>
 						<PaperTicket
 							chain={chain}
@@ -541,6 +552,10 @@ export default async function TokenPage({
 							amount={amount}
 							quote={quote}
 							quoteReason={quoteReason}
+							profile={profile}
+							policy={policy}
+							policyError={policyError}
+							fixturePolicy={policyResult.ok && policyResult.mode === "fixture"}
 						/>
 					</Panel>
 					</div>

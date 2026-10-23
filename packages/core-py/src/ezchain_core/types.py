@@ -288,6 +288,9 @@ class OrderRequest:
     amount_usd: Decimal
     idempotency_key: str
     strategy_id: str | None = None
+    # Set by the manual paper route after server sizing. Internal strategy orders leave
+    # it null: a strategy's own decision is not a user-selected profile.
+    risk_profile: str | None = None
 
 
 @dataclass(frozen=True)
