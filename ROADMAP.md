@@ -4,6 +4,10 @@ Status: living document, updated when a milestone opens or closes. The roadmap i
 permission for uncontrolled development: each item becomes a focused issue before work
 starts (`project.md` §30).
 
+> **ALPHA — PAPER ONLY.** Not ready for real-money trading. Official agent listings and
+> any live-mode claim are gated on the real-mode readiness section below; today's Hermes
+> and OpenClaw packs are local integrations, not official marketplace listings.
+
 The current code is the **PAPER stack with production operations and strategy SDK v1**:
 22/25 chain market observation, per-chain quote ladders, a paper ledger, declarative and
 visual graph strategies, external Python strategy plugins in a supervised worker, an MCP
@@ -129,6 +133,50 @@ intents producing one order and no key material outside the executor.
 
 Exit: a live intent without a paper-gate record is denied; the mode badge cannot be
 hardcoded; the kill switch is honored by the executor.
+
+## Later — Official agent distribution (post real-mode readiness)
+
+The local Hermes/OpenClaw packs ship today. "Official" means upstream listings with
+support and security review, and it waits for real mode.
+
+**Gate — all required before submitting or announcing an official listing:**
+
+- [ ] Live executor shipped, reviewed and reconciled to receipts (ADR-0026).
+- [ ] Paper gate enforced for strategy promotion; server-derived LIVE mode cannot be
+      forged; kill switch honored by the executor.
+- [ ] Per-user RBAC / scoped keys reviewed for the hosting model; multi-tenant ledger
+      partitioning decision recorded (ADR) or one-workspace-per-user documented.
+- [ ] Signed plugin/agent packages, provenance and a reproducible release artifact.
+- [ ] Security review of the MCP tool surface, key lifecycle and agent packs.
+- [ ] Alpha label removed only when the above are measured, not planned.
+
+**Hermes Agent:**
+
+- [ ] Official skill in the Hermes Skills Hub (`agentskills.io` format, versioned).
+- [ ] Official MCP catalog entry via a PR to `NousResearch/hermes-agent`
+      (`optional-mcps/ezchain/manifest.yaml`); Nous review is required.
+- [ ] Portable Agent Plugins bundle (`plugin.json` + `mcp.json` + skill) published from a
+      dedicated, signed repository.
+- [ ] Clean-profile install + `hermes mcp test` on the current stable release.
+
+**OpenClaw:**
+
+- [ ] Official skill/plugin package on ClawHub with pinned version, `openclaw` package
+      metadata, trust/provenance fields and install hints.
+- [ ] `openclaw plugins install` + `plugins inspect --runtime` + Gateway probe on the
+      current stable release.
+- [ ] Tool policy defaults that keep `place_paper_order`, strategy deletion and the kill
+      switch behind an approval.
+
+**Cross-cutting:**
+
+- [ ] One release checklist covering Hermes and OpenClaw versions, API migrations and
+      scope changes; no listing is updated without a measured probe.
+- [ ] Public compatibility matrix: harness version, bundle version, SDK version, API
+      version, paper-only/live status.
+
+Status: **not started.** The current `integrations/` packs are local and explicitly
+labelled alpha.
 
 ## Later — M5: Discovery & watchlists
 

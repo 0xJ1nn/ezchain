@@ -154,6 +154,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- README/roadmap now state the product is **alpha and paper-only**, explicitly not ready
+  for real-money trading, and gate official Hermes/OpenClaw marketplace listings on
+  real-mode readiness. README adds a contributor welcome section.
 - Execution mode is server-derived. `EZCHAIN_EXECUTION_MODE=live` is refused at boot
   until the executor ships; no API or MCP call accepts a mode argument.
 - Caddy now sends `/api/*` to `web:3000` so the Next.js route handler injects the bearer

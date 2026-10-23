@@ -1,6 +1,7 @@
 # TODO — ezCHAIN P0 + M1 close-out
 
-Status as of **2026-10-23**. The app is a **PAPER stack with production operations**:
+Status as of **2026-10-23**. The app is **alpha** and **paper-only**; it is not ready for
+real-money trading. The PAPER stack has production operations:
 continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
 ledger, declarative and visual graph strategies, external Python strategy plugins in a
 supervised worker, an MCP server for agents, backtests, strategy CRUD/scheduler,
@@ -48,6 +49,26 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Scoped agent keys with least-privilege scopes, read-auth toggle and revocation
   (0008_api_keys, ADR-0029).
 - [ ] Plugin backtest harness; signed packages; bwrap/seccomp; per-user scoped tokens.
+
+## Blocked — official agent distribution (post real-mode readiness)
+
+The local packs (`integrations/hermes`, `integrations/openclaw`) exist. Official listings
+wait for the real-mode gate and upstream review; do not announce them as official before
+every item is measured.
+
+- [ ] Live executor shipped, reconciled and reviewed; paper gate + server-derived LIVE
+      enforcement (ADR-0026).
+- [ ] Per-user RBAC / hosting model decided; multi-tenant ledger partitioning or
+      one-workspace-per-user documented.
+- [ ] Signed agent/plugin packages and a reproducible release artifact.
+- [ ] Hermes: official skill in the Skills Hub and an MCP catalog PR
+      (`optional-mcps/ezchain/manifest.yaml`); clean-profile `hermes mcp test` evidence.
+- [ ] OpenClaw: ClawHub package with pinned version, trust/provenance metadata and
+      `plugins inspect --runtime` / Gateway probe evidence.
+- [ ] Approval defaults for paper orders, strategy deletion and kill-switch mutations.
+- [ ] Public compatibility matrix (harness, bundle, SDK, API, paper/live) and a release
+      checklist.
+- [ ] Remove the alpha label only after the above are measured.
 
 ## Now — P0 live paper slice
 
