@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ezchain",
+  "version": "1.0.0",
+  "description": "ezCHAIN PAPER trading workspace: markets, ledger, strategies, backtests and risk through MCP.",
+  "homepage": "https://github.com/0xJ1nn/ezchain",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["trading", "crypto", "paper", "mcp", "ezchain"]
+}

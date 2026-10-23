@@ -46,6 +46,9 @@ create a strategy and watch it place paper orders. Every number carries source, 
 - [x] Server-derived execution mode; `EZCHAIN_EXECUTION_MODE=live` refused until the
   executor ships; computed live-readiness endpoint.
 - [x] 2026 research note, SDK contract, Hermes/OpenClaw integration docs, ADR-0028.
+- [x] First-class packs: Hermes skill + installer, OpenClaw Agent Plugins bundle.
+- [x] Scoped agent keys (`read`/`trade`/`admin`), read-auth toggle, audit timestamps
+  (migration 0008, ADR-0029).
 
 ## Done — production operations (paper)
 
@@ -65,7 +68,7 @@ create a strategy and watch it place paper orders. Every number carries source, 
 - [ ] EVM/venue execution and executor/vault (out of paper scope).
 - [ ] Plugin backtest harness (graph backtests remain the only harness).
 - [ ] Signed plugin packages, registry and a bwrap/seccomp profile.
-- [ ] Per-user RBAC and scoped API tokens for agents.
+- [ ] Multi-tenant ledger partitioning for one instance serving many users.
 
 ## Current — M1: UI close-out
 

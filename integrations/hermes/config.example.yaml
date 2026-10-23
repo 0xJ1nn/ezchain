@@ -1,0 +1,15 @@
+# Equivalent to:
+#   hermes mcp add ezchain --command ezchain-mcp --env ...
+# Keep the token in ~/.hermes/.env or your secret source, never in this file.
+mcp_servers:
+  ezchain:
+    command: ezchain-mcp
+    args: []
+    env:
+      EZCHAIN_API_URL: http://127.0.0.1:8000
+      EZCHAIN_API_TOKEN: ${EZCHAIN_API_TOKEN}
+      EZCHAIN_MCP_ALLOW_WRITES: "1"
+    tools:
+      # Read-only profile example: add write tools only for an operator profile.
+      # include: [ezchain_get_*, ezchain_list_*, ezchain_validate_*, ezchain_dry_run_*]
+      exclude: []

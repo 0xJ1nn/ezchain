@@ -13,7 +13,7 @@ Read-only is the default. Writes (paper orders, strategy changes, backtests, kil
 require both a bearer token and an explicit opt-in:
 
 ```bash
-export EZCHAIN_API_TOKEN="$(openssl rand -hex 32)"   # must match the API
+export EZCHAIN_API_TOKEN="ezk_…"   # a scoped read/trade key, not the admin token
 export EZCHAIN_MCP_ALLOW_WRITES=1
 ```
 

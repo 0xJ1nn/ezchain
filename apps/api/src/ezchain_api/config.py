@@ -6,7 +6,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # available with a warning; prod refuses to start without one.
     auth_enabled: bool = True
     api_token: SecretStr | None = None
+    # Scoped agent keys. Reads stay open by default for the self-hosted UI; a hosted
+    # deployment that serves agents should set this true and hand each agent a key.
+    require_auth_for_reads: bool = False
+    api_key_pepper: SecretStr | None = None
+    agent_key_default_ttl_days: int = Field(default=90, ge=1, le=3650)
 
     data_mode: Literal["live", "fixture"] = "live"
     # Server-derived execution mode. Live is refused until the executor exists; a client
@@ -71,6 +76,14 @@ class Settings(BaseSettings):
     paper_gate_require_backtest: bool = True
 
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
+
+    @field_validator("api_token", "api_key_pepper", mode="before")
+    @classmethod
+    def _blank_secret_is_unset(cls, value: object) -> object:
+        """An empty env var means "unset", matching the documented dev fallback."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def _validate_production(self) -> Settings:

@@ -32,10 +32,12 @@ MANIFEST = {
 }
 
 
-def _registry(tmp_path: Path, body: str) -> PluginRegistry:
+def _registry(
+    tmp_path: Path, body: str, manifest: dict[str, object] | None = None
+) -> PluginRegistry:
     root = tmp_path / "runtime"
     root.mkdir()
-    (root / "ezchain.plugin.json").write_text(json.dumps(MANIFEST))
+    (root / "ezchain.plugin.json").write_text(json.dumps(manifest or MANIFEST))
     (root / "runtime_plugin.py").write_text(textwrap.dedent(body))
     return PluginRegistry(paths=[tmp_path], include_entry_points=False)
 
@@ -61,7 +63,7 @@ class Runtime:
         )
 
 
-def _strategy(session) -> StrategyRow:  # type: ignore[no-untyped-def]
+def _strategy(session, params: dict[str, object] | None = None) -> StrategyRow:  # type: ignore[no-untyped-def]
     row = StrategyRow(
         name="plugin",
         chain="solana",
@@ -70,7 +72,8 @@ def _strategy(session) -> StrategyRow:  # type: ignore[no-untyped-def]
         kind="plugin",
         plugin_id="com.example.runtime",
         plugin_version="1.0.0",
-        params={
+        params=params
+        or {
             "interval_minutes": 60,
             "max_position_usd": 500,
             "config": {"entry_pct": 1},
@@ -84,9 +87,7 @@ def _strategy(session) -> StrategyRow:  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.asyncio
-async def test_a_plugin_buy_intent_becomes_a_buy_decision(
-    session_factory, tmp_path: Path
-) -> None:
+async def test_a_plugin_buy_intent_becomes_a_buy_decision(session_factory, tmp_path: Path) -> None:
     registry = _registry(
         tmp_path,
         """
@@ -187,5 +188,81 @@ async def test_multiple_intents_are_refused(session_factory, tmp_path: Path) -> 
             )
         assert decision.action == "hold"
         assert decision.reason == "PLUGIN_MULTIPLE_INTENTS"
+    finally:
+        await host.close_all()
+
+
+@pytest.mark.asyncio
+async def test_plugin_buy_is_clamped_to_the_strategy_caps(session_factory, tmp_path: Path) -> None:
+    registry = _registry(
+        tmp_path,
+        """
+        from decimal import Decimal
+        from ezchain_sdk import Intent, Strategy
+
+        class Plugin(Strategy):
+            def on_candle(self, ctx, candle):
+                return [Intent(side="buy", notional_usd=Decimal("1000"), reason="HUGE")]
+        """,
+    )
+    host = PluginHost(timeout_seconds=3)
+    try:
+        with session_factory() as session:
+            strategy = _strategy(
+                session,
+                {
+                    "interval_minutes": 60,
+                    "max_position_usd": 500,
+                    "order_usd": 1000,
+                    "config": {"entry_pct": 1},
+                },
+            )
+            decision = await evaluate_plugin_strategy(
+                session,
+                strategy,
+                make_snapshot(),
+                Runtime(datetime(2026, 10, 23, tzinfo=UTC)),
+                host,
+                registry,
+                now=datetime(2026, 10, 23, tzinfo=UTC),
+            )
+        assert decision.action == "buy"
+        assert decision.amount_usd == Decimal("500")
+        assert decision.inputs["requested_notional_usd"] == "1000"
+        assert decision.inputs["clamped_notional_usd"] == "500"
+    finally:
+        await host.close_all()
+
+
+@pytest.mark.asyncio
+async def test_plugin_without_submit_intent_cannot_trade(session_factory, tmp_path: Path) -> None:
+    manifest = {**MANIFEST, "permissions": ["read_market"]}
+    registry = _registry(
+        tmp_path,
+        """
+        from decimal import Decimal
+        from ezchain_sdk import Intent, Strategy
+
+        class Plugin(Strategy):
+            def on_candle(self, ctx, candle):
+                return [Intent(side="buy", notional_usd=Decimal("10"), reason="NOPE")]
+        """,
+        manifest,
+    )
+    host = PluginHost(timeout_seconds=3)
+    try:
+        with session_factory() as session:
+            strategy = _strategy(session)
+            decision = await evaluate_plugin_strategy(
+                session,
+                strategy,
+                make_snapshot(),
+                Runtime(datetime(2026, 10, 23, tzinfo=UTC)),
+                host,
+                registry,
+                now=datetime(2026, 10, 23, tzinfo=UTC),
+            )
+        assert decision.action == "hold"
+        assert decision.reason == "PLUGIN_INTENT_NOT_PERMITTED"
     finally:
         await host.close_all()

@@ -21,6 +21,7 @@ from typing import Any
 MAX_STATE_BYTES = 64 * 1024
 MAX_INTENTS = 20
 MAX_LOGS = 100
+MAX_LOG_BYTES = 128 * 1024
 
 
 def _apply_limits() -> None:
@@ -61,6 +62,23 @@ def _state(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(decoded, dict):
         raise ValueError("state must be an object")
     return decoded
+
+
+def _logs(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    logs = raw[:MAX_LOGS]
+    try:
+        encoded = json.dumps(logs, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError):
+        return []
+    if len(encoded.encode("utf-8")) > MAX_LOG_BYTES:
+        trimmed = logs[:10]
+        try:
+            if len(json.dumps(trimmed, separators=(",", ":")).encode("utf-8")) <= MAX_LOG_BYTES:
+                return trimmed
+        except (TypeError, ValueError):
+            pass
+        return []
+    return logs
 
 
 def _intents(raw: object) -> list[dict[str, Any]]:
@@ -195,7 +213,7 @@ def main() -> int:
                     "ok": True,
                     "intents": _intents(result),
                     "state": _state(context.state),
-                    "logs": context.logs[:MAX_LOGS],
+                    "logs": _logs(context.logs),
                 }
             )
         except Exception as exc:

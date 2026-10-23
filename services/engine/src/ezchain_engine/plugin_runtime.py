@@ -92,7 +92,15 @@ def _base_inputs(record: PluginRecord, tick: PluginTick, digest: str) -> dict[st
     }
 
 
-def _intent_decision(record: PluginRecord, tick: PluginTick, digest: str) -> StrategyDecision:
+def _intent_decision(
+    record: PluginRecord,
+    tick: PluginTick,
+    digest: str,
+    params: PluginParams,
+    *,
+    position_quantity: Decimal,
+    price_usd: Decimal | None,
+) -> StrategyDecision:
     inputs = _base_inputs(record, tick, digest)
     for line in tick.logs:
         logger.info(
@@ -103,6 +111,9 @@ def _intent_decision(record: PluginRecord, tick: PluginTick, digest: str) -> Str
         )
     if not tick.intents:
         return StrategyDecision("hold", Decimal(0), "PLUGIN_NO_ACTION", inputs)
+    if "submit_intent" not in record.manifest.permissions:
+        inputs["rejected_count"] = len(tick.intents)
+        return StrategyDecision("hold", Decimal(0), "PLUGIN_INTENT_NOT_PERMITTED", inputs)
     if len(tick.intents) > 1:
         inputs["rejected_count"] = len(tick.intents)
         return StrategyDecision("hold", Decimal(0), "PLUGIN_MULTIPLE_INTENTS", inputs)
@@ -116,6 +127,20 @@ def _intent_decision(record: PluginRecord, tick: PluginTick, digest: str) -> Str
         return StrategyDecision("hold", Decimal(0), "PLUGIN_UNSUPPORTED_INTENT", inputs)
     if intent.notional_usd <= 0:
         return StrategyDecision("hold", Decimal(0), "PLUGIN_INTENT_INVALID", inputs)
+    if intent.side == "buy":
+        if position_quantity > 0:
+            if price_usd is None:
+                return StrategyDecision("hold", Decimal(0), "PLUGIN_POSITION_UNKNOWN", inputs)
+            position_value = position_quantity * price_usd
+        else:
+            position_value = Decimal(0)
+        headroom = params.max_position_usd - position_value
+        allowed = min(intent.notional_usd, params.order_usd, max(Decimal(0), headroom))
+        inputs["requested_notional_usd"] = str(intent.notional_usd)
+        inputs["clamped_notional_usd"] = str(allowed)
+        if allowed <= 0:
+            return StrategyDecision("hold", Decimal(0), "MAX_POSITION", inputs)
+        return StrategyDecision("buy", allowed, intent.reason[:64], inputs)
     return StrategyDecision(
         intent.side,
         intent.notional_usd,
@@ -185,6 +210,12 @@ async def evaluate_plugin_strategy(
         bars = context.candles_for(record.manifest.primary_timeframe, 1)
         if bars:
             event = {"kind": "candle", "candle": bars[-1].to_dict()}
+    # The host knows the ledger position even when the plugin did not request
+    # ``read_account``; the per-strategy cap is enforced from the host's copy.
+    from .scheduler import position_state
+
+    position = position_state(session, strategy.chain, strategy.token_address)
+    price = None if snapshot.stale else snapshot.price_usd
     tick = await host.tick(strategy.id, record, context, event=event)
     digest = plugin_context_digest(context)
     if not tick.ok:
@@ -200,7 +231,14 @@ async def evaluate_plugin_strategy(
                 "context_digest": digest,
             },
         )
-    return _intent_decision(record, tick, digest)
+    return _intent_decision(
+        record,
+        tick,
+        digest,
+        params,
+        position_quantity=position.quantity,
+        price_usd=price,
+    )
 
 
 __all__ = [

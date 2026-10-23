@@ -4,7 +4,7 @@ Status as of **2026-10-23**. The app is a **PAPER stack with production operatio
 continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
 ledger, declarative and visual graph strategies, external Python strategy plugins in a
 supervised worker, an MCP server for agents, backtests, strategy CRUD/scheduler,
-migrations through `0007_strategy_plugins`, bearer auth, observability, a complete
+migrations through `0008_api_keys`, scoped agent keys, bearer auth, observability, a complete
 operator surface and a full-code stress harness. There are no keys, no signing and no live
 execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
@@ -28,7 +28,7 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Ops: Alembic 0001–0007 (fresh + legacy), bearer auth + CSRF proxy,
+- [x] Ops: Alembic 0001–0008 (fresh + legacy), scoped agent keys, bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
 - [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0006`).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
@@ -44,6 +44,9 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Plugin catalogue/validation/reload API and `kind=plugin` strategies (0007).
 - [x] MCP 2025-11-25 server (read tools/resources, paper-only writes, read-only default).
 - [x] Server-derived execution mode and computed live-readiness endpoint.
+- [x] First-class Hermes skill/installer and OpenClaw Agent Plugins bundle.
+- [x] Scoped agent keys with least-privilege scopes, read-auth toggle and revocation
+  (0008_api_keys, ADR-0029).
 - [ ] Plugin backtest harness; signed packages; bwrap/seccomp; per-user scoped tokens.
 
 ## Now — P0 live paper slice
