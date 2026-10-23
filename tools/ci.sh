@@ -4,6 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The gate must be hermetic. A developer running `verify.sh --live` exports the deployment
+# token for the live steps; unit tests assert the unset development default, so remove it
+# (and any signing secret) from the test environment. The caller's environment is not
+# modified: this script runs in a child shell.
+unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET
+
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 step "1/6 agent stubs"
