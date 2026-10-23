@@ -1,6 +1,7 @@
 # PRODUCTION READINESS — PAPER stack
 
-Status: **paper-ready, live-execution-not-built**. This document records what was
+Status: **alpha, paper-ready, live-execution-not-built**. Not ready for real-money
+trading. This document records what was
 measured on 2026-10-23, not what is planned. It is the honest answer to "can I run this
 and trust the paper numbers?".
 

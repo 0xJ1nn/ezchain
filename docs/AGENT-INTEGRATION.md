@@ -14,6 +14,10 @@ flowchart LR
   A --> S[(strategies)]
 ```
 
+> **ALPHA / PAPER ONLY.** These packs are local integrations, not official marketplace
+> listings. Official Hermes/OpenClaw publication is gated on real-mode readiness and
+> upstream review (see `ROADMAP.md`). Do not use this deployment for real money.
+
 ## 0. One-command packs
 
 | Harness | Pack | Install |

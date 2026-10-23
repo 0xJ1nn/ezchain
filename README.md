@@ -6,6 +6,13 @@ ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledg
 positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
+> **ALPHA — PAPER ONLY. NOT READY FOR REAL-MONEY TRADING.**
+> There are no keys, no signing and no live execution. The plugin SDK, agent packs and
+> HTTP surface may change between minor releases. Use it to research, paper-trade and
+> build integrations; do not point it at funds. See
+> [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md) for what is measured and
+> what is still missing.
+
 > Status: **PAPER stack — production operations + strategy SDK v1**. Continuous
 > all-chain market observation, per-chain quote ladders, an append-only paper ledger with
 > positions/PnL, user-defined declarative and visual graph strategies, **external Python
@@ -221,6 +228,26 @@ Operational detail — services, networks, backups, migration and rollback — i
 [docs/INFRA.md](docs/INFRA.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md). Services that do
 not exist yet (Redis, NATS, executor, ingest, a standalone engine) are recorded in
 `infra/compose.blueprint.yaml` and are not part of this stack.
+
+## Contributing
+
+**Contributors are most welcome.** The project is alpha and deliberately small; the most
+useful contributions are:
+
+- **Strategy plugin authors** — build against `packages/sdk-py`, add tests, and send the
+  manifest plus evidence. No strategy code is merged into this repository.
+- **Agent integration testers** — run `integrations/hermes` and `integrations/openclaw`
+  against Hermes/OpenClaw releases and report breakage with the version and probe output.
+- **Chain and venue adapters** — one adapter package, one contract suite, no cross-chain
+  conditionals.
+- **Docs and reproducibility** — a measured README, a failing-then-passing test, or a
+  clearer runbook is a real contribution.
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+the [issue templates](.github/ISSUE_TEMPLATE/), and `project.md` (canonical engineering
+rules). Good first issues are labelled `good first issue`; design and architecture
+changes need an ADR before code. Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md) for
+plugins and [integrations/README.md](integrations/README.md) for the agent packs.
 
 ## License
 

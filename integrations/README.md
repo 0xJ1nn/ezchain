@@ -1,5 +1,9 @@
 # Agent integration packs
 
+> **ALPHA / PAPER ONLY.** These are local packs, not official Hermes/OpenClaw marketplace
+> listings. Official publication is gated on real-mode readiness and upstream review; do
+> not use them for real-money trading.
+
 First-class packs for the two MCP-native agent harnesses. Both use the same
 `apps/mcp` server and the same ezCHAIN REST API; only installation differs.
 
