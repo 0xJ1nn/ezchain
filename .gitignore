@@ -55,3 +55,7 @@ scratch/
 # Internal agent orchestration, model policy, review logs, local handoffs.
 # These are deliberately NOT part of the public repository.
 .agents/
+
+# Desktop build artifacts (generated, never committed)
+apps/desktop/build/
+apps/desktop/dist/

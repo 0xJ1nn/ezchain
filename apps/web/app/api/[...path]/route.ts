@@ -24,6 +24,9 @@ function allowedOrigins(request: NextRequest): Set<string> {
 	const allowed = new Set<string>();
 	const configured = process.env.EZCHAIN_PUBLIC_URL;
 	if (configured) allowed.add(configured.replace(/\/+$/, ""));
+	// The desktop shell serves exactly one origin. Do not trust an arbitrary Host header:
+	// a DNS-rebinding page must not reach the token-injecting proxy.
+	if (process.env.EZCHAIN_DESKTOP === "1") return allowed;
 	const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
 	const proto = request.headers.get("x-forwarded-proto") ?? "http";
 	if (host) allowed.add(`${proto}://${host}`);

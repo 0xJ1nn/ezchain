@@ -9,7 +9,8 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -19,9 +20,41 @@ class Base(DeclarativeBase):
     pass
 
 
+def _engine_for(url: str) -> Engine:
+    """Build the engine with the pragmas an embedded SQLite deployment needs.
+
+    The desktop app runs the API, scheduler and market monitor in one process but FastAPI
+    executes synchronous routes in a threadpool. SQLite therefore needs
+    ``check_same_thread=False`` plus WAL and a busy timeout; PostgreSQL keeps its normal
+    pooled engine.
+    """
+    parsed = make_url(url)
+    if parsed.get_backend_name() != "sqlite":
+        return create_engine(url, pool_pre_ping=True, future=True)
+    engine = create_engine(
+        url,
+        pool_pre_ping=True,
+        future=True,
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection: object, _record: object) -> None:
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=30000")
+        finally:
+            cursor.close()
+
+    return engine
+
+
 @lru_cache
 def engine() -> Engine:
-    return create_engine(get_settings().database_url, pool_pre_ping=True, future=True)
+    return _engine_for(get_settings().database_url)
 
 
 @lru_cache
