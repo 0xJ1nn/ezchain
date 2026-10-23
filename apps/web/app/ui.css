@@ -45,9 +45,14 @@ svg { display: block; }
 /* ---------- shell ---------- */
 body {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   grid-template-rows: 24px 52px minmax(0, 1fr);
   min-height: 100vh;
+}
+/* The rail is a body class so the grid column, the nav and the toggle agree without
+   waiting for layout. The bootstrap script in the sidebar sets it before first paint. */
+body.sidebar-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
 }
 .fixture-banner {
   grid-row: 1;
@@ -92,7 +97,7 @@ body {
   top: 0;
   z-index: 40;
 }
-.brand { display: flex; align-items: baseline; gap: 8px; width: 204px; flex: 0 0 auto; }
+.brand { display: flex; align-items: baseline; gap: 8px; width: 200px; flex: 0 0 auto; }
 .brand-name { font-weight: 750; letter-spacing: -.02em; font-size: 15px; }
 .brand-tag { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .ws-chip, .chip {
@@ -142,25 +147,56 @@ body {
 .sidebar {
   grid-row: 3; grid-column: 1;
   background: var(--surface); border-right: 1px solid var(--line);
-  padding: 10px 8px 20px; position: sticky; top: 76px; height: calc(100vh - 76px);
-  overflow: auto;
+  padding: 8px 8px 16px; position: sticky; top: 76px; height: calc(100vh - 76px);
+  overflow-y: auto; overflow-x: hidden;
 }
-.nav-group { margin-bottom: 12px; }
+.sidebar-toggle {
+  width: 100%; min-height: 36px; display: flex; align-items: center; gap: 10px;
+  padding: 0 10px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--muted); font-size: 11px; cursor: pointer;
+  position: sticky; top: 0; z-index: 2;
+}
+.sidebar-toggle:hover { background: var(--surface-3); color: var(--ink); }
+.sidebar-toggle .g { width: 24px; flex: 0 0 24px; text-align: center; font-size: 17px; line-height: 1; color: var(--ink); }
+.nav-group { margin-bottom: 10px; }
 .nav-group > .nav-label {
   font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-  padding: 6px 8px 4px;
+  padding: 6px 10px 4px;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--r-sm);
-  color: var(--ink-2); font-size: 12.5px;
+  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 10px;
+  border-radius: var(--r-sm); color: var(--ink-2); font-size: 13px;
 }
-.nav-item .g { width: 16px; text-align: center; color: var(--muted); font-size: 11px; }
+.nav-item .g {
+  width: 24px; height: 24px; flex: 0 0 24px; display: grid; place-items: center;
+  color: var(--muted); font-size: 20px; line-height: 1; font-variant-emoji: text;
+  font-family: "Noto Sans Symbols", "Segoe UI Symbol", "Apple Symbols", var(--sans);
+}
+.nav-item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: var(--surface-3); text-decoration: none; }
 .nav-item.active { background: var(--ink); color: #fff; }
 .nav-item.active .g { color: #fff; }
 .nav-item .badge { margin-left: auto; }
 .sidebar-foot { padding: 10px 8px 0; border-top: 1px solid var(--line); margin-top: 8px; }
-.sidebar-foot a { display: block; font-size: 11px; color: var(--muted); padding: 3px 0; }
+.sidebar-foot .micro { font-size: 9px; letter-spacing: .03em; }
+
+/* Collapsed rail: labels are hidden visually but every link keeps its aria-label and
+   title, and the floating tip makes the label readable on hover and keyboard focus. */
+body.sidebar-collapsed .sidebar { padding-left: 6px; padding-right: 6px; }
+body.sidebar-collapsed .sidebar-toggle { justify-content: center; padding: 0; }
+body.sidebar-collapsed .sidebar-toggle .t { display: none; }
+body.sidebar-collapsed .nav-group { margin-bottom: 6px; }
+body.sidebar-collapsed .nav-label { display: none; }
+body.sidebar-collapsed .nav-item { justify-content: center; padding: 0; gap: 0; }
+body.sidebar-collapsed .nav-item .t { display: none; }
+body.sidebar-collapsed .sidebar-foot { padding: 10px 0 0; text-align: center; }
+body.sidebar-collapsed .sidebar-foot .micro { font-size: 8px; letter-spacing: 0; }
+
+.nav-tip {
+  position: fixed; z-index: 80; transform: translateY(-50%); pointer-events: none;
+  background: var(--ink); color: #fff; border-radius: var(--r-sm); padding: 5px 9px;
+  font-size: 11px; line-height: 1.3; white-space: nowrap; box-shadow: var(--elevation-2);
+}
 
 main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 .page-head {
@@ -511,6 +547,56 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 .swatch { display: flex; align-items: center; gap: 8px; font-size: 11px; }
 .swatch .box { width: 22px; height: 22px; border: 1px solid var(--line-2); border-radius: 3px; }
 
+/* ---------- loading & error states ---------- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.route-loading { min-width: 0; }
+.skel {
+  display: block; height: 12px; border-radius: 3px; background: var(--surface-3);
+}
+.skel-crumb { width: 120px; height: 9px; margin-bottom: 8px; }
+.skel-title { width: 190px; height: 22px; margin: 2px 0 8px; }
+.skel-sub { width: min(760px, 100%); height: 10px; }
+.skel-btn { width: 78px; height: 30px; border-radius: var(--r-sm); }
+.skel-k { width: 58%; height: 9px; }
+.skel-v { width: 80%; height: 24px; margin-top: 8px; }
+.skel-m { width: 55%; height: 9px; margin-top: 8px; }
+.skel-h { width: 140px; height: 12px; }
+.skel-badge { width: 60px; height: 18px; margin-left: auto; }
+.skel-block { width: 100%; height: 140px; border-radius: var(--r-sm); }
+.skel-chart { width: 100%; height: 240px; border-radius: var(--r-sm); }
+.skeleton-toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+.skeleton-toolbar .skel-input { width: 240px; height: 30px; }
+.skeleton-toolbar .skel-input.sm { width: 150px; }
+.skeleton-tabs { display: flex; gap: 4px; margin-bottom: 12px; overflow: hidden; }
+.skel-tab { width: 86px; height: 30px; flex: 0 0 auto; }
+.skeleton-rows { display: grid; }
+.skel-row { height: 35px; border-radius: 0; border-bottom: 1px solid var(--line); }
+.skeleton-rows .skel-row:last-child { border-bottom: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .skel { animation: skel-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+
+.route-error {
+  grid-column: 1 / -1; grid-row: 1 / -1; min-height: 100vh;
+  display: grid; place-items: center; padding: 24px;
+}
+.route-error-card { width: min(600px, 100%); padding: 26px; }
+.route-error-card h1 { font-size: 21px; letter-spacing: -.01em; }
+.route-error-card .sub { color: var(--muted); margin-top: 6px; max-width: 62ch; }
+.route-error-reason { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.route-error-card .note { margin-top: 14px; }
+.route-error-card .row { margin-top: 16px; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1439px) {
   .cols-3.tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -529,12 +615,16 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .panel-head .right { flex-wrap: wrap; justify-content: flex-end; }
 }
 @media (max-width: 1100px) {
-  body { grid-template-columns: 64px minmax(0, 1fr); }
+  /* The sidebar stays expanded and labelled here; only the mobile breakpoint hides it. */
   .brand { width: auto; }
-  .brand-tag, .nav-item span.t, .nav-label, .sidebar-foot { display: none; }
-  .nav-item { justify-content: center; }
+  .brand-tag { display: none; }
+  .topbar .ws-chip { display: none; }
   .split, .split-even { grid-template-columns: minmax(0, 1fr); }
   .cols-5, .cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 980px) {
+  .topbar .source.chip { display: none; }
+  .search { flex-basis: 200px; }
 }
 @media (max-width: 760px) {
   body { display: block; padding-bottom: 54px; }
@@ -615,5 +705,5 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
     color: var(--muted);
   }
   .mobile-nav a.on { color: var(--ink); font-weight: 700; }
-  .mobile-nav .g { font-size: 15px; line-height: 1; }
+  .mobile-nav .g { font-size: 15px; line-height: 1; font-variant-emoji: text; }
 }

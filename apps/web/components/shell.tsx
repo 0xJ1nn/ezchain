@@ -1,57 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-
-const nav = [
-	{
-		label: "Overview",
-		items: [
-			{ id: "dashboard", href: "/", label: "Dashboard", glyph: "▤" },
-			{ id: "positions", href: "/positions", label: "Positions", glyph: "▥" },
-			{ id: "markets", href: "/markets", label: "Markets", glyph: "◫" },
-			{ id: "performance", href: "/performance", label: "Performance", glyph: "◔" },
-		],
-	},
-	{
-		label: "Trade",
-		items: [
-			{ id: "wallets", href: "/wallets", label: "Wallets", glyph: "▣" },
-			{ id: "ledger", href: "/ledger", label: "Activity", glyph: "≡" },
-			{ id: "reports", href: "/reports", label: "Reports", glyph: "▦" },
-		],
-	},
-	{
-		label: "Automate",
-		items: [
-			{ id: "automations", href: "/automations", label: "Automations", glyph: "⟳" },
-			{ id: "strategies", href: "/strategies", label: "Strategies", glyph: "◇" },
-			{ id: "signals", href: "/signals", label: "Signals", glyph: "⌁" },
-			{ id: "backtests", href: "/backtests", label: "Backtests", glyph: "∿" },
-		],
-	},
-	{
-		label: "Protect",
-		items: [
-			{ id: "risk", href: "/risk", label: "Risk", glyph: "◈" },
-			{ id: "alerts", href: "/alerts", label: "Alerts", glyph: "◉" },
-		],
-	},
-	{
-		label: "System",
-		items: [
-			{ id: "chains", href: "/chains", label: "Chains & RPC", glyph: "⬡" },
-			{ id: "integrations", href: "/integrations", label: "Integrations", glyph: "⇄" },
-			{ id: "settings", href: "/settings", label: "Settings", glyph: "⚙" },
-			{ id: "security", href: "/security", label: "Security", glyph: "⌂" },
-			{ id: "developer", href: "/developer", label: "Developer", glyph: "⌘" },
-			{ id: "operations", href: "/operations", label: "Operations", glyph: "◍" },
-			{ id: "workspace", href: "/workspace", label: "Workspace", glyph: "◎" },
-		],
-	},
-];
-
-function isActive(href: string, active: string) {
-	return href === "/" ? active === "dashboard" : active === href.slice(1);
-}
+import { Sidebar } from "./sidebar";
 
 export function Topbar() {
 	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
@@ -73,18 +22,22 @@ export function Topbar() {
 				<input
 					type="search"
 					name="q"
-					placeholder="Search token, wallet, strategy, position…"
-					aria-label="Search token, wallet, strategy or position"
+					placeholder="Search markets (symbol, name or address)"
+					aria-label="Search markets (symbol, name or address)"
 				/>
 			</form>
-			<span className="chain chip" title="Active chain filter">
-				⬡ All chains <span className="muted">▾</span>
-			</span>
+			<Link
+				className="chain chip"
+				href="/markets"
+				title="Open the multi-chain market browser"
+			>
+				<span aria-hidden="true">⬡</span> All chains
+			</Link>
 			<span className="mode paper" title="Execution mode">
 				<span className="dot" />
 				PAPER
 			</span>
-			<span className="chip" title="Market data source">
+			<span className="source chip" title="Market data source">
 				{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}
 			</span>
 			<span className="spacer" />
@@ -101,53 +54,24 @@ export function Topbar() {
 	);
 }
 
-export function Sidebar({ active }: { active: string }) {
-	return (
-		<nav className="sidebar" aria-label="Primary navigation">
-			{nav.map((group) => (
-				<div className="nav-group" key={group.label}>
-					<div className="nav-label">{group.label}</div>
-					{group.items.map((item) => {
-						const on = isActive(item.href, active);
-						return (
-							<Link
-								className={`nav-item${on ? " active" : ""}`}
-								href={item.href}
-								key={item.id}
-								aria-label={item.label}
-								aria-current={on ? "page" : undefined}
-							>
-								<span className="g" aria-hidden="true">
-									{item.glyph}
-								</span>
-								<span className="t">{item.label}</span>
-							</Link>
-						);
-					})}
-				</div>
-			))}
-			<div className="sidebar-foot">
-				<Link href="/states">State gallery</Link>
-				<Link href="/components">Components</Link>
-				<Link href="/mobile">Mobile</Link>
-				<div className="micro" style={{ marginTop: 8 }}>
-					P0 · paper · no keys
-				</div>
-			</div>
-		</nav>
-	);
-}
-
 const mobileNav = [
 	{ id: "dashboard", href: "/", label: "Home", glyph: "▤" },
+	{ id: "markets", href: "/markets", label: "Browse", glyph: "◫" },
+	{ id: "signals", href: "/signals", label: "Signals", glyph: "⌁" },
 	{ id: "positions", href: "/positions", label: "Positions", glyph: "▥" },
-	{ id: "markets", href: "/markets", label: "Markets", glyph: "◫" },
-	{ id: "automations", href: "/automations", label: "Automate", glyph: "⟳" },
 	{ id: "more", href: "/more", label: "More", glyph: "⋯" },
 ];
 
+// Home, Browse, Signals and Positions are one tap away; every other surface is kept
+// under More. This mirrors the desktop groups without duplicating Signals.
 const moreSections = new Set([
 	"more",
+	"wallets",
+	"ledger",
+	"reports",
+	"automations",
+	"strategies",
+	"backtests",
 	"risk",
 	"alerts",
 	"chains",
