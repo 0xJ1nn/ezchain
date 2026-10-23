@@ -69,6 +69,10 @@ def required_scope(method: str, path: str) -> str:
         return "admin"
     if path.startswith("/api/v1/system/"):
         return "admin"
+    # The trade-sizing policy is a workspace-wide risk control. A trade-scoped agent
+    # may place orders inside it, but may not raise its own ceiling.
+    if path.startswith("/api/v1/settings/"):
+        return "admin"
     if path in READ_ONLY_POST_PATHS:
         return "read"
     if path.startswith("/api/v1/plugins/") and path.endswith("/validate"):

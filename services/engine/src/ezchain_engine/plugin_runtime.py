@@ -135,6 +135,10 @@ def _intent_decision(
         else:
             position_value = Decimal(0)
         headroom = params.max_position_usd - position_value
+        # These are strategy parameters, not the workspace risk policy. This clamp is
+        # never authorization: the order path resolves the persisted policy and rejects
+        # an amount above the effective profile maximum with SIZE_ABOVE_MAX rather than
+        # resizing it here.
         allowed = min(intent.notional_usd, params.order_usd, max(Decimal(0), headroom))
         inputs["requested_notional_usd"] = str(intent.notional_usd)
         inputs["clamped_notional_usd"] = str(allowed)

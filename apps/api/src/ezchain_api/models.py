@@ -118,6 +118,10 @@ class PaperOrderRow(Base):
     quote_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     quote_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     risk_profile: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Replayable sizing proof: request source, policy source, effective limits, equity,
+    # quantization and the resolved amount (or a refusal reason). Null for legacy rows
+    # and for an execution-blocked order that never reached sizing.
+    size_resolution: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -168,6 +172,9 @@ class StrategyRunRow(Base):
     action: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(String(64))
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # The order's size snapshot, copied here so a strategy decision and the order it
+    # produced can be replayed together without joining through a mutable paper row.
+    size_resolution: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 

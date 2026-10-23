@@ -43,7 +43,7 @@ def destructive_upgrade_operations(source: str) -> list[str]:
 
 
 def test_migration_head_is_the_latest_revision() -> None:
-    assert head_revision() == "0009_trade_policy"
+    assert head_revision() == "0010_size_resolution"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:

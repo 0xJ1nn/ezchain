@@ -83,20 +83,40 @@ def test_low_liquidity_is_rejected(session, settings, dex, jupiter) -> None:
 
 def test_paper_mark_size_cap_is_enforced(session, settings, dex, jupiter) -> None:
     dex.set(make_snapshot(price=Decimal("2000")))
-    order = place(session, settings, dex, jupiter, make_request(amount_usd="300", key="too-big"))
+    # $300 is inside the high profile but above the $250 paper-mark gate.
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="300", key="too-big", risk_profile="high"),
+    )
     assert order.status == "rejected"
     assert order.reason == "PAPER_MARK_LIMIT"
 
 
-def test_order_limit_is_enforced(session, settings, dex, jupiter) -> None:
+def test_order_limit_is_enforced(session, dex, jupiter) -> None:
     dex.set(make_snapshot(price=Decimal("2000")))
-    order = place(session, settings, dex, jupiter, make_request(amount_usd="1500", key="order-cap"))
+    settings = make_settings(max_order_usd=Decimal("250"), paper_mark_max_order_usd=Decimal("1000"))
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="300", key="order-cap", risk_profile="high"),
+    )
     assert order.status == "rejected"
     assert order.reason is not None and "ORDER_LIMIT" in order.reason
 
 
 def test_insufficient_cash_is_rejected_without_going_negative(session, dex, jupiter) -> None:
-    poor = make_settings(paper_starting_cash_usd=Decimal("50"))
+    # A $50 account needs a percentage ceiling wide enough to resolve $50; the default
+    # 2% mid cap would legitimately refuse this size before the cash check.
+    poor = make_settings(
+        paper_starting_cash_usd=Decimal("50"),
+        trade_max_pct_equity=Decimal("100"),
+        trade_mid_max_pct_equity=Decimal("100"),
+    )
     dex.set(make_snapshot(price=Decimal("1"), liquidity=Decimal("1000000")))
 
     order = place(session, poor, dex, jupiter, make_request(amount_usd="50", key="cash-1"))

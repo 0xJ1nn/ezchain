@@ -28,6 +28,8 @@ export interface StrategyRun {
 	action: string;
 	reason: string;
 	inputs: Record<string, unknown>;
+	/** Read-only sizing proof copied from the order at decision time. */
+	size_resolution?: Record<string, unknown> | null;
 	order_id: string | null;
 	created_at: string;
 }

@@ -96,6 +96,7 @@ def test_market_candles_upgrades_a_sqlite_database(tmp_path: Path) -> None:
         connection.execute(
             text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, amount_usd TEXT)")
         )
+        connection.execute(text("CREATE TABLE strategy_runs (id VARCHAR(36) PRIMARY KEY)"))
     command.stamp(config, "0003_paper_fill_order")
     command.upgrade(config, "head")
     try:

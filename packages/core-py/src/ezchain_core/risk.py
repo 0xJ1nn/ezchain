@@ -136,6 +136,25 @@ def validate_trade_policy(policy: TradeSizePolicy) -> tuple[str, ...]:
             and limits.max_pct_equity > outer.max_pct_equity
         ):
             reasons.append("PROFILE_OUTSIDE_ENVELOPE")
+        # Validate the *intersection* the resolver will actually use, not just each
+        # level on its own. A profile with no max inherits the envelope's max, so a
+        # profile minimum above that envelope maximum is a cross-level contradiction:
+        # it passes both per-level checks but leaves no legal size. This is reported as
+        # the documented PROFILE_OUTSIDE_ENVELOPE rather than leaking the resolver's
+        # internal MIN_ABOVE_MAX code from an unreachable-at-write-time policy.
+        effective = effective_trade_size_limits(policy, name)
+        if effective is None:  # pragma: no cover - the profile was read just above
+            continue
+        if (
+            effective.max_amount_usd is not None
+            and effective.min_amount_usd > effective.max_amount_usd
+        ):
+            reasons.append("PROFILE_OUTSIDE_ENVELOPE")
+        if (
+            effective.max_pct_equity is not None
+            and effective.min_pct_equity > effective.max_pct_equity
+        ):
+            reasons.append("PROFILE_OUTSIDE_ENVELOPE")
     return tuple(dict.fromkeys(reasons))
 
 

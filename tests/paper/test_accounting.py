@@ -84,7 +84,13 @@ def test_fill_order_is_unique(session, settings, dex, jupiter) -> None:
 
 def test_buy_then_sell_reconciles(session, settings, dex, jupiter) -> None:
     dex.set(make_snapshot(price=Decimal("2000"), liquidity=Decimal("500000")))
-    buy = place(session, settings, dex, jupiter, make_request(amount_usd="200", key="buy-1"))
+    buy = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="200", key="buy-1", risk_profile="high"),
+    )
     assert buy.status == "filled"
     assert buy.filled_at is not None
 
@@ -148,7 +154,13 @@ def test_buy_then_sell_reconciles(session, settings, dex, jupiter) -> None:
 
 def test_sell_is_capped_at_the_full_position(session, settings, dex, jupiter) -> None:
     dex.set(make_snapshot(price=Decimal("1000")))
-    buy = place(session, settings, dex, jupiter, make_request(amount_usd="200", key="cap-buy"))
+    buy = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="200", key="cap-buy", risk_profile="high"),
+    )
     assert buy.status == "filled"
 
     sell = place(

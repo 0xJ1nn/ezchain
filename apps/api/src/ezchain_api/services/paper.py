@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -378,7 +378,12 @@ def _find_order(session: Session, idempotency_key: str) -> PaperOrderRow | None:
     )
 
 
-def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | None:
+def _claim_order(
+    session: Session,
+    payload: OrderRequest,
+    *,
+    size_resolution: dict[str, Any] | None = None,
+) -> PaperOrderRow | None:
     """Insert the order row to claim the idempotency key. None means another won."""
     order = PaperOrderRow(
         id=new_id(),
@@ -389,6 +394,7 @@ def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | Non
         amount_usd=payload.amount_usd,
         status="pending",
         risk_profile=payload.risk_profile,
+        size_resolution=size_resolution,
         strategy_id=payload.strategy_id,
         created_at=utcnow(),
     )
@@ -401,9 +407,14 @@ def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | Non
     return order
 
 
-def _claim_or_existing(session: Session, payload: OrderRequest) -> tuple[PaperOrderRow, bool]:
+def _claim_or_existing(
+    session: Session,
+    payload: OrderRequest,
+    *,
+    size_resolution: dict[str, Any] | None = None,
+) -> tuple[PaperOrderRow, bool]:
     """Return (order, created). ``created`` is False when the key already existed."""
-    order = _claim_order(session, payload)
+    order = _claim_order(session, payload, size_resolution=size_resolution)
     if order is not None:
         return order, True
     existing = _find_order(session, payload.idempotency_key)
@@ -417,9 +428,11 @@ def _reject_new(
     payload: OrderRequest,
     reason: str,
     snapshot: TokenSnapshot | None = None,
+    *,
+    size_resolution: dict[str, Any] | None = None,
 ) -> PaperOrderRow:
-    """Persist a rejection before a quote exists (insufficient position, unknown mark)."""
-    order, created = _claim_or_existing(session, payload)
+    """Persist a rejection before a quote exists (size, position, unknown mark)."""
+    order, created = _claim_or_existing(session, payload, size_resolution=size_resolution)
     if not created:
         return order
     if snapshot is not None:
@@ -437,9 +450,10 @@ def _reject_after_quote(
     *,
     snapshot: TokenSnapshot,
     quote: Quote,
+    size_resolution: dict[str, Any] | None = None,
 ) -> PaperOrderRow:
     """Persist a rejection that has a quote, so the refused size stays replayable."""
-    order, created = _claim_or_existing(session, payload)
+    order, created = _claim_or_existing(session, payload, size_resolution=size_resolution)
     if not created:
         return order
     record_snapshot(session, snapshot)
@@ -474,36 +488,6 @@ def _sized_sell(
     return min(payload.amount_usd / mark, held_qty)
 
 
-def _reject_manual_size(
-    session: Session,
-    *,
-    chain: str,
-    token_address: str,
-    side: Side,
-    amount_usd: Decimal | None,
-    risk_profile: str | None,
-    idempotency_key: str,
-    reason: str,
-) -> PaperOrderRow:
-    """Persist a size refusal before any quote. The requested amount is never resized.
-
-    A refusal has no resolved notional, so an omitted automatic amount is stored as
-    ``0`` and the reason code is the authoritative record that no size was derived.
-    """
-    return _reject_new(
-        session,
-        OrderRequest(
-            chain=chain,
-            token_address=token_address,
-            side=side,
-            amount_usd=Decimal(0) if amount_usd is None else amount_usd,
-            idempotency_key=idempotency_key,
-            risk_profile=risk_profile,
-        ),
-        reason,
-    )
-
-
 async def place_manual_order(
     session: Session,
     *,
@@ -517,86 +501,49 @@ async def place_manual_order(
     dexscreener: DexScreenerClient,
     quotes: QuoteRouter,
 ) -> PaperOrderRow:
-    """Resolve the manual order's size before any quote, then place it.
+    """Adapt the manual route onto the one order path.
 
-    A buy with no amount is sized from the persisted policy and *server* equity. A
-    refusal is persisted as a rejected order before the quote exists, so there is no
-    silent default and no quote/fill to explain away. A sell is an exit: it requires an
-    explicit amount and keeps the existing rule that size limits never trap a position.
+    Buying with no amount is *not* resolved here: ``place_order`` owns the policy
+    snapshot, so the manual route and a strategy decision cannot diverge. ``0`` is the
+    internal "omitted" marker (the request schema already refuses a client-supplied
+    zero) and ``amount_omitted`` keeps that intent explicit without weakening the
+    ``OrderRequest`` contract used by every other caller.
     """
     ensure_genesis(session, settings.paper_starting_cash_usd)
     existing = _find_order(session, idempotency_key)
     if existing is not None:
         return existing
 
-    if side == "sell":
-        if amount_usd is None or amount_usd <= 0:
-            return _reject_manual_size(
-                session,
-                chain=chain,
-                token_address=token_address,
-                side="sell",
-                amount_usd=amount_usd,
-                risk_profile=None,
-                idempotency_key=idempotency_key,
-                reason="AMOUNT_REQUIRED",
-            )
-        return await place_order(
+    if side == "sell" and (amount_usd is None or amount_usd <= 0):
+        return _reject_new(
             session,
             OrderRequest(
                 chain=chain,
                 token_address=token_address,
                 side="sell",
-                amount_usd=amount_usd,
+                amount_usd=Decimal(0),
                 idempotency_key=idempotency_key,
-                risk_profile=None,
             ),
-            settings,
-            dexscreener,
-            quotes,
+            "AMOUNT_REQUIRED",
+            size_resolution=trade_policy.exit_resolution_snapshot(
+                source="manual", requested_amount_usd=Decimal(0)
+            ),
         )
 
-    # Local import avoids the paper -> account_read -> paper import cycle at module load.
-    from .account_read import equity_usd as account_equity_usd
-
-    record = trade_policy.load_trade_policy(session, settings)
-    resolution = trade_policy.quantize_resolution(
-        trade_policy.resolve_order_size(
-            equity_usd=account_equity_usd(session),
-            record=record,
-            profile=risk_profile,
-            manual_amount_usd=amount_usd,
-        )
-    )
-    if not resolution.ok or resolution.amount_usd is None:
-        return _reject_manual_size(
-            session,
-            chain=chain,
-            token_address=token_address,
-            side="buy",
-            amount_usd=amount_usd,
-            # An unknown profile has no resolvable name; store NULL rather than an
-            # arbitrary client string in a column reserved for stable profile names.
-            risk_profile=resolution.profile,
-            idempotency_key=idempotency_key,
-            reason=resolution.reason or "SIZE_UNKNOWN",
-        )
-
-    # The resolver's amount is already the order notional at cent precision; it was
-    # re-checked against the same limits after quantization. Nothing resizes it again.
     return await place_order(
         session,
         OrderRequest(
             chain=chain,
             token_address=token_address,
-            side="buy",
-            amount_usd=resolution.amount_usd,
+            side=side,
+            amount_usd=Decimal(0) if amount_usd is None else amount_usd,
             idempotency_key=idempotency_key,
-            risk_profile=resolution.profile,
+            risk_profile=None if side == "sell" else risk_profile,
         ),
         settings,
         dexscreener,
         quotes,
+        amount_omitted=side == "buy" and amount_usd is None,
     )
 
 
@@ -606,8 +553,17 @@ async def place_order(
     settings: Settings,
     dexscreener: DexScreenerClient,
     quotes: QuoteRouter,
+    *,
+    amount_omitted: bool = False,
 ) -> PaperOrderRow:
     """Place a paper order: quote, risk, fill and journal in one transaction.
+
+    Every buy — manual or strategy — is resolved and validated against the persisted
+    trade policy here, before any quote. Manual amounts are validated, never resized; a
+    strategy's explicit amount above the effective profile maximum is a persisted
+    ``SIZE_ABOVE_MAX`` rejection, never a silent clamp. The resolution snapshot is
+    stored on the order (and copied into the strategy run by the engine), so the size
+    can be replayed from persisted inputs.
 
     Cash, the open-position count and every position are one paper account, so the fill
     window is serialized per *account*, not per token. The quote happens outside a
@@ -625,7 +581,60 @@ async def place_order(
     # Defence in depth for callers that bypass KillSwitchExecutor: an order that claims
     # strategy attribution is refused before any quote while the operator switch is armed.
     if payload.strategy_id is not None and read_kill_switch(session, settings).active:
+        # Execution is blocked before sizing: there is no resolution to record and the
+        # reason code is the authoritative proof that no size was derived.
         return _reject_new(session, payload, "KILL_SWITCH_ACTIVE")
+
+    source: Literal["manual", "strategy"] = (
+        "strategy" if payload.strategy_id is not None else "manual"
+    )
+    size_resolution: dict[str, Any]
+
+    if payload.side == "buy":
+        # Local import avoids the paper -> account_read -> paper import cycle at load.
+        from .account_read import equity_usd as account_equity_usd
+
+        record = trade_policy.load_trade_policy(session, settings)
+        requested_amount = None if amount_omitted else payload.amount_usd
+        raw = trade_policy.resolve_order_size(
+            equity_usd=account_equity_usd(session),
+            record=record,
+            profile=payload.risk_profile,
+            manual_amount_usd=requested_amount,
+        )
+        resolution = trade_policy.quantize_resolution(raw)
+        rounded = (
+            raw.amount_usd is not None
+            and resolution.amount_usd is not None
+            and not raw.manual
+            and raw.amount_usd != resolution.amount_usd
+        )
+        size_resolution = trade_policy.resolution_snapshot(
+            resolution,
+            source=source,
+            policy_source=record.source,
+            requested_profile=payload.risk_profile,
+            requested_amount_usd=requested_amount,
+            quantized=rounded,
+        )
+        if not resolution.ok or resolution.amount_usd is None:
+            return _reject_new(
+                session,
+                replace(payload, risk_profile=resolution.profile),
+                resolution.reason or "SIZE_UNKNOWN",
+                size_resolution=size_resolution,
+            )
+        # The resolver's amount is already the order notional at cent precision; it was
+        # re-checked against the same limits after quantization. Nothing resizes it again.
+        payload = replace(
+            payload,
+            amount_usd=resolution.amount_usd,
+            risk_profile=resolution.profile,
+        )
+    else:
+        size_resolution = trade_policy.exit_resolution_snapshot(
+            source=source, requested_amount_usd=payload.amount_usd
+        )
 
     account = position_account(payload.chain, payload.token_address)
     held_qty = Decimal(0)
@@ -642,10 +651,22 @@ async def place_order(
 
     if payload.side == "sell":
         if held_qty <= 0:
-            return _reject_new(session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot)
+            return _reject_new(
+                session,
+                payload,
+                "INSUFFICIENT_POSITION",
+                snapshot=snapshot,
+                size_resolution=size_resolution,
+            )
         quantity = _sized_sell(payload, snapshot, held_qty)
         if quantity is None or quantity <= 0:
-            return _reject_new(session, payload, "PRICE_UNKNOWN", snapshot=snapshot)
+            return _reject_new(
+                session,
+                payload,
+                "PRICE_UNKNOWN",
+                snapshot=snapshot,
+                size_resolution=size_resolution,
+            )
         assert snapshot.price_usd is not None
         quote = await quotes.quote(
             chain=payload.chain,
@@ -673,13 +694,23 @@ async def place_order(
         if payload.side == "sell":
             if held_qty <= 0:
                 return _reject_after_quote(
-                    session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot, quote=quote
+                    session,
+                    payload,
+                    "INSUFFICIENT_POSITION",
+                    snapshot=snapshot,
+                    quote=quote,
+                    size_resolution=size_resolution,
                 )
             # Never fill a quantity that another writer already spent. A smaller quote is
             # fine (the position grew); a larger quote is stale and must be re-priced.
             if quote.amount_in > held_qty + MONEY_QUANTUM:
                 return _reject_after_quote(
-                    session, payload, "POSITION_CHANGED", snapshot=snapshot, quote=quote
+                    session,
+                    payload,
+                    "POSITION_CHANGED",
+                    snapshot=snapshot,
+                    quote=quote,
+                    size_resolution=size_resolution,
                 )
             fill_quantity = min(quote.amount_in, held_qty)
             notional = (
@@ -691,7 +722,7 @@ async def place_order(
             fill_quantity = quote.amount_out
             notional = quote.amount_in
 
-        order, created = _claim_or_existing(session, payload)
+        order, created = _claim_or_existing(session, payload, size_resolution=size_resolution)
         if not created:
             return order
         record_snapshot(session, snapshot)

@@ -275,6 +275,8 @@ class OrderOut(BaseModel):
     reason: str | None = None
     quote_kind: str | None = None
     risk_profile: str | None = None
+    # Read-only replay proof. The client cannot supply this on an order request.
+    size_resolution: dict[str, Any] | None = None
     created_at: str
     filled_at: str | None = None
 
@@ -528,6 +530,8 @@ class StrategyRunOut(BaseModel):
     action: str
     reason: str
     inputs: dict[str, Any]
+    # Copied from the order at decision time; the run log is append-only.
+    size_resolution: dict[str, Any] | None = None
     order_id: str | None = None
     created_at: str
 

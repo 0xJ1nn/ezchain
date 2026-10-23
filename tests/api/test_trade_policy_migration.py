@@ -26,13 +26,9 @@ def test_trade_policy_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     # and one pre-existing row, so the upgrade is proven to preserve legacy orders.
     with engine.begin() as connection:
         connection.execute(
-            text(
-                "CREATE TABLE paper_orders ("
-                "id VARCHAR(36) PRIMARY KEY, "
-                "amount_usd TEXT NOT NULL"
-                ")"
-            )
+            text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, amount_usd TEXT NOT NULL)")
         )
+        connection.execute(text("CREATE TABLE strategy_runs (id VARCHAR(36) PRIMARY KEY)"))
         connection.execute(
             text("INSERT INTO paper_orders (id, amount_usd) VALUES (:id, '42.00')"),
             {"id": LEGACY_ORDER_ID},
@@ -42,24 +38,24 @@ def test_trade_policy_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     try:
         inspector = inspect(engine)
         assert "app_settings" in inspector.get_table_names()
-        settings_columns = {
-            column["name"] for column in inspector.get_columns("app_settings")
-        }
+        settings_columns = {column["name"] for column in inspector.get_columns("app_settings")}
         assert settings_columns == SETTINGS_COLUMNS
-        order_columns = {
-            column["name"] for column in inspector.get_columns("paper_orders")
-        }
-        assert "risk_profile" in order_columns
+        order_columns = {column["name"] for column in inspector.get_columns("paper_orders")}
+        assert {"risk_profile", "size_resolution"} <= order_columns
+        run_columns = {column["name"] for column in inspector.get_columns("strategy_runs")}
+        assert "size_resolution" in run_columns
         with Session(engine) as session:
             assert database_revision(session) == head_revision()
-            assert session.execute(
-                text("SELECT COUNT(*) FROM app_settings")
-            ).scalar_one() == 0
+            assert session.execute(text("SELECT COUNT(*) FROM app_settings")).scalar_one() == 0
             legacy = session.execute(
-                text("SELECT amount_usd, risk_profile FROM paper_orders WHERE id = :id"),
+                text(
+                    "SELECT amount_usd, risk_profile, size_resolution "
+                    "FROM paper_orders WHERE id = :id"
+                ),
                 {"id": LEGACY_ORDER_ID},
             ).one()
             assert Decimal(legacy.amount_usd) == Decimal("42")
             assert legacy.risk_profile is None
+            assert legacy.size_resolution is None
     finally:
         engine.dispose()

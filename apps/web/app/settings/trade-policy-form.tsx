@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Panel } from "@/components/ui";
 import { formatUsd, formatUsdPrice } from "@/lib/live-format";
@@ -163,6 +163,15 @@ function validateDraft(draft: Draft): Record<string, string> {
 function Preview({ preview, error }: { preview: TradeSizePreview | null; error: string | null }) {
 	if (error) return <div className="note err small">{error}</div>;
 	if (!preview) return <div className="small muted">Server preview loading…</div>;
+	if (preview.reason === "EQUITY_UNKNOWN") {
+		return (
+			<div className="note warn small">
+				<Badge tone="warn">EQUITY_UNKNOWN</Badge> Equity cannot be valued because an
+				open position has no mark, so a percentage bound cannot be evaluated. Add a mark
+				or use a manual amount; the API never values an unknown position at zero.
+			</div>
+		);
+	}
 	if (preview.reason) {
 		return (
 			<div className="note warn small">
@@ -183,9 +192,11 @@ function Preview({ preview, error }: { preview: TradeSizePreview | null; error: 
 export function TradePolicyForm({
 	initial,
 	mode,
+	previewMode,
 }: {
 	initial: TradePolicyView;
 	mode: "fixture" | "live";
+	previewMode: "fixture" | "live";
 }) {
 	const router = useRouter();
 	const [saved, setSaved] = useState(initial);
@@ -198,6 +209,9 @@ export function TradePolicyForm({
 		initial.previews[initial.default_profile],
 	);
 	const [previewError, setPreviewError] = useState<string | null>(null);
+	// Monotonic request id: a slower response for an older draft must never replace the
+	// preview for the current tab/draft. Invalidating happens before the debounce fires.
+	const previewRequest = useRef(0);
 
 	const activeLimits = draft.profiles[tab];
 	const validation = useMemo(() => validateDraft(draft), [draft]);
@@ -216,6 +230,7 @@ export function TradePolicyForm({
 	// anywhere in the draft blocks the preview, so a stale tab cannot show a size the
 	// save would reject.
 	useEffect(() => {
+		const requestId = ++previewRequest.current;
 		if (Object.keys(validation).length > 0) {
 			setPreviewError("Fix the highlighted fields to preview this policy.");
 			return;
@@ -229,18 +244,20 @@ export function TradePolicyForm({
 					limits: limitsInput(draft.profiles[tab]),
 					envelope: limitsInput(draft.envelope),
 				},
-				mode,
+				previewMode,
 			)
 				.then((result) => {
+					if (requestId !== previewRequest.current) return;
 					if (result.ok) setPreview(result.data);
 					else setPreviewError(`${result.error.code}: ${result.error.message}`);
 				})
 				.catch((caught: unknown) => {
+					if (requestId !== previewRequest.current) return;
 					setPreviewError(caught instanceof Error ? caught.message : "Preview failed.");
 				});
 		}, 350);
 		return () => clearTimeout(timer);
-	}, [draft, tab, validation, mode]);
+	}, [draft, tab, validation, previewMode]);
 
 	function update(field: keyof LimitsDraft, value: string) {
 		setDraft((current) => ({

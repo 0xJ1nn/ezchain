@@ -46,7 +46,13 @@ def test_buy_and_sell_reconcile_and_counts_quote_kinds(
     session: Session, settings, dex, jupiter
 ) -> None:
     dex.set(make_snapshot(price=Decimal("2000"), liquidity=Decimal("500000")))
-    place(session, settings, dex, jupiter, make_request(amount_usd="200", key="recon-buy"))
+    place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="200", key="recon-buy", risk_profile="high"),
+    )
     dex.set(make_snapshot(price=Decimal("2500"), liquidity=Decimal("500000")))
     place(
         session,

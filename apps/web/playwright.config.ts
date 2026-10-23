@@ -31,6 +31,8 @@ export default defineConfig({
 		timeout: 120_000,
 		env: {
 			EZCHAIN_WEB_MODE: "fixture",
+			// Settings previews are still exercised against the stubbed API in the gate.
+			EZCHAIN_WEB_PREVIEW_MODE: "live",
 			EZCHAIN_API_URL: PROXY_TEST_API_URL,
 			EZCHAIN_API_TOKEN: PROXY_TEST_TOKEN,
 		},

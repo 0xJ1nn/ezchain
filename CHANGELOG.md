@@ -7,6 +7,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Trade sizing policy and profiles**: one persisted `app_settings.trade_policy`
+  document plus config defaults (`0009_trade_policy`), authenticated
+  `GET`/`PUT /api/v1/settings/trade-policy` and a read-only preview. Every buy — manual
+  or strategy-originated — is resolved or validated in `paper.place_order` before a
+  quote: a manual amount is never resized, a strategy amount above the effective profile
+  maximum is a persisted `SIZE_ABOVE_MAX` rejection, and an omitted manual amount uses
+  the request profile or policy default. The effective limits are the profile/envelope
+  intersection, validated at boot and on every save. Derived sizes are quantized down to
+  cents once and re-checked against both the absolute and percentage minimum; refusals
+  are stored before a quote. `0010_size_resolution` records the resolution (profile,
+  policy source, effective limits, equity, manual/strategy source, quantization, reason)
+  on `paper_orders` and `strategy_runs` and exposes it read-only, so a size is replayable.
+  The settings form previews the unsaved draft against server equity and the risk page
+  shows the persisted policy read-only.
 - **Strategy SDK v1 and supervised plugin runtime**: new Apache-2.0 `ezchain-sdk`
   (manifest, JSON-Schema subset, `PluginContext`, `Intent`, `Strategy`), discovery through
   `ezchain.strategies` entry points and `EZCHAIN_PLUGIN_PATHS`, and `kind=plugin`
@@ -154,6 +168,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **Default paper sizing is now $150 at $10k equity** (mid profile: 2% of equity capped
+  at $150). A manual paper buy above the mid maximum is rejected with `SIZE_ABOVE_MAX`
+  instead of relying only on the older $1,000 order gate; choose `high`, change the
+  profile, or persist a different policy to trade more. Manual buys are validated, never
+  resized. The settings route is `admin`-scoped because raising a workspace ceiling is
+  an administrative act; reads remain open and `trade` keys keep placing orders inside
+  the policy.
 - README/roadmap now state the product is **alpha and paper-only**, explicitly not ready
   for real-money trading, and gate official Hermes/OpenClaw marketplace listings on
   real-mode readiness. README adds a contributor welcome section.

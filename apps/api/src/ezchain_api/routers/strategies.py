@@ -309,6 +309,7 @@ async def run_strategy(
         action=result.action,
         reason=result.reason,
         inputs=result.inputs,
+        size_resolution=result.size_resolution,
         order_id=result.order_id,
         created_at=_dt(result.created_at) or "",
     )
@@ -357,6 +358,7 @@ def strategy_runs(
             action=row.action,
             reason=row.reason,
             inputs=row.inputs or {},
+            size_resolution=row.size_resolution,
             order_id=row.order_id,
             created_at=_dt(row.created_at) or "",
         )

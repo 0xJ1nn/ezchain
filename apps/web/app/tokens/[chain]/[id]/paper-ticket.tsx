@@ -231,7 +231,13 @@ export function PaperTicket({
 						</div>
 						{policy ? (
 							serverPreview ? (
-								serverPreview.reason ? (
+								serverPreview.reason === "EQUITY_UNKNOWN" ? (
+									<div className="small warn mt-8">
+										<Badge tone="warn">EQUITY_UNKNOWN</Badge> Equity cannot be
+										valued because an open position has no mark, so a percentage
+										bound cannot be evaluated. The API will not value it at zero.
+									</div>
+								) : serverPreview.reason ? (
 									<div className="small warn mt-8">
 										<Badge tone="warn">{serverPreview.reason}</Badge> No automatic size
 										can be derived. A manual amount may still fit the limits.

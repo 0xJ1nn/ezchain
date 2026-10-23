@@ -91,7 +91,18 @@ def test_concurrent_buys_on_different_tokens_cannot_overdraw_cash(tmp_path) -> N
     )
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine, expire_on_commit=False)
-    settings = make_settings(paper_starting_cash_usd=Decimal("100"))
+    # Keep the sizing policy from becoming the gate under test: on a $100 account the
+    # default 2% mid cap is $2, below the $10 minimum, so both buys would refuse for
+    # size before ever reaching the cash check.
+    settings = make_settings(
+        paper_starting_cash_usd=Decimal("100"),
+        trade_min_amount_usd=Decimal("1"),
+        trade_min_pct_equity=Decimal("0"),
+        trade_mid_min_amount_usd=Decimal("1"),
+        trade_mid_min_pct_equity=Decimal("0"),
+        trade_max_pct_equity=Decimal("100"),
+        trade_mid_max_pct_equity=Decimal("100"),
+    )
     dex = FakeDexScreener(make_snapshot(price=Decimal("1"), liquidity=Decimal("1000000")))
     jupiter = FakeJupiter(price=Decimal("1"))
     other = "0x0000000000000000000000000000000000000def"
@@ -136,13 +147,16 @@ def test_stale_oversized_sell_is_position_changed(tmp_path, monkeypatch) -> None
     jupiter = FakeJupiter(price=Decimal("2000"))
 
     with maker() as session:
-        assert place(
-            session,
-            settings,
-            dex,
-            jupiter,
-            make_request(side="buy", amount_usd="100", key="stale-open"),
-        ).status == "filled"
+        assert (
+            place(
+                session,
+                settings,
+                dex,
+                jupiter,
+                make_request(side="buy", amount_usd="100", key="stale-open"),
+            ).status
+            == "filled"
+        )
 
     real_replay = paper._replay
     calls = 0

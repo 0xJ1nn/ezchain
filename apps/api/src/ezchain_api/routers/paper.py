@@ -45,6 +45,7 @@ def _order(row: PaperOrderRow) -> OrderOut:
         reason=row.reason,
         quote_kind=row.quote_kind,
         risk_profile=row.risk_profile,
+        size_resolution=row.size_resolution,
         created_at=_dt(row.created_at),
         filled_at=None if row.filled_at is None else _dt(row.filled_at),
     )

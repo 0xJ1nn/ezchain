@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 TRADE_POLICY_KEY = "trade_policy"
 ORDER_CENT = Decimal("0.01")
+HUNDRED = Decimal(100)
 POLICY_SOURCE_DEFAULT: Literal["default"] = "default"
 POLICY_SOURCE_PERSISTED: Literal["persisted"] = "persisted"
 PolicySource = Literal["default", "persisted"]
@@ -190,11 +191,15 @@ def save_trade_policy(
         row.updated_by = updated_by
         row.updated_at = stamp
     session.commit()
+    # Build the response from the committed row, not the object staged before commit.
+    # A failed or rolled-back write can then never be reported as a saved policy, and
+    # a database-side timestamp/onupdate default is what the caller reads back.
+    session.refresh(row)
     return TradePolicyRecord(
         policy=policy,
         source=POLICY_SOURCE_PERSISTED,
-        updated_at=stamp,
-        updated_by=updated_by,
+        updated_at=_aware(row.updated_at),
+        updated_by=row.updated_by,
     )
 
 
@@ -213,26 +218,114 @@ def resolve_order_size(
     )
 
 
+def _lower_bound(resolution: TradeSizeResolution) -> Decimal:
+    """The absolute floor at cent resolution: max(min_amount, min_pct% of equity).
+
+    Unknown equity cannot be valued; the resolver refuses ``EQUITY_UNKNOWN`` before
+    quantization whenever a percentage bound is in play, so zero here is only reached
+    for an absolute-only floor.
+    """
+    limits = resolution.limits
+    if limits is None:
+        return Decimal(0)
+    lower = limits.min_amount_usd
+    if limits.min_pct_equity > 0 and resolution.equity_usd is not None:
+        lower = max(lower, resolution.equity_usd * limits.min_pct_equity / HUNDRED)
+    return lower
+
+
 def quantize_resolution(resolution: TradeSizeResolution) -> TradeSizeResolution:
     """Carry a resolution to the order boundary without resizing a manual amount.
 
-    A derived size is quantized once, down to cents, then re-checked against the same
-    snapshot. Rounding down can never cross an upper bound; if it crosses the lower
-    bound the refusal code is the one the order path would store. Manual amounts are
-    already cents from the request schema and are returned untouched.
+    A derived size is quantized once, down to cents, then re-checked against the *same*
+    snapshot: both the absolute and percentage minimum, and the absolute maximum.
+    Rounding down can never cross an upper bound; when it lands below either lower
+    bound the refusal code is the one the order path stores. This is deliberately
+    strict rather than granting a cent of tolerance: a policy whose minimum percentage
+    equals its maximum percentage on fractional-cent equity may therefore refuse a
+    derived buy instead of violating its own floor.
+
+    A manual amount is never resized, but it is re-checked against the same bounds so
+    the two paths cannot disagree about what is legal. Request schemas already carry
+    manual amounts at cent precision.
     """
-    if resolution.amount_usd is None or resolution.manual:
+    if resolution.amount_usd is None:
         return resolution
-    try:
-        amount = resolution.amount_usd.quantize(ORDER_CENT, rounding=ROUND_DOWN)
-    except InvalidOperation:
-        return replace(resolution, amount_usd=None, reason="SIZE_ABOVE_MAX")
     limits = resolution.limits
-    if amount <= 0 or (limits is not None and amount < limits.min_amount_usd):
+    if resolution.manual:
+        amount = resolution.amount_usd
+    else:
+        try:
+            amount = resolution.amount_usd.quantize(ORDER_CENT, rounding=ROUND_DOWN)
+        except InvalidOperation:
+            return replace(resolution, amount_usd=None, reason="SIZE_ABOVE_MAX")
+    if amount <= 0 or amount < _lower_bound(resolution):
         return replace(resolution, amount_usd=None, reason="SIZE_BELOW_MIN")
     if limits is not None and limits.max_amount_usd is not None and amount > limits.max_amount_usd:
         return replace(resolution, amount_usd=None, reason="SIZE_ABOVE_MAX")
     return replace(resolution, amount_usd=amount)
+
+
+def resolution_snapshot(
+    resolution: TradeSizeResolution,
+    *,
+    source: Literal["manual", "strategy"],
+    policy_source: PolicySource,
+    requested_profile: str | None,
+    requested_amount_usd: Decimal | None,
+    quantized: bool,
+) -> dict[str, Any]:
+    """The persisted, replayable proof of how one order's size was decided.
+
+    ``source`` is the request path (manual route or strategy executor), while
+    ``policy_source`` says whether the persisted settings row or config defaults were
+    in force. ``manual`` keeps the core meaning: an explicit amount that was validated,
+    never resized. Every money value is a decimal string so the JSON round-trips
+    exactly; ``limits`` is the effective profile/envelope intersection.
+    """
+    limits = resolution.limits
+    return {
+        "policy_applies": True,
+        "source": source,
+        "policy_source": policy_source,
+        "profile": resolution.profile,
+        "requested_profile": requested_profile,
+        "requested_amount_usd": (
+            None if requested_amount_usd is None else str(requested_amount_usd)
+        ),
+        "resolved_amount_usd": (
+            None if resolution.amount_usd is None else str(resolution.amount_usd)
+        ),
+        "equity_usd": None if resolution.equity_usd is None else str(resolution.equity_usd),
+        "limits": None if limits is None else _limits_to_dict(limits),
+        "manual": resolution.manual,
+        "quantization": "cents",
+        "rounded": quantized,
+        "reason": resolution.reason,
+    }
+
+
+def exit_resolution_snapshot(
+    *,
+    source: Literal["manual", "strategy"],
+    requested_amount_usd: Decimal,
+) -> dict[str, Any]:
+    """A sell is an exit: no size is derived, but the exemption is recorded."""
+    return {
+        "policy_applies": False,
+        "source": source,
+        "policy_source": None,
+        "profile": None,
+        "requested_profile": None,
+        "requested_amount_usd": str(requested_amount_usd),
+        "resolved_amount_usd": None,
+        "equity_usd": None,
+        "limits": None,
+        "manual": True,
+        "quantization": "none",
+        "rounded": False,
+        "reason": "EXIT_NOT_SIZED",
+    }
 
 
 def previews(policy: TradeSizePolicy, equity_usd: Decimal | None) -> dict[str, TradeSizeResolution]:

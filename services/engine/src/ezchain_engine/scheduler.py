@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ezchain_api.models import LedgerEntryRow, StrategyRow, StrategyRunRow
+from ezchain_api.models import LedgerEntryRow, PaperOrderRow, StrategyRow, StrategyRunRow
 from ezchain_core.ledger import LedgerEntry, position_account, replay_position
 from ezchain_core.strategy import (
     DEFAULT_INTERVAL_MINUTES,
@@ -131,6 +131,8 @@ class RunResult:
     inputs: dict[str, Any]
     run_id: str | None = None
     order_id: str | None = None
+    # The order's persisted sizing proof, copied into the append-only run log.
+    size_resolution: dict[str, Any] | None = None
     created_at: datetime | None = None
 
     @property
@@ -202,12 +204,14 @@ def _record(
     now: datetime,
     touch_last_run: bool,
     order_id: str | None = None,
+    size_resolution: dict[str, Any] | None = None,
 ) -> StrategyRunRow | None:
     row = StrategyRunRow(
         strategy_id=strategy.id,
         action=decision.action,
         reason=decision.reason,
         inputs=decision.inputs,
+        size_resolution=size_resolution,
         order_id=order_id,
     )
     session.add(row)
@@ -236,7 +240,37 @@ def _result(
         inputs=decision.inputs,
         run_id=None if row is None else row.id,
         order_id=None if row is None else row.order_id,
+        size_resolution=None if row is None else row.size_resolution,
         created_at=None if row is None else row.created_at,
+    )
+
+
+def _order_size_resolution(session: Session, order_id: str | None) -> dict[str, Any] | None:
+    """Read the order's sizing proof after the executor committed it.
+
+    The executor uses its own session, so this is a fresh read under READ COMMITTED.
+    A fake executor in a unit test has no row; the run then records no snapshot rather
+    than inventing one. The value is already a JSON document (decimal strings).
+    """
+    if order_id is None:
+        return None
+    row = session.get(PaperOrderRow, order_id)
+    if row is None or not isinstance(row.size_resolution, dict):
+        return None
+    return dict(row.size_resolution)
+
+
+def _with_size_resolution(
+    decision: StrategyDecision, size_resolution: dict[str, Any] | None
+) -> StrategyDecision:
+    """Put the snapshot in the decision inputs and keep the run's action unchanged."""
+    if size_resolution is None:
+        return decision
+    return StrategyDecision(
+        decision.action,
+        decision.amount_usd,
+        decision.reason,
+        {**decision.inputs, "size_resolution": size_resolution},
     )
 
 
@@ -438,18 +472,22 @@ async def evaluate_strategy(
             logger.warning(
                 "strategy %s order %s rejected: %s", strategy.id, exc.order_id, exc.reason
             )
-            rejected = StrategyDecision(
-                "hold",
-                Decimal(0),
-                "ORDER_REJECTED",
-                {
-                    **decision.inputs,
-                    "attempted_action": decision.action,
-                    "attempted_amount_usd": str(decision.amount_usd),
-                    "order_id": exc.order_id,
-                    "order_reason": exc.reason,
-                    "error_code": exc.code,
-                },
+            size_resolution = _order_size_resolution(session, exc.order_id)
+            rejected = _with_size_resolution(
+                StrategyDecision(
+                    "hold",
+                    Decimal(0),
+                    "ORDER_REJECTED",
+                    {
+                        **decision.inputs,
+                        "attempted_action": decision.action,
+                        "attempted_amount_usd": str(decision.amount_usd),
+                        "order_id": exc.order_id,
+                        "order_reason": exc.reason,
+                        "error_code": exc.code,
+                    },
+                ),
+                size_resolution,
             )
             row = _record(
                 session,
@@ -458,6 +496,7 @@ async def evaluate_strategy(
                 now=now,
                 touch_last_run=False,
                 order_id=exc.order_id,
+                size_resolution=size_resolution,
             )
             return _result(strategy, rejected, row)
         except ExecutorUnavailable as exc:
@@ -490,6 +529,8 @@ async def evaluate_strategy(
             row = _record(session, strategy, failed, now=now, touch_last_run=False)
             return _result(strategy, failed, row)
 
+    size_resolution = _order_size_resolution(session, order_id)
+    decision = _with_size_resolution(decision, size_resolution)
     row = _record(
         session,
         strategy,
@@ -497,6 +538,7 @@ async def evaluate_strategy(
         now=now,
         touch_last_run=True,
         order_id=order_id,
+        size_resolution=size_resolution,
     )
     return _result(strategy, decision, row)
 

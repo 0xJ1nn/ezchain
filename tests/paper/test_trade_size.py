@@ -24,15 +24,9 @@ def policy() -> TradeSizePolicy:
             max_pct_equity=Decimal("5"),
         ),
         profiles={
-            "low": TradeSizeLimits(
-                Decimal("10"), Decimal("0.10"), Decimal("50"), Decimal("1")
-            ),
-            "mid": TradeSizeLimits(
-                Decimal("10"), Decimal("0.10"), Decimal("150"), Decimal("2")
-            ),
-            "high": TradeSizeLimits(
-                Decimal("10"), Decimal("0.10"), Decimal("500"), Decimal("5")
-            ),
+            "low": TradeSizeLimits(Decimal("10"), Decimal("0.10"), Decimal("50"), Decimal("1")),
+            "mid": TradeSizeLimits(Decimal("10"), Decimal("0.10"), Decimal("150"), Decimal("2")),
+            "high": TradeSizeLimits(Decimal("10"), Decimal("0.10"), Decimal("500"), Decimal("5")),
         },
         default_profile="mid",
     )
@@ -43,9 +37,7 @@ def policy() -> TradeSizePolicy:
     [("low", "50"), ("mid", "150"), ("high", "500")],
 )
 def test_profiles_resolve_to_their_percentage_cap(profile: str, expected: str) -> None:
-    result = resolve_trade_size(
-        equity_usd=Decimal("10000"), policy=policy(), profile=profile
-    )
+    result = resolve_trade_size(equity_usd=Decimal("10000"), policy=policy(), profile=profile)
 
     assert result.ok
     assert result.amount_usd == Decimal(expected)
@@ -65,18 +57,14 @@ def test_default_profile_is_mid_and_absolute_cap_wins() -> None:
 def test_minimum_percentage_above_the_absolute_cap_is_refused() -> None:
     # At $1M equity the 0.10% floor is $1,000, above the $150 mid cap: the resolver
     # refuses instead of returning a size that violates one of the bounds.
-    result = resolve_trade_size(
-        equity_usd=Decimal("1000000"), policy=policy(), profile="mid"
-    )
+    result = resolve_trade_size(equity_usd=Decimal("1000000"), policy=policy(), profile="mid")
 
     assert not result.ok
     assert result.reason == "SIZE_BELOW_MIN"
 
 
 def test_percentage_cap_wins_on_a_small_account() -> None:
-    result = resolve_trade_size(
-        equity_usd=Decimal("1000"), policy=policy(), profile="high"
-    )
+    result = resolve_trade_size(equity_usd=Decimal("1000"), policy=policy(), profile="high")
 
     assert result.ok
     assert result.amount_usd == Decimal("50")
@@ -101,9 +89,7 @@ def test_equity_too_small_for_the_minimum_is_below_min() -> None:
 
 
 def test_unknown_profile_does_not_fall_back_to_the_default() -> None:
-    result = resolve_trade_size(
-        equity_usd=Decimal("10000"), policy=policy(), profile="aggressive"
-    )
+    result = resolve_trade_size(equity_usd=Decimal("10000"), policy=policy(), profile="aggressive")
 
     assert not result.ok
     assert result.reason == "PROFILE_UNKNOWN"
@@ -183,9 +169,7 @@ def test_manual_amount_at_each_boundary_is_accepted() -> None:
 
 
 def test_automatic_target_is_below_min_when_the_caps_cannot_reach_it() -> None:
-    result = resolve_trade_size(
-        equity_usd=Decimal("400"), policy=policy(), profile="mid"
-    )
+    result = resolve_trade_size(equity_usd=Decimal("400"), policy=policy(), profile="mid")
 
     # 2% of $400 is $8, below the $10 absolute and the $0.40 percentage floor.
     assert not result.ok
@@ -293,6 +277,58 @@ def test_missing_or_extra_profile_names_are_rejected() -> None:
         default_profile="mid",
     )
     assert "PROFILE_UNKNOWN" in validate_trade_policy(extra)
+
+
+def _envelope_with_mid_touching_the_cap(
+    *,
+    mid_min_amount: str = "100",
+    mid_min_pct: str = "5",
+) -> TradeSizePolicy:
+    """A profile whose max is null, so the envelope's max is the effective cap."""
+    return TradeSizePolicy(
+        limits=TradeSizeLimits(
+            min_amount_usd=Decimal("10"),
+            min_pct_equity=Decimal("0.10"),
+            max_amount_usd=Decimal("100"),
+            max_pct_equity=Decimal("5"),
+        ),
+        profiles={
+            "low": TradeSizeLimits(Decimal("10"), Decimal("0.10"), Decimal("50"), Decimal("1")),
+            "mid": TradeSizeLimits(Decimal(mid_min_amount), Decimal(mid_min_pct), None, None),
+            "high": TradeSizeLimits(Decimal("10"), Decimal("0.10"), Decimal("100"), Decimal("5")),
+        },
+        default_profile="mid",
+    )
+
+
+def test_a_profile_minimum_may_equal_the_envelope_maximum_when_its_max_is_null() -> None:
+    exact = _envelope_with_mid_touching_the_cap(mid_min_amount="100", mid_min_pct="5")
+
+    assert validate_trade_policy(exact) == ()
+    effective = effective_trade_size_limits(exact, "mid")
+    assert effective is not None
+    assert effective.min_amount_usd == effective.max_amount_usd == Decimal("100")
+    assert effective.min_pct_equity == effective.max_pct_equity == Decimal("5")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("mid_min_amount", "100.01"),
+        ("mid_min_pct", "5.01"),
+    ],
+)
+def test_a_profile_minimum_above_the_inherited_envelope_max_is_a_stable_code(
+    field: str, value: str
+) -> None:
+    invalid = _envelope_with_mid_touching_the_cap(**{field: value})
+
+    errors = validate_trade_policy(invalid)
+
+    assert "PROFILE_OUTSIDE_ENVELOPE" in errors
+    # A cross-level contradiction is named by the policy validator; the resolver's
+    # internal MIN_ABOVE_MAX code must never be the first thing an API caller sees.
+    assert "MIN_ABOVE_MAX" not in errors
 
 
 def test_profile_outside_the_envelope_is_rejected() -> None:

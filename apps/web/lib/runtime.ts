@@ -9,6 +9,17 @@ export function webMode(): WebMode {
 	return process.env.EZCHAIN_WEB_MODE === "fixture" ? "fixture" : "live";
 }
 
+/**
+ * Preview requests normally follow the data mode: a fixture page uses the labelled
+ * fixture sample and never pretends to have resolved a size. An operator can point a
+ * fixture UI at a real API for previews only (the Playwright gate does this) so the
+ * authoritative preview contract is still exercised end to end.
+ */
+export function previewMode(mode: WebMode): WebMode {
+	if (mode === "live") return "live";
+	return process.env.EZCHAIN_WEB_PREVIEW_MODE === "live" ? "live" : "fixture";
+}
+
 function origin(): URL {
 	const raw = (process.env.EZCHAIN_API_URL ?? "http://127.0.0.1:8000").trim();
 	try {

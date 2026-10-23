@@ -30,7 +30,13 @@ def test_replay_after_restart_preserves_balances_and_positions(tmp_path: Path) -
     first_engine = create_engine(url)
     Base.metadata.create_all(first_engine)
     with Session(first_engine, expire_on_commit=False) as session:
-        buy = place(session, settings, dex, jupiter, make_request(amount_usd="200", key="r-buy"))
+        buy = place(
+            session,
+            settings,
+            dex,
+            jupiter,
+            make_request(amount_usd="200", key="r-buy", risk_profile="high"),
+        )
         assert buy.status == "filled"
         dex.set(make_snapshot(price=Decimal("2500"), liquidity=Decimal("500000")))
         sell = place(

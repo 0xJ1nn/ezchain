@@ -62,6 +62,8 @@ export interface PaperOrderRecord {
 	reason: string | null;
 	quote_kind: string | null;
 	risk_profile?: string | null;
+	/** Read-only sizing proof persisted by the API; the client never computes it. */
+	size_resolution?: Record<string, unknown> | null;
 	created_at: string;
 	filled_at: string | null;
 }

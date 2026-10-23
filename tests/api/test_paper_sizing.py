@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -17,7 +18,7 @@ from ezchain_api.deps import get_dexscreener, get_quote_router
 from ezchain_api.models import PaperFillRow, PaperOrderRow
 from ezchain_api.routers import paper as paper_router
 from ezchain_api.services import account_read, paper, trade_policy
-from ezchain_core import TradeSizeLimits
+from ezchain_core import TradeSizeLimits, resolve_trade_size
 from ezchain_core.types import PairInfo, SourceRef, TokenSnapshot
 
 CHAIN = "blast"
@@ -103,6 +104,19 @@ def test_omitted_amount_resolves_mid_profile_and_persists_it(
     assert row.status == "filled"
     assert row.amount_usd == Decimal("150")
     assert row.risk_profile == "mid"
+    snapshot = row.size_resolution
+    assert snapshot is not None
+    assert snapshot["source"] == "manual"
+    assert snapshot["policy_source"] == "default"
+    assert snapshot["profile"] == "mid"
+    assert snapshot["requested_amount_usd"] is None
+    assert Decimal(snapshot["resolved_amount_usd"]) == Decimal("150")
+    assert Decimal(snapshot["equity_usd"]) == Decimal("10000")
+    assert snapshot["manual"] is False
+    assert snapshot["quantization"] == "cents"
+    assert snapshot["limits"]["max_amount_usd"] == "150"
+    # The response is a read-only projection of the same persisted document.
+    assert body["size_resolution"] == snapshot
 
 
 def test_omitted_amount_and_profile_use_the_policy_default(
@@ -226,9 +240,7 @@ def test_reusing_an_idempotency_key_returns_the_first_resolution(
 def test_unknown_profile_is_a_persisted_rejection_without_a_quote(
     client: TestClient, session: Session, dex: FakeDex, genesis: None
 ) -> None:
-    response = client.post(
-        "/api/v1/paper/orders", json=_buy(risk_profile="aggressive")
-    )
+    response = client.post("/api/v1/paper/orders", json=_buy(risk_profile="aggressive"))
 
     assert response.status_code == 201
     body = response.json()
@@ -240,6 +252,44 @@ def test_unknown_profile_is_a_persisted_rejection_without_a_quote(
     assert row is not None
     assert row.status == "rejected"
     assert row.risk_profile is None
+
+
+def test_size_resolution_round_trips_and_replays_from_persisted_inputs(
+    client: TestClient, session: Session, settings: Settings, genesis: None
+) -> None:
+    response = client.post(
+        "/api/v1/paper/orders",
+        json=_buy(amount_usd="42.42", risk_profile="low", idempotency_key="sizing-replay"),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    snapshot = body["size_resolution"]
+    assert snapshot["resolved_amount_usd"] == "42.42"
+    assert snapshot["requested_amount_usd"] == "42.42"
+    assert snapshot["source"] == "manual"
+    assert snapshot["policy_source"] == "default"
+    assert snapshot["manual"] is True
+
+    # Deliberately reconstruct the decision from the persisted snapshot alone: the
+    # profile, requested amount and equity it recorded must reproduce the same amount.
+    record = trade_policy.load_trade_policy(session, settings)
+    replayed = trade_policy.quantize_resolution(
+        resolve_trade_size(
+            equity_usd=Decimal(snapshot["equity_usd"]),
+            policy=record.policy,
+            profile=snapshot["profile"],
+            manual_amount_usd=Decimal(snapshot["requested_amount_usd"]),
+        )
+    )
+    assert replayed.ok
+    assert str(replayed.amount_usd) == snapshot["resolved_amount_usd"]
+
+    order = session.scalar(select(PaperOrderRow))
+    assert order is not None
+    assert order.size_resolution == snapshot
+    stored = json.dumps(order.size_resolution, sort_keys=True)
+    assert json.loads(stored) == snapshot
 
 
 def test_sell_requires_an_explicit_amount(

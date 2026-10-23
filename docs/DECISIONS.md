@@ -658,3 +658,76 @@ secret for the operator; production must keep it out of agent configs. Multi-ten
 isolation, per-key rate limits, IP allowlists and key rotation remain follow-ups. Any
 change to ledger partitioning needs its own ADR and migration; this ADR deliberately
 does not claim it.
+
+---
+
+## ADR-0030 — One persisted trade-sizing policy; every buy passes it
+
+**Date:** 2026-10-23 · **Status:** Accepted (review follow-up to the sizing feature)
+
+**Context:** The first sizing increment resolved a manual buy in the route only. A
+strategy order reaches the paper service through `PaperOrderExecutor`, and the plugin
+runtime clamped an intent to the strategy's own `order_usd`/`max_position_usd`; neither
+saw the persisted workspace policy. The settings route was protected as a generic
+mutation (`trade`), so an agent with a trade key could raise its own ceiling. The policy
+store also validated each level in isolation, which let a profile minimum exceed the
+envelope maximum it inherited when its own maximum was null; the resolver then reported
+an internal `MIN_ABOVE_MAX` code that no writer could have produced deliberately.
+
+**Options:** (a) resolve in both the route and the executor; (b) resolve every buy in
+`paper.place_order`; (c) clamp strategy intents to the policy before persisting the
+decision.
+
+**Decision:** (b), with explicit, replayable refusal.
+
+- **One resolution point.** Every buy, manual or strategy, resolves against the policy
+  loaded in `paper.place_order`: `profile = request profile or policy default`.
+  `requested profile` is persisted as supplied; an unknown name is `PROFILE_UNKNOWN` and
+  is never silently replaced. A manual amount (including a strategy's explicit amount)
+  is validated, never resized. An omitted manual amount resolves to
+  `min(max_amount, max_pct% × server equity)`. Unknown equity is `EQUITY_UNKNOWN`;
+  no branch invents a default.
+- **Intersection semantics.** For a profile, the effective limits are
+  `min_amount = max(envelope.min_amount, profile.min_amount)`,
+  `max_amount = min(envelope.max_amount, profile.max_amount)`,
+  `min_pct = max(envelope.min_pct, profile.min_pct)`,
+  `max_pct = min(envelope.max_pct, profile.max_pct)`, with null maxima treated as an
+  absent bound. Validation checks every level *and* the effective intersection, so a
+  profile minimum equal to the envelope maximum (with a null profile maximum) is legal
+  and one cent/0.01% above is `PROFILE_OUTSIDE_ENVELOPE`. `MIN_ABOVE_MAX` remains a
+  defensive resolver code for a hand-constructed policy that bypassed validation; the
+  settings API cannot produce it.
+- **Quantization is strict.** A derived size is rounded down to cents once, at the order
+  boundary, and re-checked against the effective absolute and percentage minimum (and
+  the maximum). If rounding leaves it below either floor the order is refused
+  `SIZE_BELOW_MIN`; there is no undocumented cent tolerance, and manual amounts are
+  checked against the same floor. `min_pct == max_pct` with fractional-cent equity may
+  therefore refuse a derived buy rather than violate the policy.
+- **Strategy scope.** Plugins may still tighten their own intents to `order_usd` and
+  `max_position_usd`; that is a strategy parameter, not a risk-policy substitute. The
+  order path revalidates the resulting amount against the persisted policy and rejects
+  an above-max amount with `SIZE_ABOVE_MAX` instead of clamping it. A strategy can never
+  raise a ceiling, and the kill switch still blocks strategy-attributed orders before
+  sizing.
+- **Persistence and replay.** `0010_size_resolution` adds nullable
+  `paper_orders.size_resolution` and `strategy_runs.size_resolution`. The document holds
+  the request source (manual/strategy), policy source (persisted/default), profile,
+  requested amount, resolved amount (or null), server equity, effective limits,
+  quantization and the stable reason. It is written on every buy path (filled and
+  rejected), copied into the strategy run inputs, and returned read-only. A sell records
+  an explicit `EXIT_NOT_SIZED` exemption instead of pretending a policy size exists.
+- **Auth scope.** `PUT /api/v1/settings/trade-policy` requires `admin`; `GET` remains a
+  normal open read (and `read` when reads are authenticated). A `trade` key may place
+  paper orders but cannot administer the workspace policy.
+- **Default.** At $10k equity the mid profile resolves to $150 (2% capped by the $150
+  absolute maximum). A manual buy above $150 under the default mid profile is rejected
+  `SIZE_ABOVE_MAX`; the trader must select `high`, change the profile, or persist a
+  different policy. The legacy `max_order_usd`/`paper_mark` gates still apply
+  independently.
+
+**Consequences:** a strategy cannot bypass the workspace policy, and every decided size
+is auditable without re-reading the current settings. Persisting the policy in
+`app_settings` still does not move money and never enters the ledger. The policy is
+workspace-wide, not per-key or per-strategy; per-strategy risk budgets and any hosted
+multi-workspace policy remain follow-ups. Changing the default is a deliberate paper-only
+behavior change, recorded here and in `CHANGELOG.md`.

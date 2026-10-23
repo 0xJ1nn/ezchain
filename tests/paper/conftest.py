@@ -165,6 +165,7 @@ def make_request(
     chain: str = CHAIN,
     token: str = TOKEN,
     strategy_id: str | None = None,
+    risk_profile: str | None = None,
 ) -> OrderRequest:
     return OrderRequest(
         chain=chain,
@@ -173,6 +174,7 @@ def make_request(
         amount_usd=Decimal(amount_usd),
         idempotency_key=key,
         strategy_id=strategy_id,
+        risk_profile=risk_profile,
     )
 
 

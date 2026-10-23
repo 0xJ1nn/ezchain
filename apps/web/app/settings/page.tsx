@@ -5,6 +5,7 @@ import { Badge, ButtonLink, Panel } from "@/components/ui";
 import {
 	apiHostOnly,
 	apiTokenConfigured,
+	previewMode,
 	publicUrlConfigured,
 	webMode,
 } from "@/lib/runtime";
@@ -17,6 +18,7 @@ const DOCS = "https://github.com/0xJ1nn/ezchain/blob/main";
 
 export default async function SettingsPage() {
 	const mode = webMode();
+	const previews = previewMode(mode);
 	const policy = await getTradePolicy();
 
 	return (
@@ -44,7 +46,7 @@ export default async function SettingsPage() {
 
 			{policy.ok ? (
 				<div className="mb-12">
-					<TradePolicyForm initial={policy.data} mode={mode} />
+					<TradePolicyForm initial={policy.data} mode={mode} previewMode={previews} />
 				</div>
 			) : (
 				<div className="mb-12">
