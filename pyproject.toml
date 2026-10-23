@@ -1,7 +1,7 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["packages/core-py/src", "packages/adapters/src", "apps/api/src", "services/engine/src"]
+src = ["packages/core-py/src", "packages/adapters/src", "packages/sdk-py/src", "apps/api/src", "apps/mcp/src", "services/engine/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -11,7 +11,7 @@ ignore = ["B008"]  # FastAPI uses Depends()/Query() in argument defaults by desi
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
-mypy_path = "packages/core-py/src:packages/adapters/src:apps/api/src:services/engine/src"
+mypy_path = "packages/core-py/src:packages/adapters/src:packages/sdk-py/src:apps/api/src:apps/mcp/src:services/engine/src"
 explicit_package_bases = true
 
 [tool.pytest.ini_options]

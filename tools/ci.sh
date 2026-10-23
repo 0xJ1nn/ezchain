@@ -33,12 +33,12 @@ ran=0
 # commit cannot pass on one machine and fail on another because of a stray global ruff.
 if [ ! -x .venv/bin/python ]; then
   if command -v ruff >/dev/null 2>&1 && [ -f pyproject.toml ]; then
-    ruff check packages apps/api services
-    ruff format --check packages apps/api services
+    ruff check packages apps services
+    ruff format --check packages apps services
     ran=1
   fi
   if command -v mypy >/dev/null 2>&1 && [ -f pyproject.toml ]; then
-    mypy --strict packages services apps/api
+    mypy --strict packages services apps
     ran=1
   fi
   if command -v pytest >/dev/null 2>&1 && [ -d tests ]; then
@@ -47,8 +47,8 @@ if [ ! -x .venv/bin/python ]; then
   fi
 fi
 if [ -x .venv/bin/ruff ]; then
-  .venv/bin/ruff check packages apps/api services
-  .venv/bin/ruff format --check packages apps/api services
+  .venv/bin/ruff check packages apps services
+  .venv/bin/ruff format --check packages apps services
   ran=1
 fi
 if [ -x .venv/bin/mypy ]; then
