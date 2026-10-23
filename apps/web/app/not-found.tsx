@@ -10,8 +10,8 @@ export default function NotFound() {
 					<div className="crumbs">404</div>
 					<h1>Not found</h1>
 					<p className="sub">
-						That route is not in the wireframe manifest. Check the screen map or go back to
-						the dashboard.
+						This page or position was not found. Check the address or go back to the
+						dashboard.
 					</p>
 				</div>
 			</header>

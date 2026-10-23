@@ -62,7 +62,7 @@ test("list, grid and detailed render the same server rows behind a URL view swit
 	).toEqual(listKeys);
 	await expect(detailed.locator("article").filter({ hasText: "BONK" }).getByRole("img")).toBeVisible();
 	await expect(detailed.locator("article").filter({ hasText: "BONK" })).toContainText(
-		"No protection rule",
+		"Protection status not reported by the positions API",
 	);
 	// Missing history is a reason code, never a flat line. Both fixture rows use addresses
 	// that have no fixture candle series.
@@ -200,19 +200,51 @@ test("positions page renders empty, error and stale states without fabricating n
 		"$10,000.00",
 	);
 
+	const account = page.locator('section.kpi-band[aria-label="Paper account"]');
+	const stat = (label: string) =>
+		account.locator(".stat").filter({ hasText: new RegExp(`^${label}`) });
+	const panelSub = page
+		.locator("section.panel")
+		.filter({ hasText: "Server positions" })
+		.locator(".panel-head .sub");
+
 	await page.goto("/positions?state=error");
 	const alert = page.locator('section[role="alert"]');
 	await expect(alert).toContainText("Paper data unavailable");
 	await expect(alert).toContainText("FIXTURE_DEMO_ERROR");
 	await expect(page.locator("[data-view]")).toHaveCount(0);
-	const account = page.locator('section.kpi-band[aria-label="Paper account"]');
 	for (const label of ["Cash", "Equity", "Realized", "Unrealized"]) {
-		const stat = account
-			.locator(".stat")
-			.filter({ hasText: new RegExp(`^${label}`) });
-		await expect(stat.locator(".value")).toHaveText("—");
+		await expect(stat(label).locator(".value")).toHaveText("—");
 	}
+	// An unavailable account is not green, even though its value is an em dash.
+	for (const label of ["Realized", "Unrealized"]) {
+		await expect(stat(label).locator(".value")).not.toHaveClass(/\bok\b/);
+	}
+	// Failed counts are unknown, not zero, and the panel says so.
+	await expect(stat("Open positions").locator(".value")).toHaveText("—");
+	await expect(stat("Open positions").locator(".meta")).toHaveText("positions unavailable");
+	await expect(stat("Needs attention").locator(".value")).toHaveText("—");
+	await expect(stat("Needs attention").locator(".meta")).toHaveText("count not read");
+	await expect(panelSub).toHaveText("positions unavailable · count not read");
+	await expect(page.getByText(/0 from \/api\/v1\/paper\/positions/)).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Retry" })).toHaveAttribute("href", "/positions");
+
+	// A positions-only failure keeps the real account values and still reports the
+	// position count as unknown rather than zero.
+	await page.goto("/positions?state=positions-error");
+	await expect(alert).toContainText("Paper data unavailable");
+	await expect(alert).toContainText("FIXTURE_DEMO_ERROR");
+	await expect(stat("Cash")).toContainText("$9,709.36");
+	await expect(stat("Equity")).toContainText("$9,870.80");
+	await expect(stat("Open positions").locator(".value")).toHaveText("—");
+	await expect(stat("Open positions").locator(".meta")).toHaveText("positions unavailable");
+	await expect(stat("Needs attention").locator(".value")).toHaveText("—");
+	await expect(stat("Needs attention").locator(".meta")).toHaveText("count not read");
+	await expect(panelSub).toHaveText("positions unavailable · count not read");
+	await expect(
+		page.getByText("The positions request failed. Nothing is rendered as a position"),
+	).toBeVisible();
+	await expect(page.locator("[data-view]")).toHaveCount(0);
 
 	await page.goto("/positions?state=stale");
 	await expect(page.getByText(/3 stale marks/)).toBeVisible();
@@ -222,6 +254,9 @@ test("positions page renders empty, error and stale states without fabricating n
 });
 
 test("positions modes do not overflow at 390, 768 and 1440", async ({ page }) => {
+	// Nine cold-compiled routes plus three viewport changes: give the navigation loop its
+	// own budget instead of borrowing the default per-test timeout.
+	test.setTimeout(240_000);
 	for (const width of [390, 768, 1440]) {
 		await page.setViewportSize({ width, height: 900 });
 		for (const view of ["list", "grid", "detailed"]) {

@@ -158,9 +158,21 @@ export function money(value: string | null | undefined, signed = false): string 
 }
 
 export function quantity(value: string): string {
-	const amount = Number(value);
+	const raw = value?.trim();
+	if (!raw) return "—";
+	const decimal = /^([+-]?)(\d*)(?:\.(\d*))?$/.exec(raw);
+	if (decimal && /\d/.test(raw)) {
+		// Format the server's decimal string directly. Going through Number would round a
+		// valid sub-micro quantity to zero, which reads as "no position".
+		const [, sign, wholeRaw, fractionRaw = ""] = decimal;
+		const whole = (wholeRaw || "0").replace(/^0+(?=\d)/, "");
+		const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+		const fraction = fractionRaw.replace(/0+$/, "");
+		return `${sign}${grouped}${fraction ? `.${fraction}` : ""}`;
+	}
+	const amount = Number(raw);
 	if (!Number.isFinite(amount)) return "—";
-	return amount.toLocaleString("en-US", { maximumFractionDigits: 6 });
+	return amount.toLocaleString("en-US", { maximumFractionDigits: 18 });
 }
 
 export interface MarkAge {

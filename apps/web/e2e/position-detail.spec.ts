@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 
 const BONK = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const BONK_PATH = `/positions/solana/${BONK}`;
+const AERO = "0x940181a94A35A4569E4529A3CDfB74e38FD98631";
+const MOCHI = "7atgF8KQo4wJrD5ATGX7t1V2zVvykPJbFfNeVf1icFv1";
+const SCAM = "5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxR3T7dRntZ0bV";
 
 test("a position route renders one position, its facts, chart and timeframe control", async ({
 	page,
@@ -45,15 +48,20 @@ test("a position route renders one position, its facts, chart and timeframe cont
 		"/positions?view=grid&chain=solana&sort=value",
 	);
 
-	// Protection is a read-only summary, not a dead control.
-	await expect(page.getByText("No protection rule")).toBeVisible();
+	// Protection is a reported gap: the positions API has no protection field, so the page
+	// never claims a rule exists or is absent.
+	await expect(
+		page.getByText("Protection status not reported by the positions API"),
+	).toBeVisible();
 	await expect(page.getByRole("button", { name: /set|stop|protect/i })).toHaveCount(0);
 
-	// A manual exit is a real link to the paper sell ticket.
+	// A manual exit is a real link to the paper sell ticket, and the ticket resolves.
 	await expect(page.getByRole("link", { name: "Paper sell ticket" })).toHaveAttribute(
 		"href",
 		`/tokens/solana/${BONK}?side=sell`,
 	);
+	const ticket = await page.request.get(`/tokens/solana/${BONK}?side=sell`);
+	expect(ticket.status()).toBe(200);
 
 	await page.screenshot({ path: ".shots/position-detail-1440.png", fullPage: true });
 });
@@ -106,6 +114,57 @@ test("a position without candle history shows the API reason", async ({ page }) 
 	const panel = page.locator("section.panel").filter({ hasText: "Price history" }).first();
 	await expect(panel.locator(".badge", { hasText: "CANDLES_NOT_FOUND" })).toBeVisible();
 	await expect(panel.locator("svg")).toHaveCount(0);
+
+	// No mark means no value and no PnL. Both stay unknown, never zero, and neither gets
+	// the green "ok" tone that a known number would carry.
+	const facts = page.locator('section.kpi-band[aria-label="Position facts"]');
+	const fact = (label: string) =>
+		facts.locator(".stat").filter({ hasText: new RegExp(`^${label}`) });
+	for (const label of ["Mark", "Value", "Unrealized"]) {
+		await expect(fact(label).locator(".value")).toHaveText("—");
+		await expect(fact(label).locator(".meta")).toContainText("unknown · not zero");
+		await expect(fact(label).locator(".value")).toHaveClass(/warn/);
+		await expect(fact(label).locator(".value")).not.toHaveClass(/\bok\b/);
+	}
+});
+
+test("every fixture position offers a resolving sell ticket or states why it cannot", async ({
+	page,
+}) => {
+	test.setTimeout(180_000);
+	const cases = [
+		{
+			symbol: "BONK",
+			path: BONK_PATH,
+			sell: `/tokens/solana/${BONK}?side=sell`,
+		},
+		{
+			symbol: "AERO",
+			path: `/positions/base/${AERO}`,
+			sell: `/tokens/base/${AERO}?side=sell`,
+		},
+		{ symbol: "MOCHI", path: `/positions/solana/${MOCHI}`, sell: null },
+		{ symbol: "SCAM", path: `/positions/solana/${SCAM}`, sell: null },
+	];
+
+	for (const entry of cases) {
+		await page.goto(entry.path);
+		await expect(
+			page.getByRole("heading", { name: new RegExp(entry.symbol), level: 1 }),
+		).toBeVisible();
+
+		if (entry.sell) {
+			const ticket = page.getByRole("link", { name: "Paper sell ticket" });
+			await expect(ticket).toHaveAttribute("href", entry.sell);
+			const response = await page.request.get(entry.sell);
+			expect(response.status(), `${entry.symbol} sell ticket must resolve`).toBe(200);
+		} else {
+			// A token absent from the registry must not get a primary button that 404s.
+			await expect(page.getByText(/Sell unavailable for this token/i)).toBeVisible();
+			await expect(page.getByText(/not in the market registry/i)).toBeVisible();
+			await expect(page.getByRole("link", { name: "Paper sell ticket" })).toHaveCount(0);
+		}
+	}
 });
 
 test("position detail does not overflow at 390, 768 and 1440", async ({ page }) => {

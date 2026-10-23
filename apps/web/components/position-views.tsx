@@ -250,12 +250,20 @@ export function PositionGrid({
 
 						<dl className={styles.cardFacts}>
 							<Fact label="Quantity" value={quantity(position.quantity)} />
-							<Fact label="Value" value={money(position.market_value_usd)} />
+							<Fact
+								label="Value"
+								value={money(position.market_value_usd)}
+								tone={position.market_value_usd === null ? "warn" : undefined}
+							/>
 							<Fact
 								label="Unrealized"
 								value={position.unrealized_usd === null ? "—" : money(position.unrealized_usd, true)}
 								tone={
-									position.unrealized_usd && Number(position.unrealized_usd) < 0 ? "err" : undefined
+									position.unrealized_usd === null
+										? "warn"
+										: Number(position.unrealized_usd) < 0
+											? "err"
+											: undefined
 								}
 							/>
 							<Fact label="Avg cost" value={money(position.avg_cost_usd)} />
@@ -342,7 +350,10 @@ export function PositionDetailed({
 									<span className={styles.miniEmpty}>— not requested</span>
 								)}
 								<span className="small muted">
-									Closed {timeframe} bars · full chart on the position page
+									{position.source
+										? `${position.source.name} · ${age.label} old`
+										: "source unknown"}{" "}
+									· closed {timeframe} bars · full chart on the position page
 								</span>
 							</div>
 
@@ -354,7 +365,11 @@ export function PositionDetailed({
 									value={position.mark_usd === null ? "—" : money(position.mark_usd)}
 									tone={position.mark_usd === null ? "warn" : undefined}
 								/>
-								<Fact label="Value" value={money(position.market_value_usd)} />
+								<Fact
+									label="Value"
+									value={money(position.market_value_usd)}
+									tone={position.market_value_usd === null ? "warn" : undefined}
+								/>
 								<Fact
 									label="Unrealized"
 									value={
@@ -363,9 +378,11 @@ export function PositionDetailed({
 											: money(position.unrealized_usd, true)
 									}
 									tone={
-										position.unrealized_usd && Number(position.unrealized_usd) < 0
-											? "err"
-											: undefined
+										position.unrealized_usd === null
+											? "warn"
+											: Number(position.unrealized_usd) < 0
+												? "err"
+												: undefined
 									}
 								/>
 								<Fact label="Realized" value={money(position.realized_usd, true)} />
@@ -374,12 +391,11 @@ export function PositionDetailed({
 							<div className={styles.protection}>
 								<span className="micro">Protection</span>
 								<div className="row">
-									<Badge tone="ghost">No protection rule</Badge>
+									<Badge tone="ghost">unknown</Badge>
 								</div>
 								<p className="small muted">
-									Read-only summary: no stop or take-profit is attached to this paper
-									position. Editing controls arrive in a later slice; nothing here is a
-									set button.
+									Protection status not reported by the positions API. No stop,
+									take-profit or trailing rule is claimed as present or absent.
 								</p>
 							</div>
 						</div>

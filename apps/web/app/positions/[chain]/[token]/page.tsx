@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { CandleView } from "@/components/token-chart";
 import { Badge, Panel, Stat } from "@/components/ui";
-import { getCandles } from "@/lib/api";
+import { getCandles, getToken, asApiError } from "@/lib/api";
 import {
 	TIMEFRAMES,
 	candleErrorFrom,
@@ -90,15 +90,35 @@ export default async function PositionDetailPage({
 
 	const mode = positionsResult.mode;
 	const fixtureState = mode === "fixture" ? parseCandleFixtureState(raw.candles) : undefined;
-	const candles = await getCandles(position.chain, position.token_address, {
-		timeframe,
-		limit: 200,
-		fixtureState,
-	})
-		.then((series) => ({ ok: true as const, series }) satisfies CandleLoad)
-		.catch((error) => ({ ok: false as const, error: candleErrorFrom(error) }) satisfies CandleLoad);
+	const [tokenLookup, candles, fillsResult] = await Promise.all([
+		getToken(position.chain, position.token_address)
+			.then(() => ({ ok: true as const }))
+			.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
+		getCandles(position.chain, position.token_address, {
+			timeframe,
+			limit: 200,
+			fixtureState,
+		})
+			.then((series) => ({ ok: true as const, series }) satisfies CandleLoad)
+			.catch(
+				(error) =>
+					({ ok: false as const, error: candleErrorFrom(error) }) satisfies CandleLoad,
+			),
+		getPaperFills(200),
+	]);
+	// The sell ticket lives on the token route. Only offer it when the token registry
+	// resolves this exact position; otherwise the primary action would be a 404.
+	const sellHref = tokenLookup.ok
+		? `/tokens/${encodeURIComponent(position.chain)}/${encodeURIComponent(
+				position.token_address,
+			)}?side=sell`
+		: null;
+	const sellUnavailableReason = !tokenLookup.ok
+		? tokenLookup.error.code === "NOT_FOUND" || tokenLookup.error.code === "CHAIN_NOT_FOUND"
+			? "this token is not in the market registry"
+			: `the token registry lookup failed (${tokenLookup.error.code})`
+		: null;
 
-	const fillsResult = await getPaperFills(200);
 	const fills: PaperFillRecord[] = fillsResult.ok
 		? fillsResult.data
 				.filter(
@@ -153,14 +173,18 @@ export default async function PositionDetailPage({
 					<Link className="btn" href={backHref}>
 						Back to positions
 					</Link>
-					<Link
-						className="btn primary"
-						href={`/tokens/${encodeURIComponent(position.chain)}/${encodeURIComponent(
-							position.token_address,
-						)}?side=sell`}
-					>
-						Paper sell ticket
-					</Link>
+					{sellHref ? (
+						<Link className="btn primary" href={sellHref}>
+							Paper sell ticket
+						</Link>
+					) : (
+						<>
+							<Badge tone="warn">sell unavailable</Badge>
+							<span className="small muted">
+								Sell unavailable for this token: {sellUnavailableReason}.
+							</span>
+						</>
+					)}
 				</div>
 			</header>
 
@@ -184,7 +208,12 @@ export default async function PositionDetailPage({
 				<Stat
 					label="Value"
 					value={money(position.market_value_usd)}
-					meta="known mark · not executable"
+					meta={
+						position.market_value_usd === null
+							? "unknown · not zero"
+							: "known mark · not executable"
+					}
+					tone={position.market_value_usd === null ? "warn" : undefined}
 				/>
 				<Stat
 					label="Unrealized"
@@ -194,9 +223,17 @@ export default async function PositionDetailPage({
 							: money(position.unrealized_usd, true)
 					}
 					tone={
-						position.unrealized_usd && Number(position.unrealized_usd) < 0 ? "err" : "ok"
+						position.unrealized_usd === null
+							? "warn"
+							: Number(position.unrealized_usd) < 0
+								? "err"
+								: "ok"
 					}
-					meta="server PnL · fees included"
+					meta={
+						position.unrealized_usd === null
+							? "unknown · not zero"
+							: "server PnL · fees included"
+					}
 				/>
 				<Stat
 					label="Realized"
@@ -331,7 +368,7 @@ export default async function PositionDetailPage({
 							<div className="panel-body">
 								<div className={styles.body}>
 									{fillsResult.ok
-										? "No fills are recorded for this position. Nothing is filled or closed here."
+										? "No fills among the newest 200 account fills for this position. Nothing is filled or closed here."
 										: `The fills request failed with ${fillsResult.error.code}. The page does not substitute fixture rows.`}
 								</div>
 							</div>
@@ -378,15 +415,15 @@ export default async function PositionDetailPage({
 
 					<Panel
 						title="Protection"
-						action={<Badge tone="ghost">read-only</Badge>}
-						footer="Editing controls arrive with the protection slice. This card is a summary, not a dead button."
+						action={<Badge tone="ghost">unknown</Badge>}
+						footer="The positions API does not report a protection field. This card names the gap instead of inventing a rule."
 					>
 						<div className={styles.protection}>
-							<Badge tone="ghost">No protection rule</Badge>
+							<Badge tone="ghost">Protection status not reported by the positions API</Badge>
 							<p className={styles.body}>
-								No stop, take-profit or trailing rule is attached to this paper position.
-								An exit is a manual paper order through the sell ticket; nothing is
-								triggered automatically.
+								The positions API does not report protection. This page cannot tell
+								whether a stop, take-profit or trailing rule is attached to the
+								position, so it shows nothing as an existing or absent rule.
 							</p>
 						</div>
 					</Panel>

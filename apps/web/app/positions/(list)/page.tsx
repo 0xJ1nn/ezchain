@@ -102,7 +102,7 @@ export default async function PositionsPage({
 					}
 				: snapshot.account;
 	const positionsResult =
-		demo === "error"
+		demo === "error" || demo === "positions-error"
 			? demoResult<PaperPosition[]>(mode, "Fixture demo: the positions request failed.")
 			: demo === "empty"
 				? { ok: true as const, mode, data: [] as PaperPosition[] }
@@ -223,8 +223,14 @@ export default async function PositionsPage({
 						</span>
 					}
 					value={account ? money(account.realized_usd, true) : "—"}
-					tone={account && Number(account.realized_usd) < 0 ? "err" : "ok"}
-					meta="closed trades · fees included"
+					tone={
+						account
+							? Number(account.realized_usd) < 0
+								? "err"
+								: "ok"
+							: undefined
+					}
+					meta={account ? "closed trades · fees included" : "account unavailable"}
 				/>
 				<Stat
 					label={
@@ -258,12 +264,12 @@ export default async function PositionsPage({
 							</span>
 						</span>
 					}
-					value={String(positions.length)}
+					value={positionsFailed ? "—" : String(positions.length)}
 					meta={
-						positions.length > 0
-							? `${chainCount(positions)} chain${chainCount(positions) === 1 ? "" : "s"} · ${staleCount} stale`
-							: positionsFailed
-								? "positions unavailable"
+						positionsFailed
+							? "positions unavailable"
+							: positions.length > 0
+								? `${chainCount(positions)} chain${chainCount(positions) === 1 ? "" : "s"} · ${staleCount} stale`
 								: "flat"
 					}
 				/>
@@ -276,12 +282,14 @@ export default async function PositionsPage({
 							</span>
 						</span>
 					}
-					value={String(attention)}
-					tone={attention > 0 ? "err" : undefined}
+					value={positionsFailed ? "—" : String(attention)}
+					tone={!positionsFailed && attention > 0 ? "err" : undefined}
 					meta={
-						attention > 0
-							? `${unknownMarkCount} unknown mark · ${staleCount} stale`
-							: "every mark fresh"
+						positionsFailed
+							? "count not read"
+							: attention > 0
+								? `${unknownMarkCount} unknown mark · ${staleCount} stale`
+								: "every mark fresh"
 					}
 				/>
 			</section>
@@ -337,7 +345,11 @@ export default async function PositionsPage({
 			<Panel
 				flush
 				title="Server positions"
-				sub={`${positions.length} from /api/v1/paper/positions`}
+				sub={
+					positionsFailed
+						? "positions unavailable · count not read"
+						: `${positions.length} from /api/v1/paper/positions`
+				}
 				action={<Badge tone="ghost">PAPER</Badge>}
 				footer={
 					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
