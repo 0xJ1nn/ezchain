@@ -6,14 +6,16 @@ ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledg
 positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
-> Status: **PAPER stack — production operations**. Continuous all-chain market
-> observation, per-chain quote ladders, an append-only paper ledger with positions/PnL,
-> user-defined declarative and visual graph strategies, a backtester, persisted kill
-> switch, reconciliation, bearer-authenticated mutations, Alembic migrations,
-> structured logs/metrics, a complete operator surface and a stress harness. There are
-> **no keys, no signing, no live execution and no fiat rail**. Verified vs unverified is
-> recorded in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live
-> executor foundation is deliberately unmerged until its review blockers are closed.
+> Status: **PAPER stack — production operations + strategy SDK v1**. Continuous
+> all-chain market observation, per-chain quote ladders, an append-only paper ledger with
+> positions/PnL, user-defined declarative and visual graph strategies, **external Python
+> strategy plugins** in a supervised worker, a backtester, persisted kill switch,
+> reconciliation, bearer-authenticated mutations, Alembic migrations, structured
+> logs/metrics, a complete operator surface, an **MCP server for Hermes/OpenClaw**, and a
+> stress harness. There are **no keys, no signing, no live execution and no fiat rail**.
+> Verified vs unverified is recorded in
+> [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
+> foundation is deliberately unmerged until its review blockers are closed.
 
 ## Why this exists
 
@@ -37,7 +39,9 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | `apps/api/` | FastAPI edge: live markets, quotes, paper orders, strategy CRUD/run |
 | `services/engine/` | Declarative strategy evaluator and scheduler (inline in P0) |
 | `packages/core-py/` | Domain, append-only ledger, paper accounting, risk, strategy rules |
+| `packages/sdk-py/` | Apache-2.0 strategy plugin SDK (manifest, context, intents) |
 | `packages/adapters/` | DexScreener market data, Jupiter quotes, 25-chain registry |
+| `apps/mcp/` | MCP 2025-11-25 server for Hermes, OpenClaw and other agents |
 | `packages/ui/` | Generated design tokens shared by the web app |
 | `docs/` | Product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
 | `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
@@ -89,6 +93,8 @@ open http://localhost:3000
 ```
 
 - API docs: <http://127.0.0.1:8000/docs>
+- Plugin catalogue: <http://127.0.0.1:8000/api/v1/plugins>
+- Agent state: <http://127.0.0.1:8000/api/v1/agent/state>
 - Liveness/readiness: `/healthz` and `/readyz` (the latter includes the migration head)
 - Live markets: `/markets` · token/ticket: `/tokens/{chain}/{address}`
 - Paper positions: `/positions` · user strategies: `/strategies`
@@ -114,6 +120,34 @@ applied. Never stamp a production database.
 
 For deterministic UI work and Playwright, set `EZCHAIN_WEB_MODE=fixture`; every fixture is
 labelled `FIXTURE` and never presented as live.
+
+## Strategy plugins and agents
+
+Strategies are external packages, not code in this repository. Install a plugin into the
+API/engine environment (or point `EZCHAIN_PLUGIN_PATHS` at a directory), then reload:
+
+```bash
+pip install ./my-strategy
+curl -X POST -H "Authorization: Bearer $EZCHAIN_API_TOKEN" \
+  http://127.0.0.1:8000/api/v1/plugins/reload
+```
+
+A plugin returns intents; the host owns risk, sizing, quotes, execution and the ledger.
+It runs in a supervised worker with a timeout, memory cap, scrubbed environment and crash
+quarantine. This is containment, not a sandbox: install only code you trust.
+
+Agents connect through MCP:
+
+```bash
+pip install -e apps/mcp
+EZCHAIN_API_URL=http://127.0.0.1:8000 ezchain-mcp          # read-only
+EZCHAIN_MCP_ALLOW_WRITES=1 EZCHAIN_API_TOKEN=… ezchain-mcp # paper mutations
+```
+
+Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md),
+[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md) and the 2026 evidence note
+[docs/RESEARCH-2026.md](docs/RESEARCH-2026.md). There is no live order tool; the API
+refuses `EZCHAIN_EXECUTION_MODE=live` until the executor ships.
 
 ## Wireframe
 

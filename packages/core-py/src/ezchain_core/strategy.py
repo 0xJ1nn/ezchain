@@ -156,7 +156,18 @@ class GraphParams(StrategyParams):
     document: GraphDocument
 
 
-AnyParams = MomentumParams | DipParams | DCAParams | ThresholdParams | GraphParams
+@dataclass(frozen=True)
+class PluginParams(StrategyParams):
+    """Host-owned sizing plus the plugin's own validated configuration.
+
+    The host validates ``config`` against the installed manifest before a row is written;
+    core only owns the shape, because core must not import plugin discovery or the SDK.
+    """
+
+    config: Mapping[str, Any]
+
+
+AnyParams = MomentumParams | DipParams | DCAParams | ThresholdParams | GraphParams | PluginParams
 
 _COMMON_KEYS = {"order_usd", "interval_minutes", "max_position_usd"}
 _EXIT_KEYS = {"take_profit_pct", "stop_loss_pct"}
@@ -238,6 +249,18 @@ def validate_params(kind: StrategyKind, params: Mapping[str, Any] | None) -> Any
             sell_above_usd=sell_above,
         )
 
+    if kind == "plugin":
+        _reject_unknown(params, _COMMON_KEYS | {"config"})
+        raw_config = params.get("config", {})
+        if not isinstance(raw_config, Mapping):
+            raise StrategyValidationError("STRATEGY_PARAM_TYPE", "config must be an object")
+        return PluginParams(
+            order_usd=order_usd,
+            interval_minutes=interval,
+            max_position_usd=max_position,
+            config=dict(raw_config),
+        )
+
     if kind == "graph":
         # ``order_usd`` stays allowed (the shared column) but a graph sizes its own orders.
         _reject_unknown(params, _COMMON_KEYS | {"graph"})
@@ -278,6 +301,8 @@ class StrategySpec:
     params: Mapping[str, Any]
     status: str = "active"
     last_run_at: datetime | None = None
+    plugin_id: str | None = None
+    plugin_version: str | None = None
 
     def number(self, key: str, default: Decimal | None = None) -> Decimal | None:
         raw = self.params.get(key)
@@ -378,6 +403,11 @@ def evaluate_strategy(
         # entry point does not carry. The engine calls ``evaluate_graph`` directly.
         return StrategyDecision("hold", Decimal(0), "GRAPH_NEEDS_CONTEXT", {})
 
+    if spec.kind == "plugin":
+        # A plugin needs its manifest-declared context, which the engine builds through
+        # the supervised worker. This snapshot-only entry point must not invent inputs.
+        return StrategyDecision("hold", Decimal(0), "PLUGIN_NEEDS_CONTEXT", {})
+
     price = snapshot.price_usd
     if price is None:
         return StrategyDecision("hold", Decimal(0), "PRICE_UNKNOWN", {})
@@ -437,6 +467,9 @@ def evaluate_strategy(
                 position_quantity=position_quantity,
             )
         return StrategyDecision("hold", Decimal(0), "THRESHOLD_WAIT", decision_inputs)
+
+    if isinstance(params, PluginParams):  # pragma: no cover - kind check returned above
+        return StrategyDecision("hold", Decimal(0), "PLUGIN_NEEDS_CONTEXT", {})
 
     change = change_for_lookback(snapshot, params.lookback)
     decision_inputs["lookback"] = params.lookback

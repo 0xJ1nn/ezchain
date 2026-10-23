@@ -38,6 +38,12 @@ from .graph import (
     latest_graph_vars,
     serialize_graph_vars,
 )
+from .plugin_host import PluginHost
+from .plugin_runtime import (
+    PluginContextBuilder,
+    evaluate_plugin_strategy,
+)
+from .plugins import PluginRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +153,8 @@ def spec_from_row(strategy: StrategyRow) -> StrategySpec:
         params=dict(strategy.params or {}),
         status=strategy.status,
         last_run_at=strategy.last_run_at,
+        plugin_id=strategy.plugin_id,
+        plugin_version=strategy.plugin_version,
     )
 
 
@@ -239,6 +247,9 @@ async def evaluate_strategy(
     order_executor: OrderExecutor,
     *,
     graph_runtime: GraphContextBuilder | None = None,
+    plugin_runtime: PluginContextBuilder | None = None,
+    plugin_host: PluginHost | None = None,
+    plugin_registry: PluginRegistry | None = None,
     now: datetime | None = None,
 ) -> RunResult:
     """Run one strategy once.
@@ -310,7 +321,30 @@ async def evaluate_strategy(
         row = _record(session, strategy, decision, now=now, touch_last_run=False)
         return _result(strategy, decision, row)
 
-    if strategy.kind == "graph":
+    if strategy.kind == "plugin":
+        if plugin_runtime is None or plugin_host is None or plugin_registry is None:
+            decision = StrategyDecision(
+                "hold",
+                Decimal(0),
+                "PLUGIN_RUNTIME_UNAVAILABLE",
+                {
+                    "kind": "plugin",
+                    "plugin_id": strategy.plugin_id,
+                    "plugin_version": strategy.plugin_version,
+                },
+            )
+            row = _record(session, strategy, decision, now=now, touch_last_run=False)
+            return _result(strategy, decision, row)
+        decision = await evaluate_plugin_strategy(
+            session,
+            strategy,
+            snapshot,
+            plugin_runtime,
+            plugin_host,
+            plugin_registry,
+            now=now,
+        )
+    elif strategy.kind == "graph":
         if graph_runtime is None:
             decision = StrategyDecision(
                 "hold",
@@ -487,6 +521,9 @@ class StrategyScheduler:
         order_executor: OrderExecutor,
         *,
         graph_runtime: GraphContextBuilder | None = None,
+        plugin_runtime: PluginContextBuilder | None = None,
+        plugin_host: PluginHost | None = None,
+        plugin_registry: PluginRegistry | None = None,
         interval_seconds: float = 30.0,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
@@ -494,6 +531,9 @@ class StrategyScheduler:
         self._dexscreener = dexscreener
         self._order_executor = order_executor
         self._graph_runtime = graph_runtime
+        self._plugin_runtime = plugin_runtime
+        self._plugin_host = plugin_host
+        self._plugin_registry = plugin_registry
         self._interval_seconds = max(1.0, interval_seconds)
         self._now = now
         self._stop = asyncio.Event()
@@ -534,6 +574,9 @@ class StrategyScheduler:
                             self._dexscreener,
                             self._order_executor,
                             graph_runtime=self._graph_runtime,
+                            plugin_runtime=self._plugin_runtime,
+                            plugin_host=self._plugin_host,
+                            plugin_registry=self._plugin_registry,
                             now=now,
                         )
                     )

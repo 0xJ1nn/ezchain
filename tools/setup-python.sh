@@ -15,7 +15,9 @@ fi
 .venv/bin/pip install --no-build-isolation --no-deps \
   -e packages/core-py \
   -e packages/adapters \
+  -e packages/sdk-py \
   -e apps/api \
+  -e apps/mcp \
   -e services/engine
 
 echo "python: ok — run .venv/bin/pytest"

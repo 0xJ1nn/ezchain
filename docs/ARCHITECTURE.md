@@ -5,10 +5,12 @@ Status: **PAPER stack with production operations**. The web UI (`apps/web`), Fas
 (`packages/core-py`) and DexScreener / Jupiter adapters (`packages/adapters`) are built,
 with Alembic migrations, bearer auth, `/healthz`/`/readyz`/`/metrics`, structured logs and a
 stress harness. Market observation is a bounded inline loop in the API. Graph strategies
-are live on the PAPER path (`/api/v1/graph/*`, `/api/v1/backtests`). The **executor**, key
-custody and a separate ingest worker are not built; live execution is disabled on every
-chain, and Timescale/tick retention is deferred. This document is the contract every later
-PR implements; deviations require an ADR.
+are live on the PAPER path (`/api/v1/graph/*`, `/api/v1/backtests`). External strategy
+plugins run as `kind=plugin` in a supervised worker, and `apps/mcp` exposes the read
+surface plus paper-only mutations to MCP agents. The **executor**, key custody and a
+separate ingest worker are not built; live execution is disabled on every chain, and
+Timescale/tick retention is deferred. This document is the contract every later PR
+implements; deviations require an ADR.
 
 ## 1. Shape
 
@@ -86,13 +88,14 @@ build on their own host. See [DESKTOP.md](DESKTOP.md).
 apps/
   web/                     # Next.js 15, App Router, CSS tokens (ADR-0013)
   api/                     # FastAPI edge
+  mcp/                     # MCP 2025-11-25 server (stdio) for agents
 services/
   engine/                  # strategy host, automation scheduler, signal router
   executor/                # vault, signer, broadcaster, confirmer
   ingest/                  # sources/{chain,venue,cex,social}, normalizers, candles
 packages/
   core_py/                 # domain: money, ledger, orders, positions, risk policy
-  sdk_py/                  # public strategy/automation SDK (Apache-2.0)
+  sdk_py/                  # standalone public strategy SDK (Apache-2.0)
   adapters/
     chain_solana/ chain_evm/ chain_move/ chain_cosmos/ chain_bitcoin/ chain_ton/ ...
     venue_jupiter/ venue_uniswap/ venue_pancake/ venue_oneinch/ venue_cex/
@@ -108,7 +111,7 @@ Enforced boundaries (import-linter):
 - `core_py` imports nothing from `apps/`, `services/`, `adapters/`, `sdk_py`.
 - `apps/api` never imports `services/executor`; only the executor HTTP client.
 - `adapters/*` import `core_py` and their chain SDK; never another adapter.
-- `sdk_py` imports only `core_py` types (no platform internals).
+- `sdk_py` imports no platform code at all; it is a standalone Apache-2.0 package.
 - `services/engine` never touches key material or signing libraries.
 
 Module size budget: ≤ 800 LOC per module, ≤ 400 LOC per file outside generated code. A

@@ -149,6 +149,10 @@ class StrategyRow(Base):
     token_symbol: Mapped[str] = mapped_column(String(40))
     kind: Mapped[str] = mapped_column(String(24))
     params: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # Pinned plugin identity. Null for the five built-in declarative kinds. The version
+    # is the installed manifest version at creation time, not a floating lookup.
+    plugin_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    plugin_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

@@ -1,5 +1,12 @@
 """ezCHAIN domain primitives."""
 
+from .gate import (
+    GateCheck,
+    GateEvidence,
+    GateResult,
+    GateThresholds,
+    evaluate_gate,
+)
 from .ledger import (
     LedgerEntry,
     assert_balanced,
@@ -34,6 +41,10 @@ from .types import (
 
 __all__ = [
     "Candle",
+    "GateCheck",
+    "GateEvidence",
+    "GateResult",
+    "GateThresholds",
     "LedgerEntry",
     "MarketRow",
     "OrderRequest",
@@ -53,6 +64,7 @@ __all__ = [
     "bps_fee",
     "buy_entries",
     "cash_account",
+    "evaluate_gate",
     "evaluate_order",
     "evaluate_strategy",
     "fee_account",

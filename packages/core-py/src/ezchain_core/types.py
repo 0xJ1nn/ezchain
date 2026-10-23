@@ -25,7 +25,7 @@ QuoteKind = Literal[
     "osmosis_sqs",
     "paper_mark",
 ]
-StrategyKind = Literal["momentum", "dip", "dca", "threshold", "graph"]
+StrategyKind = Literal["momentum", "dip", "dca", "threshold", "graph", "plugin"]
 StrategyStatus = Literal["active", "paused"]
 
 

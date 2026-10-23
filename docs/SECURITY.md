@@ -50,15 +50,32 @@ insider/mistaken operator, stolen laptop, malicious RPC/venue, supply-chain atta
 - Panic: executor refuses new intents when the kill switch is on, even if the API is
   compromised; kill switch state is read from the DB and cached fail-closed.
 
-## 4. Strategy plugin sandbox
+## 4. Strategy plugin containment (v1)
 
-- Separate process, isolated env, read-only FS, no network namespace by default.
-- Only the SDK API; no imports of platform modules; no `os.environ`, no `subprocess`.
-- CPU/wall/memory budgets; overrun ⇒ quarantine.
-- Manifest permissions are explicit and shown at install: chains, venues, data scopes.
-- Install requires a confirmation showing the diff of requested permissions.
-- Signed packages (sigstore) optional; unsigned local installs are allowed but labelled
-  `UNVERIFIED` in the UI.
+The v1 worker is **containment, not a sandbox**. It is documented that way so nobody
+mistakes a timeout for an isolation boundary.
+
+- Each plugin strategy runs in a separate interpreter (`services/engine/plugin_worker`),
+  started with a scrubbed environment: no API token, signing secret, vault path or
+  `HOME`. Only the SDK and the plugin's own dependencies are importable.
+- `RLIMIT_AS` (default 512 MiB) and `RLIMIT_CPU` bound memory and CPU; a per-callback
+  wall timeout (default 5 s) kills the process group.
+- Plugin stdout is redirected to stderr; the JSON-lines protocol is the only thing read
+  from stdout.
+- 3 failures in 10 minutes quarantine the strategy. `POST /api/v1/plugins/reload`
+  retires workers after an operator fixes the plugin.
+- Manifest permissions are explicit: `read_market`, `read_account`, `submit_intent`.
+  Unknown permissions fail discovery. Chains are declared and enforced before a tick.
+- The SDK exposes no wallet, key, signing, HTTP, filesystem or subprocess API. This is a
+  contract, not an OS boundary: a determined plugin can still open sockets and read
+  files. Installs are trusted operator actions (`pip install` or a directory under
+  `EZCHAIN_PLUGIN_PATHS`).
+- A plugin's intent is clamped by the existing paper risk policy; a plugin cannot submit
+  an order, choose a mode or reach the executor.
+
+Not yet implemented: read-only FS, network namespace, seccomp/bwrap, signed packages and
+a registry. Those are tracked as follow-ups; until they exist, do not describe the worker
+as a security sandbox. The executor remains the only key holder (ADR-0026).
 
 ## 5. API and web
 

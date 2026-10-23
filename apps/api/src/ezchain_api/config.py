@@ -32,10 +32,20 @@ class Settings(BaseSettings):
     api_token: SecretStr | None = None
 
     data_mode: Literal["live", "fixture"] = "live"
+    # Server-derived execution mode. Live is refused until the executor exists; a client
+    # can never request a mode on an order or a tool call.
+    execution_mode: Literal["paper", "live"] = "paper"
     engine_inline: bool = True
     engine_interval_seconds: int = 30
     # Seed for the persisted operator kill switch when ``system_flags`` has no row yet.
     engine_kill_switch: bool = False
+
+    # External strategy plugins. Paths are directories containing a manifest or child
+    # packages with one; installed entry points are discovered in addition.
+    plugin_paths: str = ""
+    plugin_timeout_seconds: float = Field(default=5.0, ge=0.1, le=60)
+    plugin_memory_mb: int = Field(default=512, ge=64, le=8192)
+    plugin_cpu_seconds: int = Field(default=10, ge=1, le=120)
 
     market_scan_inline: bool = True
     market_scan_interval_seconds: int = Field(default=90, ge=30)
@@ -54,12 +64,21 @@ class Settings(BaseSettings):
     # Execution-cost ceiling for a new position, as a ratio (0.05 = 5%). Applies to
     # executable quotes only; a paper_mark reports no impact and a sell is never blocked.
     max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
+    # Paper-to-live promotion gate (ADR-0009). Computed, never auto-promoted.
+    paper_gate_min_days: int = Field(default=14, ge=1, le=365)
+    paper_gate_min_intents: int = Field(default=100, ge=1)
+    paper_gate_min_fills: int = Field(default=20, ge=1)
+    paper_gate_require_backtest: bool = True
 
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
 
     @model_validator(mode="after")
     def _validate_production(self) -> Settings:
-        """Refuse an unsafe production boot, naming the exact configuration key."""
+        """Refuse an unsafe boot, naming the exact configuration key."""
+        if self.execution_mode == "live":
+            raise ValueError(
+                "EZCHAIN_EXECUTION_MODE=live is not available: the live executor is not shipped"
+            )
         if self.environment != "prod":
             return self
 
@@ -88,6 +107,10 @@ class Settings(BaseSettings):
         if "*" in self.cors_origins:
             raise ValueError("EZCHAIN_CORS_ORIGINS must not contain '*' in prod")
         return self
+
+    @property
+    def plugin_path_list(self) -> list[str]:
+        return [item.strip() for item in self.plugin_paths.split(",") if item.strip()]
 
 
 @lru_cache
