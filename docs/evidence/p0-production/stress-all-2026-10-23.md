@@ -5,7 +5,7 @@ GeckoTerminal reads. Paper only; no keys, signing or live funds.
 
 ## Release gate (the candidate evidence)
 
-Candidate commit `679bf46c270ee422a05b1b4b372602ce218c0d2d`, clean working tree
+Candidate commit `c6ee70f083b29d5dc9a367085d6f8f1d9f3ed834`, clean working tree
 (`git_dirty: false` in the report), target `http://127.0.0.1:8001`:
 
 ```bash
