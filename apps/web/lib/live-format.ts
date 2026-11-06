@@ -102,7 +102,7 @@ export function ageLabel(iso: string | null | undefined, now = Date.now()): stri
 	const hours = Math.floor(minutes / 60);
 	if (hours < 24) return `${hours}h`;
 	const days = Math.floor(hours / 24);
-	if (days < 30) return `${days}d`;
+	if (days < 365) return `${days}d`;
 	return `${Math.floor(days / 365)}y`;
 }
 

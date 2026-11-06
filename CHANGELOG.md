@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Market-first discovery:** the dashboard leads with a paper-labelled launches and
+  trending strip above equity, and a new Launches births feed lists recent tokens with
+  age, curve progress and dev history and safety marked unknown until they have a
+  source, with one-click Trade per row. In fixture mode every row is labelled FIXTURE
+  sample data.
+
 - **Strategy SDK v1 and supervised plugin runtime**: new Apache-2.0 `ezchain-sdk`
   (manifest, JSON-Schema subset, `PluginContext`, `Intent`, `Strategy`), discovery through
   `ezchain.strategies` entry points and `EZCHAIN_PLUGIN_PATHS`, and `kind=plugin`

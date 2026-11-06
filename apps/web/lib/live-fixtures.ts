@@ -8,6 +8,8 @@
 import {
 	ApiError,
 	type Chain,
+	type LaunchList,
+	type LaunchQuery,
 	type MarketList,
 	type MarketOverview,
 	type MarketQuery,
@@ -473,6 +475,49 @@ function rowFromSeed(seed: Seed, source: Source): MarketRow {
 		url: seed.url,
 		source,
 	};
+}
+
+// Curve-progress fixture values for the births feed. Only tokens whose launchpad curve
+// is modelled in the fixture sample carry a value; the rest stay null and the surface
+// prints an em dash rather than inventing a graduation percentage.
+const CURVE_PROGRESS_PCT: Record<string, number> = {
+	MOCHI: 57,
+	SCAM: 12,
+	CAKE: 31,
+	BRETT: 42,
+	AERO: 18,
+};
+
+export function fixtureLaunches(query: LaunchQuery = {}): LaunchList {
+	const chain = query.chain ?? "all";
+	checkChain(chain);
+	const limit = Math.min(100, Math.max(1, query.limit ?? 5));
+	const now = Date.now();
+	const source = fixtureSource(now, 4);
+	const rows = SEEDS.filter((seed) => chain === "all" || seed.chain === chain)
+		.map((seed) => ({
+			seed,
+			created: seed.created_minutes_ago,
+		}))
+		.sort((a, b) => {
+			if (a.created === null) return 1;
+			if (b.created === null) return -1;
+			return a.created - b.created;
+		})
+		.slice(0, limit)
+		.map(({ seed }) => ({
+			chain: seed.chain,
+			base_token: seed.base_token,
+			symbol: seed.symbol,
+			name: seed.name,
+			pair_created_at:
+				seed.created_minutes_ago === null
+					? null
+					: new Date(Date.now() - seed.created_minutes_ago * MINUTE).toISOString(),
+			curve_progress_pct: CURVE_PROGRESS_PCT[seed.symbol] ?? null,
+			source,
+		}));
+	return { rows, source, stale: false };
 }
 
 export function fixtureChains(): Chain[] {

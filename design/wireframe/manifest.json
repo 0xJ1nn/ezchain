@@ -188,6 +188,12 @@
       "file": "29-components.html",
       "group": "Meta",
       "title": "Components"
+    },
+    {
+      "id": "launches",
+      "file": "30-launches.html",
+      "group": "Overview",
+      "title": "Launches"
     }
   ]
 }
