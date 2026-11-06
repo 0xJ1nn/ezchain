@@ -263,3 +263,35 @@ def test_adapter_is_read_only() -> None:
     feed = FirehoseFeed()
     for forbidden in ("sign", "trade", "execute", "order", "buy", "sell"):
         assert not hasattr(feed, forbidden), forbidden
+
+
+def test_dedupe_window_stays_bounded(monkeypatch):
+    """_seen is a window, not an archive: it never exceeds the cap."""
+    import ezchain_adapters.firehose as fh
+
+    monkeypatch.setattr(fh, "DEDUPE_WINDOW_LIMIT", 16)
+    feed = fh.FirehoseFeed()
+    payload = {"kind": "create", "mint": "", "timestamp": BASE, "signature": ""}
+    seen = []
+    for i in range(40):
+        payload = dict(payload, mint=f"m{i}", timestamp=BASE + i, signature=f"sig{i}")
+        seen.append(feed.ingest(payload))
+    assert all(x is not None for x in seen)
+    assert feed.health()["decoded"] == 40
+    assert len(feed._seen) <= 16
+
+
+def test_dedupe_window_prunes_oldest(monkeypatch):
+    """Once pruned, an old signature may be accepted again (window semantics)."""
+    import ezchain_adapters.firehose as fh
+
+    monkeypatch.setattr(fh, "DEDUPE_WINDOW_LIMIT", 2)
+    feed = fh.FirehoseFeed()
+    feed.ingest({"kind": "create", "mint": "m0", "timestamp": BASE + 1, "signature": "s0"})
+    feed.ingest({"kind": "create", "mint": "m1", "timestamp": BASE + 2, "signature": "s1"})
+    # m2 pushes the window past its cap and prunes the oldest signature (s0)
+    feed.ingest({"kind": "create", "mint": "m2", "timestamp": BASE + 3, "signature": "s2"})
+    again = feed.ingest({"kind": "create", "mint": "m3", "timestamp": BASE + 4, "signature": "s0"})
+    # s0 was pruned; this ingest is accepted fresh, no duplicate counted
+    assert again is not None
+    assert feed.health()["duplicates"] == 0

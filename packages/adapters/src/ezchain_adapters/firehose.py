@@ -38,6 +38,7 @@ UNITS = "SOL"
 PINNED_VERSION = "0.4.0"
 DEFAULT_STALE_BUDGET_SECONDS = 60.0
 MAX_RECENT = 500
+DEDUPE_WINDOW_LIMIT = 250_000
 
 EventKind = Literal["create", "trade", "complete"]
 Venue = Literal["pumpfun", "pumpswap"]
@@ -300,7 +301,7 @@ class FirehoseFeed:
         self._alerts: list[FirehoseAlert] = []
         self._recent: list[MarketEvent] = []
         self._by_mint: dict[str, MarketEvent] = {}
-        self._seen: set[str] = set()
+        self._seen: dict[str, None] = {}
         self._decoded = 0
         self._rejected = 0
         self._duplicates = 0
@@ -316,7 +317,9 @@ class FirehoseFeed:
             self._duplicates += 1
             return None
         if event.signature:
-            self._seen.add(event.signature)
+            self._seen[event.signature] = None
+            while len(self._seen) > DEDUPE_WINDOW_LIMIT:
+                self._seen.pop(next(iter(self._seen)))
         self._decoded += 1
         self._recent.append(event)
         if len(self._recent) > MAX_RECENT:
