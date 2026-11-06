@@ -9,9 +9,10 @@ export default defineConfig({
 	testDir: "./e2e",
 	testIgnore: "**/live-paper.spec.ts",
 	globalSetup: "./e2e/global-setup.ts",
-	// `next dev` compiles each route on first hit; under host load a cold compile alone can
-	// exceed 30s, so the budget is generous and parallelism is capped to half the cores.
-	timeout: 90_000,
+	// `next dev` compiles each route on first hit; the route-hopping sidebar test visits
+	// every route in one test, and on a small host (8GB, cold cache) one pass can stretch
+	// past two minutes of compile stalls. Workers stay capped to half the cores.
+	timeout: 240_000,
 	expect: { timeout: 15_000 },
 	fullyParallel: true,
 	workers: "50%",
