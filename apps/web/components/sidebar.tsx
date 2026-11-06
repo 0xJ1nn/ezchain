@@ -13,6 +13,7 @@ const nav = [
 	{
 		label: "Discovery",
 		items: [
+			{ id: "launches", href: "/launches", label: "Launches", glyph: "✶" },
 			{ id: "markets", href: "/markets", label: "Browse", glyph: "◫" },
 			{ id: "signals", href: "/signals", label: "Signals", glyph: "⌁" },
 		],

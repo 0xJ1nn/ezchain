@@ -46,6 +46,22 @@ export interface MarketRow {
 	source: Source;
 }
 
+export interface LaunchRow {
+	chain: string;
+	base_token: string;
+	symbol: string;
+	name: string;
+	pair_created_at: string | null;
+	curve_progress_pct: number | null;
+	source: Source;
+}
+
+export interface LaunchList {
+	rows: LaunchRow[];
+	source: Source;
+	stale: boolean;
+}
+
 export interface MarketList {
 	rows: MarketRow[];
 	source: Source;
@@ -341,6 +357,40 @@ export async function getMarkets(query: MarketQuery = {}): Promise<MarketList> {
 			limit: query.limit ?? 50,
 		},
 	});
+}
+
+export interface LaunchQuery {
+	chain?: string;
+	limit?: number;
+}
+
+export async function getLaunches(query: LaunchQuery = {}): Promise<LaunchList> {
+	if (webMode() === "fixture") {
+		const fixtures = await import("./live-fixtures");
+		return fixtures.fixtureLaunches(query);
+	}
+	// Live births are the newest pairs from the proven markets feed. Curve progress has
+	// no live source in P0, so it stays null and the pages print an em dash.
+	const list = await request<MarketList>("/v1/markets", {
+		params: {
+			chain: query.chain ?? "all",
+			sort: "new",
+			limit: query.limit ?? 5,
+		},
+	});
+	return {
+		rows: list.rows.map((row) => ({
+			chain: row.chain,
+			base_token: row.base_token,
+			symbol: row.symbol,
+			name: row.name,
+			pair_created_at: row.pair_created_at,
+			curve_progress_pct: null,
+			source: row.source,
+		})),
+		source: list.source,
+		stale: list.stale,
+	};
 }
 
 export async function getChains(): Promise<Chain[]> {

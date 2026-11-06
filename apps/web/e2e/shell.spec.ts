@@ -56,14 +56,18 @@ const OVERFLOW_MATRIX = [
 	{ width: 1440, routes: ["/"] },
 ];
 
-test("Discovery is the first sidebar group and holds Browse then Signals", async ({ page }) => {
+test("Discovery is the first sidebar group and holds Launches, Browse then Signals", async ({ page }) => {
 	await page.goto("/");
 
 	const groups = sidebar(page).locator(".nav-group");
 	await expect(groups.first().locator(".nav-label")).toHaveText("Discovery");
 
 	const discovery = groups.first();
-	await expect(discovery.getByRole("link")).toHaveCount(2);
+	await expect(discovery.getByRole("link")).toHaveCount(3);
+	await expect(discovery.getByRole("link", { name: "Launches" })).toHaveAttribute(
+		"href",
+		"/launches",
+	);
 	await expect(discovery.getByRole("link", { name: "Browse" })).toHaveAttribute(
 		"href",
 		"/markets",
@@ -344,8 +348,8 @@ test("sidebar fits its viewport at 1440x900 and 1100x900", async ({ page }) => {
 		if (!box) throw new Error(`sidebar has no box at ${width}px`);
 
 		const items = nav.locator(".nav-item");
-		await expect(items).toHaveCount(20);
-		for (let index = 0; index < 20; index += 1) {
+		await expect(items).toHaveCount(21);
+		for (let index = 0; index < 21; index += 1) {
 			const item = await items.nth(index).boundingBox();
 			if (!item) throw new Error(`nav item ${index} has no box at ${width}px`);
 			expect(item.y, `item ${index} top at ${width}px`).toBeGreaterThanOrEqual(

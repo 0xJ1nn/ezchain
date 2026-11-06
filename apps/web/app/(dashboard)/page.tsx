@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
-import { Badge, ButtonLink, Panel, Stat, TokenAvatar } from "@/components/ui";
+import { Badge, ButtonLink, Meter, Panel, Stat, TokenAvatar } from "@/components/ui";
 import {
 	getMarketOverview,
 	getPaperAlerts,
 	getPaperLimits,
 	getPaperOrders,
 } from "@/lib/account-api";
-import { asApiError, getChains, getMarkets } from "@/lib/api";
+import { asApiError, getChains, getLaunches, getMarkets } from "@/lib/api";
 import {
 	ageLabel,
+	chainInitial,
 	changeText,
 	changeTone,
 	formatAmount,
@@ -67,11 +68,14 @@ export default async function DashboardPage({
 	searchParams: Promise<{ state?: string }>;
 }) {
 	const { state } = await searchParams;
-	const [snapshot, strategies, marketsOutcome, chainsOutcome, limits, alerts, orders, overview] =
+	const [snapshot, strategies, marketsOutcome, launchesOutcome, chainsOutcome, limits, alerts, orders, overview] =
 		await Promise.all([
 			getPaperSnapshot(),
 			getStrategies(),
 			getMarkets({ limit: 5, sort: "trending" })
+				.then((list) => ({ ok: true as const, list }))
+				.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
+			getLaunches({ limit: 3 })
 				.then((list) => ({ ok: true as const, list }))
 				.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
 			getChains()
@@ -111,6 +115,9 @@ export default async function DashboardPage({
 	const marketSource = marketsOutcome.ok ? marketsOutcome.list.source : null;
 	const marketStale = marketsOutcome.ok ? marketsOutcome.list.stale : false;
 	const chainRows = chainsOutcome.ok ? chainsOutcome.rows : [];
+	const launchRows = launchesOutcome.ok ? launchesOutcome.list.rows.slice(0, 3) : [];
+	const trendingRows = marketRows.slice(0, 3);
+	const labelFor = (id: string) => chainRows.find((chain) => chain.id === id)?.name ?? id;
 	const limitRows = limits.ok ? limits.data : null;
 	const alertRows = alerts.ok ? alerts.data.alerts : [];
 	const orderRows = orders.ok ? orders.data : [];
@@ -139,6 +146,160 @@ export default async function DashboardPage({
 					</Link>
 				</div>
 			</header>
+
+			<section className="panel" data-testid="market-strip" aria-label="Market strip">
+				<div className="panel-head">
+					<h2>Market</h2>
+					<span className="sub">launches + trending · paper · every number carries source and age</span>
+					<div className="right">
+						<Badge tone="ghost">PAPER</Badge>
+						{!live && <Badge tone="ghost">FIXTURE</Badge>}
+					</div>
+				</div>
+				<div className="grid cols-2">
+					<div>
+						<div className="strong mb-8">Launches</div>
+						{!launchesOutcome.ok ? (
+							<div className="note">{failure(launchesOutcome)}</div>
+						) : launchRows.length === 0 ? (
+							<div className="note">No births in the fixture sample for this view.</div>
+						) : (
+							<div className="table-wrap">
+								<table className="table compact">
+									<thead>
+										<tr>
+											<th>Token</th>
+											<th>Chain</th>
+											<th className="num">Age</th>
+											<th>Curve progress</th>
+											<th>Trade</th>
+										</tr>
+									</thead>
+									<tbody>
+										{launchRows.map((row) => (
+											<tr key={`launch:${row.chain}:${row.base_token}`}>
+												<td>
+													<span className="row">
+														<TokenAvatar size="sm">{initials(row.symbol)}</TokenAvatar>
+														<span>
+															<span className="strong">{row.symbol}</span>
+															<span className="sub" style={{ display: "block" }}>
+																{shortAddress(row.base_token)}
+															</span>
+														</span>
+													</span>
+												</td>
+												<td>
+													<span className="chain">
+														<span className="sq">{chainInitial(labelFor(row.chain))}</span>
+														{labelFor(row.chain)}
+													</span>
+												</td>
+												<td className="num mono">{ageLabel(row.pair_created_at)}</td>
+												<td>
+													{row.curve_progress_pct === null ? (
+														<span className="small muted mono">—</span>
+													) : (
+														<span>
+															<Meter
+																width={`${Math.max(0, Math.min(100, row.curve_progress_pct))}%`}
+																tone={row.curve_progress_pct >= 70 ? "warn" : undefined}
+																label="Curve progress"
+																valueText={`${row.curve_progress_pct}%`}
+															/>
+															<span className="small muted mono">{row.curve_progress_pct}%</span>
+														</span>
+													)}
+												</td>
+												<td>
+													<ButtonLink href={`/tokens/${row.chain}/${row.base_token}`} size="sm">
+														Trade
+													</ButtonLink>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+						<div className="small muted mt-8">Newest births first · safety and dev history unknown in P0.</div>
+						<div className="row mt-8">
+							<ButtonLink href="/launches" size="sm">
+								All launches
+							</ButtonLink>
+						</div>
+					</div>
+					<div>
+						<div className="strong mb-8">Trending</div>
+						{!marketsOutcome.ok ? (
+							<div className="note">{failure(marketsOutcome)}</div>
+						) : trendingRows.length === 0 ? (
+							<div className="note">No trending rows in the fixture sample for this view.</div>
+						) : (
+							<div className="table-wrap">
+								<table className="table compact">
+									<thead>
+										<tr>
+											<th>Token</th>
+											<th>Chain</th>
+											<th className="num">Age</th>
+											<th className="num">Price</th>
+											<th>Trade</th>
+										</tr>
+									</thead>
+									<tbody>
+										{trendingRows.map((row) => (
+											<tr key={`trending:${row.chain}:${row.pair_address}`}>
+												<td>
+													<span className="row">
+														<TokenAvatar size="sm">{initials(row.symbol)}</TokenAvatar>
+														<span>
+															<span className="strong">{row.symbol}</span>
+															<span className="sub" style={{ display: "block" }}>
+																{shortAddress(row.base_token)}
+															</span>
+														</span>
+													</span>
+												</td>
+												<td>
+													<span className="chain">
+														<span className="sq">{chainInitial(labelFor(row.chain))}</span>
+														{labelFor(row.chain)}
+													</span>
+												</td>
+												<td className="num mono">{ageLabel(row.pair_created_at)}</td>
+												<td className="num mono">{formatUsdPrice(row.price_usd)}</td>
+												<td>
+													<ButtonLink href={`/tokens/${row.chain}/${row.base_token}`} size="sm">
+														Trade
+													</ButtonLink>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+						<div className="small muted mt-8">Trending = 24h volume order · source on the Markets page.</div>
+						<div className="row mt-8">
+							<ButtonLink href="/markets" size="sm">
+								All markets
+							</ButtonLink>
+						</div>
+					</div>
+				</div>
+				<div className="panel-foot">
+					{live ? (
+						<>
+							Unknown is <span className="mono">—</span>, never zero. Paper mode only · every number carries source and age.
+						</>
+					) : (
+						<>
+							Unknown is <span className="mono">—</span>, never zero. Preview rows are fixture sample data and say so.
+						</>
+					)}
+				</div>
+			</section>
 
 			<section className="kpi-band mb-12" aria-label="Paper account">
 				<Stat
