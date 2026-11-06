@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Sidebar } from "./sidebar";
+import { ThemeToggle } from "./theme-toggle";
 
 export function Topbar() {
 	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
@@ -44,6 +45,7 @@ export function Topbar() {
 			<Link className="icon-btn" href="/alerts" title="Alerts" aria-label="Alerts">
 				◉
 			</Link>
+			<ThemeToggle />
 			<Link className="kill" href="/risk" title="Kill switch: halt new risk (k)">
 				KILL SWITCH
 			</Link>
