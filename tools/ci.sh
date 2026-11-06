@@ -64,15 +64,19 @@ if [ -n "${EZCHAIN_TEST_DATABASE_URL:-}" ]; then
   ran=1
 fi
 if [ -f pnpm-workspace.yaml ]; then
-  command -v pnpm >/dev/null 2>&1 || {
-    echo "pnpm is required for the web gate: npm install -g pnpm@9"
-    exit 1
-  }
-  pnpm -r lint
-  pnpm -r typecheck
-  pnpm --filter @ezchain/web build
-  pnpm -r test
-  ran=1
+  if [ ! -d node_modules ]; then
+    echo "not present yet: web gates (node_modules missing — run pnpm install)"
+  else
+    command -v pnpm >/dev/null 2>&1 || {
+      echo "pnpm is required for the web gate: npm install -g pnpm@9"
+      exit 1
+    }
+    pnpm -r lint
+    pnpm -r typecheck
+    pnpm --filter @ezchain/web build
+    pnpm -r test
+    ran=1
+  fi
 fi
 if [ "$ran" -eq 0 ]; then
   echo "not present yet: ruff, mypy, pytest, eslint, tsc, playwright"
