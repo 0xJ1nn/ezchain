@@ -192,4 +192,4 @@ a full row and the topbar wraps.
 `design/BRIEF.md` defines the design tokens, tone, component inventory and the pages in
 priority order. The wireframe deliberately uses grayscale and dashed placeholders so that
 layout, hierarchy and content are judged before aesthetics. Do not add content that is not
-in the wireframe without updating this document.
+in the wireframe without updating this document. The dark "Instrument" skin is primary: `tokens.css` keeps the light `:root` byte-identical and adds `[data-theme="dark"]`, and the web app defaults to dark with a topbar toggle persisted as `ezchain.theme` in `localStorage`. The inline bootstrap in `app/layout.tsx` reads the stored choice and otherwise guesses once from `prefers-color-scheme` (light only when the system prefers light), so a stored light skin survives reloads.
