@@ -4,6 +4,7 @@
   const page = document.body.dataset.page || "";
   const nav = [
     ["Discovery", [
+      ["launches", "30-launches.html", "Launches", "✶"],
       ["markets", "06-markets.html", "Browse", "◫"],
       ["signals", "14-signals.html", "Signals", "⌁"],
     ]],

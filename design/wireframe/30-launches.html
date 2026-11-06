@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launches · ezCHAIN wireframe</title>
+  <link rel="stylesheet" href="assets/wire.css">
+</head>
+<body data-page="launches">
+  <main id="main">
+    <header class="page-head">
+      <div class="titles">
+        <div class="crumbs">Discovery / Launches</div>
+        <h1>Launches</h1>
+        <p class="sub">Live births feed. New tokens with age, curve progress, dev history and safety; one-click Trade per row. Paper mode only.</p>
+      </div>
+      <div class="page-actions">
+        <span class="chip">PAPER</span>
+        <a class="btn" href="06-markets.html">Markets</a>
+        <a class="btn primary" href="03-dashboard.html">Dashboard</a>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>New token births</h2>
+        <span class="sub">newest first · every number carries source and age</span>
+        <div class="right"><span class="badge ghost">PAPER</span></div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Token</th><th>Chain</th><th class="num">Age</th>
+              <th>Curve progress</th><th>Dev history</th><th>Safety</th><th>LP custody</th><th>Trade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">NO</span><span><span class="strong">NOVA</span><span class="sub" style="display:block">Nova…7r2</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">4m</td>
+              <td><div class="meter"><div class="fill" style="width:18%"></div></div><span class="small muted mono">18%</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><a class="btn sm" href="07-token.html">Trade</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">GR</span><span><span class="strong">GRIZ</span><span class="sub" style="display:block">Griz…2p8</span></span></span></td>
+              <td><span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num mono">12m</td>
+              <td><div class="meter"><div class="fill" style="width:42%"></div></div><span class="small muted mono">42%</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><a class="btn sm" href="07-token.html">Trade</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">PU</span><span><span class="strong">PUMP2</span><span class="sub" style="display:block">Pump…9kd</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">27m</td>
+              <td><div class="meter"><div class="fill warn" style="width:71%"></div></div><span class="small muted mono">71%</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><a class="btn sm" href="07-token.html">Trade</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">MO</span><span><span class="strong">MOCHI</span><span class="sub" style="display:block">Mochi…4xQ</span></span></span></td>
+              <td><span class="chain"><span class="sq">S</span>Solana</span></td>
+              <td class="num mono">38m</td>
+              <td><div class="meter"><div class="fill" style="width:57%"></div></div><span class="small muted mono">57%</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><a class="btn sm" href="07-token.html">Trade</a></td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="row"><span class="token" style="width:22px;height:22px;font-size:8px">BA</span><span><span class="strong">BASED</span><span class="sub" style="display:block">Based…8j4</span></span></span></td>
+              <td><span class="chain"><span class="sq">B</span>Base</span></td>
+              <td class="num mono">51m</td>
+              <td><div class="meter"><div class="fill" style="width:31%"></div></div><span class="small muted mono">31%</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><span class="badge warn">unknown</span></td>
+              <td><a class="btn sm" href="07-token.html">Trade</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot">
+        <span>Births feed · paper mode · unknown is <span class="mono">—</span>, never a guess.</span>
+        <span>Sort: newest first · page 1/1</span>
+      </div>
+      <div class="panel-foot between">
+        <span>Sources: firehose/DexScreener indexer for births and curve; safety and dev history are unknown in P0.</span>
+        <span class="small">Freshness: births ≤ 15s · curve ≤ 3s · <span class="dot-live"></span>sweep ok</span>
+      </div>
+    </section>
+
+    <div class="split mt-16">
+      <section class="panel">
+        <div class="panel-head"><h2>How to read this feed</h2><span class="sub">what each column is allowed to claim</span></div>
+        <div class="panel-body stack-sm small muted">
+          <div>• <span class="ink">Age</span> is the token birth age from the first observed pair, not quote freshness.</div>
+          <div>• <span class="ink">Curve progress</span> is the fill toward graduation; <span class="mono">—</span> where the curve does not apply.</div>
+          <div>• <span class="ink">Dev history</span> and <span class="ink">Safety</span> are unknown in P0. A miss is not a pass; execution gates stay fail-closed.</div>
+          <div>• <span class="ink">Trade</span> opens the token quote panel. No row trades from the feed itself.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Source &amp; freshness</h2><span class="sub">reason codes, no silent fallback</span></div>
+        <div class="panel-body stack-sm small muted">
+          <div><span class="badge ghost">PAPER</span> paper mode only; there is no live trading on this page.</div>
+          <div><span class="badge ghost">FIXTURE</span> local sample data in fixture mode; never presented as live.</div>
+          <div><span class="badge warn">unknown</span> not checked · no value is assumed.</div>
+          <div><span class="badge ghost">—</span> unknown is an em dash, never zero.</div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="assets/shell.js"></script>
+</body>
+</html>

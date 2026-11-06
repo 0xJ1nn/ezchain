@@ -1,6 +1,6 @@
 # WIREFRAME — screen inventory, flows and the position tile
 
-The wireframe lives in `design/wireframe/` (31 pages, static HTML, no build). It is the
+The wireframe lives in `design/wireframe/` (32 pages, static HTML, no build). It is the
 structural source of truth: layout, content, hierarchy, states, interactions. Visual
 design happens downstream against `design/BRIEF.md`.
 
@@ -15,7 +15,8 @@ Open `design/wireframe/index.html`.
 ├──────────────┬───────────────────────────────────────────────────────┤
 │ sidebar      │ page header (title, subtitle, primary action)         │
 │ Discovery    │ ───────────────────────────────────────────────────── │
-│  Browse      │ content                                               │
+│  Launches    │ content                                               │
+│  Browse      │                                                       │
 │  Signals     │                                                       │
 │ Overview     │                                                       │
 │  Dashboard   │                                                       │
@@ -61,7 +62,7 @@ Persistent rules:
 | 00 | `index.html` | Gallery | Map of the wireframe + flows | page cards, flow links, legend |
 | 01 | `01-sign-in.html` | Sign in | Auth entry | passkey/2FA, self-host note, recovery |
 | 02 | `02-onboarding.html` | Onboarding | First run | create vault, add wallet, pick chains, risk profile, paper default |
-| 03 | `03-dashboard.html` | Dashboard | Am I safe and up? | equity hero, PnL, exposure, open positions preview, signals, automation health, chain status |
+| 03 | `03-dashboard.html` | Dashboard | Market first: what is the market doing now? | market strip (launches + trending), equity hero, PnL, exposure, open positions preview, signals, automation health, chain status |
 | 04 | `04-positions.html` | Positions | What is happening now? | filters, group-by, full position tiles, closed strip |
 | 05 | `05-position-detail.html` | Position detail | Decide on one position | full chart, ladder, fills, ledger journal, notes, actions |
 | 06 | `06-markets.html` | Markets | Find a market | screener table, chain tabs, filters, sparkline, watchlist |
@@ -89,6 +90,7 @@ Persistent rules:
 | 27 | `27-states.html` | State gallery | Every non-happy state | loading, empty, stale, unsellable, no route, offline, quarantine |
 | 28 | `28-mobile.html` | Mobile | Responsive proof | dashboard, positions, tile, kill switch |
 | 29 | `29-components.html` | Components | Handoff reference | tile anatomy, chart frame, table, badges, drawers, modals, toasts |
+| 30 | `30-launches.html` | Launches | What launched most recently? | births feed table, age, curve progress, dev history, safety, LP custody, Trade |
 
 ## 3. Primary flows
 
