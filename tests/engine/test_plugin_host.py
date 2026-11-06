@@ -167,9 +167,10 @@ async def test_timeout_kills_the_worker_and_quarantines_after_three_failures(
     )
     host = PluginHost(timeout_seconds=0.3)
     record = registry.get("com.example.test")
+    candle_event = {"kind": "candle", "candle": _context().candles["1h"][0].to_dict()}
     try:
         for _ in range(3):
-            tick = await host.tick("strategy-3", record, _context())
+            tick = await host.tick("strategy-3", record, _context(), event=candle_event)
             assert not tick.ok
             assert tick.error_code == "PLUGIN_TIMEOUT"
         blocked = await host.tick("strategy-3", record, _context())
