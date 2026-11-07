@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { CostSheet } from "@/components/cost-sheet";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel, Stat } from "@/components/ui";
 import {
@@ -502,6 +503,7 @@ export default async function TokenPage({
 											/>
 										</tbody>
 									</table>
+									<CostSheet quote={quote} symbol={token.symbol} />
 									{quote.kind === "paper_mark" && (
 										<div className="note warn">
 											<strong>PAPER · MARK.</strong> This chain has no executable venue in

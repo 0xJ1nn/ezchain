@@ -16,6 +16,7 @@ from ezchain_adapters import (
     QuoteRouter,
     get_chain,
 )
+from ezchain_core import preview_cost
 
 from ..config import Settings, get_settings
 from ..deps import (
@@ -190,6 +191,7 @@ async def quote(
     amount_usd: Decimal = Query(gt=0),
     quantity: Decimal | None = Query(default=None, gt=0),
     quotes: QuoteRouter = Depends(get_quote_router),
+    settings: Settings = Depends(get_settings),
 ) -> QuoteOut:
     if get_chain(chain) is None:
         raise HTTPException(
@@ -205,4 +207,17 @@ async def quote(
         )
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
-    return QuoteOut.model_validate(result.to_dict())
+    # The pre-trade sheet, via the one cost model: this is the same preview the journal
+    # records on the intent when the order fires, so the two agree by construction.
+    notional = result.amount_in if side == "buy" else result.amount_out
+    payload = result.to_dict()
+    payload["cost_preview"] = preview_cost(
+        kind=result.kind,
+        notional_usd=notional,
+        venue_fee_usd=result.fee_usd,
+        price_impact_pct=result.price_impact_pct,
+        amount_out=result.amount_out,
+        fee_bps=settings.paper_fee_bps,
+        source=result.source,
+    ).to_dict()
+    return QuoteOut.model_validate(payload)

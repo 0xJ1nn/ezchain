@@ -146,6 +146,21 @@ export interface MarketOverview {
 	totals: MarketOverviewTotals;
 }
 
+/**
+ * The pre-trade cost sheet for one quote, as the journal records it on the intent.
+ * Nulls are unknowns ("—" on screen), never zeros. The web formats only.
+ */
+export interface CostPreview {
+	platform_fee_usd: string;
+	venue_fee_usd: string;
+	network_fee_usd: string | null;
+	price_impact_pct: string | null;
+	slippage_bps: number | null;
+	worst_case_out: string | null;
+	fill_fee_usd: string;
+	source: Source;
+}
+
 export interface Quote {
 	chain: string;
 	token_in: string;
@@ -159,6 +174,7 @@ export interface Quote {
 	kind: string;
 	route: string | null;
 	source: Source;
+	cost_preview?: CostPreview | null;
 }
 
 export interface PaperOrderInput {

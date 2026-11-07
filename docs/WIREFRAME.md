@@ -66,7 +66,7 @@ Persistent rules:
 | 04 | `04-positions.html` | Positions | What is happening now? | filters, group-by, full position tiles, closed strip |
 | 05 | `05-position-detail.html` | Position detail | Decide on one position | full chart, ladder, fills, ledger journal, notes, actions |
 | 06 | `06-markets.html` | Markets | Find a market | screener table, chain tabs, filters, sparkline, watchlist |
-| 07 | `07-token.html` | Token | Inspect and trade | chart with levels, quote panel, safety, liquidity, holders, own position |
+| 07 | `07-token.html` | Token | Inspect and trade | chart with levels, quote panel with the pre-trade cost sheet (platform, venue, network, impact, slippage window, receiver's worst case, journal fill fee), safety, liquidity, holders, own position |
 | 08 | `08-wallets.html` | Wallets | Where is my money? | multi-wallet cards, per-chain balances, custody, policy, sync |
 | 09 | `09-wallet-detail.html` | Wallet detail | Operate one wallet | balances, allowances, activity, policy, keys/custody, sweep |
 | 10 | `10-automations.html` | Automations | What runs without me? | list, status, last run, pause, logs |

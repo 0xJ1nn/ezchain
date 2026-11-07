@@ -20,7 +20,7 @@ from .ledger import (
     replay_position,
     sell_entries,
 )
-from .money import bps_fee
+from .money import DEFAULT_SLIPPAGE_BPS, CostPreview, bps_fee, preview_cost
 from .risk import RiskLimits, evaluate_order
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
@@ -41,6 +41,8 @@ from .types import (
 
 __all__ = [
     "Candle",
+    "DEFAULT_SLIPPAGE_BPS",
+    "CostPreview",
     "GateCheck",
     "GateEvidence",
     "GateResult",
@@ -70,6 +72,7 @@ __all__ = [
     "fee_account",
     "genesis_entries",
     "position_account",
+    "preview_cost",
     "realized_account",
     "realized_pnl",
     "replay_position",

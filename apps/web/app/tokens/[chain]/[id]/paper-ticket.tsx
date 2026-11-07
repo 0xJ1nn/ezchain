@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { CostSheet } from "@/components/cost-sheet";
 import { Badge } from "@/components/ui";
 import {
 	ApiError,
@@ -226,6 +227,8 @@ export function PaperTicket({
 					<span>{blockReason}</span>
 				)}
 			</div>
+
+			{quote && matches && <CostSheet quote={quote} symbol={symbol} />}
 
 			<div className="row">
 				<button

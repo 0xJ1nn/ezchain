@@ -28,7 +28,7 @@ from typing import Any, ClassVar, Protocol, cast
 
 import httpx
 
-from ezchain_core import Quote, QuoteKind, Side, SourceRef, utcnow
+from ezchain_core import DEFAULT_SLIPPAGE_BPS, Quote, QuoteKind, Side, SourceRef, utcnow
 
 from .breaker import CircuitBreaker
 from .cache import BoundedTTLCache
@@ -133,7 +133,7 @@ class QuoteRequest:
     side: Side
     amount_usd: Decimal
     quantity: Decimal | None = None
-    slippage_bps: int = 50
+    slippage_bps: int = DEFAULT_SLIPPAGE_BPS
 
 
 class QuoteProvider(Protocol):
