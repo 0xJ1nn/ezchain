@@ -117,6 +117,33 @@ export interface TokenSnapshot {
 	stale: boolean;
 }
 
+/** One closed OHLCV bar. Prices and volumes are decimal strings; unknown volume is null. */
+export interface Candle {
+	open_time: string;
+	close_time: string;
+	timeframe_seconds: number;
+	open: string;
+	high: string;
+	low: string;
+	close: string;
+	volume: string | null;
+}
+
+/**
+ * Closed candle history, oldest bar first. An empty `candles` list with a `reason`
+ * (NO_POOL, CANDLES_EMPTY) is an honest no-series answer, never a fabricated chart.
+ */
+export interface CandlesOut {
+	chain: string;
+	token_address: string;
+	timeframe: string;
+	pool_address: string | null;
+	candles: Candle[];
+	source: Source;
+	stale: boolean;
+	reason: string | null;
+}
+
 /** One registered chain as the API's market monitor currently sees it. */
 export interface MarketChainOverview {
 	id: string;
@@ -432,6 +459,22 @@ export async function getToken(chain: string, address: string): Promise<TokenSna
 	}
 	return request<TokenSnapshot>(
 		`/v1/tokens/${encodeURIComponent(chain)}/${encodeURIComponent(address)}`,
+	);
+}
+
+export async function getTokenCandles(
+	chain: string,
+	address: string,
+	timeframe = "5m",
+	limit = 120,
+): Promise<CandlesOut> {
+	if (webMode() === "fixture") {
+		const fixtures = await import("./live-fixtures");
+		return fixtures.fixtureTokenCandles(chain, address, timeframe, limit);
+	}
+	return request<CandlesOut>(
+		`/v1/tokens/${encodeURIComponent(chain)}/${encodeURIComponent(address)}/candles`,
+		{ params: { timeframe, limit } },
 	);
 }
 

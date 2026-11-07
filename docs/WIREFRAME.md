@@ -147,10 +147,10 @@ unsellable, dust, stale mark, closed, quarantined.
 | Screen | Primary API |
 |---|---|
 | Dashboard | `/portfolio/summary`, `/positions?state=open`, `/signals?limit=8`, `/automations?status=active`, `/chains/health` |
-| Positions | `/positions?view=tile&group=…` |
+| Positions | `/positions?view=tile&group=…`, `/tokens/{chain}/{mint}/candles` (one closed-OHLCV series per open position; an empty series renders the empty state, never a chart) |
 | Position detail | `/positions/{id}`, `/positions/{id}/fills`, `/positions/{id}/journal` |
 | Markets | `/markets?chain=…&sort=…` |
-| Token | `/tokens/{chain}/{mint}`, `/quote`, `/positions?token=…` |
+| Token | `/tokens/{chain}/{mint}`, `/tokens/{chain}/{mint}/candles`, `/quote`, `/positions?token=…` (chart: closed candles with source+age; safety: the snapshot's safety object, `—` for any field the store lacks) |
 | Wallets | `/wallets`, `/wallets/{id}/balances` |
 | Automations | `/automations`, `/automations/{id}/runs` |
 | Strategies | `/strategies`, `/strategies/{id}` |
