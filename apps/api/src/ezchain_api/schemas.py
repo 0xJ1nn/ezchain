@@ -531,3 +531,54 @@ class StrategyPerformanceOut(BaseModel):
     avg_cost_usd: str | None = None
     mark_usd: str | None = None
     equity_curve: list[dict[str, str]]
+
+
+class ProtectionIn(BaseModel):
+    chain: str = Field(min_length=2, max_length=40)
+    token_address: str = Field(min_length=8, max_length=160)
+    kind: Literal["stop_loss", "trailing_stop", "take_profit"]
+    params: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(min_length=8, max_length=120)
+    profile_id: str | None = None
+
+
+class ProtectionPatch(BaseModel):
+    params: dict[str, Any] | None = None
+    expected_version: int | None = None
+    status: str | None = None
+    profile_id: str | None = None
+
+
+class ProtectionOut(BaseModel):
+    id: str
+    chain: str
+    token_address: str
+    kind: str
+    params: dict[str, Any]
+    source: str
+    status: str
+    version: int
+    profile_id: str | None = None
+    trailing_activated: bool = False
+    trailing_peak_usd: str | None = None
+    trailing_rung_index: int = 0
+    created_at: str
+    updated_at: str | None = None
+
+
+class ProtectionProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    profile_type: str = Field(default="manual", pattern="^(manual|smart)$")
+    chain: str | None = None
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    description: str | None = None
+
+
+class ProtectionProfileOut(BaseModel):
+    id: str
+    name: str
+    profile_type: str
+    chain: str | None = None
+    defaults: dict[str, Any]
+    description: str | None = None
+    created_at: str

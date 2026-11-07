@@ -20,7 +20,9 @@ from ezchain_api.routers import system
 
 EXPECTED_PROTECTED_ROUTES = (
     ("DELETE", "/api/v1/agent/keys/{key_id}"),
+    ("DELETE", "/api/v1/protections/{protection_id}"),
     ("DELETE", "/api/v1/strategies/{strategy_id}"),
+    ("PATCH", "/api/v1/protections/{protection_id}"),
     ("PATCH", "/api/v1/strategies/{strategy_id}"),
     ("POST", "/api/v1/agent/keys"),
     ("POST", "/api/v1/backtests"),
@@ -29,6 +31,8 @@ EXPECTED_PROTECTED_ROUTES = (
     ("POST", "/api/v1/paper/orders"),
     ("POST", "/api/v1/plugins/reload"),
     ("POST", "/api/v1/plugins/{plugin_id}/validate"),
+    ("POST", "/api/v1/protection-profiles"),
+    ("POST", "/api/v1/protections"),
     ("POST", "/api/v1/strategies"),
     ("POST", "/api/v1/strategies/{strategy_id}/run"),
     ("POST", "/api/v1/system/kill-switch"),
