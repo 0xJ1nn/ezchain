@@ -2,8 +2,8 @@
 
 **One open-source crypto trading app. Every chain. Your strategies. Your keys.**
 
-ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledger, live
-positions, automations, signals, backtests and a strategy plugin SDK. It ships with **no
+ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledger, live-market
+positions on PAPER fills, automations, signals, backtests and a strategy plugin SDK. It ships with **no
 strategies** — the platform, not the alpha, is the product.
 
 > **ALPHA — PAPER ONLY. NOT READY FOR REAL-MONEY TRADING.**
@@ -25,11 +25,108 @@ strategies** — the platform, not the alpha, is the product.
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
 
+## The fee math — read this first (PAPER)
+
+Terminals charge a platform fee on every trade. Every figure in the table below
+was read from the terminal's own documentation on 2026-11-07. The round-trip
+figure is twice the published per-trade rate; protocol, network, priority and
+bribe payments are additional, and each source page describes them separately.
+ezCHAIN is PAPER only: it charges no platform fee, and because there is no
+live execution in PAPER mode, no venue fee is paid either. Venue and network
+fees remain the only per-trade costs once live execution exists.
+
+| Terminal | Published platform fee, per trade | Platform cost of one buy plus one sell | Source, read 2026-11-07 |
+|---|---|---|---|
+| Axiom | Net 0.95% at the entry tier (Wood, 1X) down to 0.75% at the top tier (Champion, 5X), with stated cashback of 0.05% to 0.25% | 1.90% at the entry tier down to 1.50% at the top tier | [Axiom fees](https://docs.axiom.trade/getting-started/fees/axiom-fees.md) |
+| BullX | 1% for every buy and sell, plus protocol fees of 0.15% to 5% (1% on PumpFun; typically 0.25% for PumpFun tokens migrated to Raydium) | 2.00% before protocol fees; (1% + 0.25%) × 2 = 2.50% for a Raydium-migrated round trip before network, priority and bribe payments | [BullX fees and gas](https://bullx.gitbook.io/bullx-neo-docs/fees-and-gas.md) |
+| GMGN | 1% handling fee per transaction; each token issuance platform adds its own fee (1% on Pump.Fun, per the GMGN page) | 2.00% before issuance-platform fees | [GMGN fees and settings](https://docs.gmgn.ai/index/gmgn-fees-settings.md) |
+| Photon | 1% of the initial token amount for every buy and sell transaction | 2.00% before network and priority fees | [Photon fees](https://pies-organization.gitbook.io/photon-trading/photon-on-sol/photon-fees-sol.md) |
+| Self-hosted ezCHAIN (PAPER) | No platform fee and no subscription or billing surface; in PAPER mode no venue fee is paid | 0% platform cost | [docs/PRODUCT.md](docs/PRODUCT.md), [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md) |
+
+The published rate depends on the tier, the pool and the route, so no single
+blended number is quoted. Adding the protocol fees the terminals publish
+alongside the platform fee — for example the 0.25% BullX states for migrated
+Raydium pools — pushes a single round trip past 2% before any network,
+priority or bribe payment. A self-hosted PAPER workstation adds no platform
+fee on top of that math.
+
+## Six structural edges, each with its evidence
+
+**Self-custody and local keys.** Keys stay on the operator's machine. The
+contract in [docs/CONTRACT.md](docs/CONTRACT.md) restricts key material to the
+executor service, excludes it from the web bundle, API responses, logs and
+strategy plugins, and records that ezCHAIN holds no key custody; the PAPER
+stack ships with no keys and no signing
+([docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)).
+
+**PAPER-first on a real ledger.** Cash, size and realized PnL exist only as
+append-only `ledger_entries`, and every fill writes its journal entries in the
+same transaction as the position update
+([docs/CONTRACT.md](docs/CONTRACT.md)). Verified PAPER buy and sell fills,
+balanced ledger groups, idempotent order submission and an independent
+cash-versus-fills reconciliation check are recorded with their commands and
+results in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md), so
+paper numbers can be re-checked instead of trusted.
+
+**Strategies as plugins, with no bundled alpha.** ezCHAIN ships no strategies
+([docs/PRODUCT.md](docs/PRODUCT.md)). A strategy is an external, versioned
+plugin package implementing the Apache-2.0 SDK manifest and intent interface;
+platform code never imports a hardcoded strategy
+([docs/CONTRACT.md](docs/CONTRACT.md),
+[packages/sdk-py/README.md](packages/sdk-py/README.md),
+[docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md)). The host owns market data, risk,
+sizing, quoting, execution and accounting; a plugin returns intents.
+
+**An MCP and agent surface with approvals.** Agents connect through an
+MCP server with read tools and resources open and paper-only mutation tools
+hidden unless explicitly enabled and still bearer-authenticated, with
+least-privilege scoped keys for each agent
+([docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md),
+[apps/mcp/](apps/mcp/), [docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md)).
+There is no live order tool; the API refuses live execution mode until the
+executor ships (see the status note at the top of this file).
+
+**One open codebase.** The trading application is AGPL-3.0-or-later
+([LICENSE](LICENSE)); the strategy plugin SDK is Apache-2.0 so that strategies
+can be distributed under any license
+([packages/sdk-py/README.md](packages/sdk-py/README.md)). The full repository
+is one local checkout: web app, API, engine, adapters, strategy SDK and the
+MCP server, with one Docker compose stack for the PAPER deployment
+([infra/compose.yaml](infra/compose.yaml)).
+
+**Multi-chain observation.** Market observation runs through capability-based
+chain adapters and a 25-chain registry ([packages/adapters/](packages/adapters/)),
+not chain-name branches. Verification on 2026-10-23 recorded 22 of 25 chains
+returning market snapshots, 3 returning no data, and 0 errors, with source and
+age carried on every row
+([docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)). Chains without
+data stay unknown, never zero.
+
+## Honest limits — what ezCHAIN does not do
+
+- **Alpha, PAPER only.** ezCHAIN is not ready for real-money trading. It is
+  used to research, paper-trade and build integrations; it is not pointed at
+  funds (see the status note at the top of this file).
+- **No live executor yet.** There is no key custody, no signing and no live
+  order. Live execution, the executor vault, ingest and the streaming
+  topology remain unshipped ([docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)).
+- **No fiat rail.** There is no fiat on-ramp, no lending and no copy-trading
+  funnel ([docs/PRODUCT.md](docs/PRODUCT.md),
+  [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)).
+- **No user-supplied keys stored.** The platform stores no keys for the
+  operator: key material never appears in the web bundle, API responses,
+  logs, traces or strategy plugins
+  ([docs/CONTRACT.md](docs/CONTRACT.md)).
+- **No bundled strategy and no measured live edge.** The platform is the
+  product; any edge lives in a plugin the operator installs and validates in
+  PAPER mode first.
+
 ## Why this exists
 
-Four previous bots (solbot v1/v2/v3, pumpbot) proved the pieces but never the product:
-monoliths that grew to 300k LOC, three position-tile implementations, ledgers that
-disagreed with themselves, strategies hard-wired into the engine, and one chain only.
+Four earlier trading bots proved the pieces but never the product:
+monoliths that grew to hundreds of thousands of lines, three position-tile
+implementations, ledgers that disagreed with themselves, strategies hard-wired
+into the engine, and one chain only.
 ezCHAIN inverts that: a small, boring, modular platform with hard invariants, where a
 strategy is a removable rule set and a chain is an adapter.
 
