@@ -20,6 +20,7 @@ import {
 	type Source,
 	type TokenSnapshot,
 } from "./api";
+import { previewCost } from "./cost-model";
 
 const CHAIN_REGISTRY: Chain[] = [
 	{
@@ -678,19 +679,35 @@ export function fixtureQuote(query: QuoteQuery): Quote {
 	const isSolana = query.chain === "solana";
 	const now = Date.now();
 	const sell = query.side === "sell";
+	const kind = isSolana ? "jupiter" : "paper_mark";
+	const amountIn = decimal(sell ? amount / price : amount);
+	const amountOut = decimal(sell ? amount : amount / price);
+	const source = fixtureSource(now, 1);
+	const model = previewCost({
+		kind,
+		// The journal notional: USD paid on a buy, USD proceeds on a sell.
+		notional_usd: sell ? amountOut : amountIn,
+		venue_fee_usd: "0",
+		amount_out: amountOut,
+	});
 	return {
 		chain: query.chain,
 		token_in: sell ? snapshot.address : "USDC",
 		token_out: sell ? "USDC" : snapshot.address,
 		side: sell ? "sell" : "buy",
 		// A sell is sized from the USD notional at the observed mark.
-		amount_in: decimal(sell ? amount / price : amount),
-		amount_out: decimal(sell ? amount : amount / price),
+		amount_in: amountIn,
+		amount_out: amountOut,
 		price: snapshot.price_usd ?? "0",
 		price_impact_pct: null,
 		fee_usd: "0",
-		kind: isSolana ? "jupiter" : "paper_mark",
+		kind,
 		route: isSolana ? "Jupiter v6 → Raydium" : null,
-		source: fixtureSource(now, 1),
+		source,
+		cost_preview: {
+			...model,
+			price_impact_pct: null,
+			source,
+		},
 	};
 }

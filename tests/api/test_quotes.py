@@ -214,6 +214,26 @@ def test_mark_only_chain_returns_paper_mark(client_for: Any, session: Session) -
     assert body["kind"] == "paper_mark"
     assert body["amount_out"] == "12.5"
     assert body["price_impact_pct"] is None
+    # A paper mark has no venue, so the worst case is unknown — an em dash downstream.
+    assert body["cost_preview"]["slippage_bps"] is None
+    assert body["cost_preview"]["worst_case_out"] is None
+    assert body["cost_preview"]["platform_fee_usd"] == "0"
+
+
+def test_executable_quote_carries_the_cost_preview(client_for: Any, session: Session) -> None:
+    router = QuoteRouter(providers=[FakeJupiter()], dexscreener=FakeDex())  # type: ignore[arg-type]
+    response = _client(client_for, router).get(
+        "/api/v1/quotes",
+        params={"chain": "solana", "token": "mint", "side": "buy", "amount_usd": "100"},
+    )
+    assert response.status_code == 200
+    preview = response.json()["cost_preview"]
+    assert preview["platform_fee_usd"] == "0"
+    assert preview["venue_fee_usd"] == "0"
+    assert preview["network_fee_usd"] is None
+    assert preview["slippage_bps"] == 50
+    assert preview["worst_case_out"] is not None
+    assert preview["source"]["name"] == "jupiter"
 
 
 def test_unknown_chain_is_404(client_for: Any, session: Session) -> None:

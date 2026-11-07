@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 
 import httpx
 
-from ezchain_core import Quote, QuoteKind, SourceRef
+from ezchain_core import DEFAULT_SLIPPAGE_BPS, Quote, QuoteKind, SourceRef
 
 from .cache import BoundedTTLCache
 from .errors import NotFound, UpstreamError
@@ -133,7 +133,7 @@ class JupiterClient(HttpQuoteProvider):
         input_mint: str,
         output_mint: str,
         amount_raw: int,
-        slippage_bps: int = 50,
+        slippage_bps: int = DEFAULT_SLIPPAGE_BPS,
     ) -> dict[str, Any]:
         data = await self._get(
             "/swap/v1/quote",
@@ -167,7 +167,7 @@ class JupiterClient(HttpQuoteProvider):
         side: str,
         amount_usd: Decimal,
         quantity: Decimal | None = None,
-        slippage_bps: int = 50,
+        slippage_bps: int = DEFAULT_SLIPPAGE_BPS,
     ) -> tuple[Quote, int, int]:
         """Return (quote, input_decimals, output_decimals).
 

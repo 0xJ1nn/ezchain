@@ -20,8 +20,9 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import PAPER_MARK, DexScreenerClient, QuoteRouter
+from ezchain_adapters import DexScreenerClient, QuoteRouter
 from ezchain_core import (
+    CostPreview,
     LedgerEntry,
     OrderRequest,
     PositionView,
@@ -29,9 +30,9 @@ from ezchain_core import (
     RiskLimits,
     SourceRef,
     TokenSnapshot,
-    bps_fee,
     evaluate_order,
     genesis_entries,
+    preview_cost,
     replay_position,
     utcnow,
 )
@@ -477,18 +478,43 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
 
 
 def _fill_fee(notional: Decimal, quote: Quote, settings: Settings) -> Decimal:
-    """The fill's fee: the larger of the platform fee and the quote's own cost.
+    """The fill's fee: the larger of the paper fee and the quote's own cost.
 
     A ``paper_mark`` carries no venue cost, so the platform's flat paper fee is the whole
     fee. An executable quote already pays a pool/aggregator fee and gas, reported as
     ``quote.fee_usd``: charging the bps fee *on top* would bill the same liquidity twice,
     and charging only the bps fee would hide a 0.25% LI.FI fee or three dollars of gas.
     The maximum of the two is never less than either honest number and never their sum.
+
+    The value is ``preview_cost``'s fill fee: the cost sheet previewed before the
+    click and this journaled fee are one formula by construction, never two.
     """
-    platform = bps_fee(notional, settings.paper_fee_bps)
-    if quote.kind == PAPER_MARK:
-        return platform
-    return max(platform, quote.fee_usd)
+    return _preview_cost(notional, quote, settings).fill_fee_usd
+
+
+def _preview_cost(notional: Decimal, quote: Quote, settings: Settings) -> CostPreview:
+    """The full cost sheet for one quote at one notional, via the shared model."""
+    return preview_cost(
+        kind=quote.kind,
+        notional_usd=notional,
+        venue_fee_usd=quote.fee_usd,
+        price_impact_pct=quote.price_impact_pct,
+        amount_out=quote.amount_out,
+        fee_bps=settings.paper_fee_bps,
+        source=quote.source,
+    )
+
+
+def _record(quote: Quote, notional: Decimal, settings: Settings) -> dict[str, Any]:
+    """The persisted intent record: the quote plus its pre-trade cost preview.
+
+    Every order that reached a quote records this before it fires (or is rejected),
+    so the recorded preview belongs to the intent, never to a strategy: automated and
+    manual orders share this path, and the preview is replayable from the order row.
+    """
+    record = quote.to_dict()
+    record["cost_preview"] = _preview_cost(notional, quote, settings).to_dict()
+    return record
 
 
 def _find_order(session: Session, idempotency_key: str) -> PaperOrderRow | None:
@@ -555,8 +581,13 @@ def _reject_after_quote(
     *,
     snapshot: TokenSnapshot,
     quote: Quote,
+    settings: Settings,
 ) -> PaperOrderRow:
-    """Persist a rejection that has a quote, so the refused size stays replayable."""
+    """Persist a rejection that has a quote, so the refused size stays replayable.
+
+    The recorded preview is this order's (the intent's), never a strategy's: the order
+    row carries the quote and the cost sheet computed before the refusal.
+    """
     order, created = _claim_or_existing(session, payload)
     if not created:
         return order
@@ -564,7 +595,8 @@ def _reject_after_quote(
     order.status = "rejected"
     order.reason = reason
     order.quote_kind = quote.kind
-    order.quote_json = quote.to_dict()
+    notional = quote.amount_in if payload.side == "buy" else quote.amount_out
+    order.quote_json = _record(quote, notional, settings)
     session.commit()
     return order
 
@@ -665,13 +697,23 @@ async def place_order(
         if payload.side == "sell":
             if held_qty <= 0:
                 return _reject_after_quote(
-                    session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot, quote=quote
+                    session,
+                    payload,
+                    "INSUFFICIENT_POSITION",
+                    snapshot=snapshot,
+                    quote=quote,
+                    settings=settings,
                 )
             # Never fill a quantity that another writer already spent. A smaller quote is
             # fine (the position grew); a larger quote is stale and must be re-priced.
             if quote.amount_in > held_qty + MONEY_QUANTUM:
                 return _reject_after_quote(
-                    session, payload, "POSITION_CHANGED", snapshot=snapshot, quote=quote
+                    session,
+                    payload,
+                    "POSITION_CHANGED",
+                    snapshot=snapshot,
+                    quote=quote,
+                    settings=settings,
                 )
             fill_quantity = min(quote.amount_in, held_qty)
             notional = (
@@ -690,7 +732,7 @@ async def place_order(
 
         if fill_quantity <= 0 or notional <= 0:
             order.quote_kind = quote.kind
-            order.quote_json = quote.to_dict()
+            order.quote_json = _record(quote, notional, settings)
             return _mark_rejected(session, order, "NO_ROUTE")
 
         position_mark = snapshot.price_usd if snapshot.price_usd is not None else quote.price
@@ -718,7 +760,7 @@ async def place_order(
 
         if not allowed:
             order.quote_kind = quote.kind
-            order.quote_json = quote.to_dict()
+            order.quote_json = _record(quote, notional, settings)
             return _mark_rejected(session, order, ",".join(reasons))
 
         stamp = utcnow()
@@ -771,7 +813,7 @@ async def place_order(
         order.status = "filled"
         order.filled_at = stamp
         order.quote_kind = quote.kind
-        order.quote_json = quote.to_dict()
+        order.quote_json = _record(quote, notional, settings)
         session.commit()
         return order
 

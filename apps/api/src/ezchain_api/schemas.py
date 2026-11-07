@@ -182,6 +182,19 @@ class CandlesOut(BaseModel):
     reason: str | None = None
 
 
+class CostPreviewOut(BaseModel):
+    """The pre-trade cost sheet. Nulls are unknowns ("—"), never zeros."""
+
+    platform_fee_usd: str
+    venue_fee_usd: str
+    network_fee_usd: str | None = None
+    price_impact_pct: str | None = None
+    slippage_bps: int | None = None
+    worst_case_out: str | None = None
+    fill_fee_usd: str
+    source: SourceOut
+
+
 class QuoteOut(BaseModel):
     chain: str
     token_in: str
@@ -195,6 +208,8 @@ class QuoteOut(BaseModel):
     kind: str
     route: str | None = None
     source: SourceOut
+    # Same sheet the journal records on the intent; the preview and the journal agree.
+    cost_preview: CostPreviewOut
 
 
 class PaperOrderIn(BaseModel):
