@@ -61,7 +61,7 @@ def _get_mode(client: EzchainClient, _: dict[str, Any]) -> Any:
 
 def _list_markets(client: EzchainClient, args: dict[str, Any]) -> Any:
     params: dict[str, Any] = {
-        key: args[key] for key in ("chain", "q", "sort", "limit") if key in args
+        key: args[key] for key in ("chain", "q", "sort", "limit", "offset", "cursor") if key in args
     }
     return client.get("/api/v1/markets", params=params)
 

@@ -504,18 +504,30 @@ def build_overview(
     return {"as_of": current.isoformat(), "chains": chains, "totals": totals}
 
 
+def count_stored_snapshots(session: Session, *, chain: str = "all") -> int:
+    """Total persisted observations for the chain filter (one per token)."""
+    statement = select(func.count(MarketSnapshotRow.id))
+    if chain != "all":
+        statement = statement.where(MarketSnapshotRow.chain == chain)
+    return int(session.scalar(statement) or 0)
+
+
 def stored_snapshots(
-    session: Session, *, chain: str = "all", limit: int = 50
+    session: Session, *, chain: str = "all", limit: int = 50, offset: int = 0
 ) -> list[MarketSnapshotRow]:
     """Latest persisted observation per token, deepest liquidity first, nulls last."""
     statement = select(MarketSnapshotRow)
     if chain != "all":
         statement = statement.where(MarketSnapshotRow.chain == chain)
-    statement = statement.order_by(
-        MarketSnapshotRow.liquidity_usd.is_(None),
-        MarketSnapshotRow.liquidity_usd.desc(),
-        MarketSnapshotRow.observed_at.desc(),
-    ).limit(limit)
+    statement = (
+        statement.order_by(
+            MarketSnapshotRow.liquidity_usd.is_(None),
+            MarketSnapshotRow.liquidity_usd.desc(),
+            MarketSnapshotRow.observed_at.desc(),
+        )
+        .limit(limit)
+        .offset(max(0, offset))
+    )
     return list(session.scalars(statement))
 
 
@@ -527,5 +539,6 @@ __all__ = [
     "ScanResult",
     "build_overview",
     "stale_after_seconds",
+    "count_stored_snapshots",
     "stored_snapshots",
 ]

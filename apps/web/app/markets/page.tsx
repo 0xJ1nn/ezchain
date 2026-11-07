@@ -50,11 +50,18 @@ function readLimit(value: string): number {
 	return Math.min(100, Math.max(1, parsed));
 }
 
+function readOffset(value: string): number {
+	const parsed = Number.parseInt(value, 10);
+	if (!Number.isFinite(parsed) || parsed < 0) return 0;
+	return parsed;
+}
+
 interface MarketParams {
 	chain: string;
 	q: string;
 	sort: MarketSort;
 	limit: number;
+	offset: number;
 }
 
 function marketsHref(params: MarketParams, patch: Partial<MarketParams> = {}): string {
@@ -64,6 +71,7 @@ function marketsHref(params: MarketParams, patch: Partial<MarketParams> = {}): s
 	if (merged.q) query.set("q", merged.q);
 	if (merged.sort !== "trending") query.set("sort", merged.sort);
 	if (merged.limit !== 50) query.set("limit", String(merged.limit));
+	if (merged.offset > 0) query.set("offset", String(merged.offset));
 	const suffix = query.toString();
 	return suffix ? `/markets?${suffix}` : "/markets";
 }
@@ -130,13 +138,14 @@ export default async function MarketsPage({
 		q: one(raw.q).slice(0, 80),
 		sort: isSort(one(raw.sort)) ? (one(raw.sort) as MarketSort) : "trending",
 		limit: readLimit(one(raw.limit)),
+		offset: readOffset(one(raw.offset)),
 	};
 
 	const [chainsOutcome, marketsOutcome] = await Promise.all([
 		getChains()
 			.then((chains) => ({ ok: true as const, chains }))
 			.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
-		getMarkets({ chain: params.chain, q: params.q, sort: params.sort, limit: params.limit })
+		getMarkets({ chain: params.chain, q: params.q, sort: params.sort, limit: params.limit, offset: params.offset })
 			.then((list) => ({ ok: true as const, list }))
 			.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
 	]);
@@ -222,7 +231,33 @@ export default async function MarketsPage({
 								{SORTS.find((sort) => sort.id === params.sort)?.label.toLowerCase()}
 							</span>
 							<span>
-								page 1/1 ·{" "}
+								{list.rows.length === 0
+									? "0 rows"
+									: `${params.offset + 1}-${params.offset + list.rows.length} of ${list.total ?? list.rows.length}`}{" "}
+								· page {Math.floor(params.offset / params.limit) + 1}/
+								{Math.max(1, Math.ceil(((list.total ?? list.rows.length) || 1) / params.limit))}{" "}
+								·{" "}
+								{params.offset > 0 ? (
+									<Link
+										className="small"
+										href={marketsHref(params, { offset: Math.max(0, params.offset - params.limit) })}
+									>
+										Prev
+									</Link>
+								) : (
+									<span className="muted small">Prev</span>
+								)}{" "}
+								{list.has_more ? (
+									<Link
+										className="small"
+										href={marketsHref(params, { offset: params.offset + params.limit })}
+									>
+										Next
+									</Link>
+								) : (
+									<span className="muted small">Next</span>
+								)}{" "}
+								·{" "}
 								{list.stale
 									? "the API marked this snapshot stale"
 									: `observed ${ageLabel(list.source.observed_at)} ago`}
