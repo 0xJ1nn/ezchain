@@ -66,6 +66,13 @@ export interface MarketList {
 	rows: MarketRow[];
 	source: Source;
 	stale: boolean;
+	offset?: number;
+	limit?: number;
+	total?: number;
+	has_more?: boolean;
+	next_offset?: number | null;
+	next_cursor?: string | null;
+	truncated?: boolean;
 }
 
 export interface ChainCapabilities {
@@ -358,6 +365,8 @@ export interface MarketQuery {
 	q?: string;
 	sort?: MarketSort;
 	limit?: number;
+	offset?: number;
+	cursor?: string;
 }
 
 export async function getMarkets(query: MarketQuery = {}): Promise<MarketList> {
@@ -371,6 +380,8 @@ export async function getMarkets(query: MarketQuery = {}): Promise<MarketList> {
 			q: query.q,
 			sort: query.sort ?? "trending",
 			limit: query.limit ?? 50,
+			offset: query.offset ?? 0,
+			cursor: query.cursor,
 		},
 	});
 }
