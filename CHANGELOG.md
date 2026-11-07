@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Sourced fee table and structural edges in the README (PAPER).** A fee-math
+  table quotes each terminal's own published per-trade platform fee with its
+  source page and read date, contrasts it with a zero-platform-fee self-hosted
+  PAPER workstation, and is followed by six evidence-anchored structural edges
+  and an honest-limits section. No code changes.
+
 - **Market-first discovery:** the dashboard leads with a paper-labelled launches and
   trending strip above equity, and a new Launches births feed lists recent tokens with
   age, curve progress and dev history and safety marked unknown until they have a
