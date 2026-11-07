@@ -15,6 +15,8 @@ import {
 	type PaperResult,
 	type PaperSnapshot,
 } from "@/lib/paper-api";
+import { getProtectionArms, getProtectionProfiles } from "@/lib/protection-api";
+import { ProtectionClient } from "./protection-client";
 import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +95,10 @@ export default async function PositionsPage({
 }) {
 	const { state } = await searchParams;
 	const snapshot = await getPaperSnapshot();
+	const [armsResult, profilesResult] = await Promise.all([
+		getProtectionArms(),
+		getProtectionProfiles(),
+	]);
 	const mode = snapshot.mode;
 
 	// Deterministic state gallery in fixture mode only. Live mode always shows the API's
@@ -546,6 +552,15 @@ export default async function PositionsPage({
 					))}
 				</div>
 			)}
+
+			<div className="mt-16">
+				<ProtectionClient
+					mode={mode}
+					initialArms={armsResult.ok ? armsResult.data : []}
+					initialProfiles={profilesResult.ok ? profilesResult.data : []}
+					positions={positions}
+				/>
+			</div>
 
 			{mode === "fixture" && !failed && positions.length > 0 && (
 				<section className="mt-16" aria-label="Position tiles">
