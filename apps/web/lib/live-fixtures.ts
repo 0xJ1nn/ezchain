@@ -7,6 +7,7 @@
 
 import {
 	ApiError,
+	type CandleSeries,
 	type Chain,
 	type LaunchList,
 	type LaunchQuery,
@@ -642,7 +643,44 @@ export function fixtureToken(chain: string, address: string): TokenSnapshot {
 		price_change_h6: seed.h6,
 		price_change_h24: seed.h24,
 		pairs,
-		safety: { status: "unknown", reason: "SAFETY_NOT_IMPLEMENTED" },
+		safety:
+			seed.symbol === "WIF"
+				? {
+						status: "pass",
+						reason: null,
+						checks: [
+							{ name: "Mint authority", status: "revoked", detail: "—", source: "RPC · 4s" },
+							{ name: "Freeze authority", status: "revoked", detail: "—", source: "RPC · 4s" },
+							{ name: "Top-10 concentration", status: "18.4%", detail: "threshold 25%", source: "indexer · 2m" },
+							{ name: "Honeypot / sell simulation", status: "pass", detail: "sell 1 SOL simulated, 0 errors", source: "sim · 1m" },
+							{ name: "LP custody", status: "burned / locked", detail: "2 pools · 100%", source: "indexer · 6m" },
+						],
+					}
+				: seed.symbol === "JUP"
+					? {
+							status: "warn",
+							reason: "PARTIAL",
+							checks: [
+								{ name: "Mint authority", status: "revoked", detail: "—", source: "RPC · 3m" },
+								{ name: "Freeze authority", status: "unknown", detail: "not reported", source: "RPC · 3m" },
+								{ name: "Top-10 concentration", status: "partial", detail: "threshold 25%", source: "indexer · 4m" },
+								{ name: "Honeypot / sell simulation", status: "warn", detail: "partial simulation", source: "sim · 2m" },
+								{ name: "LP custody", status: "unknown", detail: "not reported", source: "indexer · 5m" },
+							],
+						}
+					: seed.symbol === "SCAM"
+						? {
+								status: "fail",
+								reason: "SAFETY_FAILED",
+								checks: [
+									{ name: "Mint authority", status: "revoked", detail: "—", source: "RPC · 3m" },
+									{ name: "Freeze authority", status: "unknown", detail: "query timed out", source: "RPC · 3m" },
+									{ name: "Top-10 concentration", status: "86.4%", detail: "threshold 25%", source: "indexer · 4m" },
+									{ name: "Honeypot / sell simulation", status: "fail", detail: "sell 1 SOL simulated, 2 errors", source: "sim · 2m" },
+									{ name: "LP custody", status: "unlocked", detail: "1 pool · 0% burned", source: "indexer · 6m" },
+								],
+							}
+						: { status: "unknown", reason: "SAFETY_NOT_IMPLEMENTED" },
 		source,
 		stale: false,
 	};
@@ -655,6 +693,78 @@ function decimal(value: number): string {
 		.toFixed(8)
 		.replace(/0+$/, "")
 		.replace(/\.$/, "");
+}
+
+const TF_SECONDS: Record<string, number> = {
+	"1m": 60,
+	"5m": 300,
+	"15m": 900,
+	"1h": 3600,
+	"4h": 14400,
+	"1d": 86400,
+};
+
+export function fixtureCandles(query: {
+	chain: string;
+	address: string;
+	timeframe?: string;
+	limit?: number;
+}): CandleSeries {
+	checkChain(query.chain);
+	const timeframe = query.timeframe ?? "5m";
+	const seconds = TF_SECONDS[timeframe] ?? 300;
+	const limit = Math.min(1000, Math.max(1, query.limit ?? 300));
+	const now = Date.now();
+	const address = query.address;
+	const isScam = address.toLowerCase().startsWith("scam");
+	if (isScam) {
+		const source = fixtureSource(now, 4);
+		return {
+			chain: query.chain,
+			token_address: address,
+			timeframe,
+			pool_address: null,
+			candles: [],
+			source,
+			stale: false,
+			reason: "CANDLES_EMPTY",
+		};
+	}
+	const n = Math.min(limit, 24);
+	const latestClosed = Math.floor(now / 1000 / seconds) * seconds - seconds;
+	const bars: CandleSeries["candles"] = [];
+	let price = 1.2;
+	const seed = address.length;
+	for (let i = 0; i < n; i++) {
+		const openTime = new Date((latestClosed - (n - 1 - i) * seconds) * 1000).toISOString();
+		const closeTime = new Date((latestClosed - (n - 1 - i) * seconds + seconds) * 1000).toISOString();
+		const change = ((i * 37 + seed) % 11 - 5) / 1000;
+		const close = Math.max(0.00000001, price * (1 + change));
+		const high = Math.max(price, close) * 1.002;
+		const low = Math.min(price, close) * 0.998;
+		bars.push({
+			open_time: openTime,
+			close_time: closeTime,
+			timeframe_seconds: seconds,
+			open: price.toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+			high: high.toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+			low: low.toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+			close: close.toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+			volume: i % 7 === 0 ? null : "10.50",
+		});
+		price = close;
+	}
+	const source = fixtureSource(now, 4);
+	return {
+		chain: query.chain,
+		token_address: address,
+		timeframe,
+		pool_address: null,
+		candles: bars,
+		source,
+		stale: false,
+		reason: null,
+	};
 }
 
 export function fixtureQuote(query: QuoteQuery): Quote {

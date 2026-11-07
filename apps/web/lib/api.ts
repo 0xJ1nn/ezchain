@@ -464,3 +464,52 @@ export async function getQuote(query: QuoteQuery): Promise<Quote> {
 export async function postPaperOrder(input: PaperOrderInput): Promise<PaperOrder> {
 	return request<PaperOrder>("/v1/paper/orders", { method: "POST", body: input });
 }
+
+export interface CandleBar {
+	open_time: string;
+	close_time: string;
+	timeframe_seconds: number;
+	open: string;
+	high: string;
+	low: string;
+	close: string;
+	volume: string | null;
+}
+
+export interface CandleSeries {
+	chain: string;
+	token_address: string;
+	timeframe: string;
+	pool_address: string | null;
+	candles: CandleBar[];
+	source: Source;
+	stale: boolean;
+	reason: string | null;
+}
+
+export interface CandlesQuery {
+	chain: string;
+	address: string;
+	timeframe?: string;
+	limit?: number;
+}
+
+export async function getCandles(query: CandlesQuery): Promise<CandleSeries> {
+	const timeframe = query.timeframe ?? "5m";
+	const limit = query.limit ?? 300;
+	if (webMode() === "fixture") {
+		const fixtures = await import("./live-fixtures");
+		return fixtures.fixtureCandles({
+			chain: query.chain,
+			address: query.address,
+			timeframe,
+			limit,
+		});
+	}
+	return request<CandleSeries>(
+		`/v1/tokens/${encodeURIComponent(query.chain)}/${encodeURIComponent(query.address)}/candles`,
+		{
+			params: { timeframe, limit },
+		},
+	);
+}

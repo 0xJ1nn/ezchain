@@ -6,15 +6,18 @@ import { AppShell } from "@/components/shell";
 import { Badge, Panel, Stat } from "@/components/ui";
 import {
 	asApiError,
+	getCandles,
 	getChains,
 	getQuote,
 	getToken,
-	type ApiError,
+	ApiError,
+	type CandleSeries,
 	type Chain,
 	type Quote,
 	type Reason,
 	type Side,
 } from "@/lib/api";
+import { CandleChart } from "@/components/candle-chart";
 import { ModeBanner } from "@/lib/live-banner";
 import {
 	ageLabel,
@@ -129,6 +132,8 @@ export default async function TokenPage({
 	const raw = await searchParams;
 	const side: Side = one(raw.side) === "sell" ? "sell" : "buy";
 	const amount = readAmount(one(raw.amount));
+	const timeframe = one(raw.tf) || "5m";
+	const chartMode = one(raw.chart);
 	const pagePath = `/tokens/${chain}/${id}`;
 
 	const tokenResult = await getToken(chain, id)
@@ -144,6 +149,59 @@ export default async function TokenPage({
 		return <TokenError error={tokenResult.error} chain={chain} id={id} />;
 	}
 	const token = tokenResult.snapshot;
+
+	// Candle series: real server series in live mode; fixture-synthesised (and labelled
+	// FIXTURE) in fixture mode. Demo states are driven by ?chart= so the empty/error
+	// renders can be exercised without a provider outage.
+	let candleSeries: CandleSeries | null = null;
+	let candleError: ApiError | null = null;
+	if (chartMode === "unsupported") {
+		candleError = new ApiError({
+			code: "CANDLES_UNSUPPORTED_CHAIN",
+			message: `${chain} has no candle history provider`,
+			status: 404,
+			retryable: false,
+		});
+	} else if (chartMode === "no-pool") {
+		candleSeries = {
+			chain,
+			token_address: token.address,
+			timeframe,
+			pool_address: null,
+			candles: [],
+			source: token.source ?? { name: "fixture", url: null, observed_at: new Date().toISOString() },
+			stale: false,
+			reason: "NO_POOL",
+		};
+	} else if (chartMode === "empty") {
+		candleSeries = {
+			chain,
+			token_address: token.address,
+			timeframe,
+			pool_address: null,
+			candles: [],
+			source: token.source ?? { name: "fixture", url: null, observed_at: new Date().toISOString() },
+			stale: false,
+			reason: "CANDLES_EMPTY",
+		};
+	} else if (chartMode === "error") {
+		candleError = new ApiError({
+			code: "UPSTREAM_UNREACHABLE",
+			message: "candle provider unreachable",
+			status: 502,
+			retryable: true,
+		});
+	} else {
+		try {
+			const fetched = await getCandles({ chain, address: token.address, timeframe, limit: 240 });
+			candleSeries = fetched;
+			if (chartMode === "stale") {
+				candleSeries = { ...fetched, stale: true };
+			}
+		} catch (error: unknown) {
+			candleError = asApiError(error);
+		}
+	}
 
 	const [quoteResult, chainsResult] = await Promise.all([
 		getQuote({ chain, token: token.address, side, amountUsd: amount })
@@ -254,8 +312,20 @@ export default async function TokenPage({
 					/>
 					<Stat
 						label="Safety"
-						value={<Badge tone="warn">unknown</Badge>}
-						meta="SAFETY_NOT_IMPLEMENTED · not a pass"
+						value={
+							<Badge
+								tone={
+									token.safety?.status === "pass"
+										? "ok"
+										: token.safety?.status === "fail"
+											? "err"
+											: "warn"
+								}
+							>
+								{String(token.safety?.status ?? "unknown")}
+							</Badge>
+						}
+						meta={`${String(token.safety?.reason ?? "from the data layer")} · not a pass until every check is known`}
 					/>
 					<Stat
 						label="Freshness"
@@ -340,45 +410,155 @@ export default async function TokenPage({
 					</Panel>
 					</div>
 
-					<div id="safety">
+					<div id="candles">
 					<Panel
-						title="Safety"
-						sub="every check is unknown in P0"
-						action={<Badge tone="warn">unknown</Badge>}
+						title="Candles"
+						sub={`${timeframe} · closed bars only`}
 						flush
-						footer="Unknown is not a pass. Safety is not implemented in P0, so this page never claims a token is safe; the API risk policy is the execution gate."
+						footer={
+							candleSeries
+								? `${sourceLabel(candleSeries.source.name)} · ${ageLabel(candleSeries.source.observed_at)} · ${
+										candleSeries.stale ? "STALE" : "not stale"
+									} · ${candleSeries.candles.length} closed bars · ${
+										candleSeries.candles.filter((bar) => bar.volume === null).length
+									} volume unknown`
+								: candleError
+									? `${candleError.code}${candleError.retryable ? " · retryable" : ""}`
+									: "no candle data"
+						}
+						action={
+							candleSeries?.stale ? <Badge tone="warn">STALE</Badge> : undefined
+						}
 					>
-						<div className="table-wrap">
-							<table className="table compact">
-								<thead>
-									<tr>
-										<th scope="col">Check</th>
-										<th scope="col">Result</th>
-										<th scope="col">Detail</th>
-										<th scope="col">Source · age</th>
-									</tr>
-								</thead>
-								<tbody>
-									{[
-										"Mint authority",
-										"Freeze authority",
-										"Top-10 concentration",
-										"Honeypot / sell simulation",
-										"LP custody",
-									].map((check) => (
-										<tr key={check}>
-											<td>{check}</td>
-											<td>
-												<Badge tone="warn">unknown</Badge>
-											</td>
-											<td className="small muted">not checked · no value is assumed</td>
-											<td className="small muted">SAFETY_NOT_IMPLEMENTED</td>
-										</tr>
+						{candleError ? (
+							<div className="note err">
+								<div className="row mb-8">
+									<Badge tone="err">{candleError.code}</Badge>
+									{candleError.retryable && <Badge tone="warn">retryable</Badge>}
+								</div>
+								<div className="small">
+									{candleError.code === "CANDLES_UNSUPPORTED_CHAIN"
+										? "CANDLES_UNSUPPORTED_CHAIN · this chain has no candle history provider"
+										: candleError.code === "UPSTREAM_UNREACHABLE"
+											? "UPSTREAM_UNREACHABLE · the candle provider could not be reached"
+											: candleError.message}
+								</div>
+								{candleError.code === "NO_POOL" && null}
+							</div>
+						) : candleSeries && candleSeries.candles.length > 0 ? (
+							<>
+								<CandleChart series={candleSeries} />
+								<nav
+									aria-label="Candle timeframe"
+									className="btn-group mt-8"
+									style={{ marginTop: 8 }}
+								>
+									{["5m", "1h", "4h", "1d"].map((tf) => (
+										<Link
+											key={tf}
+											className={`btn sm${timeframe === tf ? " primary" : ""}`}
+											href={`${pagePath}?tf=${tf}${chartMode ? `&chart=${chartMode}` : ""}`}
+											aria-current={timeframe === tf ? "true" : undefined}
+										>
+											{tf}
+										</Link>
 									))}
-								</tbody>
-							</table>
-						</div>
+								</nav>
+							</>
+						) : (
+							<div className="note">
+								<div className="row mb-8">
+									<Badge tone="err">
+										{candleSeries?.reason ?? (candleError as ApiError | null)?.code ?? "CANDLES_EMPTY"}
+									</Badge>
+								</div>
+								<div className="small">
+									{candleSeries?.reason === "NO_POOL"
+										? "NO_POOL · no pool / no liquidity pair for this token"
+										: "CANDLES_EMPTY · no candle data · no closed bars"}
+								</div>
+							</div>
+						)}
 					</Panel>
+					</div>
+
+					<div id="safety">
+					{(() => {
+						const safety = (token.safety ?? {}) as Record<string, unknown>;
+						const status = typeof safety.status === "string" ? safety.status : "unknown";
+						const reason =
+							typeof safety.reason === "string" ? safety.reason : null;
+						const badgeTone =
+							status === "pass"
+								? "ok"
+								: status === "warn"
+									? "warn"
+									: status === "fail"
+										? "err"
+										: "warn";
+						const checks = Array.isArray(safety.checks)
+							? (safety.checks as Array<Record<string, unknown>>)
+							: null;
+						const defaultChecks = [
+							"Mint authority",
+							"Freeze authority",
+							"Top-10 concentration",
+							"Honeypot / sell simulation",
+							"LP custody",
+						];
+						const rows =
+							checks && checks.length > 0
+								? checks.map((check) => ({
+										check: String(check.name ?? check.check ?? "—"),
+										result: String(check.status ?? check.result ?? "—"),
+										detail: String(check.detail ?? "—"),
+										source: String(check.source ?? reason ?? "—"),
+									}))
+								: defaultChecks.map((check) => ({
+										check,
+										result: "unknown",
+										detail: "not checked · no value is assumed",
+										source: reason ?? "SAFETY_NOT_IMPLEMENTED",
+									}));
+						return (
+							<Panel
+								title="Safety"
+								sub={`status ${status}`}
+								action={<Badge tone={badgeTone}>{status}</Badge>}
+								flush
+								footer={
+									reason
+										? `${reason} · ${status === "unknown" ? "not a pass" : status}`
+										: "Safety object from the data layer; unknown fields stay unknown."
+								}
+							>
+								<div className="table-wrap">
+									<table className="table compact">
+										<thead>
+											<tr>
+												<th scope="col">Check</th>
+												<th scope="col">Result</th>
+												<th scope="col">Detail</th>
+												<th scope="col">Source · age</th>
+											</tr>
+										</thead>
+										<tbody>
+											{rows.map((row) => (
+												<tr key={row.check}>
+													<td>{row.check}</td>
+													<td>
+														<Badge tone={badgeTone}>{row.result}</Badge>
+													</td>
+													<td className="small muted">{row.detail}</td>
+													<td className="small muted">{row.source}</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							</Panel>
+						);
+					})()}
 					</div>
 
 					<Panel title="Source & freshness" sub="one observation, one age">
