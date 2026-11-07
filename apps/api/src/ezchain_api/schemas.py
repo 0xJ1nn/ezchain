@@ -73,12 +73,65 @@ class MarketCoverageOut(BaseModel):
     reason: Literal["pairs", "no_pairs", "error"]
 
 
+MarketSort = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
+MarketSortSemantics = Literal["global_sort", "per_chain_round_robin"]
+
+
+class MarketFiltersOut(BaseModel):
+    """The validated filters actually applied to this request.
+
+    ``unknown_excluded`` names every active filter that dropped a row because the
+    provider value was unknown. Unknown is never treated as zero.
+    """
+
+    chain: str
+    q: str | None = None
+    dex: str | None = None
+    min_liquidity_usd: str | None = None
+    min_volume_24h_usd: str | None = None
+    min_change_h24: str | None = None
+    max_change_h24: str | None = None
+    min_pair_age_minutes: int | None = None
+    max_pair_age_minutes: int | None = None
+    unknown_excluded: dict[str, int] = Field(default_factory=dict)
+
+
+class MarketPopulationOut(BaseModel):
+    """What the discovery pass saw before this page was sliced from it.
+
+    ``rows_discovered`` is the adapter population, ``rows_after_filters`` is the
+    filtered population used for ``total``, and ``rows_returned`` is this page.
+    ``chains_scanned``/``addresses_requested`` are ``None`` for a global search:
+    that endpoint is not an all-chain census. ``truncated`` is true only when the
+    adapter's own row cap cut the population (never when paging does).
+    """
+
+    chains_scanned: int | None = None
+    addresses_requested: int | None = None
+    rows_discovered: int
+    rows_after_filters: int
+    rows_returned: int
+    truncated: bool = False
+    sort: MarketSort
+    sort_semantics: MarketSortSemantics
+
+
 class MarketListOut(BaseModel):
     rows: list[MarketRowOut]
     source: SourceOut
     stale: bool
     coverage: list[MarketCoverageOut] | None = None
+    # Kept for existing clients; ``sort_semantics`` is the field the UI reads.
     ordered_by: Literal["chain_round_robin", "global_sort"] = "global_sort"
+    sort: MarketSort = "trending"
+    sort_semantics: MarketSortSemantics = "global_sort"
+    offset: int = 0
+    limit: int = 50
+    total: int = 0
+    has_more: bool = False
+    next_offset: int | None = None
+    applied_filters: MarketFiltersOut
+    population: MarketPopulationOut
 
 
 class MarketChainOut(BaseModel):
@@ -128,6 +181,18 @@ class StoredSnapshotOut(BaseModel):
     source: str
     observed_at: str
     age_seconds: int | None = None
+
+
+class StoredMarketListOut(BaseModel):
+    """One page of persisted observations with the same paging contract as live rows."""
+
+    rows: list[StoredSnapshotOut]
+    as_of: str
+    offset: int = 0
+    limit: int = 50
+    total: int = 0
+    has_more: bool = False
+    next_offset: int | None = None
 
 
 class PairOut(BaseModel):
