@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { CostSheet } from "@/components/cost-sheet";
+import { CandleChart, CandleEmptyState } from "@/components/candle-chart";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel, Stat } from "@/components/ui";
 import {
@@ -9,7 +10,9 @@ import {
 	getChains,
 	getQuote,
 	getToken,
+	getTokenCandles,
 	type ApiError,
+	type CandlesOut,
 	type Chain,
 	type Quote,
 	type Reason,
@@ -57,6 +60,28 @@ function reasonMessage(reason: Reason): string {
 		default:
 			return reason.message;
 	}
+}
+
+/**
+ * The real safety object, straight from the data layer. The page renders only the
+ * fields the token snapshot carries; a field the store does not have is "—" and a
+ * badge that says unknown. Nothing is inferred, and nothing is filled from mock.
+ */
+const SAFETY_FIELDS = [
+	{ key: "mint_authority", label: "Mint authority" },
+	{ key: "freeze_authority", label: "Freeze authority" },
+	{ key: "lp_custody", label: "LP custody" },
+	{ key: "creator_history", label: "Creator history" },
+] as const;
+
+function safetyText(safety: Record<string, unknown>, key: string): string | null {
+	const value = safety[key];
+	return typeof value === "string" && value.trim() ? value : null;
+}
+
+function safetyReason(safety: Record<string, unknown>): string {
+	const reason = safety.reason;
+	return typeof reason === "string" && reason.trim() ? reason : "no reason reported";
 }
 
 function QuoteRow({
@@ -145,13 +170,16 @@ export default async function TokenPage({
 	}
 	const token = tokenResult.snapshot;
 
-	const [quoteResult, chainsResult] = await Promise.all([
+	const [quoteResult, chainsResult, candlesResult] = await Promise.all([
 		getQuote({ chain, token: token.address, side, amountUsd: amount })
 			.then((quote) => ({ quote, reason: null as Reason | null }))
 			.catch((error: unknown) => ({ quote: null as Quote | null, reason: asApiError(error).toReason() })),
 		getChains()
 			.then((chains) => chains)
 			.catch(() => [] as Chain[]),
+		getTokenCandles(chain, token.address)
+			.then((series) => ({ series: series as CandlesOut | null, error: null as ApiError | null }))
+			.catch((error: unknown) => ({ series: null as CandlesOut | null, error: asApiError(error) })),
 	]);
 
 	const quote = quoteResult.quote;
@@ -255,7 +283,7 @@ export default async function TokenPage({
 					<Stat
 						label="Safety"
 						value={<Badge tone="warn">unknown</Badge>}
-						meta="SAFETY_NOT_IMPLEMENTED · not a pass"
+						meta={`${safetyReason(token.safety)} · not a pass`}
 					/>
 					<Stat
 						label="Freshness"
@@ -270,6 +298,58 @@ export default async function TokenPage({
 					/>
 				</div>
 			</Panel>
+
+			<div id="chart">
+				<Panel
+					title="Candles"
+					sub={`${token.symbol} · closed OHLCV · 5m`}
+					action={
+						<>
+							{candlesResult.series?.stale ? <Badge tone="warn">STALE</Badge> : null}
+							{candlesResult.series?.source.name === "fixture" ? (
+								<Badge tone="ghost">FIXTURE</Badge>
+							) : null}
+							<Badge tone="ghost">PAPER</Badge>
+						</>
+					}
+					footer={
+						candlesResult.series ? (
+							<span>
+								{sourceLabel(candlesResult.series.source.name)} · observed{" "}
+								{ageLabel(candlesResult.series.source.observed_at)} ago ·{" "}
+								{candlesResult.series.candles.length} closed bar
+								{candlesResult.series.candles.length === 1 ? "" : "s"} ·{" "}
+								{candlesResult.series.stale
+									? "the API marked this series stale"
+									: "not marked stale by the API"}
+								. Closing prices are discovery data, not executable quotes.
+							</span>
+						) : (
+							<span>
+								The candle request failed with{" "}
+								<span className="mono">{candlesResult.error?.code ?? "ERROR"}</span>. No
+								chart is drawn from a failed read.
+							</span>
+						)
+					}
+				>
+					{candlesResult.series && candlesResult.series.candles.length > 0 ? (
+						<CandleChart
+							candles={candlesResult.series.candles}
+							symbol={token.symbol}
+							timeframe={candlesResult.series.timeframe}
+						/>
+					) : (
+						<CandleEmptyState
+							reason={
+								candlesResult.error?.code ??
+								candlesResult.series?.reason ??
+								"CANDLES_EMPTY"
+							}
+						/>
+					)}
+				</Panel>
+			</div>
 
 			<div className="split">
 				<div className="stack">
@@ -343,10 +423,18 @@ export default async function TokenPage({
 					<div id="safety">
 					<Panel
 						title="Safety"
-						sub="every check is unknown in P0"
+						sub="rendered from the token snapshot's safety object"
 						action={<Badge tone="warn">unknown</Badge>}
 						flush
-						footer="Unknown is not a pass. Safety is not implemented in P0, so this page never claims a token is safe; the API risk policy is the execution gate."
+						footer={
+							<>
+								Unknown is not a pass. The page renders only what the data layer carries —
+								mint and freeze authority, LP custody and creator history — and prints an em
+								dash for every field the store does not have. The API risk policy is the
+								execution gate. Safety reason:{" "}
+								<span className="mono">{safetyReason(token.safety)}</span>.
+							</>
+						}
 					>
 						<div className="table-wrap">
 							<table className="table compact">
@@ -359,22 +447,27 @@ export default async function TokenPage({
 									</tr>
 								</thead>
 								<tbody>
-									{[
-										"Mint authority",
-										"Freeze authority",
-										"Top-10 concentration",
-										"Honeypot / sell simulation",
-										"LP custody",
-									].map((check) => (
-										<tr key={check}>
-											<td>{check}</td>
-											<td>
-												<Badge tone="warn">unknown</Badge>
-											</td>
-											<td className="small muted">not checked · no value is assumed</td>
-											<td className="small muted">SAFETY_NOT_IMPLEMENTED</td>
-										</tr>
-									))}
+									{SAFETY_FIELDS.map((field) => {
+										const value = safetyText(token.safety, field.key);
+										return (
+											<tr key={field.key}>
+												<td>{field.label}</td>
+												<td>
+													{value ? (
+														<span className="mono small">{value}</span>
+													) : (
+														<Badge tone="warn">unknown</Badge>
+													)}
+												</td>
+												<td className="small muted">
+													{value ?? "— · no value is assumed"}
+												</td>
+												<td className="small muted">
+													{sourceLabel(sourceName)} · {ageLabel(token.source?.observed_at)}
+												</td>
+											</tr>
+										);
+									})}
 								</tbody>
 							</table>
 						</div>

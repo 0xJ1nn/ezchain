@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
+import { CandleChart, CandleEmptyState } from "@/components/candle-chart";
 import { PositionTile } from "@/components/position-tile";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
+import { asApiError, getTokenCandles } from "@/lib/api";
 import { positionTiles } from "@/lib/position-fixtures";
 import { usd, signedUsd, MINUS } from "@/lib/format";
 import {
@@ -149,6 +151,18 @@ export default async function PositionsPage({
 		: !positionsResult.ok
 			? positionsResult.error.code
 			: null;
+
+	// Candle history per open position, fail-closed per token: a failed or empty
+	// series renders its explicit empty state; it never borrows another token's bars.
+	const candleResults = await Promise.all(
+		positions.map(async (position) => {
+			try {
+				return { position, series: await getTokenCandles(position.chain, position.token_address), error: null as string | null };
+			} catch (error: unknown) {
+				return { position, series: null, error: asApiError(error).code };
+			}
+		}),
+	);
 
 	return (
 		<AppShell active="positions">
@@ -480,6 +494,58 @@ export default async function PositionsPage({
 					</div>
 				)}
 			</Panel>
+
+			{!failed && positions.length > 0 && (
+				<div id="candles" className="mt-16">
+					<div className={styles.tileHeading}>
+						<h2>Candle history</h2>
+						<span className="small muted">
+							closed OHLCV per open position · source and age shown per series
+						</span>
+						<Badge tone="ghost">{mode === "fixture" ? "FIXTURE" : "LIVE API"}</Badge>
+					</div>
+					{candleResults.map(({ position, series, error }) => (
+						<div key={`${position.chain}:${position.token_address}`} data-candle-block>
+							<Panel
+								title={`${position.symbol} · 5m candles`}
+								sub={`closed bars · ${position.chain}`}
+								action={
+									<>
+										{series?.stale ? <Badge tone="warn">STALE</Badge> : null}
+										<Badge tone="ghost">PAPER</Badge>
+									</>
+								}
+								footer={
+									series ? (
+										<span>
+											{series.source.name} · observed {series.source.observed_at} ·{" "}
+											{series.candles.length} closed bars · closing prices are discovery
+											data, not executable quotes
+										</span>
+									) : (
+										<span>
+											The candle request failed with <span className="mono">{error}</span>. No
+											chart is drawn from a failed read.
+										</span>
+									)
+								}
+							>
+								{series && series.candles.length > 0 ? (
+									<CandleChart
+										candles={series.candles}
+										symbol={position.symbol}
+										timeframe={series.timeframe}
+									/>
+								) : (
+									<CandleEmptyState
+										reason={error ?? series?.reason ?? "CANDLES_EMPTY"}
+									/>
+								)}
+							</Panel>
+						</div>
+					))}
+				</div>
+			)}
 
 			{mode === "fixture" && !failed && positions.length > 0 && (
 				<section className="mt-16" aria-label="Position tiles">

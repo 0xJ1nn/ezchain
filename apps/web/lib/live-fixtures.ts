@@ -7,6 +7,8 @@
 
 import {
 	ApiError,
+	type Candle,
+	type CandlesOut,
 	type Chain,
 	type LaunchList,
 	type LaunchQuery,
@@ -645,6 +647,105 @@ export function fixtureToken(chain: string, address: string): TokenSnapshot {
 		safety: { status: "unknown", reason: "SAFETY_NOT_IMPLEMENTED" },
 		source,
 		stale: false,
+	};
+}
+
+/**
+ * Deterministic fixture candle series, mirroring the API's fixture mode: same inputs,
+ * same bars, no network, source named `fixture`. Bars walk from the token's fixture
+ * price so the chart and the page header agree; a reload shows the same history.
+ * The SCAM fixture token has no pool, so it returns the honest empty series with
+ * reason CANDLES_EMPTY — the page must show its empty state, never a flat line.
+ */
+const CANDLE_EMPTY_ADDRESSES = new Set([
+	"Scam1111111111111111111111111111111111111111",
+	"5z3EqYQo9HiCEs3R84RCDMu2n7anpDMxR3T7dRntZ0bV",
+]);
+
+const TIMEFRAME_SECONDS: Record<string, number> = {
+	"1m": 60,
+	"5m": 300,
+	"15m": 900,
+	"1h": 3600,
+	"4h": 14400,
+	"1d": 86400,
+};
+
+function mulberry32(seed: number): () => number {
+	let state = seed >>> 0;
+	return () => {
+		state = (state + 0x6d2b79f5) >>> 0;
+		let t = state;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+export function fixtureTokenCandles(
+	chain: string,
+	address: string,
+	timeframe = "5m",
+	limit = 120,
+): CandlesOut {
+	checkChain(chain);
+	const seconds = TIMEFRAME_SECONDS[timeframe] ?? 300;
+	const now = Date.now();
+	const source = fixtureSource(now, 4);
+	if (CANDLE_EMPTY_ADDRESSES.has(address)) {
+		return {
+			chain,
+			token_address: address,
+			timeframe,
+			pool_address: null,
+			candles: [],
+			source,
+			stale: false,
+			reason: "CANDLES_EMPTY",
+		};
+	}
+	const seed = SEEDS.find(
+		(candidate) =>
+			candidate.chain === chain && candidate.base_token.toLowerCase() === address.toLowerCase(),
+	);
+	let hash = 0;
+	for (const char of `${chain}:${address}:${timeframe}`) {
+		hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
+	}
+	const rand = mulberry32(hash);
+	let price = seed ? Number(seed.price) : 1;
+	if (!Number.isFinite(price) || price <= 0) price = 1;
+	const latestClosed = Math.floor(now / 1000 / seconds) - 1;
+	const bars: Candle[] = [];
+	for (let index = limit - 1; index >= 0; index--) {
+		const openSeconds = (latestClosed - index) * seconds;
+		const open = price;
+		const change = (rand() - 0.5) * 0.02;
+		const close = Math.max(open * (1 + change), 1e-12);
+		const high = Math.max(open, close) * (1 + rand() * 0.004);
+		const low = Math.min(open, close) * (1 - rand() * 0.004);
+		const volume = 1000 + rand() * 99000;
+		bars.push({
+			open_time: new Date(openSeconds * 1000).toISOString(),
+			close_time: new Date((openSeconds + seconds) * 1000).toISOString(),
+			timeframe_seconds: seconds,
+			open: decimal(open),
+			high: decimal(high),
+			low: decimal(low),
+			close: decimal(close),
+			volume: decimal(volume),
+		});
+		price = close;
+	}
+	return {
+		chain,
+		token_address: address,
+		timeframe,
+		pool_address: null,
+		candles: bars,
+		source,
+		stale: false,
+		reason: null,
 	};
 }
 

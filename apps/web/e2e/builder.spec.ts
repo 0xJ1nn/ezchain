@@ -277,29 +277,56 @@ test("dragging a wire to empty canvas opens a type-filtered node menu", async ({
 	await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 });
 
+// F7 must be pressed after the builder hydrates: the keydown listener registers
+// in a client effect, so a keystroke dispatched before hydration is simply lost
+// and the test would wait for a panel that never opens under host load. The
+// press is idempotent (each press revalidates), so pressing until the expected
+// problem surface appears is safe and deterministic.
+async function pressF7Until(
+	page: Page,
+	settled: () => Promise<void>,
+): Promise<void> {
+	await expect
+		.poll(
+			async () => {
+				await page.keyboard.press("F7");
+				try {
+					await settled();
+					return true;
+				} catch {
+					return false;
+				}
+			},
+			{ timeout: 60_000, intervals: [250, 500, 1_000] },
+		)
+		.toBe(true);
+}
+
 test("F7 reports NO_ACTION and clears once a buy is wired to the event", async ({ page }) => {
 	await page.goto("/strategies/builder");
-	await page.keyboard.press("F7");
 
-	const problems = page.getByTestId("problems");
-	await expect(problems).toContainText("NO_ACTION");
-	await expect(problems).toContainText("NO_EVENT");
+	await pressF7Until(page, async () => {
+		const problems = page.getByTestId("problems");
+		await expect(problems).toContainText("NO_ACTION");
+		await expect(problems).toContainText("NO_EVENT");
+	});
 
 	await addNode(page, "event.tick");
-	await page.keyboard.press("F7");
-	await expect(page.getByTestId("problem-NO_EVENT")).toHaveCount(0);
-	await expect(page.getByTestId("problem-NO_ACTION")).toBeVisible();
+	await pressF7Until(page, async () => {
+		await expect(page.getByTestId("problem-NO_EVENT")).toHaveCount(0);
+		await expect(page.getByTestId("problem-NO_ACTION")).toBeVisible();
+	});
 
 	await addNode(page, "act.buy");
 	await page.locator("#buy-act\\.buy-amount_usd").fill("100");
 	await fitView(page);
 	await connect(page, { node: "tick", port: "out" }, { node: "buy", port: "in" });
-	await page.keyboard.press("F7");
-
-	await expect(page.getByTestId("problem-NO_ACTION")).toHaveCount(0);
-	// The buy is reachable, so the only remaining note is the (non-blocking) NO_EXIT warning.
-	await expect(problems).toContainText("0 error(s)");
-	await expect(page.getByTestId("warning-NO_EXIT")).toBeVisible();
+	await pressF7Until(page, async () => {
+		await expect(page.getByTestId("problem-NO_ACTION")).toHaveCount(0);
+		// The buy is reachable, so the only remaining note is the (non-blocking) NO_EXIT warning.
+		await expect(page.getByTestId("problems")).toContainText("0 error(s)");
+		await expect(page.getByTestId("warning-NO_EXIT")).toBeVisible();
+	});
 });
 
 test("C wraps the selection in a labelled group box", async ({ page }) => {
@@ -515,9 +542,9 @@ test("a cyclic document is an error and is never saved", async ({ page }) => {
 	};
 	await pasteDocument(page, cyclic);
 	await fillHeader(page);
-	await page.keyboard.press("F7");
-
-	await expect(page.getByTestId("problem-CYCLE")).toBeVisible();
+	await pressF7Until(page, async () => {
+		await expect(page.getByTestId("problem-CYCLE")).toBeVisible();
+	});
 
 	let posted = 0;
 	await page.route("**/api/v1/strategies", async (route) => {
