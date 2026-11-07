@@ -553,6 +553,75 @@ class BacktestOut(BaseModel):
     warmup_bars: dict[str, int] | None = None
 
 
+class ProtectionArmIn(BaseModel):
+    chain: str = Field(min_length=2, max_length=40)
+    token_address: str = Field(min_length=8, max_length=160)
+    token_symbol: str = Field(min_length=1, max_length=40)
+    kind: Literal["stop_loss", "trailing_stop", "take_profit"]
+    params: dict[str, Any] = Field(default_factory=dict)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=36)
+    expires_at: str | None = None
+
+
+class ProtectionArmPatch(BaseModel):
+    params: dict[str, Any]
+
+
+class ProtectionArmOut(BaseModel):
+    id: str
+    chain: str
+    token_address: str
+    token_symbol: str
+    kind: str
+    status: str
+    params: dict[str, Any]
+    peak_usd: str | None = None
+    triggered_levels: list[int] = Field(default_factory=list)
+    triggered_at: str | None = None
+    order_id: str | None = None
+    expires_at: str | None = None
+    profile_id: str | None = None
+    last_evaluation: dict[str, Any] | None = None
+    created_at: str
+    updated_at: str
+    mode: str = "paper"
+
+
+class ProtectionProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    chain: str | None = Field(default=None, min_length=2, max_length=40)
+    kind: Literal["manual", "smart"]
+    params: dict[str, Any] = Field(default_factory=dict)
+    rules: list[str] = Field(default_factory=list)
+
+
+class ProtectionProfileOut(BaseModel):
+    id: str
+    name: str
+    chain: str | None = None
+    kind: str
+    stop_loss_pct: str | None = None
+    trailing_pct: str | None = None
+    take_profit_pct: str | None = None
+    rules: list[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+    mode: str = "paper"
+
+
+class ProtectionEvaluateOut(BaseModel):
+    arm: ProtectionArmOut
+    action: str
+    reason: str
+    sell_fraction: str
+    order_id: str | None = None
+
+
+class ProtectionEffectiveOut(BaseModel):
+    chain: str
+    profile: ProtectionProfileOut | None = None
+
+
 class StrategyPerformanceOut(BaseModel):
     strategy_id: str
     label: Literal["PAPER"] = "PAPER"

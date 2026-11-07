@@ -275,3 +275,46 @@ class MarketCandleRow(Base):
     volume: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     source: Mapped[str] = mapped_column(String(40))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ProtectionArmRow(Base):
+    """One manually armed protection order for an open paper position.
+
+    Parameters live in ``params`` (validated by core and replayed from it).
+    Trailing peaks and ladder progress are persisted here, so every trigger is
+    computable from persisted inputs (CONTRACT I9). The close itself journals
+    via the single paper order path; this table never holds money state.
+    """
+
+    __tablename__ = "protection_arms"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    chain: Mapped[str] = mapped_column(String(40), index=True)
+    token_address: Mapped[str] = mapped_column(String(160), index=True)
+    token_symbol: Mapped[str] = mapped_column(String(40))
+    kind: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(16), default="armed", index=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    peak_usd: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    triggered_levels: Mapped[list[int]] = mapped_column(JSONType, default=list)
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    profile_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProtectionProfileRow(Base):
+    """A reusable protection preset. Chain null means the profile is global."""
+
+    __tablename__ = "protection_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120))
+    chain: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    params: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    rules: Mapped[list[str]] = mapped_column(JSONType, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

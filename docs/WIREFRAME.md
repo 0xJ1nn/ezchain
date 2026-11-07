@@ -63,13 +63,13 @@ Persistent rules:
 | 01 | `01-sign-in.html` | Sign in | Auth entry | passkey/2FA, self-host note, recovery |
 | 02 | `02-onboarding.html` | Onboarding | First run | create vault, add wallet, pick chains, risk profile, paper default |
 | 03 | `03-dashboard.html` | Dashboard | Market first: what is the market doing now? | market strip (launches + trending), equity hero, PnL, exposure, open positions preview, signals, automation health, chain status |
-| 04 | `04-positions.html` | Positions | What is happening now? | filters, group-by, full position tiles, closed strip |
+| 04 | `04-positions.html` | Positions | What is happening now? | filters, group-by, full position tiles, closed strip, `Position protection` panel (arm form with profile picker + arms table) |
 | 05 | `05-position-detail.html` | Position detail | Decide on one position | full chart, ladder, fills, ledger journal, notes, actions |
 | 06 | `06-markets.html` | Markets | Find a market | screener table, chain tabs, filters, sparkline, watchlist |
 | 07 | `07-token.html` | Token | Inspect and trade | chart with levels, quote panel with the pre-trade cost sheet (platform, venue, network, impact, slippage window, receiver's worst case, journal fill fee), safety, liquidity, holders, own position |
 | 08 | `08-wallets.html` | Wallets | Where is my money? | multi-wallet cards, per-chain balances, custody, policy, sync |
 | 09 | `09-wallet-detail.html` | Wallet detail | Operate one wallet | balances, allowances, activity, policy, keys/custody, sweep |
-| 10 | `10-automations.html` | Automations | What runs without me? | list, status, last run, pause, logs |
+| 10 | `10-automations.html` | Automations | What runs without me? | list, status, last run, pause, logs, `Armed protection` list (armed arms with honest states) |
 | 11 | `11-automation-builder.html` | Automation builder | Compose a rule | trigger → conditions → actions, scope, dry run, simulation |
 | 12 | `12-strategies.html` | Strategies | Installed plugins | cards with mode, paper gate, allocation, params, permissions |
 | 13 | `13-strategy-detail.html` | Strategy detail | Install and control | manifest, params form, grants, gate evidence, intents, logs |
@@ -152,7 +152,8 @@ unsellable, dust, stale mark, closed, quarantined.
 | Markets | `/markets?chain=…&sort=…` |
 | Token | `/tokens/{chain}/{mint}`, `/tokens/{chain}/{mint}/candles`, `/quote`, `/positions?token=…` (chart: closed candles with source+age; safety: the snapshot's safety object, `—` for any field the store lacks) |
 | Wallets | `/wallets`, `/wallets/{id}/balances` |
-| Automations | `/automations`, `/automations/{id}/runs` |
+| Automations | `/automations`, `/automations/{id}/runs`, `/protection/arms` (armed list) |
+| Positions protection | `/protection/arms`, `/protection/profiles`, `/protection/profiles/effective?chain=…` |
 | Strategies | `/strategies`, `/strategies/{id}` |
 | Signals | `/signals`, `/signals/sources` |
 | Backtests | `/backtests`, `/backtests/{id}` |
@@ -187,7 +188,24 @@ toggle; it never auto-collapses at 1100px. The topbar is 52px above the mobile b
 at ≤1200px its low-priority chips hide and the search flexes, and at ≤768px the search takes
 a full row and the topbar wraps.
 
-## 8. Handoff to visual design
+## 8. Position protection delta (issue #103)
+
+- **Positions (`04-positions.html#protection`):** a `Position protection` panel below the
+  positions table. The form picks an open position, an arm kind (`stop-loss`,
+  `trailing stop`, `take-profit`), a trigger (price or percent; trailing offers percent
+  or price distance), and a profile (manual/smart or `—`). Smart rules render verbatim.
+  The arms table below lists every arm for the account with kind, trigger, status,
+  trailing peak, and Edit / Cancel actions. Edits apply immediately while armed.
+- **Automations (`10-automations.html#armed-protection`):** an `Armed protection` list
+  shows the same arms with counts of armed arms. States are honest: `armed`,
+  `triggered`, `cancelled`, `EXPIRED`. Unknown triggers and peaks render as `—`,
+  never `0`.
+- **Data:** `GET /api/v1/protection/arms`, `POST/PATCH /arms`, `POST /arms/{id}/cancel`,
+  `POST /arms/{id}/evaluate`, `GET/POST /profiles`, `GET /profiles/effective?chain=…`.
+  All money strings are decimal strings from the server; the web formats only.
+  Every value is PAPER. Live execution is not part of this change.
+
+## 9. Handoff to visual design
 
 `design/BRIEF.md` defines the design tokens, tone, component inventory and the pages in
 priority order. The wireframe deliberately uses grayscale and dashed placeholders so that

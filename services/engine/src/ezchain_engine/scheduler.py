@@ -582,6 +582,17 @@ class StrategyScheduler:
                     )
                 except Exception:
                     logger.exception("strategy %s evaluation crashed", strategy_id)
+        # Protection arms share this tick and this intent path. Evaluate them
+        # after strategies so a strategy close wins the position race and an
+        # arm then sees NO_POSITION instead of double-selling.
+        try:
+            from ezchain_engine.protection import evaluate_all_arms
+
+            await evaluate_all_arms(
+                self._session_factory, self._dexscreener, self._order_executor, now=now
+            )
+        except Exception:
+            logger.exception("protection pass failed")
         return results
 
     async def run_forever(self) -> None:

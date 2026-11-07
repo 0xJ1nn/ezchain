@@ -658,3 +658,46 @@ secret for the operator; production must keep it out of agent configs. Multi-ten
 isolation, per-key rate limits, IP allowlists and key rotation remain follow-ups. Any
 change to ledger partitioning needs its own ADR and migration; this ADR deliberately
 does not claim it.
+
+---
+
+## ADR-0030 — Position protection arms share the single paper execution path
+
+**Date:** 2026-11-07 · **Status:** Accepted
+
+**Context:** users want to protect an open position without writing a strategy:
+stop-loss, trailing stop (price or percent) and take-profit (single or laddered),
+plus reusable manual/smart profiles. The strategy surface already proves the shape —
+declarative config, engine evaluation, one order path — but couples exits to strategy
+kinds and offers no standalone arms, no trailing fairness and no per-chain presets.
+
+**Options:** (a) new execution pipeline and dual ledger math for arm exits; (b) encode
+protection as strategies; (c) small vertical slice — pure core evaluation plus an
+engine runner that evaluates armed rows on scheduler ticks and fires the same
+`OrderExecutor.place_order` a manual sell uses.
+
+**Decision:** (c).
+
+- `ezchain_core.protection` is pure: `validate_arm`, `evaluate_arm`,
+  `resolve_profile`. Trailing peaks track only above-water prices, so a trailing stop
+  that never went above water never triggers, however far the price then falls.
+  Unknown or stale marks never trigger; expiry, cancel and missing positions are
+  explicit holds, never zero.
+- `services/engine/protection.py` owns the side effects: one market read and one
+  ledger replay per arm per tick, then one sell intent with a stable idempotency key
+  (`protection:<arm>:single|level-N`). A strategy close wins the position race first;
+  an arm then sees `NO_POSITION`. Ladder levels stay armed until their last level
+  fires. The scheduler runs the pass after strategies on the same tick, so a
+  kill-switch outage skips both.
+- `protection_arms` / `protection_profiles` hold only arm state (params, peak, ladder
+  progress, expiry, ordering). Money still journals only through
+  `paper.place_order` groups; profiles carry defaults (one home each in core) and,
+  for smart profiles, the verbatim rule list. A per-chain profile overrides the global
+  one by whole-profile selection (newest wins within a scope).
+
+**Consequences:** arm closes reconcile with manual fills and the existing
+reconciliation checks; no second bus, no dual math, no strategy code in-tree, and no
+live-anything surface. Follow-ups: partial-ladder fraction caps assume the position
+does not change size between levels (a resize updates the remaining value at the next
+tick); expiry is checked at evaluation time, not by a sweep loop; the API records no
+per-tick arm run log — evaluation inputs live on the arm row for replay.
