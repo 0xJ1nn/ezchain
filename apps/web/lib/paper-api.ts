@@ -185,6 +185,10 @@ export function webMode(): PaperApiMode {
 	return process.env.EZCHAIN_WEB_MODE === "fixture" ? "fixture" : "live";
 }
 
+// The typed protection client (lib/protection-api.ts) reuses this module's request and
+// result plumbing so every endpoint fails with the same error envelope.
+export { request as apiRequest, capture as apiCapture };
+
 function apiBase() {
 	// On the server Next needs an absolute URL. In the browser the server-side proxy at
 	// /api/[...path] forwards to the API and injects the bearer token, so a relative path

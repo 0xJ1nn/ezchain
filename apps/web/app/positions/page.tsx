@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { PositionTile } from "@/components/position-tile";
+import { ProtectionControls } from "@/components/protection-controls";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
 import { positionTiles } from "@/lib/position-fixtures";
 import { usd, signedUsd, MINUS } from "@/lib/format";
@@ -13,6 +14,11 @@ import {
 	type PaperResult,
 	type PaperSnapshot,
 } from "@/lib/paper-api";
+import {
+	getProtectionProfiles,
+	getProtections,
+	type Protection,
+} from "@/lib/protection-api";
 import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
@@ -90,8 +96,22 @@ export default async function PositionsPage({
 	searchParams: Promise<{ state?: string }>;
 }) {
 	const { state } = await searchParams;
-	const snapshot = await getPaperSnapshot();
+	const [snapshot, protectionsResult, profilesResult] = await Promise.all([
+		getPaperSnapshot(),
+		getProtections(),
+		getProtectionProfiles(),
+	]);
 	const mode = snapshot.mode;
+
+	// Protection arms are keyed by chain:token so each row only shows its own records.
+	const armsByPosition = new Map<string, Protection[]>();
+	if (protectionsResult.ok) {
+		for (const arm of protectionsResult.data) {
+			const key = `${arm.chain}:${arm.token_address}`;
+			armsByPosition.set(key, [...(armsByPosition.get(key) ?? []), arm]);
+		}
+	}
+	const profiles = profilesResult.ok ? profilesResult.data : [];
 
 	// Deterministic state gallery in fixture mode only. Live mode always shows the API's
 	// answer, including an outage — a demo flag never masks real data.
@@ -377,6 +397,7 @@ export default async function PositionsPage({
 									</th>
 									<th scope="col">Source · age</th>
 									<th scope="col">Mode</th>
+									<th scope="col">Protection</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -448,6 +469,15 @@ export default async function PositionsPage({
 											</td>
 											<td>
 												<Badge tone="ghost">{position.mode}</Badge>
+											</td>
+											<td>
+												<ProtectionControls
+													mode={mode}
+													chain={position.chain}
+													tokenAddress={position.token_address}
+													arms={armsByPosition.get(`${position.chain}:${position.token_address}`) ?? []}
+													profiles={profiles}
+												/>
 											</td>
 										</tr>
 									);
