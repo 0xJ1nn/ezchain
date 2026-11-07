@@ -2,8 +2,10 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel } from "@/components/ui";
+import { ProtectionArmsPanel } from "@/components/protection-arms-panel";
 import { ageLabel } from "@/lib/live-format";
-import { getStrategies } from "@/lib/paper-api";
+import { getPaperPositions, getStrategies } from "@/lib/paper-api";
+import { getProtections, getProtectionProfiles } from "@/lib/protection-api";
 import { getServiceHealth } from "@/lib/system-api";
 import { strategyKindMeta } from "@/lib/strategy-fixtures";
 
@@ -24,16 +26,30 @@ function stamp(iso: string | null) {
 }
 
 export default async function AutomationsPage() {
-	const [strategiesResult, healthResult] = await Promise.all([
-		getStrategies(),
-		getServiceHealth(),
-	]);
+	const [strategiesResult, healthResult, protectionsResult, profilesResult, positionsResult] =
+		await Promise.all([
+			getStrategies(),
+			getServiceHealth(),
+			getProtections(),
+			getProtectionProfiles(),
+			getPaperPositions(),
+		]);
 	const mode = strategiesResult.mode;
 	const strategies = strategiesResult.ok ? strategiesResult.data : [];
 	const active = strategies.filter((strategy) => strategy.status === "active");
 	const paused = strategies.filter((strategy) => strategy.status === "paused");
 	const health = healthResult.ok ? healthResult.data : null;
 	const healthError = healthResult.ok ? null : healthResult.error;
+	const protections = protectionsResult.ok ? protectionsResult.data : [];
+	const profiles = profilesResult.ok ? profilesResult.data : [];
+	// Arm rows name the token by its paper symbol when a position or fixture knows it;
+	// an address the read model does not know stays an address, never a guess.
+	const symbols: Record<string, string> = {};
+	if (positionsResult.ok) {
+		for (const position of positionsResult.data) {
+			symbols[`${position.chain}:${position.token_address}`] = position.symbol;
+		}
+	}
 
 	return (
 		<AppShell active="automations">
@@ -57,6 +73,16 @@ export default async function AutomationsPage() {
 					</Link>
 				</div>
 			</header>
+
+			<div className="mb-12">
+				<ProtectionArmsPanel
+					mode={mode}
+					arms={protections}
+					profiles={profiles}
+					symbols={symbols}
+					error={protectionsResult.ok ? null : protectionsResult.error}
+				/>
+			</div>
 
 			{!strategiesResult.ok && (
 				<div className="mb-12">

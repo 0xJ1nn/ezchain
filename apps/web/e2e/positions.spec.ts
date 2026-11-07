@@ -58,7 +58,8 @@ test("positions reads the paper account and PositionView shape from the typed cl
 	// The positions table is the server PositionView, one row per open position.
 	const table = page.locator("section.panel").filter({ hasText: "Server positions" }).locator("table");
 	await expect(table.locator("tbody tr")).toHaveCount(4);
-	await expect(table.locator('thead th[scope="col"]')).toHaveCount(10);
+	// Eleven columns: the PositionView fields plus the protection arm controls.
+	await expect(table.locator('thead th[scope="col"]')).toHaveCount(11);
 
 	const bonk = table.locator("tbody tr").filter({ hasText: "BONK" });
 	await expect(bonk).toContainText("solana");

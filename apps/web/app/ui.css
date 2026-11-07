@@ -716,3 +716,8 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .mobile-nav a.on { color: var(--ink); font-weight: 700; }
   .mobile-nav .g { font-size: 15px; line-height: 1; font-variant-emoji: text; }
 }
+
+/* ---------- position protection arms ---------- */
+.protection-arm { padding: 8px 0; border-top: 1px solid var(--line); }
+.protection-arm:first-child { border-top: 0; padding-top: 0; }
+.protection-cell { min-width: 200px; }

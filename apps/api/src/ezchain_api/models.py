@@ -275,3 +275,55 @@ class MarketCandleRow(Base):
     volume: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     source: Mapped[str] = mapped_column(String(40))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ProtectionProfileRow(Base):
+    __tablename__ = "protection_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120))
+    profile_type: Mapped[str] = mapped_column(String(24), default="manual")
+    chain: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    defaults: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProtectionRow(Base):
+    __tablename__ = "protections"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_protection_idempotency"),
+        Index("ix_protection_chain_token", "chain", "token_address"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    idempotency_key: Mapped[str] = mapped_column(String(120))
+    chain: Mapped[str] = mapped_column(String(40), index=True)
+    token_address: Mapped[str] = mapped_column(String(160), index=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    params: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    source: Mapped[str] = mapped_column(String(24), default="manual")
+    profile_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="armed", index=True)
+    version: Mapped[int] = mapped_column(default=1)
+    trailing_activated: Mapped[bool] = mapped_column(default=False)
+    trailing_peak: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    trailing_rung_index: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProtectionEventRow(Base):
+    __tablename__ = "protection_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    protection_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    chain: Mapped[str] = mapped_column(String(40), index=True)
+    token_address: Mapped[str] = mapped_column(String(160), index=True)
+    rule_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    mark: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    action: Mapped[str] = mapped_column(String(24))
+    order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
