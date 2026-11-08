@@ -189,6 +189,21 @@ export interface CandlesOut {
 	reason: string | null;
 }
 
+export type CandleTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+
+export interface CandleSeries {
+	chain: string;
+	token_address: string;
+	timeframe: CandleTimeframe;
+	pool_address: string | null;
+	candles: Candle[];
+	source: Source;
+	stale: boolean;
+	reason: string | null;
+}
+
+export type CandleFixtureState = "unsupported" | "no_pool" | "empty" | "error" | "stale";
+
 /** One registered chain as the API's market monitor currently sees it. */
 export interface MarketChainOverview {
 	id: string;
@@ -536,6 +551,29 @@ export async function getTokenCandles(
 		return fixtures.fixtureTokenCandles(chain, address, timeframe, limit);
 	}
 	return request<CandlesOut>(
+		`/v1/tokens/${encodeURIComponent(chain)}/${encodeURIComponent(address)}/candles`,
+		{ params: { timeframe, limit } },
+	);
+}
+
+export interface CandleQuery {
+	timeframe?: CandleTimeframe;
+	limit?: number;
+	fixtureState?: CandleFixtureState;
+}
+
+export async function getCandles(
+	chain: string,
+	address: string,
+	query: CandleQuery = {},
+): Promise<CandleSeries> {
+	const timeframe = query.timeframe ?? "1h";
+	const limit = Math.min(1000, Math.max(1, Math.floor(query.limit ?? 200)));
+	if (webMode() === "fixture") {
+		const fixtures = await import("./candle-fixtures");
+		return fixtures.fixtureCandles(chain, address, timeframe, limit, query.fixtureState);
+	}
+	return request<CandleSeries>(
 		`/v1/tokens/${encodeURIComponent(chain)}/${encodeURIComponent(address)}/candles`,
 		{ params: { timeframe, limit } },
 	);

@@ -469,7 +469,7 @@ test("loading and error boundaries are wired", async () => {
 	// browser paints the fallback), so this asserts the boundaries are wired, not a race.
 	for (const [route, active, skeleton] of [
 		["(dashboard)", "dashboard", "GenericSkeleton"],
-		["positions", "positions", "PositionsSkeleton"],
+		["positions/(list)", "positions", "PositionsSkeleton"],
 		["markets", "markets", "MarketsSkeleton"],
 		["performance", "performance", "PerformanceSkeleton"],
 	]) {
