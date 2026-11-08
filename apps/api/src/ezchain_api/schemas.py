@@ -73,12 +73,48 @@ class MarketCoverageOut(BaseModel):
     reason: Literal["pairs", "no_pairs", "error"]
 
 
+class MarketPopulationOut(BaseModel):
+    """What the discovery pass saw before this page was sliced from it."""
+
+    chains_scanned: int | None = None
+    addresses_requested: int | None = None
+    rows_discovered: int
+    rows_after_filters: int
+    rows_returned: int
+    truncated: bool = False
+    sort: Literal["trending", "liquidity", "new"] = "trending"
+    sort_semantics: Literal["global_sort", "per_chain_round_robin"] = "global_sort"
+
+
 class MarketListOut(BaseModel):
     rows: list[MarketRowOut]
     source: SourceOut
     stale: bool
     coverage: list[MarketCoverageOut] | None = None
     ordered_by: Literal["chain_round_robin", "global_sort"] = "global_sort"
+    sort: Literal["trending", "liquidity", "new"] = "trending"
+    sort_semantics: Literal["global_sort", "per_chain_round_robin"] = "global_sort"
+    offset: int = 0
+    limit: int = 50
+    total: int = 0
+    has_more: bool = False
+    next_offset: int | None = None
+    next_cursor: str | None = None
+    truncated: bool = False
+    population: MarketPopulationOut | None = None
+
+
+class StoredMarketListOut(BaseModel):
+    """One page of persisted observations with the same paging contract as live rows."""
+
+    rows: list[StoredSnapshotOut]
+    as_of: str
+    offset: int = 0
+    limit: int = 50
+    total: int = 0
+    has_more: bool = False
+    next_offset: int | None = None
+    next_cursor: str | None = None
 
 
 class MarketChainOut(BaseModel):

@@ -567,6 +567,7 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 	checkChain(chain);
 	const sort = query.sort ?? "trending";
 	const limit = Math.min(100, Math.max(1, query.limit ?? 50));
+	const offset = Math.max(0, query.offset ?? 0);
 	const search = (query.q ?? "").trim().toLowerCase();
 
 	const now = Date.now();
@@ -594,7 +595,21 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 		return Number(b.volume_24h_usd) - Number(a.volume_24h_usd);
 	});
 
-	return { rows: sorted.slice(0, limit), source, stale: false };
+	const total = sorted.length;
+	const page = sorted.slice(offset, offset + limit);
+	const hasMore = offset + page.length < total;
+	return {
+		rows: page,
+		source,
+		stale: false,
+		offset,
+		limit,
+		total,
+		has_more: hasMore,
+		next_offset: hasMore ? offset + page.length : null,
+		next_cursor: hasMore ? btoa(JSON.stringify({ offset: offset + page.length })) : null,
+		truncated: false,
+	};
 }
 
 function findSeed(chain: string, address: string): Seed {
