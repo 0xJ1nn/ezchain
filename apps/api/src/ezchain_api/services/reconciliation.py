@@ -43,11 +43,7 @@ def _check(check_id: str, ok: bool, detail: str) -> dict[str, Any]:
 
 def reconciliation(session: Session) -> dict[str, Any]:
     """Compute the reconciliation report. Never writes to the database."""
-    ledger = list(
-        session.scalars(
-            select(LedgerEntryRow).order_by(LedgerEntryRow.created_at, LedgerEntryRow.id)
-        )
-    )
+    ledger = list(session.scalars(select(LedgerEntryRow).order_by(LedgerEntryRow.seq)))
     fills = list(session.scalars(select(PaperFillRow)))
     orders = list(session.scalars(select(PaperOrderRow)))
 

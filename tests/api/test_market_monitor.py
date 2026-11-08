@@ -596,4 +596,3 @@ def test_overview_and_stored_endpoints(
     unknown = client.get("/api/v1/markets/stored", params={"chain": "not-a-chain"})
     assert unknown.status_code == 404
     assert unknown.json()["detail"]["code"] == "CHAIN_NOT_FOUND"
-

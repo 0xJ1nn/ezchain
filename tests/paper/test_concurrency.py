@@ -136,13 +136,16 @@ def test_stale_oversized_sell_is_position_changed(tmp_path, monkeypatch) -> None
     jupiter = FakeJupiter(price=Decimal("2000"))
 
     with maker() as session:
-        assert place(
-            session,
-            settings,
-            dex,
-            jupiter,
-            make_request(side="buy", amount_usd="100", key="stale-open"),
-        ).status == "filled"
+        assert (
+            place(
+                session,
+                settings,
+                dex,
+                jupiter,
+                make_request(side="buy", amount_usd="100", key="stale-open"),
+            ).status
+            == "filled"
+        )
 
     real_replay = paper._replay
     calls = 0

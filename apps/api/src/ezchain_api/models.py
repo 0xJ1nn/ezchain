@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     DateTime,
     ForeignKey,
     Index,
@@ -17,11 +18,12 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.types import TypeEngine
 
 from .db import Base
@@ -94,6 +96,7 @@ class LedgerEntryRow(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, index=True)
     group_id: Mapped[str] = mapped_column(String(36), index=True)
     account: Mapped[str] = mapped_column(String(160), index=True)
     asset: Mapped[str] = mapped_column(String(160))
@@ -101,6 +104,28 @@ class LedgerEntryRow(Base):
     usd_value: Mapped[Decimal] = mapped_column(MONEY)
     kind: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+@event.listens_for(Session, "before_flush")
+def _assign_ledger_seqs(session: Session, _flush_context: Any, _instances: Any) -> None:
+    """Assign monotonic sequences to new ledger rows before they are flushed.
+
+    Postgres also has an IDENTITY default, but assigning in Python keeps SQLite-based
+    tests working and guarantees a stable order within a single transaction. Rows
+    that already carry a ``seq`` (backfilled or explicitly provided) are left alone.
+    """
+    pending = [
+        obj
+        for obj in session.new
+        if isinstance(obj, LedgerEntryRow) and getattr(obj, "seq", None) is None
+    ]
+    if not pending:
+        return
+    query = text("SELECT COALESCE(MAX(seq), 0) FROM ledger_entries")
+    current = int(session.execute(query).scalar() or 0)
+    for obj in pending:
+        current += 1
+        obj.seq = current
 
 
 class PaperOrderRow(Base):

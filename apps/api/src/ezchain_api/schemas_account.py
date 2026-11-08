@@ -19,6 +19,7 @@ class LedgerEntryOut(BaseModel):
     """One append-only journal entry, exactly as persisted."""
 
     id: str
+    seq: int
     group_id: str
     account: str
     asset: str

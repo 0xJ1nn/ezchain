@@ -165,7 +165,7 @@ def position_state(
     rows = session.scalars(
         select(LedgerEntryRow)
         .where(LedgerEntryRow.account == position_account(chain, token_address))
-        .order_by(LedgerEntryRow.created_at, LedgerEntryRow.id)
+        .order_by(LedgerEntryRow.seq)
     ).all()
     entries = (
         LedgerEntry(
