@@ -9,10 +9,19 @@ import { DASH, ageLabel, formatAmount, formatUsd, sourceLabel } from "@/lib/live
  * API's, or the fixture model's in fixture mode); this component computes
  * nothing. Unknown is "—", never zero; the platform fee is a known zero.
  */
-export function CostSheet({ quote, symbol }: { quote: Quote; symbol: string }) {
+export function CostSheet({
+	quote,
+	symbol,
+	now,
+}: {
+	quote: Quote;
+	symbol: string;
+	/** Server render time, so a client component hydrates the same age text. */
+	now?: number;
+}) {
 	const preview = quote.cost_preview;
 	if (!preview) return null;
-	const sourceAge = `${sourceLabel(preview.source.name)} · ${ageLabel(preview.source.observed_at)}`;
+	const sourceAge = `${sourceLabel(preview.source.name)} · ${ageLabel(preview.source.observed_at, now)}`;
 	const worstCase =
 		preview.worst_case_out === null
 			? DASH

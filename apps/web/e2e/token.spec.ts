@@ -59,7 +59,7 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 
 	// Quote side switch goes through the server (URL) and the paper ticket preview matches.
 	await expect(page.locator("#ticket")).toContainText("3,182,686.19 BONK");
-	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 
@@ -89,7 +89,7 @@ test("paper buy reaches a success state with a client idempotency key", async ({
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	const confirm = page.getByRole("button", { name: "Confirm paper order" });
+	const confirm = page.locator("#ticket").getByRole("button", { name: "Confirm paper order" });
 	await expect(confirm).toBeEnabled();
 	await confirm.click();
 
@@ -129,7 +129,7 @@ test("paper buy shows the API reason on rejection", async ({ page }) => {
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	await page.getByRole("button", { name: "Confirm paper order" }).click();
+	await page.locator("#ticket").getByRole("button", { name: "Confirm paper order" }).click();
 
 	await expect(page.locator("#ticket .note.err")).toBeVisible();
 	await expect(page.locator("#ticket")).toContainText("NO_SELL_ROUTE");
@@ -151,7 +151,7 @@ test("scamcoin fails closed with no route and no confirmable order", async ({ pa
 	await expect(page.locator("#quote")).not.toContainText("Jupiter v6");
 	await expect(page.locator("#quote")).not.toContainText("3,182,686");
 
-	const confirm = page.getByRole("button", { name: "Confirm paper order" });
+	const confirm = page.locator("#ticket").getByRole("button", { name: "Confirm paper order" });
 	await expect(confirm).toBeDisabled();
 	await expect(page.locator("#ticket")).toContainText("NO_SELL_ROUTE");
 
@@ -167,7 +167,7 @@ test("a non-solana token is labelled PAPER · MARK, not an executable route", as
 	await expect(page.locator("#quote")).toContainText(
 		"This chain has no executable venue in P0",
 	);
-	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 });
 
 test("sell is sized from the USD notional and renders a paper quote", async ({ page }) => {
@@ -175,7 +175,7 @@ test("sell is sized from the USD notional and renders a paper quote", async ({ p
 
 	await expect(page.locator("#quote")).not.toContainText("NO_SELL_ROUTE");
 	await expect(page.locator("#quote")).toContainText("PAPER");
-	await expect(page.getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 });
 
 test("unknown chain or token ids return 404", async ({ page }) => {
