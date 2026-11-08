@@ -17,7 +17,8 @@
 import { serverAuthorizationHeader } from "./api-auth";
 
 export type WebMode = "fixture" | "live";
-export type MarketSort = "trending" | "liquidity" | "new";
+export type MarketSort = "trending" | "liquidity" | "new" | "change_h24" | "pair_age";
+export type MarketSortSemantics = "global_sort" | "per_chain_round_robin";
 export type Side = "buy" | "sell";
 
 export interface Source {
@@ -35,8 +36,8 @@ export interface MarketRow {
 	symbol: string;
 	name: string;
 	price_usd: string;
-	liquidity_usd: string;
-	volume_24h_usd: string;
+	liquidity_usd: string | null;
+	volume_24h_usd: string | null;
 	price_change_m5: string | null;
 	price_change_h1: string | null;
 	price_change_h6: string | null;
@@ -62,17 +63,54 @@ export interface LaunchList {
 	stale: boolean;
 }
 
+export interface MarketCoverage {
+	chain: string;
+	requested: number;
+	returned: number;
+	reason: "pairs" | "no_pairs" | "error";
+}
+
+export interface MarketFilters {
+	chain: string;
+	q: string | null;
+	dex: string | null;
+	min_liquidity_usd: string | null;
+	min_volume_24h_usd: string | null;
+	min_change_h24: string | null;
+	max_change_h24: string | null;
+	min_pair_age_minutes: number | null;
+	max_pair_age_minutes: number | null;
+	unknown_excluded: Record<string, number>;
+}
+
+export interface MarketPopulation {
+	chains_scanned: number | null;
+	addresses_requested: number | null;
+	rows_discovered: number;
+	rows_after_filters: number;
+	rows_returned: number;
+	truncated: boolean;
+	sort: MarketSort;
+	sort_semantics: MarketSortSemantics;
+}
+
 export interface MarketList {
 	rows: MarketRow[];
 	source: Source;
 	stale: boolean;
-	offset?: number;
-	limit?: number;
-	total?: number;
-	has_more?: boolean;
-	next_offset?: number | null;
+	coverage: MarketCoverage[] | null;
+	ordered_by: "chain_round_robin" | "global_sort";
+	sort: MarketSort;
+	sort_semantics: MarketSortSemantics;
+	offset: number;
+	limit: number;
+	total: number;
+	has_more: boolean;
+	next_offset: number | null;
 	next_cursor?: string | null;
 	truncated?: boolean;
+	applied_filters: MarketFilters;
+	population: MarketPopulation;
 }
 
 export interface ChainCapabilities {
@@ -101,8 +139,8 @@ export interface PairInfo {
 	dex: string;
 	quote_token: string;
 	price_usd: string;
-	liquidity_usd: string;
-	volume_24h_usd: string;
+	liquidity_usd: string | null;
+	volume_24h_usd: string | null;
 	url: string | null;
 }
 
@@ -394,6 +432,13 @@ export interface MarketQuery {
 	limit?: number;
 	offset?: number;
 	cursor?: string;
+	minLiquidityUsd?: string | number;
+	minVolume24hUsd?: string | number;
+	minChangeH24?: string | number;
+	maxChangeH24?: string | number;
+	minPairAgeMinutes?: string | number;
+	maxPairAgeMinutes?: string | number;
+	dex?: string;
 }
 
 export async function getMarkets(query: MarketQuery = {}): Promise<MarketList> {
@@ -409,6 +454,13 @@ export async function getMarkets(query: MarketQuery = {}): Promise<MarketList> {
 			limit: query.limit ?? 50,
 			offset: query.offset ?? 0,
 			cursor: query.cursor,
+			min_liquidity_usd: query.minLiquidityUsd,
+			min_volume_24h_usd: query.minVolume24hUsd,
+			min_change_h24: query.minChangeH24,
+			max_change_h24: query.maxChangeH24,
+			min_pair_age_minutes: query.minPairAgeMinutes,
+			max_pair_age_minutes: query.maxPairAgeMinutes,
+			dex: query.dex,
 		},
 	});
 }

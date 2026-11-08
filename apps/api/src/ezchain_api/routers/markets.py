@@ -6,7 +6,7 @@ import base64
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, NoReturn
+from typing import Any, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -33,10 +33,12 @@ from ..models import MarketSnapshotRow
 from ..schemas import (
     CandlesOut,
     MarketCoverageOut,
+    MarketFiltersOut,
     MarketListOut,
     MarketOverviewOut,
     MarketPopulationOut,
     MarketRowOut,
+    MarketSort,
     QuoteOut,
     SourceOut,
     StoredMarketListOut,
@@ -47,13 +49,20 @@ from ..services.candles import get_candles
 from ..services.market_monitor import (
     MarketMonitor,
     build_overview,
-    count_stored_snapshots,
     stored_snapshots,
 )
 
 router = APIRouter(tags=["markets"])
 
 BROWSE_DISCOVERY_ROWS = 1000
+
+# A filter is echoed back in ``applied_filters``. Without a bound, Decimal accepts
+# ``1e1000000`` and ``format(value, "f")`` expands it to a megabyte of digits before any
+# provider work happens. The supported range covers every realistic USD/percent filter
+# and caps both the magnitude and the number of significant digits.
+FILTER_MAX_ABS = Decimal("1e18")
+FILTER_MIN_ABS = Decimal("1e-18")
+FILTER_MAX_DIGITS = 30
 
 
 def _invalid_cursor(message: str) -> NoReturn:
@@ -92,6 +101,149 @@ def _stored_anchor(row: MarketSnapshotRow) -> str:
 CandleTimeframe = Literal["1m", "5m", "15m", "1h", "4h", "1d"]
 
 
+def _invalid_filter(message: str) -> NoReturn:
+    raise HTTPException(
+        status_code=422,
+        detail={"code": "INVALID_FILTER", "message": message, "retryable": False},
+    )
+
+
+def _aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _validate_decimal_filter(name: str, value: Decimal | None, *, non_negative: bool) -> None:
+    if value is None:
+        return
+    if not value.is_finite():
+        _invalid_filter(f"{name} must be finite")
+    if value.is_zero():
+        return
+    if non_negative and value.as_tuple().sign:
+        _invalid_filter(f"{name} must be greater than or equal to zero")
+    adjusted = value.adjusted()
+    if adjusted > 18 or (adjusted == 18 and value > FILTER_MAX_ABS):
+        _invalid_filter(f"{name} must not exceed {FILTER_MAX_ABS:f}")
+    if adjusted < -18:
+        _invalid_filter(f"{name} must be zero or at least {FILTER_MIN_ABS:f}")
+    if len(value.as_tuple().digits) > FILTER_MAX_DIGITS:
+        _invalid_filter(f"{name} must have at most {FILTER_MAX_DIGITS} significant digits")
+
+
+def _decimal_text(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    if value.is_zero():
+        return "0"
+    if not value.is_finite():
+        return str(value)
+    digits = value.as_tuple().digits
+    adjusted = value.adjusted()
+    if (
+        len(digits) > FILTER_MAX_DIGITS
+        or adjusted > 18
+        or adjusted < -18
+        or (adjusted == 18 and (value > FILTER_MAX_ABS or value < -FILTER_MAX_ABS))
+    ):
+        return str(value)
+    return format(value, "f")
+
+
+def _apply_filters(
+    rows: list[MarketRow],
+    *,
+    dex: str | None,
+    min_liquidity_usd: Decimal | None,
+    min_volume_24h_usd: Decimal | None,
+    min_change_h24: Decimal | None,
+    max_change_h24: Decimal | None,
+    min_pair_age_minutes: int | None,
+    max_pair_age_minutes: int | None,
+    now: datetime,
+) -> tuple[list[MarketRow], dict[str, int]]:
+    unknown: dict[str, int] = {}
+    kept: list[MarketRow] = []
+    dex_casefold = None if dex is None else dex.casefold()
+    for row in rows:
+        unknown_fields: set[str] = set()
+        if min_liquidity_usd is not None and row.liquidity_usd is None:
+            unknown_fields.add("liquidity_usd")
+        if min_volume_24h_usd is not None and row.volume_24h_usd is None:
+            unknown_fields.add("volume_24h_usd")
+        if (min_change_h24 is not None or max_change_h24 is not None) and (
+            row.price_change_h24 is None
+        ):
+            unknown_fields.add("price_change_h24")
+        if (min_pair_age_minutes is not None or max_pair_age_minutes is not None) and (
+            row.pair_created_at is None
+        ):
+            unknown_fields.add("pair_created_at")
+        if unknown_fields:
+            for field in unknown_fields:
+                unknown[field] = unknown.get(field, 0) + 1
+            continue
+
+        if min_liquidity_usd is not None and row.liquidity_usd is not None:
+            if row.liquidity_usd < min_liquidity_usd:
+                continue
+        if min_volume_24h_usd is not None and row.volume_24h_usd is not None:
+            if row.volume_24h_usd < min_volume_24h_usd:
+                continue
+        if min_change_h24 is not None and row.price_change_h24 is not None:
+            if row.price_change_h24 < min_change_h24:
+                continue
+        if max_change_h24 is not None and row.price_change_h24 is not None:
+            if row.price_change_h24 > max_change_h24:
+                continue
+        if row.pair_created_at is not None:
+            age_minutes = max(0.0, (now - _aware(row.pair_created_at)).total_seconds() / 60.0)
+            if min_pair_age_minutes is not None and age_minutes < min_pair_age_minutes:
+                continue
+            if max_pair_age_minutes is not None and age_minutes > max_pair_age_minutes:
+                continue
+        if dex_casefold is not None and row.dex.casefold() != dex_casefold:
+            continue
+        kept.append(row)
+    return kept, unknown
+
+
+def _sort_semantics(chain: str, q: str | None, coverage: Any) -> str:
+    if chain == "all" and q is None and coverage is not None:
+        return "per_chain_round_robin"
+    return "global_sort"
+
+
+def _population(
+    *,
+    rows: list[MarketRow],
+    coverage: Any,
+    total: int,
+    returned: int,
+    sort: MarketSort,
+    semantics: str,
+) -> MarketPopulationOut:
+    if coverage is None:
+        discovered = len(rows)
+        truncated = False
+        chains_scanned = None
+        addresses_requested = None
+    else:
+        discovered = sum(item.returned for item in coverage)
+        truncated = discovered > len(rows)
+        chains_scanned = len(coverage)
+        addresses_requested = sum(item.requested for item in coverage)
+    return MarketPopulationOut(
+        chains_scanned=chains_scanned,
+        addresses_requested=addresses_requested,
+        rows_discovered=discovered,
+        rows_after_filters=total,
+        rows_returned=returned,
+        truncated=truncated,
+        sort=sort,
+        sort_semantics=semantics,  # type: ignore[arg-type]
+    )
+
+
 @router.get("/api/v1/markets/overview", response_model=MarketOverviewOut)
 def market_overview(
     session: Session = Depends(get_session),
@@ -126,6 +278,144 @@ def _stored(row: MarketSnapshotRow, now: datetime) -> StoredSnapshotOut:
     )
 
 
+def _apply_stored_filters(
+    rows: list[MarketSnapshotRow],
+    *,
+    dex: str | None,
+    min_liquidity_usd: Decimal | None,
+    min_volume_24h_usd: Decimal | None,
+    min_change_h24: Decimal | None,
+    max_change_h24: Decimal | None,
+    min_pair_age_minutes: int | None,
+    max_pair_age_minutes: int | None,
+    now: datetime,
+) -> tuple[list[MarketSnapshotRow], dict[str, int]]:
+    unknown: dict[str, int] = {}
+    kept: list[MarketSnapshotRow] = []
+    for row in rows:
+        unknown_fields: set[str] = set()
+        if min_liquidity_usd is not None and row.liquidity_usd is None:
+            unknown_fields.add("liquidity_usd")
+        if min_volume_24h_usd is not None and row.volume_24h_usd is None:
+            unknown_fields.add("volume_24h_usd")
+        if (min_change_h24 is not None or max_change_h24 is not None) and (
+            row.price_change_h24 is None
+        ):
+            unknown_fields.add("price_change_h24")
+        if min_pair_age_minutes is not None or max_pair_age_minutes is not None:
+            # Stored snapshots do not persist pair age.
+            unknown_fields.add("pair_created_at")
+        if unknown_fields:
+            for field in unknown_fields:
+                unknown[field] = unknown.get(field, 0) + 1
+            continue
+        if min_liquidity_usd is not None and row.liquidity_usd is not None:
+            if row.liquidity_usd < min_liquidity_usd:
+                continue
+        if min_volume_24h_usd is not None and row.volume_24h_usd is not None:
+            if row.volume_24h_usd < min_volume_24h_usd:
+                continue
+        if min_change_h24 is not None and row.price_change_h24 is not None:
+            if row.price_change_h24 < min_change_h24:
+                continue
+        if max_change_h24 is not None and row.price_change_h24 is not None:
+            if row.price_change_h24 > max_change_h24:
+                continue
+        # pair age unknown already excluded above
+        if dex is not None:
+            # Stored observations do not carry a DEX; no row can satisfy a DEX filter.
+            continue
+        kept.append(row)
+    return kept, unknown
+
+
+def _stored_filters_payload(
+    chain: str,
+    q: str | None,
+    dex: str | None,
+    min_liquidity_usd: Decimal | None,
+    min_volume_24h_usd: Decimal | None,
+    min_change_h24: Decimal | None,
+    max_change_h24: Decimal | None,
+    min_pair_age_minutes: int | None,
+    max_pair_age_minutes: int | None,
+    unknown: dict[str, int],
+) -> MarketFiltersOut:
+    return MarketFiltersOut(
+        chain=chain,
+        q=q,
+        dex=dex,
+        min_liquidity_usd=_decimal_text(min_liquidity_usd),
+        min_volume_24h_usd=_decimal_text(min_volume_24h_usd),
+        min_change_h24=_decimal_text(min_change_h24),
+        max_change_h24=_decimal_text(max_change_h24),
+        min_pair_age_minutes=min_pair_age_minutes,
+        max_pair_age_minutes=max_pair_age_minutes,
+        unknown_excluded=unknown,
+    )
+
+
+def _market_filters_payload(
+    chain: str,
+    q: str | None,
+    dex: str | None,
+    min_liquidity_usd: Decimal | None,
+    min_volume_24h_usd: Decimal | None,
+    min_change_h24: Decimal | None,
+    max_change_h24: Decimal | None,
+    min_pair_age_minutes: int | None,
+    max_pair_age_minutes: int | None,
+    unknown: dict[str, int],
+) -> MarketFiltersOut:
+    return _stored_filters_payload(
+        chain,
+        q,
+        dex,
+        min_liquidity_usd,
+        min_volume_24h_usd,
+        min_change_h24,
+        max_change_h24,
+        min_pair_age_minutes,
+        max_pair_age_minutes,
+        unknown,
+    )
+
+
+def _cursor_market_matches(
+    data: dict[str, object],
+    *,
+    chain: str,
+    sort: MarketSort,
+    q: str | None,
+    dex: str | None,
+    min_liquidity_usd: Decimal | None,
+    min_volume_24h_usd: Decimal | None,
+    min_change_h24: Decimal | None,
+    max_change_h24: Decimal | None,
+    min_pair_age_minutes: int | None,
+    max_pair_age_minutes: int | None,
+) -> bool:
+    if data.get("kind") != "markets" or data.get("chain") != chain or data.get("sort") != sort:
+        return False
+    if data.get("q") != q:
+        return False
+    if data.get("dex") != dex:
+        return False
+    if data.get("min_liquidity_usd") != _decimal_text(min_liquidity_usd):
+        return False
+    if data.get("min_volume_24h_usd") != _decimal_text(min_volume_24h_usd):
+        return False
+    if data.get("min_change_h24") != _decimal_text(min_change_h24):
+        return False
+    if data.get("max_change_h24") != _decimal_text(max_change_h24):
+        return False
+    if data.get("min_pair_age_minutes") != min_pair_age_minutes:
+        return False
+    if data.get("max_pair_age_minutes") != max_pair_age_minutes:
+        return False
+    return True
+
+
 @router.get("/api/v1/markets/stored", response_model=StoredMarketListOut)
 def market_stored(
     chain: str = Query(default="all"),
@@ -134,46 +424,107 @@ def market_stored(
     after: str | None = Query(default=None, alias="after"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    min_liquidity_usd: Decimal | None = Query(default=None, ge=0),
+    min_volume_24h_usd: Decimal | None = Query(default=None, ge=0),
+    min_change_h24: Decimal | None = Query(default=None),
+    max_change_h24: Decimal | None = Query(default=None),
+    min_pair_age_minutes: int | None = Query(default=None, ge=0),
+    max_pair_age_minutes: int | None = Query(default=None, ge=0),
+    dex: str | None = Query(default=None, max_length=80),
     session: Session = Depends(get_session),
 ) -> StoredMarketListOut:
-    """Latest persisted observation per token, ordered by liquidity (unknowns last).
-
-    Same paging contract as the live browse: ``total`` is the persisted population and
-    ``next_cursor``/``next_offset`` are present only while another page exists.
-    """
     if chain != "all" and get_chain(chain) is None:
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
         )
-    effective_cursor = cursor or page_cursor or after
+    _validate_decimal_filter("min_liquidity_usd", min_liquidity_usd, non_negative=True)
+    _validate_decimal_filter("min_volume_24h_usd", min_volume_24h_usd, non_negative=True)
+    _validate_decimal_filter("min_change_h24", min_change_h24, non_negative=False)
+    _validate_decimal_filter("max_change_h24", max_change_h24, non_negative=False)
+    if (
+        min_change_h24 is not None
+        and max_change_h24 is not None
+        and min_change_h24 > max_change_h24
+    ):
+        _invalid_filter("min_change_h24 must be less than or equal to max_change_h24")
+    if (
+        min_pair_age_minutes is not None
+        and max_pair_age_minutes is not None
+        and min_pair_age_minutes > max_pair_age_minutes
+    ):
+        _invalid_filter("min_pair_age_minutes must be less than or equal to max_pair_age_minutes")
+    if dex is not None:
+        dex = dex.strip() or None
+
     now = datetime.now(UTC)
-    total = count_stored_snapshots(session, chain=chain)
+    effective_cursor = cursor or page_cursor or after
+    all_rows = stored_snapshots(session, chain=chain, limit=100000, offset=0)
+    filtered, unknown = _apply_stored_filters(
+        all_rows,
+        dex=dex,
+        min_liquidity_usd=min_liquidity_usd,
+        min_volume_24h_usd=min_volume_24h_usd,
+        min_change_h24=min_change_h24,
+        max_change_h24=max_change_h24,
+        min_pair_age_minutes=min_pair_age_minutes,
+        max_pair_age_minutes=max_pair_age_minutes,
+        now=now,
+    )
+    total = len(filtered)
+
     if effective_cursor is not None:
         data = _decode_cursor(effective_cursor)
         if data.get("kind") != "stored" or data.get("chain") != chain:
             _invalid_cursor("cursor does not match this request")
+        # filter match
+        if data.get("dex") != dex:
+            _invalid_cursor("cursor does not match this request")
+        if data.get("min_liquidity_usd") != _decimal_text(min_liquidity_usd):
+            _invalid_cursor("cursor does not match this request")
+        if data.get("min_volume_24h_usd") != _decimal_text(min_volume_24h_usd):
+            _invalid_cursor("cursor does not match this request")
+        if data.get("min_change_h24") != _decimal_text(min_change_h24):
+            _invalid_cursor("cursor does not match this request")
+        if data.get("max_change_h24") != _decimal_text(max_change_h24):
+            _invalid_cursor("cursor does not match this request")
+        if data.get("min_pair_age_minutes") != min_pair_age_minutes:
+            _invalid_cursor("cursor does not match this request")
+        if data.get("max_pair_age_minutes") != max_pair_age_minutes:
+            _invalid_cursor("cursor does not match this request")
         anchor_id = data.get("id")
         if not isinstance(anchor_id, str):
             _invalid_cursor("cursor is missing its anchor")
-        all_rows = stored_snapshots(session, chain=chain, limit=100000, offset=0)
         anchor_index = next(
-            (index for index, row in enumerate(all_rows) if str(row.id) == anchor_id), None
+            (index for index, row in enumerate(filtered) if str(row.id) == anchor_id), None
         )
         if anchor_index is None:
             _invalid_cursor("cursor refers to a row that no longer exists")
         start = anchor_index + 1
-        page_rows = all_rows[start : start + limit]
+        page_rows = filtered[start : start + limit]
     else:
         start = offset
-        page_rows = stored_snapshots(session, chain=chain, limit=limit, offset=offset)
+        page_rows = filtered[start : start + limit]
+
     returned = len(page_rows)
     has_more = start + returned < total
     next_cursor = None
     if has_more and page_rows:
         next_cursor = _encode_cursor(
-            {"v": 1, "kind": "stored", "chain": chain, "id": _stored_anchor(page_rows[-1])}
+            {
+                "v": 1,
+                "kind": "stored",
+                "chain": chain,
+                "id": _stored_anchor(page_rows[-1]),
+                "dex": dex,
+                "min_liquidity_usd": _decimal_text(min_liquidity_usd),
+                "min_volume_24h_usd": _decimal_text(min_volume_24h_usd),
+                "min_change_h24": _decimal_text(min_change_h24),
+                "max_change_h24": _decimal_text(max_change_h24),
+                "min_pair_age_minutes": min_pair_age_minutes,
+                "max_pair_age_minutes": max_pair_age_minutes,
+            }
         )
-    # next_cursor should point after last returned; already encoded with last row anchor.
+
     return StoredMarketListOut(
         rows=[_stored(row, now) for row in page_rows],
         as_of=now.isoformat(),
@@ -183,6 +534,18 @@ def market_stored(
         has_more=has_more,
         next_offset=start + returned if has_more else None,
         next_cursor=next_cursor,
+        applied_filters=_stored_filters_payload(
+            chain,
+            None,
+            dex,
+            min_liquidity_usd,
+            min_volume_24h_usd,
+            min_change_h24,
+            max_change_h24,
+            min_pair_age_minutes,
+            max_pair_age_minutes,
+            unknown,
+        ),
     )
 
 
@@ -190,18 +553,46 @@ def market_stored(
 async def markets(
     chain: str = Query(default="all"),
     q: str | None = Query(default=None, max_length=80),
-    sort: Literal["trending", "liquidity", "new"] = Query(default="trending"),
+    sort: MarketSort = Query(default="trending"),
     cursor: str | None = Query(default=None),
     page_cursor: str | None = Query(default=None, alias="page_cursor"),
     after: str | None = Query(default=None, alias="after"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
+    min_liquidity_usd: Decimal | None = Query(default=None, ge=0),
+    min_volume_24h_usd: Decimal | None = Query(default=None, ge=0),
+    min_change_h24: Decimal | None = Query(default=None),
+    max_change_h24: Decimal | None = Query(default=None),
+    min_pair_age_minutes: int | None = Query(default=None, ge=0),
+    max_pair_age_minutes: int | None = Query(default=None, ge=0),
+    dex: str | None = Query(default=None, max_length=80),
     adapter: DexScreenerClient = Depends(get_dexscreener),
 ) -> MarketListOut:
     if chain != "all" and get_chain(chain) is None:
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
         )
+    _validate_decimal_filter("min_liquidity_usd", min_liquidity_usd, non_negative=True)
+    _validate_decimal_filter("min_volume_24h_usd", min_volume_24h_usd, non_negative=True)
+    _validate_decimal_filter("min_change_h24", min_change_h24, non_negative=False)
+    _validate_decimal_filter("max_change_h24", max_change_h24, non_negative=False)
+    if q is not None:
+        q = q.strip() or None
+    if dex is not None:
+        dex = dex.strip() or None
+    if (
+        min_change_h24 is not None
+        and max_change_h24 is not None
+        and min_change_h24 > max_change_h24
+    ):
+        _invalid_filter("min_change_h24 must be less than or equal to max_change_h24")
+    if (
+        min_pair_age_minutes is not None
+        and max_pair_age_minutes is not None
+        and min_pair_age_minutes > max_pair_age_minutes
+    ):
+        _invalid_filter("min_pair_age_minutes must be less than or equal to max_pair_age_minutes")
+
     try:
         rows, source, coverage = await adapter.discover_markets(
             chain=chain, query=q, sort=sort, limit=BROWSE_DISCOVERY_ROWS
@@ -209,54 +600,64 @@ async def markets(
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
 
+    now = datetime.now(UTC)
+    filtered, unknown = _apply_filters(
+        rows,
+        dex=dex,
+        min_liquidity_usd=min_liquidity_usd,
+        min_volume_24h_usd=min_volume_24h_usd,
+        min_change_h24=min_change_h24,
+        max_change_h24=max_change_h24,
+        min_pair_age_minutes=min_pair_age_minutes,
+        max_pair_age_minutes=max_pair_age_minutes,
+        now=now,
+    )
+    total = len(filtered)
+
     effective_cursor = cursor or page_cursor or after
-    total = len(rows)
     if effective_cursor is not None:
         data = _decode_cursor(effective_cursor)
-        if (
-            data.get("kind") != "markets"
-            or data.get("chain") != chain
-            or data.get("sort") != sort
-            or data.get("q") != q
+        if not _cursor_market_matches(
+            data,
+            chain=chain,
+            sort=sort,
+            q=q,
+            dex=dex,
+            min_liquidity_usd=min_liquidity_usd,
+            min_volume_24h_usd=min_volume_24h_usd,
+            min_change_h24=min_change_h24,
+            max_change_h24=max_change_h24,
+            min_pair_age_minutes=min_pair_age_minutes,
+            max_pair_age_minutes=max_pair_age_minutes,
         ):
             _invalid_cursor("cursor does not match this request")
         anchor_id = data.get("id")
         if not isinstance(anchor_id, str):
             _invalid_cursor("cursor is missing its anchor")
         anchor_index = next(
-            (index for index, row in enumerate(rows) if _market_anchor(row) == anchor_id), None
+            (index for index, row in enumerate(filtered) if _market_anchor(row) == anchor_id), None
         )
         if anchor_index is None:
             _invalid_cursor("cursor refers to a row that no longer exists")
         start = anchor_index + 1
+        page_rows = filtered[start : start + limit]
     else:
         start = offset
-    if start < 0:
-        start = 0
-    if start > total:
-        start = total
-    page = rows[start : start + limit]
-    has_more = start + len(page) < total
-    semantics = (
-        "chain_round_robin"
-        if coverage is not None and q is None and chain == "all"
-        else "global_sort"
-    )
-    semantics_value = "per_chain_round_robin" if semantics == "chain_round_robin" else "global_sort"
-    ordered_by = "chain_round_robin" if semantics == "chain_round_robin" else "global_sort"
+        if start < 0:
+            start = 0
+        if start > total:
+            start = total
+        page_rows = filtered[start : start + limit]
 
-    discovered = len(rows)
-    truncated = False
-    chains_scanned = None
-    addresses_requested = None
-    if coverage is not None:
-        discovered = sum(item.returned for item in coverage)
-        truncated = discovered > len(rows)
-        chains_scanned = len(coverage)
-        addresses_requested = sum(item.requested for item in coverage)
+    returned = len(page_rows)
+    has_more = start + returned < total
+    semantics = _sort_semantics(chain, q, coverage)
+    semantics_value = (
+        "per_chain_round_robin" if semantics == "per_chain_round_robin" else "global_sort"
+    )
 
     next_cursor = None
-    if has_more and page:
+    if has_more and page_rows:
         next_cursor = _encode_cursor(
             {
                 "v": 1,
@@ -264,36 +665,53 @@ async def markets(
                 "chain": chain,
                 "sort": sort,
                 "q": q,
-                "id": _market_anchor(page[-1]),
+                "dex": dex,
+                "min_liquidity_usd": _decimal_text(min_liquidity_usd),
+                "min_volume_24h_usd": _decimal_text(min_volume_24h_usd),
+                "min_change_h24": _decimal_text(min_change_h24),
+                "max_change_h24": _decimal_text(max_change_h24),
+                "min_pair_age_minutes": min_pair_age_minutes,
+                "max_pair_age_minutes": max_pair_age_minutes,
+                "id": _market_anchor(page_rows[-1]),
             }
         )
 
     return MarketListOut(
-        rows=[MarketRowOut.model_validate(row.to_dict()) for row in page],
+        rows=[MarketRowOut.model_validate(row.to_dict()) for row in page_rows],
         source=SourceOut.model_validate(source.to_dict()),
         stale=source.is_stale(60),
         coverage=None
         if coverage is None
         else [MarketCoverageOut.model_validate(item.to_dict()) for item in coverage],
-        ordered_by=ordered_by,  # type: ignore[arg-type]
+        ordered_by="chain_round_robin" if semantics == "per_chain_round_robin" else "global_sort",
         sort=sort,
         sort_semantics=semantics_value,  # type: ignore[arg-type]
         offset=start,
         limit=limit,
         total=total,
         has_more=has_more,
-        next_offset=start + len(page) if has_more else None,
+        next_offset=start + returned if has_more else None,
         next_cursor=next_cursor,
-        truncated=truncated,
-        population=MarketPopulationOut(
-            chains_scanned=chains_scanned,
-            addresses_requested=addresses_requested,
-            rows_discovered=discovered,
-            rows_after_filters=total,
-            rows_returned=len(page),
-            truncated=truncated,
+        truncated=coverage is not None and sum(item.returned for item in coverage) > len(rows),
+        applied_filters=_market_filters_payload(
+            chain,
+            q,
+            dex,
+            min_liquidity_usd,
+            min_volume_24h_usd,
+            min_change_h24,
+            max_change_h24,
+            min_pair_age_minutes,
+            max_pair_age_minutes,
+            unknown,
+        ),
+        population=_population(
+            rows=rows,
+            coverage=coverage,
+            total=total,
+            returned=returned,
             sort=sort,
-            sort_semantics=semantics_value,  # type: ignore[arg-type]
+            semantics=semantics_value,
         ),
     )
 
@@ -327,7 +745,6 @@ async def token_candles(
     settings: Settings = Depends(get_settings),
 ) -> CandlesOut:
     """Closed OHLCV history for one token, oldest bar first.
-
     Read-only and unauthenticated like every other GET. The series is served from
     ``market_candles`` when it is current; only a missing range reaches the provider.
     """
@@ -376,8 +793,6 @@ async def quote(
         )
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
-    # The pre-trade sheet, via the one cost model: this is the same preview the journal
-    # records on the intent when the order fires, so the two agree by construction.
     notional = result.amount_in if side == "buy" else result.amount_out
     payload = result.to_dict()
     payload["cost_preview"] = preview_cost(
