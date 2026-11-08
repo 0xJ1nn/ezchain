@@ -64,6 +64,10 @@ class MarketRowOut(BaseModel):
     source: SourceOut
 
 
+MarketSort = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
+MarketSortSemantics = Literal["global_sort", "per_chain_round_robin"]
+
+
 class MarketCoverageOut(BaseModel):
     """One chain's contribution to a discovery pass; counts are pre-slice."""
 
@@ -71,6 +75,25 @@ class MarketCoverageOut(BaseModel):
     requested: int
     returned: int
     reason: Literal["pairs", "no_pairs", "error"]
+
+
+class MarketFiltersOut(BaseModel):
+    """The validated filters actually applied to this request.
+
+    ``unknown_excluded`` names every active filter that dropped a row because the
+    provider value was unknown. Unknown is never treated as zero.
+    """
+
+    chain: str
+    q: str | None = None
+    dex: str | None = None
+    min_liquidity_usd: str | None = None
+    min_volume_24h_usd: str | None = None
+    min_change_h24: str | None = None
+    max_change_h24: str | None = None
+    min_pair_age_minutes: int | None = None
+    max_pair_age_minutes: int | None = None
+    unknown_excluded: dict[str, int] = Field(default_factory=dict)
 
 
 class MarketPopulationOut(BaseModel):
@@ -82,8 +105,8 @@ class MarketPopulationOut(BaseModel):
     rows_after_filters: int
     rows_returned: int
     truncated: bool = False
-    sort: Literal["trending", "liquidity", "new"] = "trending"
-    sort_semantics: Literal["global_sort", "per_chain_round_robin"] = "global_sort"
+    sort: MarketSort = "trending"
+    sort_semantics: MarketSortSemantics = "global_sort"
 
 
 class MarketListOut(BaseModel):
@@ -92,8 +115,8 @@ class MarketListOut(BaseModel):
     stale: bool
     coverage: list[MarketCoverageOut] | None = None
     ordered_by: Literal["chain_round_robin", "global_sort"] = "global_sort"
-    sort: Literal["trending", "liquidity", "new"] = "trending"
-    sort_semantics: Literal["global_sort", "per_chain_round_robin"] = "global_sort"
+    sort: MarketSort = "trending"
+    sort_semantics: MarketSortSemantics = "global_sort"
     offset: int = 0
     limit: int = 50
     total: int = 0
@@ -101,6 +124,7 @@ class MarketListOut(BaseModel):
     next_offset: int | None = None
     next_cursor: str | None = None
     truncated: bool = False
+    applied_filters: MarketFiltersOut | None = None
     population: MarketPopulationOut | None = None
 
 
@@ -115,6 +139,7 @@ class StoredMarketListOut(BaseModel):
     has_more: bool = False
     next_offset: int | None = None
     next_cursor: str | None = None
+    applied_filters: MarketFiltersOut | None = None
 
 
 class MarketChainOut(BaseModel):
