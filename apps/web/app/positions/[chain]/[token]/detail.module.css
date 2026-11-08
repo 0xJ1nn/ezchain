@@ -1,0 +1,92 @@
+/* One-position page layout. Shared primitives stay in app/ui.css. */
+
+.address {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.nowrap {
+	white-space: nowrap;
+}
+
+.body {
+	font-size: 12px;
+	color: var(--muted);
+	max-width: 80ch;
+	overflow-wrap: anywhere;
+}
+
+.facts {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px 12px;
+	margin: 0;
+}
+
+.facts div {
+	min-width: 0;
+}
+
+.facts dt {
+	font-size: 9.5px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.facts dd {
+	margin: 2px 0 0;
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+.protection {
+	display: grid;
+	gap: 6px;
+	justify-items: start;
+}
+
+.timeframes {
+	display: inline-flex;
+	border: 1px solid var(--line-2);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+	flex-wrap: wrap;
+}
+
+.timeframe {
+	padding: 3px 8px;
+	font-size: 10.5px;
+	color: var(--muted);
+	background: var(--surface);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.timeframe + .timeframe {
+	border-left: 1px solid var(--line);
+}
+
+.timeframe:hover {
+	color: var(--ink);
+	background: var(--surface-2);
+}
+
+.timeframeActive {
+	background: var(--ink);
+	color: #fff;
+}
+
+.timeframeActive:hover {
+	background: var(--ink);
+	color: #fff;
+}
+
+@media (max-width: 760px) {
+	.facts {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.timeframes {
+		max-width: 100%;
+	}
+}

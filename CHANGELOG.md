@@ -22,6 +22,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   listings use `seq DESC`. Migration `0010_ledger_sequence` backfills existing rows
   deterministically in `(created_at, id)` order. No PnL or cost-basis math changed.
 
+- **Positions workspace display modes and per-position detail route (PAPER).** Positions
+  now render the same server rows in List, Grid and Detailed modes selected via
+  `?view=`, with chain filter and sort persisted in the URL. A new
+  `/positions/[chain]/[token]` route shows full position facts, the landed candle chart
+  with timeframe control and named reason states, recent fills, and read-only
+  protection-arm status. A sell action is offered only when the token resolves in the
+  registry; otherwise an explicit unavailable reason is shown. Candle blocks and the
+  protection panel on the positions page survive the redesign.
+
 - **Sourced fee table and structural edges in the README (PAPER).** A fee-math
   table quotes each terminal's own published per-trade platform fee with its
   source page and read date, contrasts it with a zero-platform-fee self-hosted

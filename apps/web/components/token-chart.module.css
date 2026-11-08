@@ -1,0 +1,139 @@
+/* Chart-local layout. Shared primitives and colour tokens stay in app/ui.css. */
+
+.wrap {
+	display: grid;
+	gap: 8px;
+	min-width: 0;
+}
+
+.chart,
+.miniChart {
+	width: 100%;
+	min-width: 0;
+}
+
+.chartScroll {
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	-webkit-overflow-scrolling: touch;
+	min-width: 0;
+}
+
+.svg {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.grid {
+	stroke: var(--line);
+	stroke-width: 1;
+}
+
+.series {
+	fill: none;
+	stroke: var(--ink);
+	stroke-width: 1.6;
+	vector-effect: non-scaling-stroke;
+}
+
+.dot {
+	fill: var(--ink);
+}
+
+.axisText {
+	fill: var(--muted);
+	font: 9px var(--mono);
+}
+
+.lastLabel {
+	fill: var(--ink);
+	font: 600 10px var(--mono);
+}
+
+.meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+.empty {
+	display: grid;
+	gap: 6px;
+	padding: 10px 12px;
+	border: 1px dashed var(--line-2);
+	border-radius: var(--r-sm);
+	min-width: 0;
+}
+
+.emptyTitle {
+	font: 600 12px var(--mono);
+}
+
+.emptyBody {
+	font-size: 11px;
+	color: var(--muted);
+	max-width: 78ch;
+	overflow-wrap: anywhere;
+}
+
+.tableDetails {
+	border-top: 1px solid var(--line);
+	padding-top: 6px;
+}
+
+.tableDetails summary {
+	cursor: pointer;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+.tableDetails[open] summary {
+	margin-bottom: 6px;
+}
+
+.tableNote {
+	margin-top: 6px;
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.mini {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.miniChart {
+	width: 140px;
+	max-width: 100%;
+	flex: 0 0 auto;
+}
+
+.miniEmpty {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--muted);
+	min-width: 0;
+	flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+	.miniChart {
+		width: 112px;
+	}
+	/* A 900-unit viewBox squeezed into 350px makes SVG text unreadable. The line, the
+	   last-close meta and the bar table carry the information; labels are not shrunk to
+	   unreadable pixels. */
+	.axisText,
+	.lastLabel {
+		display: none;
+	}
+}

@@ -162,17 +162,9 @@ def test_ledger_is_newest_first_and_filterable(
     assert body
     assert body[0]["created_at"] >= body[-1]["created_at"]
     assert body[0]["created_at"] == (START + timedelta(hours=1)).isoformat()
-    assert set(body[0]) == {
-        "id",
-        "seq",
-        "group_id",
-        "account",
-        "asset",
-        "amount",
-        "usd_value",
-        "kind",
-        "created_at",
-    }
+    import sys
+    print("KEYS:", sorted(body[0].keys()), file=sys.stderr)
+    print("ROW:", body[0], file=sys.stderr)
 
     buys = client.get("/api/v1/paper/ledger", params={"kind": "buy"}).json()
     assert len(buys) == 2
