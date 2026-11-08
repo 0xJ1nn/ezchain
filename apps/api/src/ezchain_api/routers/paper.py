@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
@@ -102,6 +102,7 @@ def reconciliation_report(session: Session = Depends(get_session)) -> Reconcilia
 @router.post("/orders", response_model=OrderOut, status_code=201)
 async def create_order(
     payload: PaperOrderIn,
+    response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
     dexscreener: DexScreenerClient = Depends(get_dexscreener),
@@ -121,6 +122,15 @@ async def create_order(
     )
     try:
         row = await paper.place_order(session, request, settings, dexscreener, quotes)
+    except paper.IdempotencyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "IDEMPOTENCY_CONFLICT", "message": str(exc)},
+        ) from exc
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
+    if paper.last_created():
+        response.status_code = 201
+    else:
+        response.status_code = 200
     return _order(row)

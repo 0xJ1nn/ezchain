@@ -187,10 +187,22 @@ def position_state(
     )
 
 
-def idempotency_key(strategy_id: str, now: datetime, interval: int) -> str:
-    """Stable within one decision window, distinct across windows."""
+def idempotency_key(
+    strategy_id: str,
+    now: datetime,
+    interval: int,
+    action: str | None = None,
+    amount_usd: Any = None,
+) -> str:
+    """Stable within one decision window, distinct across windows.
+
+    Bound to the action and resolved amount when supplied.
+    """
     window = max(1, interval) * 60
     bucket = int(now.timestamp()) // window
+    if action is not None or amount_usd is not None:
+        amount = "" if amount_usd is None else str(amount_usd)
+        return f"strategy:{strategy_id}:{action}:{amount}:{bucket}"
     return f"strategy:{strategy_id}:{bucket}"
 
 
@@ -414,7 +426,9 @@ async def evaluate_strategy(
             token_address=strategy.token_address,
             side=decision.action,
             amount_usd=decision.amount_usd,
-            idempotency_key=idempotency_key(strategy.id, now, interval),
+            idempotency_key=idempotency_key(
+                strategy.id, now, interval, action=decision.action, amount_usd=decision.amount_usd
+            ),
             strategy_id=strategy.id,
         )
         try:

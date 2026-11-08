@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
 
 from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 from ezchain_api.services import paper
-from ezchain_core import utcnow
+from ezchain_api.services.paper import IdempotencyConflict
+from ezchain_core import OrderRequest, utcnow
 
-from .conftest import make_request, make_settings, make_snapshot, place
+from .conftest import CHAIN, TOKEN, make_request, make_settings, make_snapshot, place
 
 
 def test_idempotent_retry_returns_the_original_order(session, settings, dex, jupiter) -> None:
@@ -36,12 +39,93 @@ def test_rejected_order_is_also_idempotent(session, settings, dex, jupiter) -> N
     assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
 
 
-def test_idempotency_is_unique_per_key_not_per_payload(session, settings, dex, jupiter) -> None:
+@pytest.mark.parametrize(
+    "changed",
+    [
+        pytest.param({"amount_usd": "900"}, id="amount"),
+        pytest.param({"side": "sell"}, id="side"),
+        pytest.param({"token": "0x0000000000000000000000000000000000000def"}, id="token"),
+        pytest.param({"chain": "solana"}, id="chain"),
+        pytest.param({"strategy_id": "strategy-2"}, id="strategy"),
+    ],
+)
+def test_idempotency_conflicts_on_payload_mismatch(
+    session, settings, dex, jupiter, changed
+) -> None:
     first = place(session, settings, dex, jupiter, make_request(amount_usd="50", key="same"))
-    second = place(session, settings, dex, jupiter, make_request(amount_usd="900", key="same"))
-    assert second.id == first.id
-    assert second.amount_usd == Decimal("50")
+
+    with pytest.raises(IdempotencyConflict):
+        place(
+            session,
+            settings,
+            dex,
+            jupiter,
+            make_request(**{"amount_usd": "50", "key": "same", **changed}),
+        )
+
+    # The original order is left untouched, and no second fill or order exists.
+    assert first.amount_usd == Decimal("50")
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
     assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
+
+
+def test_fingerprint_is_canonical_across_order_scale_and_absent_optionals() -> None:
+    """Field order, decimal scale and null-vs-missing must not change the hash."""
+    first = paper._fingerprint(
+        {"chain": CHAIN, "amount_usd": Decimal("50.00"), "strategy_id": None}
+    )
+    second = paper._fingerprint({"amount_usd": Decimal("50"), "chain": CHAIN})
+    third = paper._fingerprint({"chain": CHAIN, "amount_usd": Decimal("5E+1")})
+    assert first == second == third
+
+
+def test_fingerprint_covers_every_order_request_field() -> None:
+    covered = set(paper._FINGERPRINT_FIELDS) | {"idempotency_key"}
+    assert covered == {field.name for field in fields(OrderRequest)}
+
+
+def test_replay_accepts_a_differently_spelled_amount(session, settings, dex, jupiter) -> None:
+    first = place(session, settings, dex, jupiter, make_request(amount_usd="50", key="scale"))
+    replay = place(session, settings, dex, jupiter, make_request(amount_usd="50.00", key="scale"))
+
+    assert replay.id == first.id
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
+
+
+def test_legacy_order_without_a_fingerprint_replays_only_the_same_payload(
+    session, settings, dex, jupiter
+) -> None:
+    # A row written before migration 0011 has no stored hash. The test stands in for
+    # an already-filled order: the replay path reads the order row, never its fills.
+    session.add(
+        PaperOrderRow(
+            id="legacy-order",
+            idempotency_key="legacy-key",
+            request_fingerprint=None,
+            chain=CHAIN,
+            token_address=TOKEN,
+            side="buy",
+            amount_usd=Decimal("100"),
+            status="filled",
+            created_at=utcnow(),
+        )
+    )
+    session.commit()
+
+    replay = place(
+        session, settings, dex, jupiter, make_request(amount_usd="100.00", key="legacy-key")
+    )
+    assert replay.id == "legacy-order"
+    # The derived hash is persisted so the row is checked directly next time.
+    assert replay.request_fingerprint is not None
+    assert replay.request_fingerprint == paper._request_fingerprint(
+        make_request(amount_usd="100", key="legacy-key")
+    )
+
+    with pytest.raises(IdempotencyConflict):
+        place(session, settings, dex, jupiter, make_request(amount_usd="900", key="legacy-key"))
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
 
 
 def test_stale_quote_is_rejected_before_a_fill(session, settings, dex, jupiter) -> None:

@@ -8,6 +8,9 @@ entries, never read from a mutable scalar.
 
 from __future__ import annotations
 
+import contextvars
+import hashlib
+import json
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -48,6 +51,19 @@ from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrder
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
+# Per-request flag recording whether the last ``place_order`` call created a new
+# order row (True) or replayed an existing one (False). A context variable keeps
+# it correct under concurrent async requests.
+_ORDER_CREATED: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "paper_order_created", default=True
+)
+
+
+def last_created() -> bool:
+    """Whether the most recent place_order call created a new order."""
+    return _ORDER_CREATED.get()
+
+
 POSITION_PREFIX = "position:"
 MONEY_QUANTUM = Decimal("0.00000001")
 SHARE_QUANTUM = Decimal("0.01")
@@ -513,10 +529,94 @@ def _record(quote: Quote, notional: Decimal, settings: Settings) -> dict[str, An
     return record
 
 
+class IdempotencyConflict(Exception):
+    """Raised when an idempotency key is reused with a different request payload.
+
+    The key names a single order: replaying it with the same payload returns the
+    original order, but a changed payload must surface as ``409
+    IDEMPOTENCY_CONFLICT`` instead of silently succeeding.
+    """
+
+    code = "IDEMPOTENCY_CONFLICT"
+
+    def __init__(self, idempotency_key: str) -> None:
+        self.idempotency_key = idempotency_key
+        super().__init__("idempotency key was already used for a different order payload")
+
+
+# Every field that gives the key its meaning. Adding a payload field without adding it
+# here would let one key name two different orders, so the schema-drift test in
+# tests/paper/test_orders.py fails until the new field is covered. Rows written before
+# the fingerprint column have no stored hash; their values are read from the persisted
+# order, so a new field also needs a column and a backfill at that point.
+_FINGERPRINT_FIELDS = ("chain", "token_address", "side", "amount_usd", "strategy_id")
+
+
+def _canonical_decimal(value: Decimal) -> str:
+    """One spelling per value, so ``50``, ``50.0`` and ``50.00`` hash alike."""
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
+
+
+def _fingerprint(values: dict[str, Any]) -> str:
+    """SHA-256 of a payload's canonical JSON: sorted keys, no whitespace, exact money.
+
+    ``None`` fields are omitted rather than encoded as ``null``, so an optional field
+    that a caller does not supply hashes the same as one added later with a ``None``
+    default. A supplied value still changes the hash.
+    """
+    canonical = {
+        name: _canonical_decimal(value) if isinstance(value, Decimal) else value
+        for name, value in values.items()
+        if value is not None
+    }
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _request_fingerprint(payload: OrderRequest) -> str:
+    """Canonical hash of the request payload the idempotency key is bound to."""
+    return _fingerprint({name: getattr(payload, name) for name in _FINGERPRINT_FIELDS})
+
+
+def _stored_fingerprint(order: PaperOrderRow) -> str:
+    """The fingerprint of the order as persisted, for rows written before 0011."""
+    return _fingerprint({name: getattr(order, name) for name in _FINGERPRINT_FIELDS})
+
+
 def _find_order(session: Session, idempotency_key: str) -> PaperOrderRow | None:
     return session.scalar(
         select(PaperOrderRow).where(PaperOrderRow.idempotency_key == idempotency_key)
     )
+
+
+def _replay_existing(
+    session: Session, payload: OrderRequest, existing: PaperOrderRow
+) -> PaperOrderRow:
+    """Return the original order, proving the key names this exact payload.
+
+    A row written before the fingerprint column has no stored hash. Derive it from
+    the persisted order so an identical retry still replays while a changed payload
+    is refused, then persist the derived hash so the row is checked directly next
+    time. A row whose stored values were rounded by the database will not match a
+    finer request amount: that is a conflict, never a silent replay.
+    """
+    expected = existing.request_fingerprint
+    actual = _request_fingerprint(payload)
+    if expected is None:
+        expected = _stored_fingerprint(existing)
+        if expected != actual:
+            raise IdempotencyConflict(payload.idempotency_key)
+        existing.request_fingerprint = actual
+        # The replay path has no other writes; commit the backfill so it survives a
+        # rolled-back or closed request session.
+        session.commit()
+    elif expected != actual:
+        raise IdempotencyConflict(payload.idempotency_key)
+    _ORDER_CREATED.set(False)
+    return existing
 
 
 def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | None:
@@ -524,6 +624,7 @@ def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | Non
     order = PaperOrderRow(
         id=new_id(),
         idempotency_key=payload.idempotency_key,
+        request_fingerprint=_request_fingerprint(payload),
         chain=payload.chain,
         token_address=payload.token_address,
         side=payload.side,
@@ -545,11 +646,12 @@ def _claim_or_existing(session: Session, payload: OrderRequest) -> tuple[PaperOr
     """Return (order, created). ``created`` is False when the key already existed."""
     order = _claim_order(session, payload)
     if order is not None:
+        _ORDER_CREATED.set(True)
         return order, True
     existing = _find_order(session, payload.idempotency_key)
     if existing is None:  # pragma: no cover - the unique index guarantees a row exists
         raise RuntimeError("idempotency claim lost without an existing order")
-    return existing, False
+    return _replay_existing(session, payload, existing), False
 
 
 def _reject_new(
@@ -640,7 +742,7 @@ async def place_order(
     ensure_genesis(session, settings.paper_starting_cash_usd)
     existing = _find_order(session, payload.idempotency_key)
     if existing is not None:
-        return existing
+        return _replay_existing(session, payload, existing)
 
     # Defence in depth for callers that bypass KillSwitchExecutor: an order that claims
     # strategy attribution is refused before any quote while the operator switch is armed.

@@ -134,6 +134,11 @@ class PaperOrderRow(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     idempotency_key: Mapped[str] = mapped_column(String(120))
+    # SHA-256 of the canonical request payload (chain, token, side, amount,
+    # strategy). Binds the idempotency key to the order it represents, so a
+    # replay with a different payload is detected instead of silently
+    # returning the original order (CONTRACT I9).
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     chain: Mapped[str] = mapped_column(String(40), index=True)
     token_address: Mapped[str] = mapped_column(String(160), index=True)
     side: Mapped[str] = mapped_column(String(8))
