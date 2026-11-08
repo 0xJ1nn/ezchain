@@ -271,6 +271,7 @@ def performance(session: Session) -> dict[str, Any]:
     open_books = [book for book in books if book.quantity > 0]
     # One missing mark makes the portfolio total unknowable. Do not value it at zero.
     marks_unknown = any(book.mark_usd is None for book in open_books)
+    complete = not marks_unknown
     unrealized = (
         None if marks_unknown else sum((book.unrealized_usd or ZERO for book in open_books), ZERO)
     )
@@ -295,6 +296,8 @@ def performance(session: Session) -> dict[str, Any]:
         "losses": losses,
         "win_rate_pct": _win_rate(wins, losses),
         "open_positions": len(open_books),
+        "complete": complete,
+        "marks_unknown": marks_unknown,
         "by_token": [_book_dict(book) for book in books],
         "daily_realized": _daily_realized(groups, now),
     }

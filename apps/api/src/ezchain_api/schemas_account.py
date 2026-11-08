@@ -82,6 +82,8 @@ class PaperPerformanceOut(BaseModel):
     losses: int
     win_rate_pct: str | None = None
     open_positions: int
+    complete: bool = False
+    marks_unknown: bool = False
     by_token: list[TokenPerformanceOut]
     daily_realized: list[DailyRealizedOut]
 
