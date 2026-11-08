@@ -150,11 +150,17 @@ class PaperPluginRuntime:
                 ),
             )
             account = Account(
-                cash_usd=Decimal(str(account_body.get("cash_usd", "0"))),
-                equity_usd=Decimal(str(account_body.get("equity_usd", "0"))),
-                realized_usd=Decimal(str(account_body.get("realized_usd", "0"))),
-                unrealized_usd=Decimal(str(account_body.get("unrealized_usd", "0"))),
+                cash_usd=_decimal_or_none(account_body.get("cash_usd")) or Decimal(0),
+                equity_usd=_decimal_or_none(account_body.get("equity_usd")),
+                realized_usd=_decimal_or_none(account_body.get("realized_usd")) or Decimal(0),
+                unrealized_usd=_decimal_or_none(account_body.get("unrealized_usd")),
                 open_positions=len(account_body.get("positions", [])),
+                marks_unknown=bool(
+                    account_body.get("marks_unknown", account_body.get("equity_usd") is None)
+                ),
+                complete=bool(
+                    account_body.get("complete", account_body.get("equity_usd") is not None)
+                ),
             )
             positions = tuple(
                 PluginPosition(

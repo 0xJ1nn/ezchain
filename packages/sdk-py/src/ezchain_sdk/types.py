@@ -176,28 +176,40 @@ class Position:
 @dataclass(frozen=True)
 class Account:
     cash_usd: Decimal
-    equity_usd: Decimal
-    realized_usd: Decimal
-    unrealized_usd: Decimal
-    open_positions: int
+    equity_usd: Decimal | None = None
+    realized_usd: Decimal = Decimal(0)
+    unrealized_usd: Decimal | None = None
+    open_positions: int = 0
+    marks_unknown: bool = False
+    complete: bool = True
+
+    def __post_init__(self) -> None:
+        # Equity is the source of truth for completeness: a missing equity means incomplete.
+        object.__setattr__(self, "marks_unknown", self.equity_usd is None)
+        object.__setattr__(self, "complete", self.equity_usd is not None)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "cash_usd": str(self.cash_usd),
-            "equity_usd": str(self.equity_usd),
+            "equity_usd": _decimal_str(self.equity_usd),
             "realized_usd": str(self.realized_usd),
-            "unrealized_usd": str(self.unrealized_usd),
+            "unrealized_usd": _decimal_str(self.unrealized_usd),
             "open_positions": self.open_positions,
+            "marks_unknown": self.marks_unknown,
+            "complete": self.complete,
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Account:
+        equity = _decimal(data.get("equity_usd"))
         return cls(
             cash_usd=_decimal(data.get("cash_usd")) or Decimal(0),
-            equity_usd=_decimal(data.get("equity_usd")) or Decimal(0),
+            equity_usd=equity,
             realized_usd=_decimal(data.get("realized_usd")) or Decimal(0),
-            unrealized_usd=_decimal(data.get("unrealized_usd")) or Decimal(0),
+            unrealized_usd=_decimal(data.get("unrealized_usd")),
             open_positions=int(data.get("open_positions", 0)),
+            marks_unknown=bool(data.get("marks_unknown", equity is None)),
+            complete=bool(data.get("complete", equity is not None)),
         )
 
 
