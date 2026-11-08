@@ -22,6 +22,13 @@ from .plugins import (
     PluginRegistry,
     PluginUnavailable,
 )
+from .protection import (
+    ProtectionResult,
+    arm_from_row,
+    evaluate_all_arms,
+    evaluate_arm_row,
+    protection_idempotency_key,
+)
 from .scheduler import (
     ExecutionBlocked,
     ExecutorUnavailable,
@@ -53,9 +60,13 @@ __all__ = [
     "PluginWorkerError",
     "OrderExecutor",
     "OrderRejected",
+    "ProtectionResult",
     "RunResult",
     "StrategyScheduler",
     "TokenSource",
+    "arm_from_row",
+    "evaluate_all_arms",
+    "evaluate_arm_row",
     "evaluate_graph_strategy",
     "evaluate_plugin_strategy",
     "evaluate_strategy",
@@ -65,6 +76,7 @@ __all__ = [
     "latest_plugin_state",
     "plugin_context_digest",
     "position_state",
+    "protection_idempotency_key",
     "serialize_graph_vars",
     "should_run",
     "spec_from_row",

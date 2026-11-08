@@ -505,6 +505,19 @@
         </div>
       </div>
     </section>
+
+    <section class="panel mt-16" id="protection">
+      <div class="panel-head"><h2>Position protection</h2><span class="sub">paper arms · one execution path</span><div class="right"><span class="badge ghost">PAPER</span></div></div>
+      <div class="panel-body stack-sm small">
+        <div>Arm stop-loss, trailing stop and take-profit (single or laddered) on any open position. Each arm is immediately editable and removable. Arms evaluate on engine ticks and close through the same order path as a manual sell.</div>
+        <div class="row"><span class="field"><select class="select" aria-label="Position"><option>BONK (solana)</option></select></span><span class="field"><select class="select" aria-label="Kind"><option>stop-loss</option><option>trailing stop</option><option>take-profit</option></select></span><span class="field"><select class="select" aria-label="Profile"><option>—</option><option>Guarded · global · smart</option><option>Tight · solana · manual</option></select></span><span class="btn primary">Arm protection</span></div>
+        <div class="note">Profiles are reusable PAPER presets. A smart profile lists its rules verbatim; a per-chain profile overrides the global one. Unknown triggers stay —, never 0.</div>
+      </div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Position</th><th>Kind</th><th>Trigger</th><th>Status</th><th>Peak</th><th></th></tr></thead><tbody>
+        <tr><td><span class="strong">BONK</span><span class="sub" style="display:block">solana</span></td><td>stop-loss</td><td>$0.00002</td><td><span class="badge warn">armed</span></td><td>—</td><td class="right"><span class="row"><button class="btn sm">Edit</button><button class="btn sm">Cancel</button></span></td></tr>
+        <tr><td><span class="strong">AERO</span><span class="sub" style="display:block">base</span></td><td>trailing stop</td><td>5%</td><td><span class="badge warn">armed</span></td><td>—</td><td class="right"><span class="row"><button class="btn sm">Edit</button><button class="btn sm">Cancel</button></span></td></tr>
+      </tbody></table></div>
+    </section>
   </main>
   <script src="assets/shell.js"></script>
 </body>

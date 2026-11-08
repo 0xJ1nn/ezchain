@@ -4,8 +4,10 @@ import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/o
 import { Badge, ButtonLink, Panel } from "@/components/ui";
 import { ageLabel } from "@/lib/live-format";
 import { getStrategies } from "@/lib/paper-api";
+import { getProtectionArms } from "@/lib/protection-api";
 import { getServiceHealth } from "@/lib/system-api";
 import { strategyKindMeta } from "@/lib/strategy-fixtures";
+import { ProtectionList } from "./protection-list";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +26,10 @@ function stamp(iso: string | null) {
 }
 
 export default async function AutomationsPage() {
-	const [strategiesResult, healthResult] = await Promise.all([
+	const [strategiesResult, healthResult, armsResult] = await Promise.all([
 		getStrategies(),
 		getServiceHealth(),
+		getProtectionArms(),
 	]);
 	const mode = strategiesResult.mode;
 	const strategies = strategiesResult.ok ? strategiesResult.data : [];
@@ -231,6 +234,8 @@ export default async function AutomationsPage() {
 							</table>
 						</div>
 					</Panel>
+
+					<ProtectionList mode={mode} initialArms={armsResult.ok ? armsResult.data : []} />
 				</div>
 
 				<div className="stack">

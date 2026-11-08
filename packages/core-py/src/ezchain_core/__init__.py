@@ -21,6 +21,18 @@ from .ledger import (
     sell_entries,
 )
 from .money import DEFAULT_SLIPPAGE_BPS, CostPreview, bps_fee, preview_cost
+from .protection import (
+    ArmEvaluation,
+    ArmParams,
+    ProtectionArm,
+    ProtectionProfile,
+    ProtectionValidationError,
+    TakeProfitLevel,
+    evaluate_arm,
+    resolve_profile,
+    validate_arm,
+    validate_profile,
+)
 from .risk import RiskLimits, evaluate_order
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
@@ -40,6 +52,8 @@ from .types import (
 )
 
 __all__ = [
+    "ArmEvaluation",
+    "ArmParams",
     "Candle",
     "DEFAULT_SLIPPAGE_BPS",
     "CostPreview",
@@ -49,6 +63,10 @@ __all__ = [
     "GateThresholds",
     "LedgerEntry",
     "MarketRow",
+    "ProtectionArm",
+    "ProtectionProfile",
+    "ProtectionValidationError",
+    "TakeProfitLevel",
     "OrderRequest",
     "PairInfo",
     "PositionState",
@@ -66,6 +84,7 @@ __all__ = [
     "bps_fee",
     "buy_entries",
     "cash_account",
+    "evaluate_arm",
     "evaluate_gate",
     "evaluate_order",
     "evaluate_strategy",
@@ -76,6 +95,9 @@ __all__ = [
     "realized_account",
     "realized_pnl",
     "replay_position",
+    "resolve_profile",
     "sell_entries",
     "utcnow",
+    "validate_arm",
+    "validate_profile",
 ]

@@ -7,6 +7,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Position protection arms and profiles (PAPER, issue #103):** stop-loss,
+  trailing stop (percent or price distance, above-water only) and take-profit
+  (single or laddered) on any open position, each immediately editable and
+  removable, plus manual and smart profiles (global, with per-chain override).
+  Arms evaluate on engine ticks and close through the same paper order path as a
+  manual sell, journaling like any other fill. Migration `0009_protection` adds the
+  `protection_arms` / `protection_profiles` tables; the web adds arm controls on
+  Positions and an armed list on Automations. No live execution is added.
+
 - **Sourced fee table and structural edges in the README (PAPER).** A fee-math
   table quotes each terminal's own published per-trade platform fee with its
   source page and read date, contrasts it with a zero-platform-fee self-hosted
