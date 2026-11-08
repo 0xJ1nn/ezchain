@@ -383,6 +383,12 @@ table.table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .chart .peak { fill: none; stroke: var(--ink); stroke-width: 1; }
 .chart .crosshair { stroke: var(--line-2); stroke-dasharray: 2 2; }
 .chart .num-label { fill: var(--ink); font: 600 10px var(--mono); }
+.chart .candle-up { fill: var(--ok); }
+.chart .candle-down { fill: var(--err); }
+.chart .candle-wick.up { stroke: var(--ok); stroke-width: 1; }
+.chart .candle-wick.down { stroke: var(--err); stroke-width: 1; }
+.chart .vol-up { fill: var(--ok); opacity: 0.45; }
+.chart .vol-down { fill: var(--err); opacity: 0.45; }
 .chart-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; color: var(--muted); }
 .chart-legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid currentColor; vertical-align: middle; margin-right: 4px; }
 .chart-legend .l-entry { color: var(--ink); }

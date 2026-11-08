@@ -24,7 +24,7 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
 
 	await expect(page.getByRole("heading", { name: /Bonk/, level: 1 })).toBeVisible();
-	await expect(page.getByText("FIXTURE", { exact: true })).toBeVisible();
+	await expect(page.getByText("FIXTURE", { exact: true }).first()).toBeVisible();
 	await expect(page.getByText("LIVE ·")).toHaveCount(0);
 	await expect(page.locator(".page-actions .mono").first()).toHaveText("$0.00003142");
 
@@ -39,11 +39,12 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 	await expect(page.locator("#pairs tbody tr").first()).toContainText(/Fixture · \d+s/);
 
 	// Safety is unknown everywhere. The page never promotes a miss to a pass.
+	// The rows are the four fields the data layer carries (GH-123); every one is unknown.
 	await expect(page.locator("#safety .panel-head .badge")).toHaveText("unknown");
-	await expect(page.locator("#safety tbody tr")).toHaveCount(5);
+	await expect(page.locator("#safety tbody tr")).toHaveCount(4);
 	await expect(
 		page.locator("#safety tbody tr td:nth-child(2) .badge", { hasText: "unknown" }),
-	).toHaveCount(5);
+	).toHaveCount(4);
 	await expect(page.getByText("SAFETY_NOT_IMPLEMENTED").first()).toBeVisible();
 
 	// Quote panel: server-rendered Jupiter paper quote with PAPER on every number.
@@ -193,7 +194,7 @@ test("unknown chain or token ids return 404", async ({ page }) => {
 test("token page has no external requests", async ({ page }) => {
 	const external = noExternal(page);
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	await expect(page.locator("#safety tbody tr")).toHaveCount(5);
+	await expect(page.locator("#safety tbody tr")).toHaveCount(4);
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
@@ -201,7 +202,7 @@ test("token page screenshot at mobile width", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
 	await expect(page.getByRole("navigation", { name: "Primary mobile navigation" })).toBeVisible();
-	await expect(page.getByText("FIXTURE", { exact: true })).toBeVisible();
+	await expect(page.getByText("FIXTURE", { exact: true }).first()).toBeVisible();
 
 	const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
 	expect(scrollWidth, "page must not scroll sideways on a 390px viewport").toBeLessThanOrEqual(
