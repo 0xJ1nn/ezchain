@@ -76,9 +76,7 @@ def ledger(
     kind: str | None = None,
 ) -> list[dict[str, Any]]:
     """Newest-first journal slice. Filters are exact so a caller cannot invent a query."""
-    query = select(LedgerEntryRow).order_by(
-        LedgerEntryRow.created_at.desc(), LedgerEntryRow.id.desc()
-    )
+    query = select(LedgerEntryRow).order_by(LedgerEntryRow.seq.desc())
     if account is not None:
         query = query.where(LedgerEntryRow.account == account)
     if kind is not None:
@@ -87,6 +85,7 @@ def ledger(
     return [
         {
             "id": row.id,
+            "seq": row.seq,
             "group_id": row.group_id,
             "account": row.account,
             "asset": row.asset,

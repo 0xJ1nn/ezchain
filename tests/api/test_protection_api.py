@@ -21,6 +21,7 @@ PROFILES = "/api/v1/protection/profiles"
 
 def _hold_position(session: Session) -> None:
     from ezchain_core.ledger import position_account
+
     session.add(
         LedgerEntryRow(
             group_id="g1",

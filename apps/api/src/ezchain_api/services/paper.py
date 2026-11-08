@@ -92,11 +92,7 @@ def _aware(value: datetime | None) -> datetime | None:
 
 
 def _ledger_rows(session: Session) -> list[LedgerEntryRow]:
-    return list(
-        session.scalars(
-            select(LedgerEntryRow).order_by(LedgerEntryRow.created_at, LedgerEntryRow.id)
-        )
-    )
+    return list(session.scalars(select(LedgerEntryRow).order_by(LedgerEntryRow.seq)))
 
 
 def _domain_entry(row: LedgerEntryRow) -> LedgerEntry:

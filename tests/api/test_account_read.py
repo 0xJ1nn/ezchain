@@ -164,6 +164,7 @@ def test_ledger_is_newest_first_and_filterable(
     assert body[0]["created_at"] == (START + timedelta(hours=1)).isoformat()
     assert set(body[0]) == {
         "id",
+        "seq",
         "group_id",
         "account",
         "asset",

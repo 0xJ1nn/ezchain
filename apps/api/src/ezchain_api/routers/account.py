@@ -53,6 +53,7 @@ FILL_COLUMNS = (
 )
 LEDGER_COLUMNS = (
     "id",
+    "seq",
     "group_id",
     "account",
     "asset",

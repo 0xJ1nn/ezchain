@@ -143,7 +143,9 @@ async def test_stop_loss_triggers_on_the_same_order_path(
     executor = FakeExecutor()
 
     with session_factory() as session:
-        result = await evaluate_arm_row(session, session.get(ProtectionArmRow, "arm-1"), source, executor)
+        result = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, executor
+        )
 
     assert result.action == "trigger"
     assert result.reason == "STOP_LOSS"
@@ -165,7 +167,9 @@ async def test_cancelled_arm_never_fires(session_factory: sessionmaker[Session])
     executor = FakeExecutor()
 
     with session_factory() as session:
-        result = await evaluate_arm_row(session, session.get(ProtectionArmRow, "arm-1"), source, executor)
+        result = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, executor
+        )
 
     assert result.action == "hold"
     assert result.reason == "NOT_ARMED"
@@ -179,13 +183,17 @@ def test_trailing_stop_never_above_water_does_not_trigger() -> None:
     )
     # Entry 10, price only ever below water (9 -> 8.5): no peak, no trigger.
     held = evaluate_arm(
-        arm, price_usd=Decimal("9"), position_quantity=Decimal("100"),
+        arm,
+        price_usd=Decimal("9"),
+        position_quantity=Decimal("100"),
         position_avg_cost_usd=Decimal("10"),
     )
     assert held.action == "hold"
     assert held.peak_usd is None
     lower = evaluate_arm(
-        arm, price_usd=Decimal("8.5"), position_quantity=Decimal("100"),
+        arm,
+        price_usd=Decimal("8.5"),
+        position_quantity=Decimal("100"),
         position_avg_cost_usd=Decimal("10"),
     )
     assert lower.action == "hold"
@@ -193,7 +201,9 @@ def test_trailing_stop_never_above_water_does_not_trigger() -> None:
 
     # Above water: peak tracks 12, then a 5% dip to 10 triggers at 11.40.
     above = evaluate_arm(
-        arm, price_usd=Decimal("12"), position_quantity=Decimal("100"),
+        arm,
+        price_usd=Decimal("12"),
+        position_quantity=Decimal("100"),
         position_avg_cost_usd=Decimal("10"),
     )
     assert above.peak_usd == Decimal("12")
@@ -214,16 +224,20 @@ async def test_take_profit_ladder_sells_one_level_at_a_time(
     add_arm(
         session_factory,
         kind="take_profit",
-        params={"levels": [
-            {"gain_pct": "20", "fraction": "0.5"},
-            {"gain_pct": "40", "fraction": "0.5"},
-        ]},
+        params={
+            "levels": [
+                {"gain_pct": "20", "fraction": "0.5"},
+                {"gain_pct": "40", "fraction": "0.5"},
+            ]
+        },
     )
     source = FakeSource(make_snapshot(price="1.25", change_h1="0"))
     executor = FakeExecutor()
 
     with session_factory() as session:
-        result = await evaluate_arm_row(session, session.get(ProtectionArmRow, "arm-1"), source, executor)
+        result = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, executor
+        )
 
     assert result.action == "trigger"
     assert result.reason == "TAKE_PROFIT_LEVEL"
@@ -237,21 +251,27 @@ async def test_take_profit_ladder_sells_one_level_at_a_time(
         assert row.triggered_levels == [0]
 
 
-async def test_expired_and_unknown_price_fail_closed(session_factory: sessionmaker[Session]) -> None:
+async def test_expired_and_unknown_price_fail_closed(
+    session_factory: sessionmaker[Session],
+) -> None:
     add_position(session_factory)
     add_arm(session_factory, expires_at=NOW - timedelta(seconds=1))
     source = FakeSource(make_snapshot(price="0.50", change_h1="0"))
     executor = FakeExecutor()
 
     with session_factory() as session:
-        result = await evaluate_arm_row(session, session.get(ProtectionArmRow, "arm-1"), source, executor, now=NOW)
+        result = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, executor, now=NOW
+        )
 
     assert result.reason == "EXPIRED"
     assert executor.requests == []
 
     arm = make_arm()
     unknown = evaluate_arm(
-        arm, price_usd=None, position_quantity=Decimal("100"),
+        arm,
+        price_usd=None,
+        position_quantity=Decimal("100"),
         position_avg_cost_usd=Decimal("1"),
     )
     assert unknown.action == "hold"
@@ -383,8 +403,11 @@ async def test_arm_trigger_journals_like_any_other_fill(
         buy_status = await _place(
             session,
             PaperOrderRequest(
-                chain=CHAIN, token_address=TOKEN, side="buy",
-                amount_usd=Decimal("100"), idempotency_key="prot-buy-1",
+                chain=CHAIN,
+                token_address=TOKEN,
+                side="buy",
+                amount_usd=Decimal("100"),
+                idempotency_key="prot-buy-1",
             ),
             dex,
         )

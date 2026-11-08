@@ -15,6 +15,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   manual sell, journaling like any other fill. Migration `0009_protection` adds the
   `protection_arms` / `protection_profiles` tables; the web adds arm controls on
   Positions and an armed list on Automations. No live execution is added.
+- **Ledger monotonic sequence for deterministic replay (PAPER).** `ledger_entries`
+  now carries a DB-assigned monotonic `seq` (identity/bigserial on Postgres, unique
+  and indexed). All ledger reads and replays order by `seq` instead of
+  `created_at, id`; `/paper/ledger` and the CSV export expose `seq`; newest-first
+  listings use `seq DESC`. Migration `0010_ledger_sequence` backfills existing rows
+  deterministically in `(created_at, id)` order. No PnL or cost-basis math changed.
 
 - **Sourced fee table and structural edges in the README (PAPER).** A fee-math
   table quotes each terminal's own published per-trade platform fee with its
