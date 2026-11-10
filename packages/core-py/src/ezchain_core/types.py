@@ -63,6 +63,10 @@ class SourceRef:
         }
 
 
+def _aware(value: datetime) -> datetime:
+    return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 @dataclass(frozen=True)
 class MarketRow:
     chain: str
@@ -192,6 +196,14 @@ class TokenSnapshot:
             "base_token_address": self.base_token_address,
             "quote_token_address": self.quote_token_address,
             "url": self.url,
+            "pair_age_seconds": None
+            if self.pair_created_at is None or self.source is None
+            else max(
+                0,
+                int(
+                    (_aware(self.source.observed_at) - _aware(self.pair_created_at)).total_seconds()
+                ),
+            ),
         }
 
 

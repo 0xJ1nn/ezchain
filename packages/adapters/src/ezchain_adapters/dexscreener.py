@@ -275,11 +275,11 @@ def snapshot_from_pairs(
         source=best_row.source,
         stale=False,
         pair_created_at=best_row.pair_created_at,
-        pair_address=best_row.pair_address,
-        dex=best_row.dex,
-        base_token_address=best_row.base_token,
-        quote_token_address=best_row.quote_token,
-        url=best_row.url,
+        pair_address=best_row.pair_address or None,
+        dex=None if best_row.dex in ("", "unknown") else best_row.dex,
+        base_token_address=best_row.base_token or None,
+        quote_token_address=best_row.quote_token or None,
+        url=best_row.url or None,
     )
 
 
