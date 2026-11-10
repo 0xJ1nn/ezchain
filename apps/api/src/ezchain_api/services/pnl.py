@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -417,8 +418,11 @@ def performance_series(
         by_group.setdefault(line.group_id, []).append(line)
 
     def observed(lines_for_group: list[LedgerLine]) -> datetime | None:
-        stamps = [_aware_local(line.created_at) for line in lines_for_group]
-        stamps = [stamp for stamp in stamps if stamp is not None]
+        stamps: list[datetime] = []
+        for line in lines_for_group:
+            stamp = _aware_local(line.created_at)
+            if stamp is not None:
+                stamps.append(stamp)
         return min(stamps) if stamps else None
 
     # Preserve ledger/seq order: the projector consumes ledger rows in seq order,

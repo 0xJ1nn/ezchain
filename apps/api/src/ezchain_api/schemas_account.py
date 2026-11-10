@@ -7,6 +7,7 @@ Money and prices are decimal strings computed on the server; the UI formats only
 from __future__ import annotations
 
 from typing import Any, Literal
+
 from pydantic import BaseModel
 
 from .schemas import KillSwitchOut

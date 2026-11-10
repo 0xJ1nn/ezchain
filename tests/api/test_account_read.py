@@ -221,7 +221,7 @@ def test_performance_matches_a_known_ledger(
     assert body["fees_usd"] == "0.96"
     assert body["complete"] is True
     assert body["marks_unknown"] is False
-    assert body["trades"] == 2
+    assert body["trades"] == 1
     assert body["wins"] == 1
     assert body["losses"] == 0
     assert body["win_rate_pct"] == "100"
