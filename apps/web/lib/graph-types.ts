@@ -110,6 +110,7 @@ export interface DryRunCandles {
 	bars: number;
 	last_close_time: string | null;
 	stale: boolean;
+	source?: string;
 }
 
 export interface DryRunContext {
@@ -126,6 +127,7 @@ export interface DryRunResult {
 	trace: GraphTrace;
 	context: DryRunContext;
 	mode: "DRY_RUN";
+	data_mode?: string;
 }
 
 export type Numeric = string | number | null;
@@ -166,6 +168,7 @@ export interface Backtest {
 	label: "BACKTEST";
 	request: Record<string, unknown>;
 	data_source: string | null;
+	data_mode?: string | null;
 	fill_model: string | null;
 	metrics: BacktestMetrics;
 	equity: BacktestEquityPoint[];

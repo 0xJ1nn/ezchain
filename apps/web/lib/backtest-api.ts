@@ -25,6 +25,7 @@ export interface BacktestRow {
 	label: "BACKTEST";
 	request: Record<string, unknown>;
 	data_source: string;
+	data_mode?: string | null;
 	fill_model: string;
 	metrics: BacktestMetrics;
 	node_hits: Record<string, number>;

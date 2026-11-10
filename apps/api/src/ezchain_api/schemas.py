@@ -636,6 +636,7 @@ class BacktestOut(BaseModel):
     request: dict[str, Any]
     data_source: str
     fill_model: str
+    data_mode: str | None = None
     metrics: dict[str, Any]
     equity: list[dict[str, Any]]
     trades: list[dict[str, Any]]

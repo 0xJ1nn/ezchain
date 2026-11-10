@@ -104,6 +104,11 @@ export default async function BacktestsPage() {
 												<span className="mono small">{row.id.slice(0, 8)}…</span>
 												<span className="sub" style={{ display: "block" }}>
 													{row.label} · {row.data_source}
+													{(row.data_mode === "fixture" ||
+														row.data_source === "fixture" ||
+														row.data_source?.startsWith("FIXTURE")) && (
+														<Badge tone="ghost">FIXTURE</Badge>
+													)}
 												</span>
 											</td>
 											<td className="small">

@@ -1091,11 +1091,12 @@ export function fixtureDryRun(document: GraphDocument): DryRunResult {
 		context: {
 			now: FIXTURE_NOW,
 			price_usd: "0.00003142",
-			candles: { "5m": { bars: 240, last_close_time: "2026-10-22T09:40:00Z", stale: false } },
+			candles: { "5m": { bars: 240, last_close_time: "2026-10-22T09:40:00Z", stale: false, source: "fixture" } },
 			position: { open: false, quantity: "0", value_usd: null },
 			account: { cash_usd: "9709.36", equity_usd: "9709.36" },
 		},
 		mode: "DRY_RUN",
+		data_mode: "fixture",
 	};
 }
 
@@ -1190,6 +1191,7 @@ export function fixtureBacktest(document: GraphDocument, strategyId?: string): B
 			starting_cash_usd: "10000",
 		},
 		data_source: "FIXTURE sample · not a market feed",
+		data_mode: "fixture",
 		fill_model: "FIXTURE next-bar open · fee 10 bps · slippage 5 bps",
 		metrics: { ...FIXTURE_METRICS },
 		equity: fixtureEquity(),

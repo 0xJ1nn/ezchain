@@ -133,6 +133,15 @@ def live_settings() -> Settings:
     )
 
 
+def fixture_settings() -> Settings:
+    return Settings(
+        environment="test",
+        data_mode="fixture",
+        database_url="sqlite+pysqlite://",
+        auto_create_schema=False,
+    )
+
+
 def bars(count: int, *, closes: list[str] | None = None) -> tuple[Candle, ...]:
     end = latest_closed_open(datetime.now(UTC), FIVE_MINUTES)
     start = end - timedelta(seconds=FIVE_MINUTES * (count - 1))
@@ -184,6 +193,15 @@ def build(client_for: Callable[..., TestClient], series: tuple[Candle, ...]) -> 
         get_dexscreener: lambda: FakeSnapshots(),
         get_geckoterminal: lambda: FakeCandles(series),
         get_settings: live_settings,
+    }
+    return client_for(backtests.router, overrides)
+
+
+def build_fixture(client_for: Callable[..., TestClient]) -> TestClient:
+    overrides: dict[Any, Any] = {
+        get_dexscreener: lambda: FakeSnapshots(),
+        get_geckoterminal: lambda: FakeCandles(()),
+        get_settings: fixture_settings,
     }
     return client_for(backtests.router, overrides)
 
@@ -364,3 +382,30 @@ def test_backtest_requires_exactly_one_graph_source(
     neither = request_body()
     neither.pop("graph", None)
     assert client.post("/api/v1/backtests", json=neither).status_code == 422
+
+
+def test_persisted_fixture_result_relabels_source(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    from ezchain_api.models import BacktestRow
+
+    client = build_fixture(client_for)
+    response = client.post("/api/v1/backtests", json=request_body())
+    assert response.status_code == 201
+    backtest_id = response.json()["id"]
+
+    # Simulate a migrated/persisted fixture row that still carries a real-sounding source.
+    row = session.get(BacktestRow, backtest_id)
+    assert row is not None
+    bad = dict(row.result or {})
+    bad["data_source"] = "provided_candles"
+    row.result = bad
+    session.commit()
+
+    detail = client.get(f"/api/v1/backtests/{backtest_id}")
+    assert detail.status_code == 200
+    assert detail.json()["data_source"] == "fixture"
+
+    listed = client.get("/api/v1/backtests")
+    assert listed.status_code == 200
+    assert listed.json()[0]["data_source"] == "fixture"

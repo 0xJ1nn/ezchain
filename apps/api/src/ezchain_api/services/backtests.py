@@ -223,15 +223,21 @@ def _result_payload(result: BacktestResult) -> dict[str, Any]:
 
 
 def _out(row: BacktestRow) -> dict[str, Any]:
+    request = dict(row.request or {})
     result = dict(row.result or {})
     result["id"] = row.id
     result["created_at"] = _aware(row.created_at).isoformat()
-    result["request"] = dict(row.request or {})
+    result["request"] = request
     result.setdefault("label", BACKTEST_LABEL)
     result.setdefault("metrics", {})
     result.setdefault("equity", [])
     result.setdefault("trades", [])
     result.setdefault("node_hits", {})
+    result.setdefault("data_mode", request.get("data_mode"))
+    if result.get("data_mode") == "fixture":
+        result["data_source"] = "fixture"
+    else:
+        result.setdefault("data_source", "provided_candles")
     return result
 
 
@@ -306,6 +312,12 @@ async def create_backtest(
         "candle_sources": sources,
     }
     payload = _result_payload(result)
+    payload["data_mode"] = data_mode
+    if data_mode == "fixture":
+        payload["data_source"] = "fixture"
+    else:
+        payload["data_source"] = result.data_source
+    payload["candle_sources"] = sources
     row = BacktestRow(
         id=new_id(),
         strategy_id=strategy_id,
@@ -326,15 +338,28 @@ def list_backtests(session: Session, *, strategy_id: str | None = None) -> list[
     if strategy_id is not None:
         statement = statement.where(BacktestRow.strategy_id == strategy_id)
     rows = list(session.scalars(statement))
-    return [
-        {
-            "id": row.id,
-            "created_at": _aware(row.created_at).isoformat(),
-            "request": dict(row.request or {}),
-            "metrics": dict((row.result or {}).get("metrics", {})),
-        }
-        for row in rows
-    ]
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        request = dict(row.request or {})
+        result = dict(row.result or {})
+        data_mode = result.get("data_mode", request.get("data_mode"))
+        if data_mode == "fixture":
+            data_source = "fixture"
+        else:
+            data_source = result.get("data_source", "provided_candles")
+        items.append(
+            {
+                "id": row.id,
+                "created_at": _aware(row.created_at).isoformat(),
+                "label": result.get("label", BACKTEST_LABEL),
+                "request": request,
+                "metrics": dict(result.get("metrics", {})),
+                "data_source": data_source,
+                "fill_model": result.get("fill_model"),
+                "data_mode": data_mode,
+            }
+        )
+    return items
 
 
 def get_backtest(session: Session, backtest_id: str) -> dict[str, Any] | None:
