@@ -25,9 +25,15 @@ def upgrade() -> None:
         return
     op.add_column("market_snapshots", sa.Column("pair_address", sa.String(160), nullable=True))
     op.add_column("market_snapshots", sa.Column("dex", sa.String(40), nullable=True))
-    op.add_column("market_snapshots", sa.Column("base_token_address", sa.String(160), nullable=True))
-    op.add_column("market_snapshots", sa.Column("quote_token_address", sa.String(160), nullable=True))
-    op.add_column("market_snapshots", sa.Column("pair_created_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "market_snapshots", sa.Column("base_token_address", sa.String(160), nullable=True)
+    )
+    op.add_column(
+        "market_snapshots", sa.Column("quote_token_address", sa.String(160), nullable=True)
+    )
+    op.add_column(
+        "market_snapshots", sa.Column("pair_created_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("market_snapshots", sa.Column("url", sa.Text(), nullable=True))
 
 
