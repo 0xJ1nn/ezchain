@@ -3,6 +3,7 @@
 // These functions format values the server already computed. They never derive PnL,
 // exposure or a quote (CONTRACT I10). Unknown values print an em dash, never zero.
 
+import type { MarketList } from "./api";
 import { MINUS, pct } from "./format";
 
 export const DASH = "\u2014";
@@ -122,6 +123,34 @@ export function sourceLabel(name: string | null | undefined): string {
 		fixture: "Fixture",
 	};
 	return known[name.toLowerCase()] ?? name;
+}
+
+/**
+ * One line describing what the server actually read for a market page.
+ *
+ * A symbol, name or address search is a single feed-wide query against the exchange
+ * search index; the adapter reports no per-chain coverage for it. Calling that a
+ * "global search" implied a scan of every registered chain, which never happened.
+ */
+export function populationSummary(list: MarketList): string {
+	const population = list.population;
+	const excluded = Object.values(list.applied_filters.unknown_excluded).reduce(
+		(total, count) => total + count,
+		0,
+	);
+	const origin =
+		population.chains_scanned === null
+			? list.applied_filters.q
+				? "feed-wide market query"
+				: "feed-wide market result"
+			: `${population.chains_scanned} chains scanned`;
+	const addresses =
+		population.addresses_requested !== null
+			? ` · ${population.addresses_requested} addresses requested`
+			: "";
+	const truncated = population.truncated ? " · discovery cap reached" : "";
+	const unknown = excluded > 0 ? ` · ${excluded} unknown value(s) excluded` : "";
+	return `${origin}${addresses} · ${population.rows_discovered} rows discovered${truncated}${unknown}`;
 }
 
 export function quoteKindLabel(kind: string | null | undefined): string {

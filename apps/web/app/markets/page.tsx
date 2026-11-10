@@ -17,6 +17,7 @@ import {
 	ageLabel,
 	changeText,
 	formatUsdCompact,
+	populationSummary,
 	sourceLabel,
 } from "@/lib/live-format";
 import styles from "./markets.module.css";
@@ -248,24 +249,7 @@ function ErrorPanel({ error, retryHref }: { error: ApiError; retryHref: string }
 }
 
 function PopulationLine({ list }: { list: MarketList }) {
-	const population = list.population;
-	const excluded = Object.values(list.applied_filters.unknown_excluded).reduce(
-		(total, count) => total + count,
-		0,
-	);
-	return (
-		<span className="small muted">
-			{population.chains_scanned === null
-				? "Global search"
-				: `${population.chains_scanned} chains scanned`}
-			{population.addresses_requested !== null
-				? ` · ${population.addresses_requested} addresses requested`
-				: ""}
-			{` · ${population.rows_discovered} rows discovered`}
-			{population.truncated ? " · discovery cap reached" : ""}
-			{excluded > 0 ? ` · ${excluded} unknown value(s) excluded` : ""}
-		</span>
-	);
+	return <span className="small muted">{populationSummary(list)}</span>;
 }
 
 export default async function MarketsPage({

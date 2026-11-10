@@ -27,8 +27,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   screener; a wallet, strategy or position term is treated as a market query
   and returns the screener's own empty result instead of implying a global
   search. The display-only "All chains" chip is removed from the topbar and the
-  More page, which now points to Markets, Launches and Positions, the surfaces
-  that own their chain filters.
+  More page; the More page now explains that chain scope belongs to Markets,
+  Launches and Positions, and links to Markets.
+
+- **A market search no longer claims it scanned every chain.** The Markets
+  footer describes a symbol, name or address query as a feed-wide market query,
+  which is what the feed returns; the API reports no per-chain coverage for a
+  search.
 
 - **Protection writes are compare-and-swap and the event sequence is
   serialized (PAPER).** Engine ticks and API edits increment the arm version in

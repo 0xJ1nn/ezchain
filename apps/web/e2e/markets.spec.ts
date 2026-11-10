@@ -9,6 +9,7 @@ import {
 	webMode,
 	type ApiError,
 } from "../lib/api";
+import { populationSummary } from "../lib/live-format";
 
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 
@@ -102,6 +103,11 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(page).toHaveURL(/q=bonk/);
 	await expect(marketTable.locator("tbody tr")).toHaveCount(1);
 	await expect(marketTable.locator("tbody tr").first()).toContainText("BONK");
+
+	// Search is one feed-wide query, not a census of every registered chain. The
+	// population note must not describe it as a global search.
+	await expect(page.getByText(/feed-wide market query · 1 rows discovered/)).toBeVisible();
+	await expect(page.getByText("Global search")).toHaveCount(0);
 
 	// Sort is a URL query param. All-chain liquidity stays per-chain round robin.
 	await page.goto("/markets?sort=liquidity");
@@ -464,6 +470,10 @@ test("fixture mode returns fixture rows without touching the network", async () 
 
 		const searched = await getMarkets({ q: "bonk" });
 		expect(searched.rows.map((row) => row.symbol)).toEqual(["BONK"]);
+		// Fixture parity: a search reports no per-chain coverage, like the API.
+		expect(searched.population.chains_scanned).toBeNull();
+		expect(searched.population.addresses_requested).toBeNull();
+		expect(searched.population.rows_discovered).toBe(1);
 
 		// Fixture parity: filtering, totals and offset paging match the API contract.
 		const first = await getMarkets({ limit: 5 });
@@ -548,6 +558,14 @@ test("live mode fetches the API and never falls back to fixtures", async () => {
 			expect(filteredRequest).toContain("min_pair_age_minutes=60");
 			expect(filteredRequest).toContain("max_pair_age_minutes=1440");
 			expect(filteredRequest).toContain("dex=uniswap");
+
+			// A live search returns no per-chain coverage; the population line names it a
+			// feed-wide query instead of implying a global scan of every chain.
+			const searched = await getMarkets({ q: "bonk" });
+			expect(searched.population.chains_scanned).toBeNull();
+			expect(searched.applied_filters.q).toBe("bonk");
+			expect(populationSummary(searched)).toContain("feed-wide market query");
+			expect(populationSummary(searched)).not.toContain("Global search");
 
 			// Upstream 500: a reason code, not fixture rows.
 			await expect(getMarkets({ q: "boom" })).rejects.toMatchObject({

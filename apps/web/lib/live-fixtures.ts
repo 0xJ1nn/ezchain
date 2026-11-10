@@ -735,9 +735,17 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 			unknown_excluded: unknownExcluded,
 		},
 		population: {
-			chains_scanned: chain === "all" ? CHAIN_REGISTRY.length : 1,
-			addresses_requested: null,
-			rows_discovered: discovered.length,
+			// Search is one feed-wide query with no per-chain coverage, matching the API
+			// contract rather than pretending the fixture scanned every chain.
+			chains_scanned: coverage === null ? null : coverage.length,
+			addresses_requested:
+				coverage === null
+					? null
+					: coverage.reduce((sum, item) => sum + item.requested, 0),
+			rows_discovered:
+				coverage === null
+					? discovered.length
+					: coverage.reduce((sum, item) => sum + item.returned, 0),
 			rows_after_filters: total,
 			rows_returned: page.length,
 			truncated: false,
