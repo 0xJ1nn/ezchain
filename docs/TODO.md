@@ -5,7 +5,7 @@ real-money trading. The PAPER stack has production operations:
 continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
 ledger, declarative and visual graph strategies, external Python strategy plugins in a
 supervised worker, an MCP server for agents, backtests, strategy CRUD/scheduler,
-migrations through `0010_ledger_sequence`, scoped agent keys, bearer auth, observability, a complete
+migrations through `0014_pair_identity`, scoped agent keys, bearer auth, observability, a complete
 operator surface and a full-code stress harness. There are no keys, no signing and no live
 execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
@@ -29,9 +29,9 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Ops: Alembic 0001–0010 (fresh + legacy), scoped agent keys, bearer auth + CSRF proxy,
+- [x] Ops: Alembic 0001–0014 (fresh + legacy), scoped agent keys, bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
-- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0010`).
+- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0014`).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
 - [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
 - [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0014` is pending.

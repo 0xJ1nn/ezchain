@@ -65,8 +65,11 @@ without a token of at least 32 characters.
 | `trade` | Paper orders, strategy create/update/delete/run, backtests, protection arms and profiles |
 | `admin` | Every `/api/v1/agent/keys` request; `POST /api/v1/plugins/reload`; `POST /api/v1/system/kill-switch` |
 
-`GET /api/v1/system/kill-switch` is a read. The Next.js server injects the deployment
-token in its server-side `/api/[...path]` proxy; the browser never receives it.
+`GET /api/v1/system/kill-switch` follows the read rule, not the `/system/` prefix: a
+self-hosted workspace serves it without a credential, and a hosted deployment with
+`EZCHAIN_REQUIRE_AUTH_FOR_READS=true` serves it to a principal holding the `read` scope.
+Only the `POST` is `admin`. The Next.js server injects the deployment token in its
+server-side `/api/[...path]` proxy; the browser never receives it.
 
 ## Read-only POSTs
 
@@ -243,6 +246,7 @@ Minting a key with an unknown scope or no scopes is `422`; production without
 | GET | `/api/v1/protection/arms?status=&chain=&token_address=` | read | Arms for the account |
 | POST | `/api/v1/protection/arms` | trade | Arm a stop-loss, trailing stop or take-profit |
 | GET | `/api/v1/protection/arms/{arm_id}` | read | One arm and its state |
+| GET | `/api/v1/protection/arms/{arm_id}/events?limit=` | read | Newest-first append-only arm event trail |
 | PATCH | `/api/v1/protection/arms/{arm_id}` | trade | Edit an armed rule |
 | POST | `/api/v1/protection/arms/{arm_id}/cancel` | trade | Cancel an arm |
 | POST | `/api/v1/protection/arms/{arm_id}/evaluate` | trade | Run one evaluation tick |

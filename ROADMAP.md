@@ -61,13 +61,13 @@ create a strategy and watch it place paper orders. Every number carries source, 
 - [x] All-chain browse fan-out/round-robin with coverage and 30-pair-cap regression tests.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Production ops: Alembic 0001–0010, genesis/fill uniqueness, bearer auth + CSRF
+- [x] Production ops: Alembic 0001–0014, genesis/fill uniqueness, bearer auth + CSRF
   proxy, `/healthz`/`/readyz`/`/metrics`, JSON logs, runtime-only image deps.
-- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0010_ledger_sequence**.
+- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0014_pair_identity**.
 - [x] Stress harness (smoke/soak/idempotency/chaos) with deduplicated issue filing;
   #71 detected and closed by #72.
 - [x] Web truth: fixture badges, DCA/dip vocabulary, Playwright build guard.
-- [ ] Re-drill Docker build/`compose up` at the current migration head `0010_ledger_sequence` (historical 0003 drill recorded).
+- [ ] Re-drill Docker build/`compose up` at the current migration head `0014_pair_identity` (historical 0003 drill recorded).
 - [ ] Per-user auth/RBAC; one deployment token today.
 - [ ] Dashboard equity-snapshot history remains absent (#57); wallets have no backend yet (#10).
 - [ ] EVM/venue execution and executor/vault (out of paper scope).
