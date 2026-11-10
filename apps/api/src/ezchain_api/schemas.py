@@ -740,3 +740,10 @@ class StrategyPerformanceOut(BaseModel):
     complete: bool = False
     marks_unknown: bool = False
     equity_curve: list[dict[str, str]]
+    window: str = "all"
+    source: str = "ledger"
+    reason: str | None = None
+    equity_series: list[dict[str, Any]] = []
+    realized_pnl_series: list[dict[str, Any]] = []
+    drawdown_series: list[dict[str, Any]] = []
+    series: dict[str, Any] = {}

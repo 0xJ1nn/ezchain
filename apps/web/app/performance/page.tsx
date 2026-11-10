@@ -307,6 +307,50 @@ export default async function PerformancePage({
 
 				<div className="stack">
 					<Panel
+						title="Equity and drawdown"
+						sub={performance ? `${performance.equity_series?.length ?? 0} server points · ${performance.source ?? "ledger"} · ${performance.window ?? "all"}` : "unavailable"}
+						action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">PAPER</Badge>}
+						flush
+					>
+						{performance && (performance.equity_series?.length ?? 0) > 0 ? (
+							<div className="panel-body">
+								<svg viewBox="0 0 320 120" width="100%" height="120" role="img" aria-label="Equity and drawdown">
+									<polyline
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.5"
+										points={(performance.equity_series ?? [])
+											.map((point, index) => {
+												const x = (index / Math.max(1, (performance.equity_series?.length ?? 1) - 1)) * 320;
+												const values = (performance.equity_series ?? [])
+													.map((p) => Number(p.value ?? p.equity_usd ?? 0))
+													.filter((n) => Number.isFinite(n));
+												const min = Math.min(...values);
+												const max = Math.max(...values);
+												const span = max - min || 1;
+												const y = 100 - ((Number(point.value ?? point.equity_usd ?? 0) - min) / span) * 80;
+												return `${x},${y}`;
+											})
+											.join(" ")}
+									/>
+								</svg>
+								<div className="small muted mt-8">
+									Source: {performance.source ?? "ledger"} · Window: {performance.window ?? "all"} · Mode:{" "}
+									{mode === "fixture" ? "FIXTURE" : "live API"} · Complete: {String(performance.complete)} ·
+									Win rate: {performance.win_rate_pct ?? "—"}% · Trades: {performance.trades}
+								</div>
+								{performance.reason && <div className="note err mt-8">{performance.reason}</div>}
+							</div>
+						) : (
+							<div className="panel-body">
+								<div className="note">
+									{performance?.reason ?? "No server series available."}
+								</div>
+							</div>
+						)}
+					</Panel>
+
+					<Panel
 						title="Daily realized"
 						sub="ledger groups · UTC days"
 						action={<Badge tone="ghost">PAPER</Badge>}

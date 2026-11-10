@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -316,11 +316,13 @@ async def run_strategy(
 
 @router.get("/{strategy_id}/performance", response_model=StrategyPerformanceOut)
 def strategy_performance(
-    strategy_id: str, session: Session = Depends(get_session)
+    strategy_id: str,
+    window: str | None = Query(default=None),
+    session: Session = Depends(get_session),
 ) -> StrategyPerformanceOut:
     """PAPER performance from this strategy's own fills, never the whole account."""
     get_or_404(session, strategy_id)
-    body = performance.strategy_performance(session, strategy_id)
+    body = performance.strategy_performance(session, strategy_id, window=window)
     if body is None:  # pragma: no cover - get_or_404 already proved the row exists
         raise HTTPException(
             status_code=404,
