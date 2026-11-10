@@ -59,7 +59,7 @@ export default async function RiskPage() {
 		: !snapshot.positions.ok
 			? snapshot.positions.error
 			: null;
-	const stale = positions.filter((position) => isStale(position.source?.observed_at));
+	const stale = positions.filter((position) => markStatus(position.source?.observed_at) === "stale");
 	const unknown = positions.filter((position) => position.mark_usd === null);
 
 	return (

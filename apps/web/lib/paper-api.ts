@@ -358,7 +358,7 @@ export const fixturePaperAccount: PaperAccount = {
 			market_value_usd: "5.70",
 			share_pct: null,
 			source: { name: "dexscreener", observed_at: observed(125) },
-			mark_status: "fresh",
+			mark_status: "stale",
 		},
 		{
 			chain: "settlement",
@@ -405,7 +405,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "68.54",
 			share_pct: "0.70",
-			mark_status: "fresh",
+			mark_status: "stale",
 		},
 		{
 			chain: "settlement",
@@ -451,7 +451,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			market_value_usd: "5.70",
 			share_pct: "0.06",
 			source: { name: "dexscreener", observed_at: observed(125) },
-			mark_status: "fresh",
+			mark_status: "stale",
 		},
 		{
 			chain: "settlement",
