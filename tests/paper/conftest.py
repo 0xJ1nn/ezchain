@@ -90,6 +90,11 @@ def make_snapshot(
         source=SourceRef("dexscreener", "https://dexscreener.com", observed),
         stale=stale,
         pair_created_at=pair_created_at,
+        pair_address="0xpair",
+        dex="uniswap",
+        base_token_address=address,
+        quote_token_address="USDC",
+        url=None,
     )
 
 

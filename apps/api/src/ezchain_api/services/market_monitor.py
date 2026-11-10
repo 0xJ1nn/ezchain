@@ -107,8 +107,9 @@ def stale_after_seconds(settings: Settings, last_scan_duration_seconds: float = 
 def _snapshot(row: MarketRow) -> TokenSnapshot:
     """Project a pair row onto the token-level snapshot the table stores.
 
-    The API owns no pair/dex/url columns, so only the snapshot-facing fields are carried
-    over. A row without a base token cannot be keyed and is skipped by the caller.
+    Pair identity is carried over at the snapshot boundary, with empty or ``unknown``
+    sentinels normalised to ``None`` so a missing value stays unknown. A row without
+    a base token cannot be keyed and is skipped by the caller.
     """
     return TokenSnapshot(
         chain=row.chain,
@@ -125,9 +126,12 @@ def _snapshot(row: MarketRow) -> TokenSnapshot:
         pairs=(),
         source=row.source,
         stale=False,
-        # ``market_snapshots`` does not persist pair age. The order path re-fetches a live
-        # token snapshot and applies the gate there; do not imply this value is stored.
-        pair_created_at=None,
+        pair_created_at=row.pair_created_at,
+        pair_address=row.pair_address or None,
+        dex=None if row.dex in ("", "unknown") else row.dex,
+        base_token_address=row.base_token or None,
+        quote_token_address=row.quote_token or None,
+        url=row.url or None,
     )
 
 

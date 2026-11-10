@@ -30,7 +30,7 @@ from ezchain_adapters.dexscreener import BASE
 from ezchain_adapters.ratelimit import TokenBucket
 from ezchain_api.config import Settings
 from ezchain_api.db import Base
-from ezchain_api.deps import get_market_monitor, get_session
+from ezchain_api.deps import get_dexscreener, get_market_monitor, get_session
 from ezchain_api.models import LedgerEntryRow, MarketSnapshotRow
 from ezchain_api.routers import markets
 from ezchain_api.services import market_snapshots
@@ -67,14 +67,16 @@ def make_row(
     price: str = "2000",
     liquidity: str = "500000",
     observed_at: datetime | None = None,
+    dex: str = "uniswap",
+    quote_token: str = "USDC",
 ) -> MarketRow:
     observed = observed_at or datetime.now(UTC)
     return MarketRow(
         chain=chain,
         pair_address=f"pair-{chain}-{token}",
-        dex="uniswap",
+        dex=dex,
         base_token=token,
-        quote_token="USDC",
+        quote_token=quote_token,
         symbol=symbol,
         name=symbol,
         price_usd=Decimal(price),
@@ -589,9 +591,12 @@ def test_overview_and_stored_endpoints(
     assert all(isinstance(row["price_usd"], str) for row in rows)
     assert rows[0]["source"] == "dexscreener"
     assert rows[0]["observed_at"]
-    assert "pair_address" not in rows[0]
-    assert "dex" not in rows[0]
-    assert "url" not in rows[0]
+    assert {row["pair_address"] for row in rows} == {
+        "pair-ethereum-" + ETH_TOKEN,
+        "pair-solana-" + SOL_TOKEN,
+    }
+    assert all(row["dex"] == "uniswap" for row in rows)
+    assert all(row["pair_age_seconds"] is None for row in rows)
 
     solana = client.get("/api/v1/markets/stored", params={"chain": "solana"})
     assert [row["token_address"] for row in solana.json()["rows"]] == [SOL_TOKEN]
@@ -599,6 +604,99 @@ def test_overview_and_stored_endpoints(
     unknown = client.get("/api/v1/markets/stored", params={"chain": "not-a-chain"})
     assert unknown.status_code == 404
     assert unknown.json()["detail"]["code"] == "CHAIN_NOT_FOUND"
+
+
+def test_absent_identity_persists_null(
+    session: Session, session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    source = FakeSource({"ethereum": [make_row(dex="unknown", quote_token="")]})
+    monitor = MarketMonitor(session_factory, source, settings)
+    asyncio.run(monitor.run_once())
+
+    with session_factory() as s:
+        rows = list(s.scalars(select(MarketSnapshotRow)))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.dex is None
+    assert row.quote_token_address is None
+    assert row.pair_address is not None
+
+
+def test_token_snapshot_to_dict_pair_age() -> None:
+    created = datetime.now(UTC) - timedelta(minutes=5)
+    observed = datetime.now(UTC)
+    snap = TokenSnapshot(
+        chain="ethereum",
+        address="0xabc",
+        symbol="TEST",
+        name="TEST",
+        price_usd=None,
+        liquidity_usd=None,
+        volume_24h_usd=None,
+        price_change_m5=None,
+        price_change_h1=None,
+        price_change_h6=None,
+        price_change_h24=None,
+        source=SourceRef("dexscreener", "https://dexscreener.com", observed),
+        pair_created_at=created,
+    )
+    assert snap.to_dict()["pair_age_seconds"] is not None
+    assert snap.to_dict()["pair_age_seconds"] > 0
+
+    unknown = TokenSnapshot(
+        chain="ethereum",
+        address="0xabc",
+        symbol="TEST",
+        name="TEST",
+        price_usd=None,
+        liquidity_usd=None,
+        volume_24h_usd=None,
+        price_change_m5=None,
+        price_change_h1=None,
+        price_change_h6=None,
+        price_change_h24=None,
+        source=SourceRef("dexscreener", "https://dexscreener.com", observed),
+        pair_created_at=None,
+    )
+    assert unknown.to_dict()["pair_age_seconds"] is None
+
+
+def test_token_endpoint_carries_pair_age() -> None:
+    from fastapi import FastAPI
+
+    created = datetime.now(UTC) - timedelta(minutes=5)
+    observed = datetime.now(UTC)
+
+    class FakeAdapter:
+        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+            return TokenSnapshot(
+                chain=chain,
+                address=address,
+                symbol="TKN",
+                name="Token",
+                price_usd=Decimal("1.2"),
+                liquidity_usd=Decimal("1000"),
+                volume_24h_usd=None,
+                price_change_m5=None,
+                price_change_h1=None,
+                price_change_h6=None,
+                price_change_h24=None,
+                source=SourceRef("dexscreener", "https://dexscreener.com", observed),
+                stale=False,
+                pair_created_at=created,
+                pair_address="0xpair",
+                dex="uniswap",
+            )
+
+    app = FastAPI()
+    app.include_router(markets.router)
+    app.dependency_overrides[get_dexscreener] = lambda: FakeAdapter()
+    client = TestClient(app)
+    response = client.get("/api/v1/tokens/ethereum/0xabc")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pair_age_seconds"] is not None
+    assert body["pair_age_seconds"] > 0
 
 
 async def test_one_failed_snapshot_row_does_not_drop_the_batch(

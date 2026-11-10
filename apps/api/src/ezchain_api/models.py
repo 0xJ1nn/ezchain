@@ -282,6 +282,14 @@ class MarketSnapshotRow(Base):
     price_change_h24: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     source: Mapped[str] = mapped_column(String(40))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    # Pair identity carried over from the observation. Null when the source did not
+    # report it; never inferred from the symbol or the token address.
+    pair_address: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    dex: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_token_address: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    quote_token_address: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    pair_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
 
 
