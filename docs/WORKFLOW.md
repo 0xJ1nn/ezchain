@@ -21,7 +21,6 @@ Conventional Commits, signed off:
 feat(executor): require full-size sell quote before entry
 fix(ledger): commit position and journal in one transaction
 
-Refs: #123
 Signed-off-by: Name <email>
 ```
 

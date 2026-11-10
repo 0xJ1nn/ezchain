@@ -1,11 +1,11 @@
 # TODO — ezCHAIN P0 + M1 close-out
 
-Status as of **2026-10-23**. The app is **alpha** and **paper-only**; it is not ready for
+Status as of **2026-11-10**. The app is **alpha** and **paper-only**; it is not ready for
 real-money trading. The PAPER stack has production operations:
 continuous 22/25-chain market observation, per-chain quote ladders, an append-only paper
 ledger, declarative and visual graph strategies, external Python strategy plugins in a
 supervised worker, an MCP server for agents, backtests, strategy CRUD/scheduler,
-migrations through `0008_api_keys`, scoped agent keys, bearer auth, observability, a complete
+migrations through `0014_pair_identity`, scoped agent keys, bearer auth, observability, a complete
 operator surface and a full-code stress harness. There are no keys, no signing and no live
 execution. Read [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
@@ -29,14 +29,14 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Market eyes: inline all-chain scan, overview/stored, 22/25 chains, coverage metadata.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Ops: Alembic 0001–0008 (fresh + legacy), scoped agent keys, bearer auth + CSRF proxy,
+- [x] Ops: Alembic 0001–0014 (fresh + legacy), scoped agent keys, bearer auth + CSRF proxy,
   `/healthz`/`/readyz`/`/metrics`, JSON logs, genesis/fill uniqueness.
-- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0006`).
+- [x] Dockerfiles + runnable PAPER Compose/Caddy/Prometheus (build/up verified at head `0003`; not re-verified at `0014`).
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
 - [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
-- [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0006` is pending.
+- [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0014` is pending.
 - [ ] Per-user auth/RBAC.
-- [ ] Live dashboard equity history and live wallets (#57); EVM venue (#59).
+- [ ] Live dashboard equity history (#57), live wallets (#10) and an EVM venue adapter (#58).
 
 ## Done — strategy SDK v1 + agent surface (2026-10-23)
 
@@ -79,11 +79,12 @@ every item is measured.
 - [x] P0.4 Live markets/token pages + paper ticket.
 - [x] P0.5 Paper positions + strategy builder screens.
 - [x] P0.6 integration: full gate, live Jupiter/paper smoke, restart persistence,
-  API-down `UPSTREAM_UNREACHABLE`; evidence pack tracked in #60.
+  API-down `UPSTREAM_UNREACHABLE`; the evidence pack is recorded in #59 and
+  `docs/evidence/p0-production/`.
 - [x] P0.7 dashboard KPI band reads the live paper account.
 - [ ] P0.7b dashboard equity history and live open-position tiles (#57).
-- [ ] Engine repository boundary (#58).
-- [ ] EVM venue adapter to replace `paper_mark` (#59).
+- [ ] EVM venue adapter to replace `paper_mark` (#58).
+- [ ] Standalone engine process; no issue tracks it yet.
 
 Known P0 limits: chains without a keyless quote provider use capped `paper_mark`; the
 strategy *list* has no per-row PnL (per-strategy performance is available); no live
@@ -99,27 +100,27 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 - No key material, no signing, no live balances.
 - Remaining: wallet metadata registry, watch-only sync and the live custody flow.
 
-### 2. Automations + builder — #11 (done as strategy scheduler)
+### 2. Automations + builder — #11 (strategy scheduler live; generic builder open)
 
 - `/automations` shows the real strategy scheduler: status, interval, last run and links
   to each strategy. A generic trigger/action object is not part of this build.
 - The graph builder is `/strategies/builder`; no separate automation builder is claimed.
 
-### 3. Strategies + strategy detail + signals — #12 (done)
+### 3. Strategies + strategy detail + signals — #12 (surfaces live; tracker open for follow-ups)
 
 - `/strategies` and `/strategies/[id]`: real CRUD, graph builder, runs, pause/resume.
 - `/signals`: live market movers with source and age; no safety or alpha claim.
 - Plugin manifests/grants are now served by `/api/v1/plugins`; live promotion remains
   later work (the readiness endpoint reports evidence only).
 
-### 4. Risk + alerts — #13 (done for PAPER)
+### 4. Risk + alerts — #13 (live for PAPER; delivery channels open)
 
 - `/risk`: server limits, positions/marks, rejected attempts and the persisted kill switch.
 - `/alerts`: server-derived reconciliation/mark/rejection/kill-switch alerts; no delivery
   channel exists yet and the page says so.
 - Kill switch is reachable from the sidebar and dashboard.
 
-### 5. Remaining system pages + component gallery — #14 (done)
+### 5. Remaining system pages + component gallery — #14 (routes live; gallery polish open)
 
 - Every sidebar route is implemented; the placeholder catch-all is removed and unknown
   routes return 404. `/states`, `/mobile` and `/components` are real galleries.
@@ -140,17 +141,18 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
       <=768 px the tables scroll horizontally inside `.table-wrap`, and `col-hide-sm`
       drops secondary columns; the wireframe calls for cards
       (`design/wireframe/28-mobile.html`). A proper card primitive is still missing.
-- [ ] Real filters/search/watchlist. Preview-only today; watchlists are #33.
-- [ ] Position tiles/tables do not link anywhere yet; the dead `/positions/...`
-      route is gone and dashboard rows link to `/tokens/{chain}/{address}`. Add a real
-      token/detail link to the tile and table when their view models carry chain + token.
-- [ ] #36 deterministic local gate: Playwright concurrency/port collisions and the
-      `next build` cache need one clean run.
+- [ ] Watchlists as owned entities (#33). Chain, search, sort, liquidity, volume, change,
+      pair-age and DEX filters are live on `/markets`; watchlists are the remaining
+      discovery gap.
+- [x] Position tiles and tables link to `/positions/{chain}/{token}`; the per-position
+      detail route is live (#102).
+- [x] #36 Playwright gate determinism: the build-directory guard and the single-writer
+      gate are in place.
 - [ ] #39 review the audit-drafted ADR-0014–0019 and `ROADMAP.md` before treating them as
       decisions of record. ADR-0015/0016/0018/0019 and the roadmap were not explicitly
       approved by the maintainer.
-- [ ] Dark “Instrument” visual pass from `design/BRIEF.md`. M1 uses provisional light
-      tokens; the visual pass is still pending.
+- [x] Dark “Instrument” visual pass from `design/BRIEF.md`; dark is the default theme with
+      a persisted light toggle (#147).
 - [ ] `SOL/USD` is repeated in fixture strings (`$147.62`). Move it to one fixture
       constant when the wallet/token fixtures are touched.
 

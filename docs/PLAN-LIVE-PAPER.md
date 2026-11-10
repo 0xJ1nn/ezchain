@@ -1,12 +1,13 @@
 # PLAN — Live paper slice (P0)
 
-Status: **P0.0–P0.5 implemented; P0.6 in progress.** This plan is the contract for the
-first working vertical slice. It supersedes the M1 fixture-only assumption for the
-surfaces it touches; the rest of M1 (wallets, automations, system pages) stays where it is.
+Status: **The paper slice is implemented.** This plan is the contract for the first working
+vertical slice; the phase checklist below records the completed work breakdown. It
+supersedes the M1 fixture-only assumption for the surfaces it touches; the rest of M1
+(wallets, automations, system pages) stays where it is.
 
 ## Goal
 
-A user can open ezCHAIN, browse **live markets on every chain DexScreener covers**, open a
+A user can open ezCHAIN, browse **live markets across the 25-chain registry**, open a
 token, place a **paper** buy or sell at a live quote/mark, see the fill in an append-only
 ledger, and create a **user-defined strategy** that runs automatically in paper mode.
 
@@ -34,9 +35,10 @@ No private keys, no signing, no real funds, no fiat rail, no copy-trading.
 - Live order signing, key custody, hardware wallets, live funds.
 - Fiat on-ramp, billing or subscriptions.
 - Copy-trading.
-- pump.fun firehose (spike #35; live trading later).
-- A full strategy SDK sandbox; P0 ships a declarative user-defined rule engine, not
-  arbitrary code execution.
+- Live pump.fun trading. The read-only firehose adapter ships; the Geyser spike (#35)
+  and live trading remain later work.
+- A full strategy SDK sandbox. The platform ships declarative rules and a supervised
+  external-plugin worker; that is containment, not a sandbox.
 - Every DEX on every chain; browsing is broad, execution is capability-gated.
 
 ## Architecture for P0
@@ -78,6 +80,9 @@ Rules:
 - No client-side PnL or quote math; the API returns computed view models.
 
 ## API contract (v1)
+
+The table below is the P0 slice. The current routes, auth scopes, paper semantics and
+reason codes are in [API.md](API.md).
 
 Base: `/api/v1`. JSON, UTC timestamps, snake_case. Errors: `{code, message, retryable,
 detail}`.
@@ -236,76 +241,77 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 
 ### P0.0 — Foundation (lead)
 
-- [ ] `pyproject.toml`, Python 3.11 venv, dependency lock note, `.env.example`.
-- [ ] Postgres schema bootstrap + Alembic baseline.
-- [ ] FastAPI app, settings, error envelope, CORS/proxy, `/health`, `/chains`.
-- [ ] Adapter/core/engine protocols and package skeletons.
-- [ ] API fixture mode and live mode switch.
-- [ ] Next.js `/api` rewrite.
-- [ ] CI additions: `ruff`, `mypy`, `pytest` when the Python tree exists.
-- [ ] ADR-0020 (paper mark for non-Solana), ADR-0021 (inline engine in P0).
-- [ ] Epic issue + workstream issues + this plan.
+- [x] `pyproject.toml`, Python 3.11 venv, dependency lock note, `.env.example`.
+- [x] Postgres schema bootstrap + Alembic baseline.
+- [x] FastAPI app, settings, error envelope, CORS/proxy, `/health`, `/chains`.
+- [x] Adapter/core/engine protocols and package skeletons.
+- [x] API fixture mode and live mode switch.
+- [x] Next.js `/api` rewrite.
+- [x] CI additions: `ruff`, `mypy`, `pytest` when the Python tree exists.
+- [x] ADR-0020 (paper mark for non-Solana), ADR-0021 (inline engine in P0).
+- [x] Epic issue + workstream issues + this plan.
 
 ### P0.1 — Live multi-chain data (swarm A)
 
-- [ ] DexScreener client: profiles, boosts, takeovers, token batch, search, pairs.
-- [ ] 25-chain registry with DexScreener ids; unknown chain → 404.
-- [ ] Normalizer: pair → market row; source/age; duplicate pair collapse.
-- [ ] Jupiter quote client: exact-in, sell quote, route/fee/impact.
-- [ ] Cache + rate limit (token bucket, 429 backoff, request dedupe).
-- [ ] Fixture recordings + `respx` tests.
-- [ ] Adapter contract tests.
+- [x] DexScreener client: profiles, boosts, takeovers, token batch, search, pairs.
+- [x] 25-chain registry with DexScreener ids; unknown chain → 404.
+- [x] Normalizer: pair → market row; source/age; duplicate pair collapse.
+- [x] Jupiter quote client: exact-in, sell quote, route/fee/impact.
+- [x] Cache + rate limit (token bucket, 429 backoff, request dedupe).
+- [x] Fixture recordings + `respx` tests.
+- [x] Adapter contract tests.
 
 ### P0.2 — Paper ledger + order service (swarm B)
 
-- [ ] SQLAlchemy models: ledger entries, paper orders, fills, positions view.
-- [ ] Genesis account and balance/position replay.
-- [ ] Buy/sell order service with idempotency and risk checks.
-- [ ] Quote → fill math (Jupiter outAmount / paper mark, fee bps).
-- [ ] Account/positions/orders/fills read models.
-- [ ] Property tests: ledger sums to zero, no negative cash/position, replay stable.
-- [ ] Restart test.
+- [x] SQLAlchemy models: ledger entries, paper orders, fills, positions view.
+- [x] Genesis account and balance/position replay.
+- [x] Buy/sell order service with idempotency and risk checks.
+- [x] Quote → fill math (Jupiter outAmount / paper mark, fee bps).
+- [x] Account/positions/orders/fills read models.
+- [x] Property tests: ledger sums to zero, no negative cash/position, replay stable.
+- [x] Restart test.
 
 ### P0.3 — Strategy engine (swarm C)
 
-- [ ] Strategy model + CRUD service (API routes owned by lead or B).
-- [ ] Evaluator for momentum/dip/DCA/threshold.
-- [ ] Scheduler: interval, pause, one-decision-per-window, run log.
-- [ ] Risk integration through the order service.
-- [ ] Manual run-now endpoint/service.
-- [ ] Tests: each kind, cooldown, stop-loss, take-profit, paused, repeated run.
+- [x] Strategy model + CRUD service (API routes owned by lead or B).
+- [x] Evaluator for momentum/dip/DCA/threshold.
+- [x] Scheduler: interval, pause, one-decision-per-window, run log.
+- [x] Risk integration through the order service.
+- [x] Manual run-now endpoint/service.
+- [x] Tests: each kind, cooldown, stop-loss, take-profit, paused, repeated run.
 
 ### P0.4 — Web live browsing (swarm D)
 
-- [ ] `lib/api.ts` typed client, no silent fallback.
-- [ ] Markets page: live rows, chain filter, search, sort, source/age, error/empty/stale.
-- [ ] Token page: live header/pairs/quote, fail-closed reason codes.
-- [ ] Loading/refresh; no client PnL/quote math.
-- [ ] Playwright against `DATA_MODE=fixture`; screenshots at 1440/390.
-- [ ] Update fixture banner logic: live mode says `LIVE`; fixture mode says `FIXTURE`.
+- [x] `lib/api.ts` typed client, no silent fallback.
+- [x] Markets page: live rows, chain filter, search, sort, source/age, error/empty/stale.
+- [x] Token page: live header/pairs/quote, fail-closed reason codes.
+- [x] Loading/refresh; no client PnL/quote math.
+- [x] Playwright against `DATA_MODE=fixture`; screenshots at 1440/390.
+- [x] Update fixture banner logic: live mode says `LIVE`; fixture mode says `FIXTURE`.
 
 ### P0.5 — Web paper + strategies (swarm E)
 
-- [ ] Paper account card on dashboard and positions.
-- [ ] Buy/sell ticket on token page (amount USD, quote preview, confirm, idempotency key).
-- [ ] Positions page from `/paper/positions`.
-- [ ] Strategies page: list, create form, pause/resume, run-now, runs log.
-- [ ] Error/reason rendering; `PAPER` badge on every number.
-- [ ] Playwright e2e for buy → position → sell; strategy create → run.
-- [ ] Screenshots at 1440/390.
+- [x] Paper account card on dashboard and positions.
+- [x] Buy/sell ticket on token page (amount USD, quote preview, confirm, idempotency key).
+- [x] Positions page from `/paper/positions`.
+- [x] Strategies page: list, create form, pause/resume, run-now, runs log.
+- [x] Error/reason rendering; `PAPER` badge on every number.
+- [x] Playwright e2e for buy → position → sell; strategy create → run.
+- [x] Screenshots at 1440/390.
 
 ### P0.6 — Integration and hardening (lead + reviewers)
 
 - [x] Continuous all-chain market observation: bounded scan, persisted snapshots,
       `/markets/overview` and `/markets/stored`, fail-closed `no_data`/`stale`/`error`.
-- [ ] Merge stacked branches, resolve contracts, run end-to-end against live APIs.
-- [ ] Manual smoke: browse 5 chains, buy/sell, restart, strategy fires.
-- [ ] Failure drills: API down, DexScreener 429, stale quote, no route, DB down.
-- [ ] Security: no secrets, no key material, no arbitrary code execution.
-- [ ] Update README, ROADMAP, TODO, CHANGELOG, ADRs, state.
-- [ ] Open PR(s) with evidence; squash-merge; close issues.
+- [x] Merge stacked branches, resolve contracts, run end-to-end against live APIs.
+- [x] Manual smoke: browse 5 chains, buy/sell, restart, strategy fires.
+- [x] Failure drills: API down, DexScreener 429, stale quote, no route, DB down.
+- [x] Security: no secrets or key material; external plugins run in a supervised worker,
+      not a sandbox.
+- [x] Update README, ROADMAP, TODO, CHANGELOG, ADRs, state.
+- [x] Open PR(s) with evidence; squash-merge; close issues.
 
-## Acceptance tests
+
 
 ```bash
 # backend
