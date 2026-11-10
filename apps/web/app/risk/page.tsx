@@ -16,9 +16,12 @@ export const dynamic = "force-dynamic";
 
 const STALE_AFTER_SECONDS = 60;
 
-function isStale(observedAt: string | null | undefined) {
+function markStatus(observedAt: string | null | undefined): "fresh" | "stale" | "future" | "unknown" {
 	const age = ageSeconds(observedAt);
-	return age === null || age > STALE_AFTER_SECONDS;
+	if (age === null) return "unknown";
+	if (age < 0) return "future";
+	if (age > STALE_AFTER_SECONDS) return "stale";
+	return "fresh";
 }
 
 function markCountLabel(count: number) {
@@ -218,8 +221,7 @@ export default async function RiskPage() {
 										</thead>
 										<tbody>
 											{positions.map((position) => {
-												const age = ageSeconds(position.source?.observed_at);
-												const staleMark = age === null || age > STALE_AFTER_SECONDS;
+												const status = markStatus(position.source?.observed_at);
 												return (
 													<tr key={`${position.chain}:${position.token_address}`}>
 														<td>
@@ -247,8 +249,8 @@ export default async function RiskPage() {
 														</td>
 														<td>
 															{position.source ? (
-																<Badge tone={staleMark ? "warn" : "ghost"}>
-																	{staleMark ? "stale" : "fresh"} · {position.source.name}
+																<Badge tone={status === "fresh" ? "ghost" : "warn"}>
+																	{status} · {position.source.name}
 																</Badge>
 															) : (
 																<Badge tone="warn">unknown</Badge>

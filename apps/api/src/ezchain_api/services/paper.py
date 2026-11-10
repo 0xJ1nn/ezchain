@@ -434,7 +434,11 @@ def _mark_status(
 
 
 def _position_views(
-    replay: Replay, snapshots: dict[tuple[str, str], MarketSnapshotRow]
+    replay: Replay,
+    snapshots: dict[tuple[str, str], MarketSnapshotRow],
+    *,
+    max_age_seconds: float = 60.0,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     views: list[dict[str, Any]] = []
     for account, (quantity, cost) in replay.positions.items():
@@ -462,11 +466,12 @@ def _position_views(
             mode="paper",
         )
         row = view.to_dict()
+        now = now or utcnow()
         row["mark_status"] = _mark_status(
             view.mark_usd,
             row.get("source"),
-            get_settings().max_quote_age_seconds,
-            utcnow(),
+            max_age_seconds,
+            now,
         )
         views.append(row)
     views.sort(key=lambda item: (item["chain"], item["token_address"]))
@@ -729,8 +734,10 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
     """
     if starting_cash_usd is not None:
         ensure_genesis(session, starting_cash_usd)
+    now = utcnow()
+    max_age = get_settings().max_quote_age_seconds
     replay = _replay(_ledger_rows(session))
-    views = _position_views(replay, _snapshot_index(session))
+    views = _position_views(replay, _snapshot_index(session), max_age_seconds=max_age, now=now)
     known_market_value = Decimal(0)
     unrealized = Decimal(0)
     unpriced: list[dict[str, Any]] = []

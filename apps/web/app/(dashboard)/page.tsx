@@ -433,8 +433,12 @@ export default async function DashboardPage({
 													<td>
 														{row.mark_status === "unknown" ? (
 															<Badge tone="warn">{row.unpriced_assets} unpriced</Badge>
+														) : row.mark_status === "fresh" ? (
+															<Badge tone="ghost">fresh</Badge>
+														) : row.mark_status === "stale" ? (
+															<Badge tone="warn">stale</Badge>
 														) : (
-															<Badge tone="ghost">known</Badge>
+															<Badge tone="warn">future</Badge>
 														)}
 													</td>
 												</tr>
@@ -495,7 +499,7 @@ export default async function DashboardPage({
 														{row.mark_status === "unknown" ? (
 															<Badge tone="warn">unknown mark</Badge>
 														) : row.source ? (
-															`${sourceLabel(row.source.name)} · ${ageLabel(row.source.observed_at)}`
+															`${row.mark_status} · ${sourceLabel(row.source.name)} · ${ageLabel(row.source.observed_at)}`
 														) : row.kind === "cash" ? (
 															"ledger"
 														) : (
