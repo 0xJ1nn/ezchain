@@ -171,8 +171,9 @@ export default async function StrategyDetailPage({
 							No runs yet. Run the strategy from the list to record the first decision.
 						</div>
 					) : (
-						<div className={`table-wrap ${styles.logTable}`}>
+						<div className={`table-wrap ${styles.logTable}`} tabIndex={0} role="region" aria-label="Runs table">
 							<table className="table compact">
+								<caption className="sr-only">Runs</caption>
 								<thead>
 									<tr>
 										<th scope="col">Time</th>
@@ -227,8 +228,9 @@ export default async function StrategyDetailPage({
 						sub="declarative · applied on the next evaluation"
 						action={<Badge tone="ghost">PAPER</Badge>}
 					>
-						<div className="table-wrap">
+						<div className="table-wrap" tabIndex={0} role="region" aria-label="Parameters table">
 							<table className="table compact">
+								<caption className="sr-only">Parameters</caption>
 								<tbody>
 									<tr>
 										<td className="muted">Token</td>

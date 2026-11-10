@@ -40,15 +40,16 @@ export function ProtectionList({
 			footer="Each arm evaluates on engine ticks and closes through the same order path as a manual sell. An unknown trigger stays —, never 0."
 		>
 			{arms.length > 0 ? (
-				<div className="table-wrap">
+				<div className="table-wrap" tabIndex={0} role="region" aria-label="Armed protection table">
 					<table className="table">
+						<caption className="sr-only">Armed protection</caption>
 						<thead>
 							<tr>
-								<th>Position</th>
-								<th>Kind</th>
-								<th>Trigger</th>
-								<th>Status</th>
-								<th>Peak</th>
+								<th scope="col">Position</th>
+								<th scope="col">Kind</th>
+								<th scope="col">Trigger</th>
+								<th scope="col">Status</th>
+								<th scope="col">Peak</th>
 							</tr>
 						</thead>
 						<tbody>
