@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const SCAM_MINT = "Scam1111111111111111111111111111111111111111";
@@ -154,6 +154,17 @@ test("a filled buy offers protection as an explicit click, never automatically",
 	await form.getByLabel("Loss (%)").fill("5");
 	await form.getByTestId("quick-trade-arm").click();
 	await expect(form.getByRole("status")).toContainText("Armed stop-loss for BONK.");
+
+	// A new preview is a new trade. The previous fill, protect form and armed notice
+	// must not survive onto a quote that has not filled.
+	await bar.getByTestId("quick-trade-preset-250").click();
+	await expect(page).toHaveURL(/[?&]amount=250(&|$)/, { timeout: 60_000 });
+	await expect(bar.getByTestId("quick-trade-protect-form")).toHaveCount(0);
+	await expect(bar.getByText(/Armed stop-loss/)).toHaveCount(0);
+	await expect(bar.getByText("PAPER FILL")).toHaveCount(0);
+	await expect(bar.getByTestId("quick-trade-protect")).toHaveCount(0);
+	await expect(bar.getByTestId("quick-trade-submit")).toContainText("Confirm paper order");
+	await expect(bar.getByTestId("quick-trade-submit")).toBeEnabled();
 });
 
 test("the quick-trade bar fails closed when no route or price exists", async ({ page }) => {

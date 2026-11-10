@@ -138,6 +138,13 @@ export function QuickTradeBar({
 	useEffect(() => {
 		setIdempotencyKey(newIdempotencyKey());
 		setState({ kind: "idle" });
+		// A new quote is a new trade. Never carry an armed notice, an open protect form,
+		// a validation error or the custom highlight across from the previous fill.
+		setProtectOpen(false);
+		setProtectArmed(false);
+		setProtectNotice(null);
+		setFormError(null);
+		setCustomMode(false);
 	}, [quoteIdentity]);
 
 	const quoteUsd = quote?.side === "buy" ? quote.amount_in : amount;
