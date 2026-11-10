@@ -102,3 +102,39 @@ def test_fresh_postgres_database_reaches_head_with_backtests(scratch_postgres: s
         pytest.fail(f"model and migrations disagree: {exc}")
     finally:
         engine.dispose()
+
+
+def test_the_old_sequence_index_shape_is_reconciled(scratch_postgres: str) -> None:
+    """A database that ran the old 0010 must end up with one unique index, not two rules.
+
+    Creating the constraint plus a plain index is exactly what the first revision left
+    behind; head must repair it, or autogenerate reports a difference on a database that
+    is otherwise up to date.
+    """
+    config = _config(scratch_postgres)
+    command.upgrade(config, "0016_provider_keys")
+    engine = create_engine(scratch_postgres)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("DROP INDEX ix_ledger_entries_seq"))
+            connection.execute(
+                text("ALTER TABLE ledger_entries ADD CONSTRAINT uq_ledger_entries_seq UNIQUE (seq)")
+            )
+            connection.execute(text("CREATE INDEX ix_ledger_entries_seq ON ledger_entries (seq)"))
+
+        command.upgrade(config, "head")
+
+        with Session(engine) as session:
+            assert database_revision(session) == head_revision() == "0017_ledger_seq_index"
+        inspector = inspect(engine)
+        constraints = {row["name"] for row in inspector.get_unique_constraints("ledger_entries")}
+        assert "uq_ledger_entries_seq" not in constraints
+        index = next(
+            row
+            for row in inspector.get_indexes("ledger_entries")
+            if row["name"] == "ix_ledger_entries_seq"
+        )
+        assert index["unique"] is True
+        command.check(config)
+    finally:
+        engine.dispose()

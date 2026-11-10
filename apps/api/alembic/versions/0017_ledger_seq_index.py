@@ -67,3 +67,6 @@ def downgrade() -> None:
     if current is not None and current.get("unique"):
         op.drop_index(INDEX, table_name=TABLE)
         op.create_index(INDEX, TABLE, ["seq"], unique=False)
+    names = {constraint["name"] for constraint in inspector.get_unique_constraints(TABLE)}
+    if CONSTRAINT not in names:
+        op.create_unique_constraint(CONSTRAINT, TABLE, ["seq"])
