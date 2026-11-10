@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     min_pair_age_minutes: int = 10
     min_liquidity_usd: Decimal = Field(default=Decimal("10000"))
     paper_mark_max_order_usd: Decimal = Field(default=Decimal("250"))
+    # Unauthenticated read rate limit. Zero disables it (development only).
+    read_rate_limit_per_minute: int = Field(default=60, ge=0, le=100000)
+    # Caps on a single quote request. Exceeded before any provider call.
+    max_quote_notional_usd: Decimal = Field(default=Decimal("1000"), gt=0)
+    max_quote_slippage_bps: int = Field(default=500, ge=0, le=10000)
     # Execution-cost ceiling for a new position, as a ratio (0.05 = 5%). Applies to
     # executable quotes only; a paper_mark reports no impact and a sell is never blocked.
     max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
@@ -147,6 +152,8 @@ class Settings(BaseSettings):
             raise ValueError("EZCHAIN_DATA_MODE must not be fixture in prod")
         if "*" in self.cors_origins:
             raise ValueError("EZCHAIN_CORS_ORIGINS must not contain '*' in prod")
+        if self.read_rate_limit_per_minute == 0:
+            raise ValueError("EZCHAIN_READ_RATE_LIMIT_PER_MINUTE must be greater than zero in prod")
         return self
 
     @property

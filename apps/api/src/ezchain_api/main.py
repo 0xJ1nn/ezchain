@@ -33,6 +33,7 @@ from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .errors import request_validation_error
 from .observability import ObservabilityMiddleware, configure_logging
+from .rate_limit import ReadRateLimitMiddleware
 from .routers import (
     account,
     agent,
@@ -165,7 +166,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     # Later additions are outermost: access logs wrap CORS, and CORS wraps auth so a
-    # 401 still carries CORS headers for the browser.
+    # 401 still carries CORS headers for the browser. The read limiter runs inside
+    # auth so it can see the resolved principal.
+    app.add_middleware(ReadRateLimitMiddleware, settings=settings)
     app.add_middleware(
         BearerAuthMiddleware,
         settings=settings,
