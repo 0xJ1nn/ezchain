@@ -235,7 +235,7 @@ def _out(row: BacktestRow) -> dict[str, Any]:
     result.setdefault("node_hits", {})
     result.setdefault("data_mode", request.get("data_mode"))
     if result.get("data_mode") == "fixture":
-        result.setdefault("data_source", "fixture")
+        result["data_source"] = "fixture"
     else:
         result.setdefault("data_source", "provided_candles")
     return result
@@ -344,7 +344,7 @@ def list_backtests(session: Session, *, strategy_id: str | None = None) -> list[
         result = dict(row.result or {})
         data_mode = result.get("data_mode", request.get("data_mode"))
         if data_mode == "fixture":
-            data_source = result.get("data_source", "fixture")
+            data_source = "fixture"
         else:
             data_source = result.get("data_source", "provided_candles")
         items.append(

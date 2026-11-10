@@ -1269,7 +1269,6 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 
 					<div className={styles.barActions}>
 						<Badge tone="ghost">PAPER</Badge>
-						{mode === "fixture" && <Badge tone="ghost">FIXTURE</Badge>}
 						<button
 							className="btn sm"
 							type="button"
