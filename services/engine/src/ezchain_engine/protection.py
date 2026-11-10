@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_api.models import LedgerEntryRow, ProtectionArmRow
+from ezchain_api.services import protection as protection_service
 from ezchain_core.ledger import LedgerEntry, position_account, replay_position
 from ezchain_core.protection import (
     ArmKind,
@@ -148,19 +149,54 @@ async def evaluate_arm_row(
         return _hold(row, "NOT_ARMED", row.peak_usd)
     if row.expires_at is not None and now >= _aware(row.expires_at):  # type: ignore[operator]
         row.status = "expired"
+        row.version = int(row.version or 1) + 1
         row.updated_at = _stamp(now)
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="expired",
+            reason="EXPIRED",
+            rule_snapshot=dict(row.params or {}),
+            mark=None,
+            observed_at=now,
+            order_id=row.order_id,
+        )
         session.commit()
         return _hold(row, "EXPIRED", row.peak_usd)
 
     try:
         arm = arm_from_row(row)
     except ProtectionValidationError:
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="held",
+            reason="INVALID_ARM",
+            rule_snapshot=dict(row.params or {}),
+            mark=None,
+            observed_at=now,
+            order_id=None,
+            dedupe=True,
+        )
+        session.commit()
         return _hold(row, "INVALID_ARM", row.peak_usd)
 
     try:
         snapshot = await token_source.get_token(row.chain, row.token_address)
     except Exception:  # fail closed: no mark, no order, arm stays armed
         logger.warning("protection arm %s market data unavailable", row.id)
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="held",
+            reason="MARKET_DATA_UNAVAILABLE",
+            rule_snapshot=dict(row.params or {}),
+            mark=None,
+            observed_at=now,
+            order_id=None,
+            dedupe=True,
+        )
+        session.commit()
         return _hold(row, "MARKET_DATA_UNAVAILABLE", row.peak_usd)
 
     quantity, avg_cost = position_state(session, row.chain, row.token_address)
@@ -176,13 +212,41 @@ async def evaluate_arm_row(
     # Persist trailing peaks even on a hold: the peak is persisted input for replay.
     if evaluation.peak_usd != (Decimal(str(row.peak_usd)) if row.peak_usd is not None else None):
         row.peak_usd = evaluation.peak_usd
+        row.version = int(row.version or 1) + 1
         row.updated_at = _stamp(now)
         session.commit()
 
     if evaluation.action == "hold":
+        mark = snapshot.price_usd
         if evaluation.reason == "EXPIRED":
             row.status = "expired"
+            row.version = int(row.version or 1) + 1
+            row.updated_at = _stamp(now)
+            protection_service.record_event(
+                session,
+                arm_id=row.id,
+                action="expired",
+                reason=evaluation.reason,
+                rule_snapshot=dict(row.params or {}),
+                mark=mark,
+                observed_at=now,
+                order_id=row.order_id,
+            )
             session.commit()
+            return _hold(row, evaluation.reason, evaluation.peak_usd)
+        # Record a held observation (including fail-closed holds) for replay.
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="held",
+            reason=evaluation.reason,
+            rule_snapshot=dict(row.params or {}),
+            mark=mark,
+            observed_at=now,
+            order_id=None,
+            dedupe=True,
+        )
+        session.commit()
         return _hold(row, evaluation.reason, evaluation.peak_usd)
 
     price = snapshot.price_usd
@@ -199,6 +263,18 @@ async def evaluate_arm_row(
         order_id = await order_executor.place_order(request)
     except Exception:  # fail closed: retry next tick, keep the arm armed
         logger.warning("protection arm %s order failed; staying armed", row.id)
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="rejected",
+            reason="ORDER_FAILED",
+            rule_snapshot=dict(row.params or {}),
+            mark=snapshot.price_usd,
+            observed_at=now,
+            order_id=None,
+            dedupe=True,
+        )
+        session.commit()
         return _hold(row, "ORDER_FAILED", evaluation.peak_usd)
 
     if evaluation.level_index is not None and arm.params.levels:
@@ -210,7 +286,18 @@ async def evaluate_arm_row(
             row.status = "triggered"
             row.triggered_at = _stamp(now)
             row.order_id = order_id
+        row.version = int(row.version or 1) + 1
         row.updated_at = _stamp(now)
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="triggered",
+            reason=evaluation.reason,
+            rule_snapshot=dict(row.params or {}),
+            mark=snapshot.price_usd,
+            observed_at=now,
+            order_id=order_id,
+        )
         session.commit()
         return ProtectionResult(
             arm_id=row.id,
@@ -226,7 +313,18 @@ async def evaluate_arm_row(
     row.status = "triggered"
     row.triggered_at = _stamp(now)
     row.order_id = order_id
+    row.version = int(row.version or 1) + 1
     row.updated_at = _stamp(now)
+    protection_service.record_event(
+        session,
+        arm_id=row.id,
+        action="triggered",
+        reason=evaluation.reason,
+        rule_snapshot=dict(row.params or {}),
+        mark=snapshot.price_usd,
+        observed_at=now,
+        order_id=order_id,
+    )
     session.commit()
     return ProtectionResult(
         arm_id=row.id,

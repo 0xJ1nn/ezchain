@@ -8,9 +8,19 @@ position the account does not hold.
 from __future__ import annotations
 
 from decimal import Decimal
+
+import pytest
 from sqlalchemy.orm import Session
-from ezchain_api.models import LedgerEntryRow
+
+from ezchain_api.models import (
+    AppendOnlyViolation,
+    LedgerEntryRow,
+    ProtectionArmRow,
+    ProtectionEventRow,
+)
 from ezchain_api.routers import protection
+from ezchain_api.services import protection as protection_service
+from ezchain_api.services.protection import ProtectionServiceError
 
 CHAIN = "solana"
 TOKEN = "So11111111111111111111111111111111111111112"
@@ -128,3 +138,140 @@ def test_profiles_global_vs_per_chain(client_for, session: Session) -> None:
         json={"name": "Magic", "chain": None, "kind": "smart", "params": {"stop_loss_pct": "3"}},
     )
     assert rejected.status_code == 422
+
+
+def _create_arm(client, *, price: str = "90") -> dict:
+    created = client.post(
+        ARMS,
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "token_symbol": "TEST",
+            "kind": "stop_loss",
+            "params": {"price_usd": price},
+        },
+    )
+    assert created.status_code == 201, created.text
+    return created.json()
+
+
+def test_version_conflict_returns_409(client_for, session: Session) -> None:
+    _hold_position(session)
+    client = client_for(protection.router)
+    arm = _create_arm(client)
+    assert arm["version"] == 1
+
+    first = client.patch(
+        f"{ARMS}/{arm['id']}",
+        json={"params": {"price_usd": "85"}, "expected_version": 1},
+    )
+    assert first.status_code == 200
+    assert first.json()["version"] == 2
+
+    # A stale writer loses; its payload is not applied.
+    stale = client.patch(
+        f"{ARMS}/{arm['id']}",
+        json={"params": {"price_usd": "10"}, "expected_version": 1},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "PROTECTION_CONFLICT"
+
+    # If-Match carries the same precondition.
+    current = client.patch(
+        f"{ARMS}/{arm['id']}",
+        json={"params": {"price_usd": "80"}},
+        headers={"If-Match": '"2"'},
+    )
+    assert current.status_code == 200
+    assert current.json()["version"] == 3
+
+    # Clearing is guarded by the same version.
+    assert (
+        client.post(f"{ARMS}/{arm['id']}/cancel", json={"expected_version": 2}).status_code == 409
+    )
+    cancelled = client.post(f"{ARMS}/{arm['id']}/cancel", json={"expected_version": 3})
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["version"] == 4
+
+    # A malformed If-Match is refused, never silently ignored.
+    malformed = client.patch(
+        f"{ARMS}/{arm['id']}", json={"params": {"price_usd": "1"}}, headers={"If-Match": "abc"}
+    )
+    assert malformed.status_code == 400
+    assert malformed.json()["detail"]["code"] == "INVALID_PRECONDITION"
+
+
+def test_a_stale_reader_cannot_overwrite_a_newer_version(
+    client_for, session: Session, engine
+) -> None:
+    """The version check is a conditional update, not read-check-write."""
+    _hold_position(session)
+    client = client_for(protection.router)
+    arm = _create_arm(client)
+
+    # This session loads version 1 and keeps that snapshot while a second
+    # writer commits version 2. It is the same stale identity map a second API
+    # worker would hold between its read and its write.
+    with Session(engine) as stale:
+        stale_arm = stale.get(ProtectionArmRow, arm["id"])
+        assert stale_arm is not None
+        assert stale_arm.version == 1
+        won = client.patch(
+            f"{ARMS}/{arm['id']}",
+            json={"params": {"price_usd": "85"}, "expected_version": 1},
+        )
+        assert won.status_code == 200
+        assert won.json()["version"] == 2
+
+        with pytest.raises(ProtectionServiceError) as caught:
+            protection_service.patch_arm(stale, arm["id"], {"price_usd": "10"}, expected_version=1)
+    assert caught.value.code == "PROTECTION_CONFLICT"
+    current = session.get(ProtectionArmRow, arm["id"])
+    assert current is not None
+    assert current.version == 2
+    assert current.params == {"price_usd": "85"}
+
+
+def test_event_trail_is_ordered_and_append_only(client_for, session: Session) -> None:
+    _hold_position(session)
+    client = client_for(protection.router)
+    arm = _create_arm(client)
+    patched = client.patch(f"{ARMS}/{arm['id']}", json={"params": {"price_usd": "85"}})
+    assert patched.status_code == 200
+    assert client.post(f"{ARMS}/{arm['id']}/cancel", json={}).status_code == 200
+
+    trail = client.get(f"{ARMS}/{arm['id']}/events")
+    assert trail.status_code == 200
+    events = trail.json()
+    # Newest first, by the per-arm sequence, not by wall-clock time.
+    assert [event["action"] for event in events] == ["cancelled", "updated", "armed"]
+    assert [event["seq"] for event in events] == [3, 2, 1]
+    assert [event["rule_snapshot"]["price_usd"] for event in events] == ["85", "85", "90"]
+
+    newest = client.get(f"{ARMS}/{arm['id']}/events", params={"limit": 1}).json()
+    assert [event["seq"] for event in newest] == [3]
+
+    # The audit trail has no HTTP mutation path.
+    assert client.delete(f"{ARMS}/{arm['id']}/events").status_code == 405
+    assert client.put(f"{ARMS}/{arm['id']}/events").status_code == 405
+
+    # Nor an ORM one: update and delete both fail closed.
+    row = session.get(ProtectionEventRow, events[0]["id"])
+    assert row is not None
+    row.reason = "tampered"
+    with pytest.raises(AppendOnlyViolation):
+        session.commit()
+    session.rollback()
+
+    row = session.get(ProtectionEventRow, events[0]["id"])
+    assert row is not None
+    session.delete(row)
+    with pytest.raises(AppendOnlyViolation):
+        session.commit()
+    session.rollback()
+
+    unchanged = session.get(ProtectionEventRow, events[0]["id"])
+    assert unchanged is not None
+    assert unchanged.reason is None
+    assert unchanged.action == "cancelled"

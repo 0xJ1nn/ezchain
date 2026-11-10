@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import DexScreenerClient, get_chain
@@ -11,11 +11,13 @@ from ezchain_core.protection import ProtectionValidationError
 from ..deps import get_dexscreener, get_session
 from ..models import ProtectionArmRow
 from ..schemas import (
+    ProtectionArmCancelIn,
     ProtectionArmIn,
     ProtectionArmOut,
     ProtectionArmPatch,
     ProtectionEffectiveOut,
     ProtectionEvaluateOut,
+    ProtectionEventOut,
     ProtectionProfileIn,
     ProtectionProfileOut,
 )
@@ -27,6 +29,30 @@ from ..services.protection import (
 )
 
 router = APIRouter(prefix="/api/v1/protection", tags=["protection"])
+
+
+def _expected_version(value: int | None, request: Request) -> int | None:
+    """One precondition, two spellings: the body field or an If-Match header.
+
+    A malformed header is a 400, never silently ignored: a caller that thinks
+    it sent a precondition must not get an unguarded write.
+    """
+    if value is not None:
+        return value
+    header = request.headers.get("if-match")
+    if not header:
+        return None
+    try:
+        return int(header.strip().strip('"'))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_PRECONDITION",
+                "message": "If-Match must carry an integer arm version",
+                "retryable": False,
+            },
+        ) from exc
 
 
 def _get_or_404(session: Session, arm_id: str) -> ProtectionArmRow:
@@ -94,10 +120,16 @@ def get_arm(arm_id: str, session: Session = Depends(get_session)) -> ProtectionA
 
 @router.patch("/arms/{arm_id}", response_model=ProtectionArmOut)
 def patch_arm(
-    arm_id: str, payload: ProtectionArmPatch, session: Session = Depends(get_session)
+    arm_id: str,
+    payload: ProtectionArmPatch,
+    request: Request,
+    session: Session = Depends(get_session),
 ) -> ProtectionArmOut:
+    expected = _expected_version(payload.expected_version, request)
     try:
-        row = protection_service.patch_arm(session, arm_id, payload.params)
+        row = protection_service.patch_arm(
+            session, arm_id, payload.params, expected_version=expected
+        )
     except ProtectionValidationError as exc:
         raise _validation_http(exc) from exc
     except ProtectionServiceError as exc:
@@ -110,9 +142,15 @@ def patch_arm(
 
 
 @router.post("/arms/{arm_id}/cancel", response_model=ProtectionArmOut)
-def cancel_arm(arm_id: str, session: Session = Depends(get_session)) -> ProtectionArmOut:
+def cancel_arm(
+    arm_id: str,
+    request: Request,
+    payload: ProtectionArmCancelIn | None = Body(default=None),
+    session: Session = Depends(get_session),
+) -> ProtectionArmOut:
+    expected = _expected_version(None if payload is None else payload.expected_version, request)
     try:
-        row = protection_service.cancel_arm(session, arm_id)
+        row = protection_service.cancel_arm(session, arm_id, expected_version=expected)
     except ProtectionServiceError as exc:
         status = 404 if exc.code == "ARM_NOT_FOUND" else 409
         raise HTTPException(
@@ -201,3 +239,21 @@ def effective_profile(
         chain=chain,
         profile=None if row is None else ProtectionProfileOut.model_validate(profile_to_dict(row)),
     )
+
+
+def _arm_events(arm_id: str, session: Session, limit: int) -> list[ProtectionEventOut]:
+    _get_or_404(session, arm_id)
+    return [
+        ProtectionEventOut.model_validate(protection_service.event_to_dict(row))
+        for row in protection_service.list_events(session, arm_id, limit=limit)
+    ]
+
+
+@router.get("/arms/{arm_id}/events", response_model=list[ProtectionEventOut])
+def arm_events(
+    arm_id: str,
+    limit: int = Query(default=200, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> list[ProtectionEventOut]:
+    """Newest first. The trail is read-only; there is no event mutation route."""
+    return _arm_events(arm_id, session, limit)
