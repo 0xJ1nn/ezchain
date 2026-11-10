@@ -39,6 +39,7 @@ from ezchain_core import (
     PositionView,
     Quote,
     RiskLimits,
+    RiskReason,
     SourceRef,
     TokenSnapshot,
     evaluate_order,
@@ -53,6 +54,7 @@ from ezchain_core.ledger import (
     position_account,
     sell_entries,
 )
+from ezchain_core.types import RISK_REASON_MESSAGES
 
 from ..config import Settings
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow, new_id
@@ -663,12 +665,37 @@ def _claim_or_existing(session: Session, payload: OrderRequest) -> tuple[PaperOr
     return _replay_existing(session, payload, existing), False
 
 
+def _structured_reasons(value: Any) -> list[dict[str, Any]]:
+    """Normalize a reason code, string or RiskReason into the persisted shape."""
+    if isinstance(value, str):
+        items = [part for part in value.split(",") if part]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        items = [value]
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if hasattr(item, "to_dict"):
+            out.append(item.to_dict())
+        else:
+            code = str(item)
+            out.append(
+                {
+                    "code": code,
+                    "message": RISK_REASON_MESSAGES.get(code, code),
+                    "detail": None,
+                }
+            )
+    return out
+
+
 def _reject_new(
     session: Session,
     payload: OrderRequest,
     reason: str,
     snapshot: TokenSnapshot | None = None,
     quote_json: dict[str, Any] | None = None,
+    reasons: Any = None,
 ) -> PaperOrderRow:
     """Persist a rejection before a quote exists (insufficient position, no exit route)."""
     order, created = _claim_or_existing(session, payload)
@@ -678,6 +705,7 @@ def _reject_new(
         record_snapshot(session, snapshot)
     order.status = "rejected"
     order.reason = reason
+    order.reasons = _structured_reasons(reasons if reasons is not None else reason)
     order.quote_json = quote_json
     session.commit()
     return order
@@ -692,6 +720,7 @@ def _reject_after_quote(
     quote: Quote,
     settings: Settings,
     reduce_only: bool = False,
+    reasons: Any = None,
 ) -> PaperOrderRow:
     """Persist a rejection that has a quote, so the refused size stays replayable.
 
@@ -704,6 +733,7 @@ def _reject_after_quote(
     record_snapshot(session, snapshot)
     order.status = "rejected"
     order.reason = reason
+    order.reasons = _structured_reasons(reasons if reasons is not None else reason)
     order.quote_kind = quote.kind
     notional = quote.amount_in if payload.side == "buy" else quote.amount_out
     order.quote_json = _record(quote, notional, settings, reduce_only=reduce_only)
@@ -711,9 +741,12 @@ def _reject_after_quote(
     return order
 
 
-def _mark_rejected(session: Session, order: PaperOrderRow, reason: str) -> PaperOrderRow:
+def _mark_rejected(
+    session: Session, order: PaperOrderRow, reason: str, reasons: Any = None
+) -> PaperOrderRow:
     order.status = "rejected"
     order.reason = reason
+    order.reasons = _structured_reasons(reasons if reasons is not None else reason)
     session.commit()
     return order
 
@@ -945,12 +978,14 @@ async def place_order(
         fee = _fill_fee(notional, quote, settings)
         if allowed and payload.side == "buy" and replay.cash < notional + fee:
             allowed = False
-            reasons = ("INSUFFICIENT_CASH",)
+            reasons = (RiskReason("INSUFFICIENT_CASH"),)
 
         if not allowed:
             order.quote_kind = quote.kind
             order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-            return _mark_rejected(session, order, ",".join(reasons))
+            return _mark_rejected(
+                session, order, ",".join(str(r) for r in reasons), reasons=reasons
+            )
 
         stamp = utcnow()
         if payload.side == "buy":

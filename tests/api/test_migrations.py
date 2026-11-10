@@ -46,7 +46,7 @@ def destructive_upgrade_operations(source: str) -> list[str]:
 
 
 def test_migration_head_is_the_latest_revision() -> None:
-    assert head_revision() == "0012_protection_events"
+    assert head_revision() == "0013_risk_reasons"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:
@@ -91,6 +91,7 @@ def test_protection_events_migration_creates_the_audit_table(tmp_path: Path) -> 
     # revisions add columns to ``strategies``, so seed its primary key.
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
+        connection.execute(text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"))
     command.stamp(config, "0005_price_precision")
     command.upgrade(config, "head")
     try:

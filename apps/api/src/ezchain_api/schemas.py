@@ -341,6 +341,12 @@ class PaperOrderIn(BaseModel):
         return value
 
 
+class RiskReasonOut(BaseModel):
+    code: str
+    message: str
+    detail: Any = None
+
+
 class OrderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -351,9 +357,32 @@ class OrderOut(BaseModel):
     amount_usd: str
     status: str
     reason: str | None = None
+    reasons: list[RiskReasonOut] = Field(default_factory=list)
     quote_kind: str | None = None
     created_at: str
     filled_at: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_reasons(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            reason = data.get("reason")
+            reasons = data.get("reasons")
+            if not reasons and reason is not None:
+                from ezchain_core.types import RISK_REASON_MESSAGES
+
+                data = dict(data)
+                data["reasons"] = [
+                    {
+                        "code": reason,
+                        "message": RISK_REASON_MESSAGES.get(reason, reason),
+                        "detail": None,
+                    }
+                ]
+            elif reasons is None:
+                data = dict(data)
+                data["reasons"] = []
+        return data
 
 
 class FillOut(BaseModel):
