@@ -43,6 +43,7 @@ from .routers import (
     paper,
     plugins,
     protection,
+    signals,
     strategies,
     system,
 )
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system.router)
     app.include_router(markets.router)
+    app.include_router(signals.router)
     app.include_router(paper.router)
     app.include_router(account.router)
     app.include_router(strategies.router)

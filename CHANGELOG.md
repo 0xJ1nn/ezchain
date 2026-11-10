@@ -214,6 +214,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   evidence, and opt-in deduplicated GitHub issue filing by failure fingerprint.
 - `tools/stress/run.sh` (venv-aware), `tools/stress/README.md` with cron/launchd examples,
   and pytest coverage for the pure checkers and issue dedupe.
+- **Server-ranked market movers.** `GET /api/v1/signals/movers` answers one
+  window (`h1`, `h24`) and one direction (`up`, `down`) with the movers the API ranked:
+  one row per token, ordered by the window's own price change, behind a liquidity floor
+  and a freshness budget. Rows with an unknown change, an unknown liquidity or a stale
+  mark are excluded and counted under their own reason instead of being dropped
+  silently, and every returned row carries its source, observation time and age. An
+  empty answer carries a reason code; no mover is invented to fill the table. The
+  Signals page reads this model instead of sorting the market list in the browser.
 
 ### Changed
 
