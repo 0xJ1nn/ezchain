@@ -273,8 +273,9 @@ class ProviderKeyRow(Base):
 
     The plaintext exists only between the request and the configured secret store. The
     row keeps the ciphertext, a non-reversible fingerprint for display, and the workspace
-    that owns it. A revoked key keeps its metadata for audit; its ciphertext is cleared so
-    the row cannot be used again.
+    that owns it. ``revoked_at`` is what retires a key: a revoked row is never resolved,
+    and its ciphertext is cleared once the external copy is deleted. A failed deletion
+    leaves the reference in place so the purge can be retried.
     """
 
     __tablename__ = "provider_keys"

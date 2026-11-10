@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -51,6 +52,33 @@ def test_jupiter_is_limited_to_one_request_per_second() -> None:
     # The quote router gives a provider 5 s per attempt. A budget wait must end inside
     # that window so exhaustion is a typed 429, not a generic timeout/NO_ROUTE.
     assert JUPITER_LIMIT.max_wait_seconds < 5.0
+
+
+async def test_the_tail_of_the_queue_is_refused_instead_of_waiting_it_out() -> None:
+    """Three callers, one slot per 50 ms, a 60 ms wait budget: the tail cannot be served.
+
+    A per-sleep bound alone serves every one of them — each caller waits a single slot,
+    while the queue as a whole takes 150 ms. That is longer than the budget, and on a real
+    provider longer than the route's per-attempt timeout, so the request would surface as
+    a generic timeout/NO_ROUTE instead of the typed 429. The tail must be refused.
+    """
+    manager = ProviderBudgetManager(
+        limits=[ProviderLimit("jupiter", 20.0, 1, 8, 0.06)],
+        clock=time.monotonic,
+    )
+    await manager.call("jupiter", lambda: immediate("slot"))
+
+    outcomes = await asyncio.gather(
+        *(manager.call("jupiter", lambda n=n: immediate(str(n))) for n in range(3)),
+        return_exceptions=True,
+    )
+
+    assert any(isinstance(item, str) for item in outcomes), "the head of the queue is served"
+    refused: list[ProviderBudgetExhausted] = [
+        item for item in outcomes if isinstance(item, ProviderBudgetExhausted)
+    ]
+    assert refused, "the tail must be refused rather than served past the budget"
+    assert all(item.code == "PROVIDER_BUDGET_EXHAUSTED" for item in refused)
 
 
 async def test_a_provider_call_waits_for_the_budget() -> None:

@@ -485,7 +485,9 @@ def test_commit_failure_forgets_the_encrypted_secret(settings: Settings) -> None
     assert cipher.values == {}
 
 
-def test_revoke_reports_a_failed_external_delete(session: Any, settings: Settings) -> None:
+def test_a_failed_delete_keeps_the_reference_so_a_retry_can_purge_it(
+    session: Any, settings: Settings
+) -> None:
     cipher = MemoryCipher()
     row = provider_keys.create_key(
         session,
@@ -494,22 +496,99 @@ def test_revoke_reports_a_failed_external_delete(session: Any, settings: Setting
         secret=TEST_KEY,
         cipher=cipher,
     )
+    stored = row.secret_ciphertext
+    attempts: list[str] = []
+    refusing = {"yes": True}
 
-    def failing_forget(_stored: str) -> None:
-        raise CipherUnavailable("the external store refused the deletion")
+    def forget(value: str) -> None:
+        attempts.append(value)
+        if refusing["yes"]:
+            raise CipherUnavailable("the external store refused the deletion")
+        cipher.forget(value)
 
-    with pytest.raises(provider_keys.ProviderKeyForgetFailed):
+    with pytest.raises(provider_keys.ProviderKeyForgetFailed) as caught:
         provider_keys.revoke_key(
             session,
             workspace_id=settings.workspace_id,
             key_id=row.id,
-            forget=failing_forget,
+            forget=forget,
         )
 
-    refreshed = session.get(ProviderKeyRow, row.id)
-    assert refreshed is not None
-    assert refreshed.revoked_at is not None
-    assert refreshed.secret_ciphertext == ""
+    assert caught.value.retryable is True
+    session.expire_all()
+    pending = session.get(ProviderKeyRow, row.id)
+    assert pending is not None
+    # Revoked already, so no provider call can read it...
+    assert pending.revoked_at is not None
+    with pytest.raises(provider_keys.ProviderKeyNotFound):
+        provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=cipher,
+        )
+    # ...but the row still holds the only pointer to the external copy.
+    assert pending.secret_ciphertext == stored
+    assert stored in cipher.values
+
+    refusing["yes"] = False
+    assert (
+        provider_keys.revoke_key(
+            session,
+            workspace_id=settings.workspace_id,
+            key_id=row.id,
+            forget=forget,
+        )
+        is True
+    )
+
+    session.expire_all()
+    purged = session.get(ProviderKeyRow, row.id)
+    assert purged is not None
+    # The retry deleted the original reference, not a copy of it, and only then cleared it.
+    assert attempts == [stored, stored]
+    assert purged.secret_ciphertext == ""
+    assert cipher.values == {}
+
+
+def test_revoke_is_retryable_through_the_route(client_for: Any, session: Any) -> None:
+    cipher = MemoryCipher()
+    attempts: list[str] = []
+    refusing = {"yes": True}
+
+    def forgetter(stored: str) -> None:
+        attempts.append(stored)
+        if refusing["yes"]:
+            raise CipherUnavailable("the external store refused the deletion")
+        cipher.forget(stored)
+
+    client = client_for(
+        provider_keys_router.router,
+        {
+            get_secret_cipher: lambda: cipher,
+            get_secret_forgetter: lambda: forgetter,
+        },
+    )
+    created = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    ).json()
+    row = session.get(ProviderKeyRow, created["id"])
+    assert row is not None
+    stored = row.secret_ciphertext
+
+    first = client.delete(f"/api/v1/provider-keys/{created['id']}")
+    assert first.status_code == 503
+    assert first.json()["detail"]["code"] == "PROVIDER_KEY_FORGET_FAILED"
+    assert first.json()["detail"]["retryable"] is True
+
+    refusing["yes"] = False
+    second = client.delete(f"/api/v1/provider-keys/{created['id']}")
+    # A second attempt completes the purge instead of 404-ing on a key that is only
+    # half-revoked.
+    assert second.status_code == 204
+    assert attempts == [stored, stored]
+    assert cipher.values == {}
 
 
 def test_revoke_returns_503_when_the_external_delete_fails(client_for: Any) -> None:

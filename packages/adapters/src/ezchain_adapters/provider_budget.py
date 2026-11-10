@@ -2,9 +2,11 @@
 
 Jupiter documents one request per second for a keyed account. The manager hands a caller
 a slot through the existing token bucket, but keeps a bounded queue in front of it: a
-burst of callers waits for the budget, and once the queue is full the next caller is
-refused immediately with :class:`ProviderBudgetExhausted`. The API renders that exception
-as a typed 429 instead of holding the request open indefinitely.
+burst of callers waits for the budget, and each caller's total wait is capped, so one
+that cannot be served inside that cap is refused with :class:`ProviderBudgetExhausted`
+rather than overrunning the timeout its request is under. The API renders that exception
+as a typed 429 instead of holding the request open, or letting it fail as a generic
+timeout.
 
 The manager is deliberately independent of transport. A provider call is any awaitable
 ``operation``; the budget is acquired before it starts.
@@ -50,9 +52,10 @@ JUPITER_LIMIT = ProviderLimit(
     provider="jupiter",
     requests_per_second=1.0,
     burst=1,
-    # Keep the longest possible budget wait below the quote router's per-provider
-    # attempt timeout (5 s), so a slow queue raises the typed budget error before the
-    # outer wait_for turns it into a generic timeout/NO_ROUTE.
+    # The wait budget is the total a caller may spend queued, and it stays below the
+    # quote router's per-provider attempt timeout (5 s) so a slow queue raises the typed
+    # budget error before the outer wait_for turns it into a generic timeout/NO_ROUTE.
+    # Queue depth is not the bound: four callers waiting 1 s each would still be 4 s.
     max_queue=4,
     max_wait_seconds=2.0,
 )
@@ -73,6 +76,7 @@ class ProviderBudgetExhausted(RateLimited):
 class _Budget:
     def __init__(self, limit: ProviderLimit, *, clock: Clock, sleep: Sleeper) -> None:
         self.limit = limit
+        self._clock = clock
         self._bucket = TokenBucket(
             rate_per_second=limit.requests_per_second,
             burst=limit.burst,
@@ -88,8 +92,14 @@ class _Budget:
             if self._waiting >= self.limit.max_queue:
                 raise ProviderBudgetExhausted(self.limit.provider, detail="queue is full")
             self._waiting += 1
+        # Measured from the moment this caller joins the queue. A caller behind several
+        # competitors can lose the slot once per competitor, so the wait it deserves is
+        # the accumulated one; bounding a single sleep instead lets it run past the
+        # caller's attempt timeout, which the route can only report as a generic
+        # timeout/NO_ROUTE rather than the typed 429 this budget promises.
+        deadline = self._clock() + self.limit.max_wait_seconds
         try:
-            await self._bucket.acquire()
+            await self._bucket.acquire(deadline=deadline)
         except RateLimited as exc:
             raise ProviderBudgetExhausted(
                 self.limit.provider,

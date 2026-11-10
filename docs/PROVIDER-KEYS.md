@@ -55,9 +55,16 @@ accepts a stored key today.
 A revoked key cannot be resolved for a provider call. The row keeps its fingerprint and
 timestamps so the revocation is still visible in the list. Revocation deletes the stored
 secret through the backend named by its own prefix, even when the current configuration
-selects a different one. If that external deletion fails, the row is already revoked and
-cannot be used, and the request returns HTTP 503 `PROVIDER_KEY_FORGET_FAILED` so an
-operator can retry or clean the external store by hand.
+selects a different one.
+
+Revocation happens in two steps so a failed delete cannot strand a secret. The row is
+marked revoked and committed first, which retires the key immediately; the stored
+reference is cleared only after the external store confirms the deletion. If that
+deletion fails the request returns HTTP 503 `PROVIDER_KEY_FORGET_FAILED` with
+`"retryable": true`, and the row keeps the reference, so repeating the same `DELETE`
+finishes the purge instead of returning 404. A second `DELETE` after a completed
+revocation returns 404, because there is nothing left to delete and nothing active to
+report.
 
 ## Use
 
@@ -74,11 +81,14 @@ that would hide a broken credential store and change the provider's rate limit.
 
 Provider calls share `ProviderBudgetManager` from `ezchain_adapters`. The shipped Jupiter
 client is constructed with this manager, so its requests are limited to one per second with
-a burst of one. Callers wait for the next slot inside a bounded queue. When the queue is
-full, or the next slot is beyond the wait window, the manager raises
-`ProviderBudgetExhausted`; the API renders that exception as HTTP 429 with
-`PROVIDER_BUDGET_EXHAUSTED` and `Retry-After: 1`. A caller is never left waiting
-indefinitely for a provider budget.
+a burst of one. Callers wait for the next slot inside a bounded queue. The wait window is
+the total a caller may spend queued, measured from the moment it joins, so a caller that
+cannot be served inside it is refused even when every individual sleep was short. That
+refusal, and a full queue, raise `ProviderBudgetExhausted`; the API renders it as HTTP 429
+with `PROVIDER_BUDGET_EXHAUSTED` and `Retry-After: 1`. The window stays below the quote
+router's per-attempt timeout, so a slow queue answers with that typed 429 instead of
+timing out and surfacing as a route failure. A caller is never left waiting indefinitely
+for a provider budget.
 
 The budget is per process, not shared between processes. Two API workers behind one
 provider key each get their own one-request-per-second allowance, so a deployment that

@@ -64,6 +64,9 @@ class ProviderKeyCipherUnavailable(ProviderKeyError):
 class ProviderKeyForgetFailed(ProviderKeyError):
     code = "PROVIDER_KEY_FORGET_FAILED"
     status_code = 503
+    # The row keeps the reference until the delete lands, so the same request can be
+    # replayed and complete the purge.
+    retryable = True
 
 
 def fingerprint(secret: str, pepper: str | None = None) -> str:
@@ -212,25 +215,34 @@ def revoke_key(
     """Revoke one key inside the workspace and clear its stored material.
 
     ``forget`` is bound to the row's stored prefix, not to the current configuration, so
-    a key written by one backend is deleted through that backend. The row is committed as
-    revoked before the external deletion is attempted; a deletion failure is surfaced as
-    :class:`ProviderKeyForgetFailed` so an operator can retry it.
+    a key written by one backend is deleted through that backend.
+
+    Revocation and deletion are two steps, and the row is the only record of where the
+    secret lives. The row is committed as revoked first so the key stops being usable
+    immediately, but its stored reference is kept until the external delete returns: a
+    failure therefore leaves a revoked row that still points at the orphaned copy, and
+    replaying the request finishes the purge instead of 404-ing on a key that is only
+    half-revoked. The reference is cleared only after the delete succeeds.
     """
     workspace = _validated_workspace(workspace_id)
     row = session.get(ProviderKeyRow, key_id)
-    if row is None or row.workspace_id != workspace or row.revoked_at is not None:
+    if row is None or row.workspace_id != workspace:
         return False
+    if row.revoked_at is None:
+        row.revoked_at = utcnow()
+        session.commit()
     stored = row.secret_ciphertext
+    if not stored:
+        # Already revoked and fully purged; a revoked key has no active state to report.
+        return False
+    try:
+        forget(stored)
+    except Exception as exc:  # noqa: BLE001 - every backend failure is a 503
+        raise ProviderKeyForgetFailed(
+            "the key is revoked in ezCHAIN, but the external store could not delete it"
+        ) from exc
     row.secret_ciphertext = ""
-    row.revoked_at = utcnow()
     session.commit()
-    if stored:
-        try:
-            forget(stored)
-        except Exception as exc:  # noqa: BLE001 - every backend failure is a 503
-            raise ProviderKeyForgetFailed(
-                "the key is revoked in ezCHAIN, but the external store could not delete it"
-            ) from exc
     return True
 
 
