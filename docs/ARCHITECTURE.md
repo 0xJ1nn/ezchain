@@ -139,7 +139,7 @@ in flight) because `/latest/dex/tokens` caps a response at 30 pairs, then round-
 ranked per-chain rows. The returned coverage tells the monitor which chains were already
 attempted, so it does not re-probe them; a second bounded per-chain pass runs only when the
 all-chain call raised or returned no coverage. Each observed pair is projected onto its base
-token and persisted through `paper.record_snapshot` before it can appear in
+token and persisted through `market_snapshots.record_snapshot` before it can appear in
 `/api/v1/markets/overview` or `/api/v1/markets/stored`. A failed provider or chain records
 `error` (coverage reason `error`) and the scan continues. Row counts and ages are DB-derived,
 so the overview survives a restart; attempt times and error text are process-local. A chain

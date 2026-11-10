@@ -30,7 +30,7 @@ from ezchain_core import MarketRow, SourceRef, TokenSnapshot, utcnow
 
 from ..config import Settings
 from ..models import MarketSnapshotRow
-from . import paper
+from . import market_snapshots, paper
 
 logger = logging.getLogger(__name__)
 
@@ -274,8 +274,12 @@ class MarketMonitor:
                 logger.warning("mark refresh %s:%s failed: %s", chain, token, _error_text(exc))
                 continue
             with self._session_factory() as session:
-                paper.record_snapshot(session, snapshot)
-                session.commit()
+                try:
+                    market_snapshots.record_snapshot(session, snapshot)
+                    session.commit()
+                except Exception as exc:
+                    logger.warning("mark refresh %s:%s failed: %s", chain, token, _error_text(exc))
+                    continue
             refreshed += 1
         return refreshed
 
@@ -384,10 +388,28 @@ class MarketMonitor:
     ) -> int:
         best = _best_rows(rows)
         state = self._states[chain_id]
+        persisted = 0
+        failures: list[str] = []
         try:
             with self._session_factory() as session:
                 for row in best:
-                    paper.record_snapshot(session, _snapshot(row))
+                    snapshot = _snapshot(row)
+                    try:
+                        # One savepoint per row: a row the database refuses costs only
+                        # that row, and the rest of the batch still commits.
+                        with session.begin_nested():
+                            market_snapshots.record_snapshot(session, snapshot)
+                    except Exception as exc:
+                        message = _error_text(exc)
+                        failures.append(f"{snapshot.address}: {message}")
+                        logger.warning(
+                            "market snapshot %s:%s failed: %s",
+                            chain_id,
+                            snapshot.address,
+                            message,
+                        )
+                        continue
+                    persisted += 1
                 session.commit()
         except Exception as exc:
             message = _error_text(exc)
@@ -396,10 +418,15 @@ class MarketMonitor:
             errors[chain_id] = message
             logger.warning("market scan %s persist failed: %s", chain_id, message)
             return 0
-        state.rows = len(best)
+        state.rows = persisted
         state.last_success_at = observed_at
-        state.last_error = None
-        return len(best)
+        if failures:
+            message = f"{len(failures)} snapshot row(s) failed: {failures[0]}"
+            state.last_error = message
+            errors[chain_id] = message
+        else:
+            state.last_error = None
+        return persisted
 
     async def run_forever(self) -> None:
         self._stop.clear()

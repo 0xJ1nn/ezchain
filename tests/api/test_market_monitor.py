@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -31,6 +33,7 @@ from ezchain_api.db import Base
 from ezchain_api.deps import get_market_monitor, get_session
 from ezchain_api.models import LedgerEntryRow, MarketSnapshotRow
 from ezchain_api.routers import markets
+from ezchain_api.services import market_snapshots
 from ezchain_api.services.market_monitor import (
     MarketMonitor,
     build_overview,
@@ -596,3 +599,75 @@ def test_overview_and_stored_endpoints(
     unknown = client.get("/api/v1/markets/stored", params={"chain": "not-a-chain"})
     assert unknown.status_code == 404
     assert unknown.json()["detail"]["code"] == "CHAIN_NOT_FOUND"
+
+
+async def test_one_failed_snapshot_row_does_not_drop_the_batch(
+    session: Session,
+    session_factory: sessionmaker[Session],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    other = "0x0000000000000000000000000000000000000def"
+    source = FakeSource(
+        {
+            "ethereum": [
+                make_row(token=other, symbol="BAD"),
+                make_row(token=ETH_TOKEN, symbol="GOOD"),
+            ]
+        }
+    )
+    monitor = MarketMonitor(session_factory, source, settings)
+    real = market_snapshots.record_snapshot
+
+    def failing_one(db: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow:
+        if snapshot.address == other:
+            raise RuntimeError("row rejected")
+        return real(db, snapshot)
+
+    monkeypatch.setattr(market_snapshots, "record_snapshot", failing_one)
+
+    result = await monitor.run_once()
+
+    # The good row committed; the rejected one cost only its own row and is reported.
+    assert _count(session) == 1
+    assert result.persisted == 1
+    assert "ethereum" in result.errors
+    assert "row rejected" in result.errors["ethereum"]
+    stored = session.scalar(select(MarketSnapshotRow))
+    assert stored is not None and stored.symbol == "GOOD"
+
+
+def test_concurrent_scan_passes_converge_on_one_mark(tmp_path) -> None:
+    engine = create_engine(
+        f"sqlite+pysqlite:///{tmp_path / 'monitor-race.db'}",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+    settings = make_settings()
+    older = datetime.now(UTC) - timedelta(seconds=30)
+    newer = datetime.now(UTC) - timedelta(seconds=1)
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def scan(observed: datetime, price: str) -> object:
+        source = FakeSource({"ethereum": [make_row(observed_at=observed, price=price)]})
+        monitor = MarketMonitor(maker, source, settings)
+        try:
+            barrier.wait(timeout=10)
+            return asyncio.run(monitor.run_once())
+        except BaseException as exc:  # noqa: BLE001 - a thread failure is the test failing
+            errors.append(exc)
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda pair: scan(*pair), [(newer, "2001"), (older, "1999")]))
+
+    assert not errors, errors
+    assert all(result is not None and result.errors == {} for result in results), results
+    with maker() as session:
+        rows = list(session.scalars(select(MarketSnapshotRow)))
+    assert len(rows) == 1
+    assert rows[0].price_usd == Decimal("2001")
+    engine.dispose()
