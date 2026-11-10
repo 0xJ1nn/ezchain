@@ -160,18 +160,19 @@ export default async function LedgerPage({
 					>
 						{orders.ok ? (
 							orderRows.length > 0 ? (
-								<div className="table-wrap">
+								<div className="table-wrap" tabIndex={0} role="region" aria-label="Orders table">
 									<table className="table">
+										<caption className="sr-only">Orders</caption>
 										<thead>
 											<tr>
-												<th>Created</th>
-												<th>Order</th>
-												<th>Token</th>
-												<th>Side</th>
-												<th className="num">Amount</th>
-												<th>Status</th>
-												<th>Reason / quote</th>
-												<th className="col-hide-sm">Filled</th>
+												<th scope="col">Created</th>
+												<th scope="col">Order</th>
+												<th scope="col">Token</th>
+												<th scope="col">Side</th>
+												<th scope="col" className="num">Amount</th>
+												<th scope="col">Status</th>
+												<th scope="col">Reason / quote</th>
+												<th scope="col" className="col-hide-sm">Filled</th>
 											</tr>
 										</thead>
 										<tbody>
@@ -235,20 +236,21 @@ export default async function LedgerPage({
 					>
 						{fills.ok ? (
 							fillRows.length > 0 ? (
-								<div className="table-wrap">
+								<div className="table-wrap" tabIndex={0} role="region" aria-label="Fills table">
 									<table className="table">
+										<caption className="sr-only">Fills</caption>
 										<thead>
 											<tr>
-												<th>Created</th>
-												<th>Fill</th>
-												<th>Order</th>
-												<th>Token</th>
-												<th>Side</th>
-												<th className="num">Quantity</th>
-												<th className="num col-hide-sm">Price</th>
-												<th className="num">Notional</th>
-												<th className="num col-hide-sm">Fee</th>
-												<th className="col-hide-sm">Quote</th>
+												<th scope="col">Created</th>
+												<th scope="col">Fill</th>
+												<th scope="col">Order</th>
+												<th scope="col">Token</th>
+												<th scope="col">Side</th>
+												<th scope="col" className="num">Quantity</th>
+												<th scope="col" className="num col-hide-sm">Price</th>
+												<th scope="col" className="num">Notional</th>
+												<th scope="col" className="num col-hide-sm">Fee</th>
+												<th scope="col" className="col-hide-sm">Quote</th>
 											</tr>
 										</thead>
 										<tbody>
@@ -314,9 +316,10 @@ export default async function LedgerPage({
 			>
 				{ledgerResult.ok ? (
 					ledgerRows.length > 0 ? (
-						<div className="table-wrap">
+						<div className="table-wrap" tabIndex={0} role="region" aria-label="Ledger journal table">
 							<table className="table compact">
-								<thead><tr><th>Created</th><th>Account</th><th>Asset</th><th className="num">Amount</th><th className="num">USD value</th><th>Kind</th><th className="col-hide-sm">Group</th></tr></thead>
+								<caption className="sr-only">Ledger journal</caption>
+								<thead><tr><th scope="col">Created</th><th scope="col">Account</th><th scope="col">Asset</th><th scope="col" className="num">Amount</th><th scope="col" className="num">USD value</th><th scope="col">Kind</th><th scope="col" className="col-hide-sm">Group</th></tr></thead>
 								<tbody>
 									{ledgerRows.slice(0, 100).map((entry) => (
 										<tr key={entry.id}>
