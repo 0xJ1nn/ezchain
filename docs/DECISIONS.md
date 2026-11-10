@@ -784,10 +784,15 @@ from the order or the position instead of storing attribution on the journal.
 - `paper_wallets` declares chain, settlement asset and label, unique per
   `(chain, asset)`. It stores identity, never money. Wallets are seeded at boot and on
   order placement; `GET /paper/wallets` only reads, so a GET cannot write.
-- An order on a chain with no declared wallet is refused `WALLET_UNKNOWN` before any
-  quote, market read, fill or journal row; a wallet that does not settle in the ledger
-  asset is refused `SETTLEMENT_ASSET_UNKNOWN`. Both are structured risk reasons with the
-  chain (and asset) in the detail, so the refusal is replayable from the order row.
+- Settlement routing is an entry gate. A buy on a chain with no declared wallet is
+  refused `WALLET_UNKNOWN` before any quote, market read, fill or journal row; a wallet
+  that does not settle in the ledger asset is refused `SETTLEMENT_ASSET_UNKNOWN`. Both
+  are structured risk reasons with the chain (and asset) in the detail, so the refusal
+  is replayable from the order row. A sell is never refused for either reason: an exit
+  is bounded by the held quantity, so its proceeds settle to the chain wallet when that
+  wallet is valid and to the settlement wallet otherwise. Cash attributed to a wallet
+  row that no longer exists is reported in a labelled `unallocated` read-model row with
+  a null id, so the wallet list stays a complete partition of the cash account.
 - Cash per wallet is `Replay.wallet_cash`, accumulated in the same single pass over the
   same loaded rows as `Replay.cash`, at an exact decimal precision. No SQL aggregate
   computes money read models. The buckets are therefore an exact partition of the cash

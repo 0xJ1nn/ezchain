@@ -181,9 +181,9 @@ lists the unpriced positions instead of reporting a partial total as complete.
 
 `GET /paper/account` and `GET /paper/wallets` are read-only. They never create genesis or
 re-declare a missing wallet: bootstrap happens at boot and on `POST /paper/orders` only, so
-a GET reports a missing wallet row as missing. A sell is an exit, not an entry: when its
-chain's wallet is missing or declares a settlement asset other than USD, the fill still
-happens and its proceeds settle to the settlement wallet. An identical buy is refused with
+a GET reports a missing wallet row as missing. A sell is an exit, not an entry: on a chain with no declared wallet, or a wallet that
+declares a settlement asset other than USD, the fill still happens and its proceeds
+settle to the settlement wallet. An identical buy is refused with
 `WALLET_UNKNOWN` or `SETTLEMENT_ASSET_UNKNOWN`, naming the chain and, for an asset
 mismatch, the asset the wallet declares.
 
@@ -196,8 +196,8 @@ Every ledger entry reports `wallet_id`, the paper wallet that received its cash 
 `null` on legs that are not cash (positions, the `fees:USD` expense, `pnl:realized:USD`
 and `equity:genesis`). The no-risk funding top-up is cash: its `cash:USD` leg carries the
 settlement wallet id because the shortfall is booked as settlement capital, while its
-`funding:USD` contra leg carries none. A `null` is never resolved to a wallet at read
-time; on a legacy cash row it means the row predates wallet attribution.
+`funding:USD` contra leg carries none. A `null` is not backfilled: on a legacy cash row it means the row predates wallet
+attribution, and the replay reports that cash in the settlement wallet.
 
 ### Strategies
 

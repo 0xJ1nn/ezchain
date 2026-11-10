@@ -126,7 +126,7 @@ def test_sell_settles_proceeds_back_to_the_chain_wallet(session, settings, dex, 
 
 
 def test_unknown_chain_fails_closed_with_a_typed_reason(session, settings, dex, jupiter) -> None:
-    """A chain with no wallet is refused before a quote, a fill or a journal row."""
+    """A buy on a chain with no declared wallet is refused before a quote or a fill."""
     order = place(
         session,
         settings,
@@ -146,7 +146,7 @@ def test_unknown_chain_fails_closed_with_a_typed_reason(session, settings, dex, 
 
 
 def test_unknown_settlement_asset_fails_closed(session, settings, dex, jupiter) -> None:
-    """A wallet that does not settle in the ledger asset cannot receive its cash legs."""
+    """A buy into a wallet that does not settle in the ledger asset is refused before a quote."""
     paper.ensure_genesis(session, STARTING_CASH)
     wallet = session.scalar(select(PaperWalletRow).where(PaperWalletRow.chain == CHAIN))
     assert wallet is not None

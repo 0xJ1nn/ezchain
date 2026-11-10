@@ -138,9 +138,12 @@ def test_account_get_reports_a_deleted_wallet_without_writing(
         event.remove(engine, "before_cursor_execute", capture)
 
     assert response.status_code == 200
-    assert not [
-        statement for statement in statements if statement.lstrip().upper().startswith("INSERT")
-    ], "a GET inserted a row"
+    writes = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))
+    ]
+    assert not writes, f"a GET wrote: {writes}"
     assert session.scalar(select(func.count()).select_from(PaperWalletRow)) == before
 
     body = response.json()
