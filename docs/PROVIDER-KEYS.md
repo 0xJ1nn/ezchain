@@ -22,7 +22,8 @@ must be on `PATH`; `EZCHAIN_PROVIDER_KEY_AGE_BINARY` overrides its name. Ciphert
 armored and stored with the `age:v1:` prefix, so the database alone is not enough to
 recover a key.
 
-For the OS keyring, install the `keyring` package and a working platform backend. The
+For the OS keyring, install the API's optional extra (`pip install "ezchain-api[keyring]"`) and a
+working platform backend. The
 service stores each secret under the `ezchain-provider-keys` service name and keeps only
 its reference.
 
