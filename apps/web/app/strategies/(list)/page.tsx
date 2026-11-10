@@ -2,8 +2,8 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel } from "@/components/ui";
 import { getAllStrategyRuns, getStrategies, webMode } from "@/lib/paper-api";
-import { StrategiesClient } from "./strategies-client";
-import styles from "./strategies.module.css";
+import { StrategiesClient } from "../strategies-client";
+import styles from "../strategies.module.css";
 
 export const dynamic = "force-dynamic";
 
