@@ -208,7 +208,7 @@ def performance(session: Session, *, window: Any = None) -> dict[str, Any]:
             None if projection.unrealized_usd is None else _num(projection.unrealized_usd)
         ),
         "fees_usd": _num(projection.fees_usd),
-        "trades": len(fills),
+        "trades": sum(1 for group in projection.groups if group.closed),
         "wins": projection.wins,
         "losses": projection.losses,
         "win_rate_pct": pnl.win_rate_pct(projection.wins, projection.losses),

@@ -319,19 +319,25 @@ export default async function PerformancePage({
 										fill="none"
 										stroke="currentColor"
 										strokeWidth="1.5"
-										points={(performance.equity_series ?? [])
-											.map((point, index) => {
-												const x = (index / Math.max(1, (performance.equity_series?.length ?? 1) - 1)) * 320;
-												const values = (performance.equity_series ?? [])
-													.map((p) => Number(p.value ?? p.equity_usd ?? 0))
-													.filter((n) => Number.isFinite(n));
-												const min = Math.min(...values);
-												const max = Math.max(...values);
-												const span = max - min || 1;
-												const y = 100 - ((Number(point.value ?? point.equity_usd ?? 0) - min) / span) * 80;
-												return `${x},${y}`;
-											})
-											.join(" ")}
+										points={(() => {
+											const series = performance.equity_series ?? [];
+											const finite = series
+												.map((p) => Number(p.value ?? p.equity_usd))
+												.filter((n) => Number.isFinite(n));
+											const min = finite.length ? Math.min(...finite) : 0;
+											const max = finite.length ? Math.max(...finite) : 0;
+											const span = max - min || 1;
+											return series
+												.map((point, index) => {
+													const num = Number(point.value ?? point.equity_usd);
+													if (!Number.isFinite(num)) return null;
+													const x = (index / Math.max(1, series.length - 1)) * 320;
+													const y = 100 - ((num - min) / span) * 80;
+													return `${x},${y}`;
+												})
+												.filter((p): p is string => p !== null)
+												.join(" ");
+										})()}
 									/>
 								</svg>
 								<div className="small muted mt-8">

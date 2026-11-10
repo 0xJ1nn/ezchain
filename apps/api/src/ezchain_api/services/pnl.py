@@ -421,13 +421,10 @@ def performance_series(
         stamps = [stamp for stamp in stamps if stamp is not None]
         return min(stamps) if stamps else None
 
-    ordered = sorted(
-        by_group.items(),
-        key=lambda item: (
-            observed(item[1]) is None,
-            observed(item[1]) or datetime.min.replace(tzinfo=UTC),
-        ),
-    )
+    # Preserve ledger/seq order: the projector consumes ledger rows in seq order,
+    # so the series must follow the same order rather than re-sorting by the
+    # observed timestamp, which can disagree with journal order.
+    ordered = list(by_group.items())
 
     cumulative: list[LedgerLine] = []
     equity_points: list[dict[str, Any]] = []
@@ -488,7 +485,7 @@ def performance_series(
         complete = True
         marks_unknown = False
     else:
-        complete = last_projection.complete and len(equity_points) > 0
+        complete = last_projection.complete
         marks_unknown = last_projection.marks_unknown
 
     if not equity_points and not realized_points:
