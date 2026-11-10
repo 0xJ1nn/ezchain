@@ -36,6 +36,14 @@ POSITION_PREFIX = "position:"
 GENESIS_ACCOUNT = "equity:genesis"
 GENESIS_GROUP = "genesis"
 
+
+def _is_funding_group(group_id: str, rows: list[Any]) -> bool:
+    """A paper no-risk funding journal group: labelled and balanced on its own."""
+    if group_id == "funding" or group_id.startswith("funding:") or group_id.startswith("funding-"):
+        return True
+    return bool(rows) and all(getattr(row, "kind", None) == "funding" for row in rows)
+
+
 # The journal each order side must leave behind. A buy books two cash legs (trade and
 # fee) and two position-side legs; a sell adds the realized PnL leg. A group that differs
 # is linked to the order id but was not written by the one order path.
@@ -157,6 +165,8 @@ def _check_groups_linked(
     order_mismatches: list[str] = []
     for group_id, rows in by_group.items():
         if group_id == GENESIS_GROUP:
+            continue
+        if _is_funding_group(group_id, rows):
             continue
         order = orders_by_id.get(group_id)
         if order is None:
@@ -426,6 +436,7 @@ def reconciliation(session: Session) -> dict[str, Any]:
     by_group: dict[str, list[Any]] = defaultdict(list)
     cash_total = Decimal(0)
     genesis = Decimal(0)
+    funding_cash = Decimal(0)
     position_quantities: dict[str, Decimal] = defaultdict(Decimal)
 
     for row in ledger:
@@ -435,6 +446,8 @@ def reconciliation(session: Session) -> dict[str, Any]:
         by_group[row.group_id].append(row)
         if row.account == cash_account():
             cash_total += value
+            if _is_funding_group(row.group_id, by_group[row.group_id]):
+                funding_cash += value
         elif row.account == GENESIS_ACCOUNT:
             # The genesis equity leg is the negative of the starting cash.
             genesis -= value
@@ -443,7 +456,7 @@ def reconciliation(session: Session) -> dict[str, Any]:
 
     # Independently project cash from genesis plus the persisted fill cash flow:
     # sells add proceeds, buys subtract notional, every fill pays its fee.
-    fills_cash = _fills_cash(list(fills), genesis)
+    fills_cash = _fills_cash(list(fills), genesis) + funding_cash
 
     fills_by_order: dict[str, list[Any]] = defaultdict(list)
     position_from_fills: dict[str, Decimal] = defaultdict(Decimal)

@@ -317,6 +317,7 @@ RISK_REASON_MESSAGES: dict[str, str] = {
     "MAX_OPEN_POSITIONS": "Maximum number of open positions reached.",
     "DAILY_LOSS_LIMIT": "Daily loss limit reached.",
     "INSUFFICIENT_CASH": "Insufficient cash to cover the order.",
+    "SHORTFALL_FUNDED": "Shortfall was funded.",
     "INSUFFICIENT_POSITION": "Insufficient position to sell.",
     "POSITION_CHANGED": "Position changed while the order was being priced.",
     "KILL_SWITCH_ACTIVE": "Kill switch is active.",
