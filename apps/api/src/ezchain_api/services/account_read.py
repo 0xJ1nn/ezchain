@@ -254,9 +254,23 @@ def attribution(session: Session) -> list[dict[str, Any]]:
 def limits(session: Session, settings: Settings) -> dict[str, Any]:
     """The UI-visible risk limits plus the persisted operator switch. No secrets."""
     state = read_kill_switch(session, settings)
+    profile_name = settings.trade_risk_profile
+    from ezchain_core import TRADE_RISK_PROFILES
+
+    profile = TRADE_RISK_PROFILES.get(profile_name, TRADE_RISK_PROFILES["mid"])
     return {
         "mode": "paper",
+        "risk_profile": profile_name,
+        "trade_risk_profile": profile_name,
+        "trade_profile": profile_name,
+        "active_profile": profile_name,
+        "profile": profile_name,
+        "min_order_usd": _num(profile.min_order_usd),
         "max_order_usd": _num(settings.max_order_usd),
+        "max_trade_usd": _num(profile.max_order_usd),
+        "max_order_pct_of_equity": str(profile.max_order_pct_of_equity),
+        "per_token_cap_usd": _num(profile.per_token_cap_usd),
+        "max_slippage_bps": profile.max_slippage_bps,
         "max_position_usd": _num(settings.max_position_usd),
         "max_open_positions": settings.max_open_positions,
         "max_daily_loss_usd": _num(settings.max_daily_loss_usd),

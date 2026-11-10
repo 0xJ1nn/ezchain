@@ -106,7 +106,14 @@ class PaperLimitsOut(BaseModel):
     """Risk limits the UI may show. Never contains a token, database URL or secret."""
 
     mode: Mode = "paper"
+    risk_profile: str = "mid"
+    trade_risk_profile: str = "mid"
+    min_order_usd: str | None = None
     max_order_usd: str
+    max_trade_usd: str | None = None
+    max_order_pct_of_equity: str | None = None
+    per_token_cap_usd: str | None = None
+    max_slippage_bps: int | None = None
     max_position_usd: str
     max_open_positions: int
     max_daily_loss_usd: str

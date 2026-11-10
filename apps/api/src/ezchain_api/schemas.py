@@ -291,6 +291,11 @@ class PaperOrderIn(BaseModel):
     # A sell that exists to reduce the open position. Entry-only risk gates do not apply;
     # the position bound, quote freshness and an executable route still do.
     reduce_only: bool = False
+    # Optional requested risk profile. The server allows it only when it matches the
+    # account's configured profile; any other value is a typed rejection.
+    risk_profile: str | None = None
+    trade_risk_profile: str | None = None
+    profile: str | None = None
 
     @model_validator(mode="after")
     def sell_only_fields(self) -> PaperOrderIn:

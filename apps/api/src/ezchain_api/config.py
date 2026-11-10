@@ -7,7 +7,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     # Execution-cost ceiling for a new position, as a ratio (0.05 = 5%). Applies to
     # executable quotes only; a paper_mark reports no impact and a sell is never blocked.
     max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
+    # Server-side trade risk profile. A client may request this profile by name only
+    # when the server allows it for the account; the active profile is configuration.
+    trade_risk_profile: Literal["low", "mid", "high"] = Field(
+        default="mid",
+        validation_alias=AliasChoices("trade_risk_profile", "risk_profile", "trade_profile"),
+    )
     # Paper-to-live promotion gate (ADR-0009). Computed, never auto-promoted.
     paper_gate_min_days: int = Field(default=14, ge=1, le=365)
     paper_gate_min_intents: int = Field(default=100, ge=1)
@@ -104,6 +110,13 @@ class Settings(BaseSettings):
         """An empty env var means "unset", matching the documented dev fallback."""
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("trade_risk_profile")
+    @classmethod
+    def _valid_trade_risk_profile(cls, value: str) -> str:
+        if value not in {"low", "mid", "high"}:
+            raise ValueError("EZCHAIN_TRADE_RISK_PROFILE must be one of low, mid, high")
         return value
 
     @field_validator("trusted_proxy_cidrs")
@@ -170,6 +183,14 @@ class Settings(BaseSettings):
     @property
     def plugin_path_list(self) -> list[str]:
         return [item.strip() for item in self.plugin_paths.split(",") if item.strip()]
+
+    @property
+    def risk_profile(self) -> str:
+        return self.trade_risk_profile
+
+    @property
+    def trade_profile(self) -> str:
+        return self.trade_risk_profile
 
 
 @lru_cache

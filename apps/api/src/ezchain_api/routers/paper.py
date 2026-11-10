@@ -143,6 +143,7 @@ async def create_order(
         idempotency_key=payload.idempotency_key,
         quantity=payload.quantity,
         reduce_only=payload.reduce_only,
+        risk_profile=payload.risk_profile or payload.trade_risk_profile or payload.profile,
     )
     try:
         row = await paper.place_order(session, request, settings, dexscreener, quotes)

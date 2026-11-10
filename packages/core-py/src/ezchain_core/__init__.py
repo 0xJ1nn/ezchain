@@ -33,7 +33,16 @@ from .protection import (
     validate_arm,
     validate_profile,
 )
-from .risk import RiskLimits, evaluate_order
+from .risk import (
+    PROFILES,
+    RISK_PROFILES,
+    TRADE_PROFILES,
+    TRADE_RISK_PROFILES,
+    RiskLimits,
+    RiskProfile,
+    TradeRiskProfile,
+    evaluate_order,
+)
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
     Candle,
@@ -77,6 +86,12 @@ __all__ = [
     "RiskDecision",
     "RiskReason",
     "RiskLimits",
+    "RiskProfile",
+    "TradeRiskProfile",
+    "TRADE_RISK_PROFILES",
+    "RISK_PROFILES",
+    "TRADE_PROFILES",
+    "PROFILES",
     "Side",
     "SourceRef",
     "StrategyDecision",

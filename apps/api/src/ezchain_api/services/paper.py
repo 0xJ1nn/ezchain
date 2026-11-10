@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, NoRoute, QuoteRouter
 from ezchain_core import (
+    TRADE_RISK_PROFILES,
     CostPreview,
     LedgerEntry,
     OrderRequest,
@@ -42,6 +43,7 @@ from ezchain_core import (
     RiskReason,
     SourceRef,
     TokenSnapshot,
+    TradeRiskProfile,
     evaluate_order,
     genesis_entries,
     preview_cost,
@@ -456,9 +458,26 @@ def fills(session: Session, limit: int = 50) -> list[PaperFillRow]:
 # ---------------------------------------------------------------------------
 
 
+def trade_profile_from_settings(
+    settings: Settings, requested: str | None = None
+) -> TradeRiskProfile:
+    name = requested or settings.trade_risk_profile
+    if name not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    allowed = {settings.trade_risk_profile}
+    if name not in allowed:
+        raise ValueError("PROFILE_UNKNOWN")
+    return TRADE_RISK_PROFILES[name]
+
+
 def limits_from_settings(settings: Settings) -> RiskLimits:
+    profile = TRADE_RISK_PROFILES.get(settings.trade_risk_profile, TRADE_RISK_PROFILES["mid"])
     return RiskLimits(
-        max_order_usd=settings.max_order_usd,
+        min_order_usd=profile.min_order_usd,
+        max_order_usd=min(settings.max_order_usd, profile.max_order_usd),
+        max_order_pct_of_equity=profile.max_order_pct_of_equity,
+        per_token_cap_usd=profile.per_token_cap_usd,
+        max_slippage_bps=profile.max_slippage_bps,
         max_position_usd=settings.max_position_usd,
         max_open_positions=settings.max_open_positions,
         max_daily_loss_usd=settings.max_daily_loss_usd,
@@ -544,12 +563,13 @@ _FINGERPRINT_FIELDS = (
     "strategy_id",
     "quantity",
     "reduce_only",
+    "risk_profile",
 )
 # Fields added after the fingerprint column existed have no stored order column. A row
 # written before them is replayed with the value it could have had: no exact quantity and
 # not a reduce-only exit. A request that supplies either value therefore conflicts with a
 # legacy row instead of replaying a different intent.
-_LEGACY_FINGERPRINT_DEFAULTS = {"quantity": None, "reduce_only": False}
+_LEGACY_FINGERPRINT_DEFAULTS = {"quantity": None, "reduce_only": False, "risk_profile": None}
 
 
 def _canonical_decimal(value: Decimal) -> str:
@@ -833,6 +853,56 @@ async def place_order(
     if payload.strategy_id is not None and read_kill_switch(session, settings).active:
         return _reject_new(session, payload, "KILL_SWITCH_ACTIVE")
 
+    # Profile selection is server-side. An unknown or disallowed profile is a typed
+    # rejection and never falls back to the active profile.
+    requested_profile = payload.risk_profile
+    if requested_profile is not None:
+        try:
+            trade_profile_from_settings(settings, requested_profile)
+        except ValueError:
+            return _reject_new(session, payload, "PROFILE_UNKNOWN")
+
+    if payload.side == "buy":
+        # Minimum size and (absolute) maximum size apply before any quote.
+        profile = TRADE_RISK_PROFILES.get(settings.trade_risk_profile, TRADE_RISK_PROFILES["mid"])
+        if payload.amount_usd < profile.min_order_usd:
+            return _reject_new(session, payload, "SIZE_BELOW_MIN")
+        if payload.amount_usd > profile.max_order_usd:
+            return _reject_new(session, payload, "SIZE_ABOVE_MAX")
+        # Percent of equity, fail-closed on unknown marks.
+        replay = _replay(_ledger_rows(session))
+        snapshots = _snapshot_index(session)
+        equity: Decimal = replay.cash
+        equity_known = True
+        for account_pos, (qty, _cost) in replay.positions.items():
+            if qty <= 0:
+                continue
+            chain, token = _split_position_account(account_pos)
+            snap = snapshots.get((chain, token))
+            mark = snap.price_usd if snap is not None else None
+            if mark is None:
+                equity_known = False
+                break
+            equity = equity + qty * mark
+        if not equity_known:
+            return _reject_new(session, payload, "EQUITY_UNKNOWN")
+        cap = equity * profile.max_order_pct_of_equity
+        if payload.amount_usd > cap:
+            return _reject_new(session, payload, "SIZE_ABOVE_MAX")
+        # Per-token cap including the proposed order.
+        # Existing exposure for this token.
+        existing_value = Decimal(0)
+        held_qty, held_cost = replay.positions.get(
+            position_account(payload.chain, payload.token_address), (Decimal(0), Decimal(0))
+        )
+        # Use mark if known; position_mark may be from snapshot.
+        snap = snapshots.get((payload.chain, payload.token_address))
+        mark = snap.price_usd if snap is not None else None
+        if mark is not None:
+            existing_value = held_qty * mark
+        if existing_value + payload.amount_usd > profile.per_token_cap_usd:
+            return _reject_new(session, payload, "POSITION_LIMIT")
+
     account = position_account(payload.chain, payload.token_address)
     held_qty = Decimal(0)
     reduce_only = payload.side == "sell" and payload.reduce_only
@@ -966,6 +1036,20 @@ async def place_order(
             strategy_id=payload.strategy_id,
             reduce_only=exit_only,
         )
+        _equity = replay.cash
+        _equity_known = True
+        for _acct, (_qty, _cost) in replay.positions.items():
+            if _qty <= 0:
+                continue
+            _ch, _tok = _split_position_account(_acct)
+            _snap = _snapshot_index(session).get((_ch, _tok))
+            _mark = _snap.price_usd if _snap is not None else None
+            if _mark is None:
+                _equity_known = False
+                break
+            _equity += _qty * _mark
+        equity_for_risk = _equity if _equity_known else None
+
         allowed, reasons = evaluate_order(
             request=request,
             snapshot=snapshot,
@@ -974,6 +1058,7 @@ async def place_order(
             open_positions=_open_positions(replay),
             daily_realized_pnl_usd=replay.daily_realized,
             limits=limits_from_settings(settings),
+            equity_usd=equity_for_risk,
         )
         fee = _fill_fee(notional, quote, settings)
         if allowed and payload.side == "buy" and replay.cash < notional + fee:
