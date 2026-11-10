@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 // GH-123: token and position pages render candle charts from the server series.
 // Fixture mode is the deterministic series labelled FIXTURE. These tests assert

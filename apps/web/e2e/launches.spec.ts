@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 const noExternal = (page: import("@playwright/test").Page) => {
 	const external: string[] = [];

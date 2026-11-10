@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { activity, attribution, totals } from "../lib/dashboard-fixtures";
 import { marketRows } from "../lib/markets-fixtures";
 import { strategyParamFields } from "../lib/strategy-fixtures";

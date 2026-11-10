@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 test("the API proxy rejects a cross-site mutation before injecting the token", async ({
 	request,

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 const sidebar = (page: import("@playwright/test").Page) =>
 	page.getByRole("navigation", { name: "Primary navigation" });

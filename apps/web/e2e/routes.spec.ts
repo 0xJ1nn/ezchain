@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 // Every route the sidebar and the mobile "More" page link to. The list is explicit so a
 // removed page fails here even if the sidebar is changed at the same time.
