@@ -195,7 +195,15 @@ you are in the repository root. Nothing here needs a published API port: the edg
 docker compose -f infra/compose.yaml ps
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8080/readyz
-curl -fsS http://localhost:8080/metrics | head
+# /metrics is operator-only and is not published by the edge.
+docker compose -f infra/compose.yaml exec -T api python - <<'PY' | head
+import os, urllib.request
+request = urllib.request.Request(
+    "http://127.0.0.1:8000/metrics",
+    headers={"Authorization": "Bearer " + os.environ["EZCHAIN_API_TOKEN"]},
+)
+print(urllib.request.urlopen(request).read().decode())
+PY
 docker compose -f infra/compose.yaml logs --tail=100 api
 ```
 
@@ -205,6 +213,7 @@ docker compose -f infra/compose.yaml logs --tail=100 api
   Postgres is down or migrations have not run). Check
   `docker compose -f infra/compose.yaml ps postgres` and the `migrate` logs.
 - `/metrics` is Prometheus text format. It is served by the API, not by the web handler.
+  A non-loopback scrape needs the operator token; see §12.6.4.
 - A container marked `unhealthy` in `ps` has failed its own healthcheck. Read
   `docker compose -f infra/compose.yaml logs <service>` before restarting anything.
 
@@ -249,7 +258,9 @@ means the API and web containers disagree about the token, or a request bypassed
    ```
 
 6. Never add the token to browser code, `NEXT_PUBLIC_*`, screenshots or logs. If a token
-   leaks, rotate it in `infra/.env` and recreate `api` and `web`.
+   leaks, rotate it in `infra/.env` and recreate `api` and `web`; with the
+   observability profile running, recreate `prometheus` too so its token file is
+   rewritten.
 
 ### 12.3 Migrate, upgrade and rollback
 
@@ -345,7 +356,8 @@ process is running but must not receive work.
 Symptom: a web mutation returns `401` with `detail.code == "UNAUTHORIZED"`, while pages
 read normally.
 
-1. Reads (`GET`/`HEAD`/`OPTIONS`) are open by design; only mutations are protected.
+1. Reads (`GET`/`HEAD`/`OPTIONS`) are open by design, except
+   `/api/v1/agent/state`, which always needs a principal; mutations are protected.
 2. The browser should call the Next server at `/api/...`, never the API directly. The
    proxy drops any browser `Authorization` header and injects `EZCHAIN_API_TOKEN`.
 3. Confirm the **web** process has `EZCHAIN_API_TOKEN` set; restart it after changing it.
@@ -361,6 +373,40 @@ read normally.
 public origin (for example `https://ezchain.example.com`) in the web container; the
 proxy also accepts the forwarded host/proto. A non-browser client with no Origin header
 is still allowed, so this only affects browser CSRF attempts and misconfigured origins.
+
+### 12.6.4 Operational endpoint boundary
+
+| Endpoint | Class | Rule |
+|---|---|---|
+| `/healthz` | public-safe | Liveness only; never reads the database. |
+| `/readyz` | public-safe | Database and migration status; no ledger data. |
+| `/health` | operator | Loopback, or `Authorization: Bearer $EZCHAIN_API_TOKEN`. |
+| `/metrics` | operator | Loopback, or `Authorization: Bearer $EZCHAIN_API_TOKEN`. |
+| `/docs`, `/redoc`, `/openapi.json` | loopback-only | 404 to every other client. |
+| `/api/v1/agent/state` | authenticated | A principal with the `read` scope, even when reads are open. |
+| `/api/v1/agent/keys` | authenticated | A principal with the `admin` scope. |
+
+A remote request for an operator endpoint without the token returns 401 with
+`detail.code == "UNAUTHORIZED"`. The loopback test uses the TCP peer address.
+`X-Forwarded-For` is read only from a loopback peer or from a peer listed in
+`EZCHAIN_TRUSTED_PROXY_CIDRS` (a JSON list, empty by default); the rightmost address that
+is not a loopback or trusted proxy hop is the client. A remote client cannot make itself
+loopback with a header, and a same-host proxy forwarding a public client stays remote.
+A reverse proxy that forwards to the API must set `X-Forwarded-For`: without the header,
+a same-host proxy is indistinguishable from a local client.
+
+Set `EZCHAIN_TRUSTED_PROXY_CIDRS` only when a reverse proxy sits in front and the API
+cannot see the client directly. List the proxy's own address or network, never a client
+network: a host that can reach the API directly from a trusted network could otherwise
+claim a loopback address. Leave it empty when the API port is reachable from the network
+without a proxy.
+
+Metrics consumers outside the host send the same bearer token. The web server adds it
+server-side for `/health` and `/metrics`. The edge does not publish `/metrics`; a
+Prometheus scrape goes to `api:8000` over the app network and reads the token from
+`/etc/prometheus/api-token`, which Compose fills from `EZCHAIN_API_TOKEN`. Do not put the
+token in `prometheus.yml`.
+
 ### 12.7 Agent keys (scoped MCP credentials)
 
 Mint one key per agent/user with the deployment admin token:

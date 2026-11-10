@@ -23,14 +23,12 @@
 		reverse_proxy web:3000
 	}
 
-	# Liveness, readiness and Prometheus metrics are served by the API.
+	# Liveness and readiness are public API probes. Metrics is an operator surface and
+	# is not published here: scrape api:8000/metrics with the bearer token instead.
 	handle /healthz {
 		reverse_proxy api:8000
 	}
 	handle /readyz {
-		reverse_proxy api:8000
-	}
-	handle /metrics {
 		reverse_proxy api:8000
 	}
 

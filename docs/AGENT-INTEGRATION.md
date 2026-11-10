@@ -210,15 +210,18 @@ mutate.
 
 ## 7. REST for agents without MCP
 
-The same data is on the OpenAPI edge. Start with:
+The same data is on the OpenAPI edge. The state snapshot aggregates the whole
+workspace and needs a principal with the `read` scope; the capability and plugin
+catalogues are open unless `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` closes reads.
 
 ```bash
-curl http://127.0.0.1:8000/api/v1/agent/state
+curl -H "Authorization: Bearer $EZCHAIN_API_TOKEN" \
+  http://127.0.0.1:8000/api/v1/agent/state
 curl http://127.0.0.1:8000/api/v1/agent/capabilities
 curl http://127.0.0.1:8000/api/v1/plugins
 ```
 
-Mutations need the bearer token. The web proxy injects it server-side; a standalone
+Mutations need the same bearer token. The web proxy injects it server-side; a standalone
 agent must hold it in its own secret store, never in a prompt or a model context.
 
 ## 8. Safety model
@@ -231,8 +234,10 @@ agent must hold it in its own secret store, never in a prompt or a model context
 - **Risk clamps.** A plugin's notional is clamped by the existing paper risk policy; a
   rejected order is logged with its reason.
 - **Read-only default.** An agent that only needs to observe never sees a write tool.
+- **Workspace snapshot.** `/api/v1/agent/state` always needs a `read` principal; it
+  aggregates the account, positions and reconciliation in one document.
 - **Scoped keys.** `read` cannot trade, `trade` cannot administer, and revocation is
-  immediate. `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` closes the read surface too.
+  immediate. `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` closes the rest of the read surface.
 - **Tool poisoning is real.** MCP tool descriptions, resource text and plugin metadata
   are untrusted data. Keep MCP servers allowlisted, review plugin manifests before
   install, and do not let an agent follow instructions embedded in market text. See

@@ -200,7 +200,7 @@ open http://localhost:3000
 
 - API docs: <http://127.0.0.1:8000/docs>
 - Plugin catalogue: <http://127.0.0.1:8000/api/v1/plugins>
-- Agent state: <http://127.0.0.1:8000/api/v1/agent/state>
+- Agent state: <http://127.0.0.1:8000/api/v1/agent/state> (needs a `read` principal)
 - Agent keys: `/api/v1/agent/keys` (admin only; tokens shown once)
 - Liveness/readiness: `/healthz` and `/readyz` (the latter includes the migration head)
 - Live markets: `/markets` · token/ticket: `/tokens/{chain}/{address}`
@@ -314,7 +314,7 @@ See [docs/evidence/p0-production/docker-up.md](docs/evidence/p0-production/docke
 | <http://localhost:8080> | Web app (markets, positions, strategies) |
 | <http://localhost:8080/healthz> | API liveness |
 | <http://localhost:8080/readyz> | API readiness, including the database |
-| <http://localhost:8080/metrics> | Prometheus metrics from the API (no auth; keep the default loopback bind) |
+| `/metrics` (API only) | Prometheus metrics; not published by the edge; requires the operator token off loopback |
 | `http://localhost:8080/api/v1/...` | API through the edge; the Next.js route handler adds the bearer token server-side |
 
 The interactive OpenAPI UI is **not** published by the edge. On a trusted machine,

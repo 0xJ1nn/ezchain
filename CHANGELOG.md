@@ -198,6 +198,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **Operational endpoints require the operator token off loopback.** `/metrics` and
+  `/health` answer a loopback client without a credential and return 401 to every other
+  client; the Caddy edge no longer publishes `/metrics`. `/docs`, `/redoc` and
+  `/openapi.json` return 404 off loopback, and `/api/v1/agent/state` requires a `read`
+  principal even when reads are open. A new `EZCHAIN_TRUSTED_PROXY_CIDRS` setting lists
+  reverse proxies whose `X-Forwarded-For` may be read; it is empty by default.
 - README/roadmap now state the product is **alpha and paper-only**, explicitly not ready
   for real-money trading, and gate official Hermes/OpenClaw marketplace listings on
   real-mode readiness. README adds a contributor welcome section.

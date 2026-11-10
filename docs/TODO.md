@@ -35,7 +35,7 @@ Source of truth: [`project.md`](../project.md), [`AGENTS.md`](../AGENTS.md),
 - [x] Stress harness smoke/soak/idempotency/chaos + dedupe issue filing; #71 → #72 loop.
 - [x] Dashboard fixture badges, DCA/dip vocabularies, Playwright build guard.
 - [x] Docker `compose up --build` drill at head `0003` (2026-10-22); re-drill at `0006` is pending.
-- [ ] Per-user auth/RBAC; `/metrics` exposure decision.
+- [ ] Per-user auth/RBAC.
 - [ ] Live dashboard equity history and live wallets (#57); EVM venue (#59).
 
 ## Done — strategy SDK v1 + agent surface (2026-10-23)

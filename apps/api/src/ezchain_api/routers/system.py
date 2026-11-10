@@ -1,4 +1,9 @@
-"""Health, readiness, metrics and chain registry."""
+"""Health, readiness, metrics and chain registry.
+
+``/healthz`` and ``/readyz`` are public orchestration probes. ``/health`` and ``/metrics``
+describe the process, the scheduler and paper order counts, so the auth middleware serves
+them only to a loopback client or to a request carrying the deployment token.
+"""
 
 from __future__ import annotations
 
@@ -98,7 +103,11 @@ def readyz(
 
 @router.get("/metrics")
 def metrics(session: Session = Depends(get_session)) -> Response:
-    """Prometheus text exposition with bounded labels. No third-party dependency."""
+    """Prometheus text exposition with bounded labels. No third-party dependency.
+
+    A loopback scrape needs no credential; a scrape from another host sends the
+    deployment token (middleware).
+    """
     up = True
     counts = {status: 0 for status in PAPER_ORDER_STATUSES}
     fills = 0

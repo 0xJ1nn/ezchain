@@ -63,8 +63,11 @@ policies and continuous aggregates are not implemented.
 host :8080
    |
  caddy ── /api/* ───────────────► web:3000 ── (Next route handler adds bearer) ──► api:8000
-   |── /healthz|/readyz|/metrics ──────────────────────────────────────────────► api:8000
+   |── /healthz|/readyz ───────────────────────────────────────────────────────► api:8000
    └── /* ───────────────────────► web:3000
+
+ api:8000/metrics is not published. Prometheus scrapes it over the app network with
+ the operator token.
 ```
 
 - `data` is `internal: true`. Only `postgres`, `migrate` and `api` attach to it.
@@ -97,6 +100,7 @@ host :8080
 | `EZCHAIN_PUBLIC_URL` | yes (web) | exact browser origin, e.g. `http://localhost:8080`; used by the proxy same-origin check |
 | `EZCHAIN_LOG_LEVEL` | no | `INFO`; structured access logs |
 | `EZCHAIN_DATA_MODE` | no | `live` (default); `fixture` is for tests only |
+| `EZCHAIN_TRUSTED_PROXY_CIDRS` | no | JSON list of reverse-proxy addresses allowed to supply `X-Forwarded-For`; empty trusts no additional proxy |
 | `EZCHAIN_ENGINE_INLINE` | no | `true`; engine runs in the API process |
 | `EZCHAIN_MARKET_SCAN_INLINE` | no | `true`; bounded market observation in the API |
 | `EZCHAIN_BIND` / `EZCHAIN_PORT` | no | Host bind address (`127.0.0.1`) and port (`8080`) |
@@ -113,9 +117,10 @@ Notes:
   `.env.example`.
 - Secrets are not baked into images. The Docker build context is `.dockerignore`d against
   `.env` and key material.
-- The API's `/healthz`, `/readyz` and `/metrics` are edge endpoints, not `/api/*`.
-  `/metrics` has no authentication and exposes order/fill counts; keep the default
-  `EZCHAIN_BIND=127.0.0.1` unless you intentionally expose it.
+- The API's `/healthz` and `/readyz` are public edge endpoints, not `/api/*`. The edge
+  does not publish `/metrics`: it exposes order/fill counts and requires
+  `EZCHAIN_API_TOKEN` unless the caller is loopback. Scrape `api:8000` over the private
+  network with the token; keep the default `EZCHAIN_BIND=127.0.0.1`.
 - The edge injects one deployment bearer token for every caller. It is not per-user auth;
   anyone who can reach the edge can mutate the paper account. Run it on a trusted host
   until per-user auth exists.
@@ -147,13 +152,15 @@ for default numbers; do not duplicate limits in compose.
 |---|---|---|
 | `/healthz` | `api` | Liveness. Process can serve HTTP; must not depend on the database. |
 | `/readyz` | `api` | Readiness. Checks the dependencies needed to serve paper traffic (database). |
-| `/metrics` | `api` | Prometheus text format. |
+| `/metrics` | `api` | Prometheus text format. Loopback or the operator token. |
 | `/` | `web` | Web container health. |
 
-Prometheus config scrapes only `api:8000` and itself. Alerts cover the API scrape target,
-the API's `ezchain_up` gauge, the HTTP request counter and the paper-order counter. There
-are no executor, queue, breaker, drift or backup alerts because those metrics do not
-exist.
+Prometheus config scrapes only `api:8000` and itself. The API serves `/metrics` to
+loopback or with the operator token; the scrape reads that token from
+`/etc/prometheus/api-token`, which Compose fills from `EZCHAIN_API_TOKEN`. Alerts cover
+the API scrape target, the API's `ezchain_up` gauge, the HTTP request counter and the
+paper-order counter. There are no executor, queue, breaker, drift or backup alerts
+because those metrics do not exist.
 
 The observability profile:
 

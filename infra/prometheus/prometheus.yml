@@ -12,6 +12,10 @@ rule_files:
 scrape_configs:
   - job_name: api
     metrics_path: /metrics
+    # The API serves /metrics to loopback or with the operator token. The Compose
+    # file mounts that token at this path for the observability profile.
+    authorization:
+      credentials_file: /etc/prometheus/api-token
     static_configs:
       - targets: ["api:8000"]
 
