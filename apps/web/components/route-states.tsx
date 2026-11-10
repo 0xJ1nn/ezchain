@@ -183,6 +183,7 @@ export function StrategiesSkeleton() {
 	return (
 		<Loading label="Loading strategies…" testId="strategies-loading">
 			<Head actions={3} />
+			<Band stats={4} />
 			<TablePanel rows={6} />
 			<div className="grid cols-2 mt-16" aria-hidden="true">
 				<section className="panel">
@@ -213,6 +214,7 @@ export function LedgerSkeleton() {
 			<Band stats={4} />
 			<TablePanel rows={6} />
 			<TablePanel rows={4} />
+			<TablePanel rows={4} />
 		</Loading>
 	);
 }
@@ -240,6 +242,24 @@ export function OperationsSkeleton() {
 					</div>
 				</section>
 			</div>
+			<div className="grid cols-2 mt-16" aria-hidden="true">
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={4} />
+					</div>
+				</section>
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={4} />
+					</div>
+				</section>
+			</div>
 		</Loading>
 	);
 }
@@ -249,6 +269,14 @@ export function SecuritySkeleton() {
 		<Loading label="Loading security…" testId="security-loading">
 			<Head actions={2} />
 			<div className="grid cols-2" aria-hidden="true">
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={6} />
+					</div>
+				</section>
 				<section className="panel">
 					<div className="panel-head">
 						<Skeleton className="skel-h" />
