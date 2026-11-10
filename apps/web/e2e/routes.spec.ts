@@ -27,6 +27,7 @@ const ROUTES = [
 	"/workspace",
 	"/states",
 	"/mobile",
+	"/m",
 	"/components",
 	"/more",
 ];

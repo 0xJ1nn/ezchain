@@ -49,10 +49,11 @@ const OVERFLOW_MATRIX = [
 			"/positions",
 			"/tokens/solana/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
 			"/more",
+			"/m",
 		],
 	},
 	{ width: 761, routes: ["/reports"] },
-	{ width: 768, routes: ["/mobile", "/markets", "/positions"] },
+	{ width: 768, routes: ["/mobile", "/m", "/markets", "/positions"] },
 	{ width: 1100, routes: ["/", "/markets"] },
 	{ width: 1440, routes: ["/"] },
 ];
@@ -473,6 +474,7 @@ test("loading and error boundaries are wired", async () => {
 		["positions/(list)", "positions", "PositionsSkeleton"],
 		["markets", "markets", "MarketsSkeleton"],
 		["performance", "performance", "PerformanceSkeleton"],
+		["m", "mobile", "GenericSkeleton"],
 	]) {
 		const source = readFileSync(join(app, route, "loading.tsx"), "utf8");
 		expect(source, `${route || "root"} loading boundary`).toContain(skeleton);
