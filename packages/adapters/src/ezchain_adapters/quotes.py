@@ -36,7 +36,11 @@ from .decimals import DecimalsResolver
 from .dexscreener import DexScreenerClient
 from .errors import AdapterError, NoRoute, NotFound, ProviderKeyUnavailable, UpstreamError
 from .http import DEFAULT_TIMEOUT_SECONDS, ApiKeyProvider, Clock, JsonApiClient, Sleeper
-from .provider_budget import ProviderBudgetExhausted, ProviderBudgetManager
+from .provider_budget import (
+    ProviderBudgetExhausted,
+    ProviderBudgetManager,
+    attempt_deadline_scope,
+)
 from .ratelimit import TokenBucket, default_sleep
 from .registry import BY_ID, PAPER_MARK, ChainMeta, QuoteAsset
 
@@ -279,10 +283,12 @@ class QuoteRouter:
             if remaining <= 0:
                 failures.append("deadline")
                 break
+            timeout = min(remaining, PROVIDER_ATTEMPT_SECONDS)
             try:
-                quote = await asyncio.wait_for(
-                    provider.quote(request), timeout=min(remaining, PROVIDER_ATTEMPT_SECONDS)
-                )
+                # The attempt owns this timeout, so publish its absolute end: a budget
+                # wait inside it must refuse before this fires, not be cancelled by it.
+                with attempt_deadline_scope(timeout):
+                    quote = await asyncio.wait_for(provider.quote(request), timeout=timeout)
             except TimeoutError:
                 failures.append(f"{kind}:TIMEOUT")
                 continue
@@ -301,11 +307,12 @@ class QuoteRouter:
                 if remaining <= 0:
                     failures.append("deadline")
                     break
+                timeout = min(remaining, PROVIDER_ATTEMPT_SECONDS)
                 try:
-                    exit_ok = await asyncio.wait_for(
-                        self._has_exit(provider, request, quote),
-                        timeout=min(remaining, PROVIDER_ATTEMPT_SECONDS),
-                    )
+                    with attempt_deadline_scope(timeout):
+                        exit_ok = await asyncio.wait_for(
+                            self._has_exit(provider, request, quote), timeout=timeout
+                        )
                 except TimeoutError:
                     failures.append(f"{kind}:EXIT_TIMEOUT")
                     continue

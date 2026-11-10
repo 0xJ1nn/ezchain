@@ -5,21 +5,28 @@ No HTTP: providers are fakes, so the assertions are about routing decisions only
 
 from __future__ import annotations
 
+import asyncio
+import time
 from decimal import Decimal
 from typing import Any
 
+import httpx
 import pytest
 
 from ezchain_adapters import (
+    JupiterClient,
     NoRoute,
     NotFound,
     ProviderBudgetExhausted,
+    ProviderBudgetManager,
     ProviderKeyUnavailable,
+    ProviderLimit,
     QuoteRequest,
     QuoteRouter,
     RateLimited,
     UpstreamError,
 )
+from ezchain_adapters.jupiter import LITE_BASE
 from ezchain_core import PairInfo, Quote, SourceRef, TokenSnapshot, utcnow
 
 USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -334,3 +341,59 @@ async def test_exit_timeout_fails_closed_with_exit_timeout(monkeypatch) -> None:
         )
     assert "EXIT_TIMEOUT" in (caught.value.detail or "")
     assert caught.value.code == "NO_ROUTE"
+
+
+SOLANA_MINT = "BudgetDeadlineMint1111111111111111111111111"
+
+
+async def test_a_competing_wait_is_refused_before_the_attempt_deadline(monkeypatch) -> None:
+    """The second HTTP call of one attempt must not outlive the attempt's deadline.
+
+    A slow token lookup plus a competing caller used to leave the budget sleeping past the
+    router's ``wait_for``: the budget computed its window from the moment each request
+    joined the queue, so the outer timeout fired first and the caller saw a generic
+    ``jupiter:TIMEOUT``/NO_ROUTE (409) instead of the typed 429. The attempt owns the
+    timeout, so its absolute deadline reaches the budget and the refusal happens first.
+    """
+    from ezchain_adapters import quotes as quotes_module
+
+    # The attempt is longer than the budget's own window, so only the attempt deadline
+    # can make the second acquisition impossible. Shrinking both keeps the test fast.
+    monkeypatch.setattr(quotes_module, "PROVIDER_ATTEMPT_SECONDS", 0.8)
+    manager = ProviderBudgetManager(
+        limits=[ProviderLimit("jupiter", 2.0, 1, 4, 0.6)], clock=time.monotonic
+    )
+    search_started = asyncio.Event()
+    release_search = asyncio.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/tokens/v2/search":
+            search_started.set()
+            await release_search.wait()
+            return httpx.Response(200, json=[{"id": SOLANA_MINT, "decimals": 6}])
+        return httpx.Response(200, json={"outAmount": "1000000", "routePlan": []})
+
+    async with httpx.AsyncClient(
+        base_url=LITE_BASE, transport=httpx.MockTransport(handler)
+    ) as http_client:
+        jupiter = JupiterClient(client=http_client, budget=manager)
+        attempt = asyncio.create_task(
+            router(jupiter).quote(
+                chain="solana",
+                token_address=SOLANA_MINT,
+                side="buy",
+                amount_usd=Decimal("1"),
+            )
+        )
+        await search_started.wait()
+        # A competitor takes the next slot while the first lookup is still in flight.
+        # Its own wait fits inside the budget window; the attempt is what runs out.
+        await manager.acquire("jupiter")
+        release_search.set()
+
+        with pytest.raises(ProviderBudgetExhausted) as caught:
+            await attempt
+
+    assert caught.value.code == "PROVIDER_BUDGET_EXHAUSTED"
+    assert caught.value.http_status == 429
+

@@ -8,6 +8,12 @@ rather than overrunning the timeout its request is under. The API renders that e
 as a typed 429 instead of holding the request open, or letting it fail as a generic
 timeout.
 
+The budget is acquired per provider HTTP request, but the timeout belongs to the route
+attempt that contains it (one quote can make several requests). :func:`attempt_deadline_scope`
+publishes that attempt's absolute deadline for its duration, so a wait that could only
+finish after the attempt is refused as the typed 429 rather than cancelled by the outer
+``asyncio.wait_for`` and reported as a route timeout.
+
 The manager is deliberately independent of transport. A provider call is any awaitable
 ``operation``; the budget is acquired before it starts.
 """
@@ -16,7 +22,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -56,10 +64,48 @@ JUPITER_LIMIT = ProviderLimit(
     # quote router's per-provider attempt timeout (5 s) so a slow queue raises the typed
     # budget error before the outer wait_for turns it into a generic timeout/NO_ROUTE.
     # Queue depth is not the bound: four callers waiting 1 s each would still be 4 s.
+    # The attempt deadline below shortens this further when the attempt has less time.
     max_queue=4,
     max_wait_seconds=2.0,
 )
 DEFAULT_LIMITS: dict[str, ProviderLimit] = {JUPITER_LIMIT.provider: JUPITER_LIMIT}
+
+
+@dataclass(frozen=True)
+class AttemptDeadline:
+    """The absolute end of the provider attempt that owns the current call.
+
+    ``at`` is on ``clock``'s timeline, not the budget's, because the attempt measures its
+    own remaining time. Pairing the value with its clock keeps the two from being mixed
+    when a caller injects a different one.
+    """
+
+    at: float
+    clock: Clock = time.monotonic
+
+    def remaining(self) -> float:
+        return self.at - self.clock()
+
+
+_ATTEMPT_DEADLINE: ContextVar[AttemptDeadline | None] = ContextVar(
+    "ezchain_provider_attempt_deadline", default=None
+)
+
+
+@contextmanager
+def attempt_deadline_scope(seconds: float, *, clock: Clock = time.monotonic) -> Iterator[None]:
+    """Publish the owning attempt's deadline for the provider calls made inside it.
+
+    Only the router knows how much of an attempt is left. Without this, each acquisition
+    measures its wait from the moment it joins the queue, and the second request of a
+    slow attempt can sleep past the attempt's ``wait_for``; the caller then sees a route
+    timeout (409) instead of the typed budget refusal (429) that is the truth.
+    """
+    token = _ATTEMPT_DEADLINE.set(AttemptDeadline(at=clock() + seconds, clock=clock))
+    try:
+        yield
+    finally:
+        _ATTEMPT_DEADLINE.reset(token)
 
 
 class ProviderBudgetExhausted(RateLimited):
@@ -87,6 +133,26 @@ class _Budget:
         self._waiting = 0
         self._lock = asyncio.Lock()
 
+    def _deadline(self) -> float:
+        """The last clock value this acquisition may wait until.
+
+        The limit's window is measured from now, but the attempt that contains this
+        request may have less time: it owns the timeout the caller is under, and a wait
+        that could only finish after it must be refused now, while this can still be
+        reported as a typed 429 instead of being cancelled by the outer ``wait_for``.
+        """
+        now = self._clock()
+        wait_cap = self.limit.max_wait_seconds
+        attempt = _ATTEMPT_DEADLINE.get()
+        if attempt is not None:
+            remaining = attempt.remaining()
+            if remaining <= 0:
+                raise ProviderBudgetExhausted(
+                    self.limit.provider, detail="the attempt deadline has passed"
+                )
+            wait_cap = min(wait_cap, remaining)
+        return now + wait_cap
+
     async def acquire(self) -> None:
         async with self._lock:
             if self._waiting >= self.limit.max_queue:
@@ -97,9 +163,10 @@ class _Budget:
         # the accumulated one; bounding a single sleep instead lets it run past the
         # caller's attempt timeout, which the route can only report as a generic
         # timeout/NO_ROUTE rather than the typed 429 this budget promises.
-        deadline = self._clock() + self.limit.max_wait_seconds
         try:
-            await self._bucket.acquire(deadline=deadline)
+            await self._bucket.acquire(deadline=self._deadline())
+        except ProviderBudgetExhausted:
+            raise
         except RateLimited as exc:
             raise ProviderBudgetExhausted(
                 self.limit.provider,
@@ -145,9 +212,11 @@ class ProviderBudgetManager:
 
 
 __all__ = [
+    "AttemptDeadline",
     "DEFAULT_LIMITS",
     "JUPITER_LIMIT",
     "ProviderBudgetExhausted",
     "ProviderBudgetManager",
     "ProviderLimit",
+    "attempt_deadline_scope",
 ]
