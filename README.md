@@ -1,10 +1,10 @@
 # ezCHAIN
 
-**One open-source crypto trading app. Every chain. Your strategies. Your keys.**
+**One open-source, multi-chain crypto trading app. PAPER-first. Your strategies.**
 
-ezCHAIN is a self-hostable trading workstation: multi-chain wallets, a real ledger, live-market
-positions on PAPER fills, automations, signals, backtests and a strategy plugin SDK. It ships with **no
-strategies** — the platform, not the alpha, is the product.
+ezCHAIN is a self-hostable trading workstation: multi-chain market browsing, a real ledger,
+live-market positions on PAPER fills, automations, signals, backtests and a strategy plugin
+SDK. It ships with **no strategies** — the platform, not the alpha, is the product.
 
 > **ALPHA — PAPER ONLY. NOT READY FOR REAL-MONEY TRADING.**
 > There are no keys, no signing and no live execution. The plugin SDK, agent packs and
@@ -31,9 +31,11 @@ Terminals charge a platform fee on every trade. Every figure in the table below
 was read from the terminal's own documentation on 2026-11-07. The round-trip
 figure is twice the published per-trade rate; protocol, network, priority and
 bribe payments are additional, and each source page describes them separately.
-ezCHAIN is PAPER only: it charges no platform fee, and because there is no
-live execution in PAPER mode, no venue fee is paid either. Venue and network
-fees remain the only per-trade costs once live execution exists.
+ezCHAIN is PAPER only: it charges no platform fee, and no money reaches a
+venue or network. Each paper fill still journals a simulated fee — 30 bps by
+default on a paper mark, or the quote's own venue cost when that is larger — so
+paper PnL is not overstated. Live venue and network fees would be the only
+per-trade costs once live execution exists.
 
 | Terminal | Published platform fee, per trade | Platform cost of one buy plus one sell | Source, read 2026-11-07 |
 |---|---|---|---|
@@ -41,7 +43,7 @@ fees remain the only per-trade costs once live execution exists.
 | BullX | 1% for every buy and sell, plus protocol fees of 0.15% to 5% (1% on PumpFun; typically 0.25% for PumpFun tokens migrated to Raydium) | 2.00% before protocol fees; (1% + 0.25%) × 2 = 2.50% for a Raydium-migrated round trip before network, priority and bribe payments | [BullX fees and gas](https://bullx.gitbook.io/bullx-neo-docs/fees-and-gas.md) |
 | GMGN | 1% handling fee per transaction; each token issuance platform adds its own fee (1% on Pump.Fun, per the GMGN page) | 2.00% before issuance-platform fees | [GMGN fees and settings](https://docs.gmgn.ai/index/gmgn-fees-settings.md) |
 | Photon | 1% of the initial token amount for every buy and sell transaction | 2.00% before network and priority fees | [Photon fees](https://pies-organization.gitbook.io/photon-trading/photon-on-sol/photon-fees-sol.md) |
-| Self-hosted ezCHAIN (PAPER) | No platform fee and no subscription or billing surface; in PAPER mode no venue fee is paid | 0% platform cost | [docs/PRODUCT.md](docs/PRODUCT.md), [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md) |
+| Self-hosted ezCHAIN (PAPER) | No platform fee and no subscription or billing surface; paper fills journal a simulated fee but nothing is paid to a venue | 0% platform cost | [docs/API.md](docs/API.md), [docs/PLAN-LIVE-PAPER.md](docs/PLAN-LIVE-PAPER.md) |
 
 The published rate depends on the tier, the pool and the route, so no single
 blended number is quoted. Adding the protocol fees the terminals publish
@@ -77,14 +79,15 @@ platform code never imports a hardcoded strategy
 [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md)). The host owns market data, risk,
 sizing, quoting, execution and accounting; a plugin returns intents.
 
-**An MCP and agent surface with approvals.** Agents connect through an
+**An MCP and agent surface with scoped keys.** Agents connect through an
 MCP server with read tools and resources open and paper-only mutation tools
 hidden unless explicitly enabled and still bearer-authenticated, with
 least-privilege scoped keys for each agent
 ([docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md),
 [apps/mcp/](apps/mcp/), [docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md)).
-There is no live order tool; the API refuses live execution mode until the
-executor ships (see the status note at the top of this file).
+The agent host applies its own approval policy to those tools. There is no
+live order tool; the API refuses live execution mode until the executor ships
+(see the status note at the top of this file).
 
 **One open codebase.** The trading application is AGPL-3.0-or-later
 ([LICENSE](LICENSE)); the strategy plugin SDK is Apache-2.0 so that strategies
@@ -149,8 +152,8 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 | `apps/mcp/` | MCP 2025-11-25 server for Hermes, OpenClaw and other agents |
 | `integrations/` | Hermes skill/installer and OpenClaw Agent Plugins bundle |
 | `packages/ui/` | Generated design tokens shared by the web app |
-| `docs/` | Product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
-| `design/wireframe/` | 31-page clickable low-fi wireframe (open `index.html`) |
+| `docs/` | API contract, product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
+| `design/wireframe/` | 32-page clickable low-fi wireframe (open `index.html`) |
 | `infra/` | Docker Compose PAPER stack, Caddy edge, Prometheus, future-service blueprint |
 | `tools/` | Local gates, setup and the combined dev runner |
 
@@ -160,8 +163,9 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
    fill writes its journal entries in the same transaction as the position update.
 2. **One execution path.** Paper, testnet and live share the same pipeline; only the venue
    adapter and custodian differ. P0 implements paper only.
-3. **Strategies are user-defined rules, never code.** P0 ships declarative
-   momentum/dip/DCA/threshold rules; arbitrary strategy code is not loaded.
+3. **Strategies are user-defined packages, never platform code.** The platform
+   ships declarative momentum/dip/DCA/threshold rules and loads external Python
+   plugins in a supervised worker; no strategy lives in this repository.
 4. **Every number has one home.** Config is schema-validated; the UI reads it; nothing
    re-declares a default.
 5. **Chains are adapters.** A capability matrix, not `if chain == "solana"` branches.
@@ -198,7 +202,7 @@ bash tools/dev.sh                # API on :8000, web on :3000
 open http://localhost:3000
 ```
 
-- API docs: <http://127.0.0.1:8000/docs>
+- API docs: <http://127.0.0.1:8000/docs> · contract: [docs/API.md](docs/API.md)
 - Plugin catalogue: <http://127.0.0.1:8000/api/v1/plugins>
 - Agent state: <http://127.0.0.1:8000/api/v1/agent/state> (needs a `read` principal)
 - Agent keys: `/api/v1/agent/keys` (admin only; tokens shown once)

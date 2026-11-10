@@ -1,8 +1,8 @@
 # PRODUCT — ezCHAIN
 
-## 1. What it is
+## 1. What it is for
 
-A self-hostable, open-source crypto trading workstation. One place for:
+The target is a self-hostable, open-source crypto trading workstation. One place for:
 
 - **Portfolio** across every chain and every wallet (hot, hardware, watch-only, exchange).
 - **Execution** through one pipeline, paper → live, with exact quotes and honest fees.
@@ -43,9 +43,12 @@ A self-hostable, open-source crypto trading workstation. One place for:
 
 ## 5. Scope for v1 (M0–M3) — target, not shipped
 
-Nothing in this table is implemented yet. It is the v1 target; the current code is a
-fixture-driven web UI only (see `README.md`). A row may not be described as supported
-until it has an adapter, contract tests and a paper-gate record.
+This is the v1 target, not a shipped-feature list. The PAPER slice implements parts of
+chains, positions, automations, strategies, research and operations; wallets, CEX
+read-only, live execution and fiat remain unshipped. A row may not be described as
+supported until it has an adapter, contract tests and a paper-gate record. Current
+coverage is recorded in [`README.md`](../README.md) and
+[`PRODUCTION-READINESS.md`](PRODUCTION-READINESS.md).
 
 | Area | v1 target |
 |---|---|

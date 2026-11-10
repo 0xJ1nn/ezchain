@@ -1,9 +1,9 @@
 # PRODUCTION READINESS — PAPER stack
 
 Status: **alpha, paper-ready, live-execution-not-built**. Not ready for real-money
-trading. This document records what was
-measured on 2026-10-23, not what is planned. It is the honest answer to "can I run this
-and trust the paper numbers?".
+trading. This document records what was measured on 2026-10-23, with migration and
+deployment references kept current. It is the honest answer to "can I run this and trust
+the paper numbers?".
 
 Raw commands and observed results: [docs/evidence/p0-production](evidence/p0-production/README.md).
 Scope: PAPER only. There is no key custody, no signing, no live order, no fiat rail and
@@ -24,7 +24,7 @@ no copy-trading. `live_execute` is `false` for every chain.
 | Rejected orders | strategy order above risk cap | `hold` / `ORDER_REJECTED`, never a fake fill |
 | Kill switch | `POST /api/v1/system/kill-switch` | persists across restart; scheduler skips while armed; manual paper orders stay available |
 | Auth | direct API vs Next proxy | direct mutation without token 401; proxy mutation 200; cross-site 403 `CROSS_ORIGIN_DENIED` |
-| Migrations | SQLite tail tests through 0008; Postgres fresh-DB path when `EZCHAIN_TEST_DATABASE_URL` is set | forward-only revisions present; Postgres `alembic check` is the remaining drill |
+| Migrations | SQLite tail tests through 0010; Postgres fresh-DB path when `EZCHAIN_TEST_DATABASE_URL` is set | forward-only revisions present; Postgres `alembic check` is the remaining drill |
 | Strategy plugins | `pytest tests/sdk tests/engine/test_plugin_host.py tests/engine/test_plugin_runtime.py tests/api/test_plugins.py` | manifest/param refusal, worker timeout+quarantine, intent mapping, pinned version, readiness |
 | Agent MCP | `pytest tests/mcp`; stdio smoke against a local API | initialize 2025-11-25, read-only tool hiding, paper-only write, resources; no live tool |
 | API image | `docker build -f apps/api/Dockerfile -t ezchain/api:plugin-sdk .`; container run with SQLite | image builds with `ezchain-sdk`, imports the worker, `/healthz` 200 and `/api/v1/agent/capabilities` reports PAPER |
@@ -48,7 +48,7 @@ These are explicit gaps, not silent assumptions:
 1. **Docker at the current migration head.** The 2026-10-22 drill on Docker 29.9.2 /
    Compose v5.6.1 passed at head `0003_paper_fill_order` (five services healthy, paper BUY
    through the edge, restart and backup drills). The stack has **not** been re-drilled at
-   head `0008_api_keys` or after the plugin/agent changes. Evidence for the historical
+   head `0010_ledger_sequence` or after the plugin/agent changes. Evidence for the historical
    drill: [docker-up.md](evidence/p0-production/docker-up.md). Re-run
    `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d` at the release
    commit before claiming Docker parity.

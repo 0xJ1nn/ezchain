@@ -29,8 +29,9 @@ run in paper mode. No keys, no live money. Full contract:
 - [x] P0.4 web live markets and token pages.
 - [x] P0.5 web paper ticket and strategy builder.
 - [x] P0.6 integration: full gate, live smoke, restart/API-down drills, docs.
-- [ ] P0.7 follow-ups: dashboard equity history/tiles (#57), engine repository boundary
-  (#58), EVM venue (#59), evidence pack (#60).
+- [ ] P0.7 follow-ups: dashboard equity history and live position tiles (#57), an EVM
+  venue adapter (#58) and a standalone engine process (no tracked issue). The P0
+  evidence pack is recorded and closed (#59).
 
 Exit: a user can browse live markets, place a paper buy/sell, see the ledger and position,
 create a strategy and watch it place paper orders. Every number carries source, age and
@@ -60,15 +61,15 @@ create a strategy and watch it place paper orders. Every number carries source, 
 - [x] All-chain browse fan-out/round-robin with coverage and 30-pair-cap regression tests.
 - [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
   `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Production ops: Alembic 0001–0003, genesis/fill uniqueness, bearer auth + CSRF
+- [x] Production ops: Alembic 0001–0010, genesis/fill uniqueness, bearer auth + CSRF
   proxy, `/healthz`/`/readyz`/`/metrics`, JSON logs, runtime-only image deps.
-- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0006**.
+- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0010_ledger_sequence**.
 - [x] Stress harness (smoke/soak/idempotency/chaos) with deduplicated issue filing;
   #71 detected and closed by #72.
 - [x] Web truth: fixture badges, DCA/dip vocabulary, Playwright build guard.
-- [ ] Re-drill Docker build/`compose up` at the current migration head (historical 0003 drill recorded).
+- [ ] Re-drill Docker build/`compose up` at the current migration head `0010_ledger_sequence` (historical 0003 drill recorded).
 - [ ] Per-user auth/RBAC; one deployment token today.
-- [ ] Dashboard equity-snapshot history remains absent; wallets have no backend yet (#57).
+- [ ] Dashboard equity-snapshot history remains absent (#57); wallets have no backend yet (#10).
 - [ ] EVM/venue execution and executor/vault (out of paper scope).
 - [ ] Plugin backtest harness (graph backtests remain the only harness).
 - [ ] Signed plugin packages, registry and a bwrap/seccomp profile.
@@ -76,27 +77,28 @@ create a strategy and watch it place paper orders. Every number carries source, 
 
 ## Current — M1: UI close-out
 
-Finish the fixture-driven surfaces and make the gate trustworthy.
+Close out the M1 surfaces and keep the gate trustworthy.
 
 **Done:** shell/dashboard (#16), positions + four tile states (#18), markets (#21),
-token + fail-closed SCAM (#22), render harness (#15), mobile overflow (#23), cross-page
-constants (#38), evidence (#24), strategies/graph builder/signals (#12), risk/alerts
-(#13), automations as the real scheduler (#11), every system page (#14), performance,
-activity/ledger, reports, chains, operations and the gallery routes. The placeholder
-catch-all is gone.
+token + fail-closed SCAM (#22), render harness (#15), Playwright gate determinism (#36), mobile
+overflow (#23), cross-page constants (#38), evidence (#24), the Instrument dark pass
+(#147), performance, activity/ledger, reports, chains, operations and the gallery
+routes. The placeholder catch-all is gone. The strategy surfaces (#12), risk/alerts
+(#13), automations scheduler (#11) and every system page (#14) are live; those tracker
+issues remain open for the follow-ups below.
 
 **Next:**
 
 - Remaining position-tile states: trail-armed, banked, laddered, dust, stale, closed,
   quarantined (#8) — the live table and server `PositionView` are already real.
-- Wallet metadata/custody and the live-executor hardening slice (blocked review).
-- Watchlists and real discovery filters (#33).
-- Dark "Instrument" visual pass from `design/BRIEF.md`.
-- Make `tools/ci.sh` deterministic; the same commit must not pass and fail (#36).
+- Wallet metadata/custody and the live-executor hardening slice (#10; review blocked).
+- Watchlists as owned entities (#33).
+- Follow-ups tracked by the open M1 issues: a generic automation builder (#11), signal
+  scoring and routing (#12), alert delivery channels (#13) and gallery polish (#14).
 
 **Known M1 gaps:** responsive tables still scroll instead of becoming cards; markets
-watchlists are absent (#33); the dark “Instrument” visual pass is still pending;
-ADR-0014–0019 and this roadmap need maintainer review (#39).
+watchlists are absent (#33); ADR-0014–0019 and this roadmap need maintainer review
+(#39).
 
 Exit: `main` renders the full M1 surface at 1440 and 390 px with no external requests,
 `bash tools/ci.sh` is green on five consecutive runs, and no screen implies live data.
