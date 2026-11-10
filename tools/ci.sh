@@ -63,8 +63,24 @@ if [ -n "${EZCHAIN_TEST_DATABASE_URL:-}" ]; then
   bash tools/check-migrations.sh
   ran=1
 fi
+# The browser suite is the slow part of the gate. Run it when the diff can
+# affect the web app, or when explicitly requested; a backend-only or docs
+# diff still runs every Python, lint and migration check.
+web_gate=1
+if [ "${EZCHAIN_GATE_WEB:-auto}" = "always" ]; then
+  web_gate=1
+elif git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+  changed=$(git diff --name-only origin/main...HEAD 2>/dev/null || true)
+  if printf '%s\n' "$changed" | grep -qE '^(apps/web/|packages/ui/|pnpm-lock\.yaml|pnpm-workspace\.yaml|tools/build-tokens\.mjs|tools/check-wireframe\.mjs|design/)'; then
+    web_gate=1
+  else
+    web_gate=0
+  fi
+fi
 if [ -f pnpm-workspace.yaml ]; then
-  if [ ! -d node_modules ]; then
+  if [ "$web_gate" -eq 0 ]; then
+    echo "web gates skipped: the diff touches no web paths (EZCHAIN_GATE_WEB=always forces them)"
+  elif [ ! -d node_modules ]; then
     echo "not present yet: web gates (node_modules missing — run pnpm install)"
   else
     command -v pnpm >/dev/null 2>&1 || {
