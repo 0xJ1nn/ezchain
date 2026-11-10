@@ -58,7 +58,6 @@
     <form class="search" role="search" action="06-markets.html">
       <input type="search" placeholder="Search markets (symbol, name or address)" aria-label="Search markets (symbol, name or address)">
     </form>
-    <span class="chain chip" title="Active chain filter">⬡ All chains <span class="muted">▾</span></span>
     <span class="mode paper" title="Execution mode"><span class="dot"></span>PAPER</span>
     <span class="chip" title="Last successful sync">⟳ synced 4s</span>
     <span class="spacer"></span>

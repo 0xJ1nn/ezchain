@@ -10,7 +10,7 @@ Open `design/wireframe/index.html`.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ topbar: logo · workspace · chain filter · search · PAPER/LIVE ·      │
+│ topbar: logo · workspace · search · PAPER/LIVE ·                     │
 │         sync status · alerts · kill switch · avatar                  │
 ├──────────────┬───────────────────────────────────────────────────────┤
 │ sidebar      │ page header (title, subtitle, primary action)         │
@@ -49,6 +49,9 @@ Persistent rules:
 - Discovery leads: Browse and Signals are the first sidebar group. Reference galleries
   live under `/more`, never in the primary navigation.
 - Mode badge (`PAPER` / `LIVE`) is always in the topbar; live adds a red hairline.
+- Chain scope belongs to the page that owns the rows. Markets, Launches and Positions
+  each carry their own chain filter in the page URL; the shell has no global chain
+  control, so no chip in the topbar may imply one.
 - Kill switch is always visible; it opens a confirm sheet with scope (all / chain /
   wallet / strategy).
 - A global `sync` chip shows last successful chain sync per connected wallet; clicking

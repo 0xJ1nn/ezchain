@@ -627,7 +627,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .page-actions { margin-left: 0; flex-wrap: wrap; }
   .kpi-band { flex-wrap: wrap; }
   .kpi-band .stat { flex: 1 1 30%; }
-  .topbar .ws-chip, .topbar .chain.chip, .topbar .chip { display: none; }
+  .topbar .ws-chip, .topbar .chip { display: none; }
   .topbar .search { flex: 1 1 220px; max-width: 420px; }
   .panel-head { flex-wrap: wrap; row-gap: 6px; }
   .panel-head .right { flex-wrap: wrap; justify-content: flex-end; }
@@ -670,7 +670,6 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 /* Mobile shell: bottom nav, sticky mode + kill, tables scroll instead of squeeze. */
 @media (max-width: 768px) {
   .topbar .ws-chip,
-  .topbar .chain.chip,
   .topbar .chip,
   .brand-tag {
     display: none;

@@ -19,21 +19,15 @@ export function Topbar() {
 				</span>
 				Personal workspace
 			</Link>
-			<form className="search" role="search" action="/markets">
+			<form className="search" role="search" action="/markets" method="get">
 				<input
 					type="search"
 					name="q"
+					maxLength={80}
 					placeholder="Search markets (symbol, name or address)"
 					aria-label="Search markets (symbol, name or address)"
 				/>
 			</form>
-			<Link
-				className="chain chip"
-				href="/markets"
-				title="Open the multi-chain market browser"
-			>
-				<span aria-hidden="true">⬡</span> All chains
-			</Link>
 			<span className="mode paper" title="Execution mode">
 				<span className="dot" />
 				PAPER
