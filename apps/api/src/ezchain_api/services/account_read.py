@@ -19,16 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
-from ezchain_core.ledger import fee_account, realized_account
 
 from ..config import Settings
-from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow
-from . import paper, reconciliation
+from ..models import LedgerEntryRow, PaperFillRow, PaperOrderRow
+from . import paper, pnl, reconciliation
 from .system_flags import read_kill_switch
 
-POSITION_PREFIX = "position:"
 ZERO = Decimal(0)
-WIN_RATE_QUANTUM = Decimal("0.01")
 SHARE_QUANTUM = Decimal("0.01")
 REJECTION_WINDOW = timedelta(hours=24)
 EXPORT_LIMIT = 5000
@@ -41,10 +38,8 @@ SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 
 
 def _num(value: Decimal) -> str:
-    """Canonical decimal string: no exponent and no float round-trip."""
-    if value == 0:
-        return "0"
-    return format(value.normalize(), "f")
+    """Canonical decimal string shared with the strategy surface."""
+    return pnl.num(value)
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -56,11 +51,6 @@ def _aware(value: datetime | None) -> datetime | None:
 def _dt(value: datetime | None) -> str | None:
     aware = _aware(value)
     return None if aware is None else aware.isoformat()
-
-
-def _split_position_account(account: str) -> tuple[str, str]:
-    chain, _, token = account[len(POSITION_PREFIX) :].partition(":")
-    return chain, token
 
 
 # ---------------------------------------------------------------------------
@@ -99,51 +89,6 @@ def ledger(
 
 
 @dataclass(frozen=True)
-class _Group:
-    """One order journal: its token, fee leg, net result and whether it closed a trade."""
-
-    group_id: str
-    observed_at: datetime | None
-    token: tuple[str, str] | None
-    fee_usd: Decimal
-    realized_usd: Decimal
-    closed: bool
-
-
-def _groups(rows: list[LedgerEntryRow]) -> list[_Group]:
-    grouped: dict[str, list[LedgerEntryRow]] = {}
-    for row in rows:
-        grouped.setdefault(row.group_id, []).append(row)
-
-    groups: list[_Group] = []
-    for group_id, group in grouped.items():
-        token: tuple[str, str] | None = None
-        fee = ZERO
-        closed = False
-        for row in group:
-            if row.account.startswith(POSITION_PREFIX):
-                token = _split_position_account(row.account)
-            elif row.account == fee_account():
-                fee += Decimal(str(row.usd_value))
-            elif row.account == realized_account():
-                # A sell books a pnl leg; a buy does not. That is the provable close.
-                closed = True
-        stamps = [_aware(row.created_at) for row in group]
-        observed = min((stamp for stamp in stamps if stamp is not None), default=None)
-        groups.append(
-            _Group(
-                group_id=group_id,
-                observed_at=observed,
-                token=token,
-                fee_usd=fee,
-                realized_usd=paper.group_position_delta(group),
-                closed=closed and token is not None,
-            )
-        )
-    return groups
-
-
-@dataclass(frozen=True)
 class _TokenBook:
     chain: str
     token_address: str
@@ -158,51 +103,37 @@ class _TokenBook:
     market_value_usd: Decimal | None
 
 
-def _snapshots(session: Session) -> dict[tuple[str, str], MarketSnapshotRow]:
-    rows = session.scalars(select(MarketSnapshotRow)).all()
-    return {(row.chain, row.token_address): row for row in rows}
-
-
 def _token_books(
-    replay: paper.Replay,
-    snapshots: dict[tuple[str, str], MarketSnapshotRow],
-    groups: list[_Group],
+    projection: pnl.Projection,
+    marks: dict[pnl.TokenKey, pnl.Mark],
     fills: list[PaperFillRow],
 ) -> list[_TokenBook]:
-    fees: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
-    for group in groups:
+    """Decorate the shared projection with the account-only fields (symbol, fill count)."""
+    fees: dict[pnl.TokenKey, Decimal] = defaultdict(Decimal)
+    for group in projection.groups:
         if group.token is not None:
-            fees[group.token] += group.fee_usd
+            fees[group.token] += group.fees_usd
     trades = Counter((fill.chain, fill.token_address) for fill in fills)
 
     books: list[_TokenBook] = []
-    for account, (quantity, cost) in replay.positions.items():
-        chain, token = _split_position_account(account)
-        snapshot = snapshots.get((chain, token))
-        mark = None if snapshot is None else snapshot.price_usd
-        symbol = snapshot.symbol if snapshot is not None and snapshot.symbol else token
-        if mark is None:
-            market_value = ZERO if quantity == 0 else None
-            unrealized = ZERO if quantity == 0 else None
-        else:
-            market_value = quantity * Decimal(str(mark))
-            unrealized = market_value - cost
+    for position in projection.positions:
+        token = (position.chain, position.token_address)
+        mark = marks.get(token)
         books.append(
             _TokenBook(
-                chain=chain,
-                token_address=token,
-                symbol=symbol,
-                realized_usd=replay.realized_by_account.get(account, ZERO),
-                unrealized_usd=unrealized,
-                fees_usd=fees.get((chain, token), ZERO),
-                trades=trades.get((chain, token), 0),
-                quantity=quantity,
-                avg_cost_usd=None if quantity == 0 else cost / quantity,
-                mark_usd=None if mark is None else Decimal(str(mark)),
-                market_value_usd=market_value,
+                chain=position.chain,
+                token_address=position.token_address,
+                symbol=mark.symbol if mark is not None else position.token_address,
+                realized_usd=position.realized_usd,
+                unrealized_usd=position.unrealized_usd,
+                fees_usd=fees.get(token, ZERO),
+                trades=trades.get(token, 0),
+                quantity=position.quantity,
+                avg_cost_usd=position.avg_cost_usd,
+                mark_usd=position.mark_usd,
+                market_value_usd=position.market_value_usd,
             )
         )
-    books.sort(key=lambda book: (book.chain, book.token_address))
     return books
 
 
@@ -224,15 +155,9 @@ def _book_dict(book: _TokenBook) -> dict[str, Any]:
     }
 
 
-def _win_rate(wins: int, losses: int) -> str | None:
-    decided = wins + losses
-    if decided == 0:
-        return None
-    rate = (Decimal(wins) * 100 / Decimal(decided)).quantize(WIN_RATE_QUANTUM)
-    return _num(rate)
-
-
-def _daily_realized(groups: list[_Group], fallback: datetime) -> list[dict[str, Any]]:
+def _daily_realized(
+    groups: tuple[pnl.GroupProjection, ...], fallback: datetime
+) -> list[dict[str, Any]]:
     totals: dict[str, list[Decimal]] = defaultdict(lambda: [ZERO, ZERO])
     for group in groups:
         if group.token is None:
@@ -240,7 +165,7 @@ def _daily_realized(groups: list[_Group], fallback: datetime) -> list[dict[str, 
         observed = group.observed_at or fallback
         day = observed.astimezone(UTC).date().isoformat()
         totals[day][0] += group.realized_usd
-        totals[day][1] += group.fee_usd
+        totals[day][1] += group.fees_usd
     return [
         {"date": day, "realized_usd": _num(values[0]), "fees_usd": _num(values[1])}
         for day, values in sorted(totals.items())
@@ -249,13 +174,12 @@ def _daily_realized(groups: list[_Group], fallback: datetime) -> list[dict[str, 
 
 def _ledger_view(
     session: Session,
-) -> tuple[paper.Replay, list[_Group], list[PaperFillRow], list[_TokenBook]]:
-    rows = paper.ledger_rows(session)
-    replay = paper.project_ledger(rows)
-    groups = _groups(rows)
+) -> tuple[pnl.Projection, list[PaperFillRow], list[_TokenBook]]:
+    """The account view: every ledger group through the shared projector."""
+    marks = pnl.mark_index(session)
+    projection = pnl.project(pnl.ledger_lines(session), marks=pnl.prices(marks))
     fills = list(session.scalars(select(PaperFillRow).order_by(PaperFillRow.created_at)))
-    books = _token_books(replay, _snapshots(session), groups, fills)
-    return replay, groups, fills, books
+    return projection, fills, _token_books(projection, marks, fills)
 
 
 # ---------------------------------------------------------------------------
@@ -265,45 +189,32 @@ def _ledger_view(
 
 def performance(session: Session) -> dict[str, Any]:
     now = utcnow()
-    replay, groups, fills, books = _ledger_view(session)
-
-    open_books = [book for book in books if book.quantity > 0]
-    # One missing mark makes the portfolio total unknowable. Do not value it at zero.
-    marks_unknown = any(book.mark_usd is None for book in open_books)
-    complete = not marks_unknown
-    unrealized = (
-        None if marks_unknown else sum((book.unrealized_usd or ZERO for book in open_books), ZERO)
-    )
-    market_value = sum((book.market_value_usd or ZERO for book in open_books), ZERO)
-    equity = None if marks_unknown else replay.cash + market_value
-
-    closed = [group for group in groups if group.closed]
-    wins = sum(1 for group in closed if group.realized_usd > 0)
-    losses = sum(1 for group in closed if group.realized_usd < 0)
-    fees = sum((group.fee_usd for group in groups), ZERO)
+    projection, fills, books = _ledger_view(session)
 
     return {
         "mode": "paper",
         "as_of": now.astimezone(UTC).isoformat(),
-        "cash_usd": _num(replay.cash),
-        "equity_usd": None if equity is None else _num(equity),
-        "realized_usd": _num(replay.realized),
-        "unrealized_usd": None if unrealized is None else _num(unrealized),
-        "fees_usd": _num(fees),
+        "cash_usd": _num(projection.cash_usd),
+        "equity_usd": (None if projection.equity_usd is None else _num(projection.equity_usd)),
+        "realized_usd": _num(projection.realized_usd),
+        "unrealized_usd": (
+            None if projection.unrealized_usd is None else _num(projection.unrealized_usd)
+        ),
+        "fees_usd": _num(projection.fees_usd),
         "trades": len(fills),
-        "wins": wins,
-        "losses": losses,
-        "win_rate_pct": _win_rate(wins, losses),
-        "open_positions": len(open_books),
-        "complete": complete,
-        "marks_unknown": marks_unknown,
+        "wins": projection.wins,
+        "losses": projection.losses,
+        "win_rate_pct": pnl.win_rate_pct(projection.wins, projection.losses),
+        "open_positions": len(projection.open_positions),
+        "complete": projection.complete,
+        "marks_unknown": projection.marks_unknown,
         "by_token": [_book_dict(book) for book in books],
-        "daily_realized": _daily_realized(groups, now),
+        "daily_realized": _daily_realized(projection.groups, now),
     }
 
 
 def attribution(session: Session) -> list[dict[str, Any]]:
-    _, _, _, books = _ledger_view(session)
+    _, _, books = _ledger_view(session)
     total_abs = sum((abs(book.realized_usd) for book in books), ZERO)
     rows: list[dict[str, Any]] = []
     for book in books:
