@@ -20,6 +20,7 @@ from ..schemas import (
     OrderOut,
     PaperAccountOut,
     PaperOrderIn,
+    PaperWalletOut,
     PositionOut,
     ReconciliationOut,
     RiskReasonOut,
@@ -94,6 +95,17 @@ def account(
 ) -> PaperAccountOut:
     paper.ensure_genesis(session, settings.paper_starting_cash_usd)
     return PaperAccountOut.model_validate(paper.account_snapshot(session))
+
+
+@router.get("/wallets", response_model=list[PaperWalletOut])
+def wallets(session: Session = Depends(get_session)) -> list[PaperWalletOut]:
+    """Every paper wallet with the cash the ledger has settled to it.
+
+    Declaring the wallets is idempotent and writes no money: a wallet is a view over the
+    journal, and its balance does not exist as a stored number.
+    """
+    paper.ensure_wallets(session)
+    return [PaperWalletOut.model_validate(row) for row in paper.wallets(session)]
 
 
 @router.get("/positions", response_model=list[PositionOut])

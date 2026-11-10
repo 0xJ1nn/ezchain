@@ -18,6 +18,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Paper wallets and per-chain settlement (PAPER).** Every paper-capable chain now has
+  a wallet besides the genesis settlement wallet. The cash legs of an order are
+  attributed to the wallet for that chain, and a wallet's balance is the sum of those
+  rows: the wallets add up to the paper cash account and no balance is stored twice.
+  `GET /api/v1/paper/wallets` lists them, and `/paper/account` decomposes equity into
+  each wallet's settled cash plus its chain's marked positions. An order on a chain with
+  no wallet is refused with `WALLET_UNKNOWN`; a wallet that does not settle in the ledger
+  asset is refused with `SETTLEMENT_ASSET_UNKNOWN`. Migration `0015_paper_wallets` adds
+  the wallet table and the cash-leg attribution. Existing ledger rows are unchanged and
+  count towards the genesis wallet.
+
 - **Protection audit trail and optimistic versioning (PAPER).** Every arm
   transition appends an immutable event (rule snapshot, mark, observation time,
   action, resulting order id) in the same transaction as the state change it
