@@ -3,6 +3,8 @@ import { expect, test } from "./test";
 const CASES = [
 	{ route: "/ledger", label: "Orders table", caption: "Orders", headers: 8 },
 	{ route: "/ledger", label: "Fills table", caption: "Fills", headers: 10 },
+	{ route: "/markets", label: "Markets table", caption: "Markets", headers: 10 },
+	{ route: "/positions", label: "Server positions table", caption: "Server positions", headers: 11 },
 ];
 
 for (const c of CASES) {
@@ -16,5 +18,8 @@ for (const c of CASES) {
 		await expect(wrapper.locator("caption")).toHaveText(c.caption);
 		await expect(wrapper.locator("thead th")).toHaveCount(c.headers);
 		await expect(wrapper.locator('thead th[scope="col"]')).toHaveCount(c.headers);
+		await page.keyboard.press("Tab");
+		await page.keyboard.press("Shift+Tab");
+		await expect(wrapper).toBeFocused();
 	});
 }
