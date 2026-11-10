@@ -9,6 +9,7 @@ const MAIN_ROUTES = [
 	"/",
 	"/positions",
 	"/markets",
+	"/watchlist",
 	"/performance",
 	"/wallets",
 	"/ledger",

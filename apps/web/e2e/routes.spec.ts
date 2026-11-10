@@ -7,6 +7,7 @@ const ROUTES = [
 	"/positions",
 	"/launches",
 	"/markets",
+	"/watchlist",
 	"/performance",
 	"/wallets",
 	"/ledger",
