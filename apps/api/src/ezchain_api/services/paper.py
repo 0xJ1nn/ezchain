@@ -1087,9 +1087,13 @@ async def place_order(
             equity_usd=equity_for_risk,
         )
         fee = _fill_fee(notional, quote, settings)
+        funded_shortfall = Decimal(0)
         if allowed and payload.side == "buy" and replay.cash < notional + fee:
-            allowed = False
-            reasons = (RiskReason("INSUFFICIENT_CASH"),)
+            if settings.paper_no_risk:
+                funded_shortfall = (notional + fee) - replay.cash
+            else:
+                allowed = False
+                reasons = (RiskReason("INSUFFICIENT_CASH"),)
 
         if not allowed:
             order.quote_kind = quote.kind
@@ -1099,6 +1103,17 @@ async def place_order(
             )
 
         stamp = utcnow()
+        if funded_shortfall > 0:
+            funding_group = f"funding:{order.id}"
+            funding_entries = (
+                LedgerEntry(cash_account(), "USD", funded_shortfall, funded_shortfall, "funding"),
+                LedgerEntry("funding:USD", "USD", -funded_shortfall, -funded_shortfall, "funding"),
+            )
+            from ezchain_core.ledger import assert_balanced
+
+            assert_balanced(funding_entries)
+            for entry in funding_entries:
+                session.add(LedgerEntryRow(**entry.to_row(funding_group, created_at=stamp)))
         if payload.side == "buy":
             entries = buy_entries(
                 chain=payload.chain,
@@ -1149,6 +1164,9 @@ async def place_order(
         order.filled_at = stamp
         order.quote_kind = quote.kind
         order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+        if funded_shortfall > 0:
+            order.reason = "SHORTFALL_FUNDED"
+            order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
         session.commit()
         return order
 

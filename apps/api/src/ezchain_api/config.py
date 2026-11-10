@@ -74,6 +74,10 @@ class Settings(BaseSettings):
 
     paper_starting_cash_usd: Decimal = Field(default=Decimal("10000"))
     paper_fee_bps: int = 30
+    # Paper-only no-risk mode: a buy that would overdraw cash is funded for the
+    # exact shortfall through a labelled funding journal group instead of being
+    # rejected. Never affects a real-risk gate and never leaves paper.
+    paper_no_risk: bool = False
     max_order_usd: Decimal = Field(default=Decimal("1000"))
     max_position_usd: Decimal = Field(default=Decimal("2500"))
     max_open_positions: int = 10
@@ -180,6 +184,8 @@ class Settings(BaseSettings):
             raise ValueError("EZCHAIN_CORS_ORIGINS must not contain '*' in prod")
         if self.read_rate_limit_per_minute == 0:
             raise ValueError("EZCHAIN_READ_RATE_LIMIT_PER_MINUTE must be greater than zero in prod")
+        if self.paper_no_risk:
+            raise ValueError("EZCHAIN_PAPER_NO_RISK must be false in prod")
         return self
 
     @property

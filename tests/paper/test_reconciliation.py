@@ -21,7 +21,7 @@ from ezchain_api.schemas import ReconciliationOut
 from ezchain_api.services import paper
 from ezchain_api.services.reconciliation import TOLERANCE, reconciliation
 
-from .conftest import CHAIN, TOKEN, make_request, make_snapshot, place
+from .conftest import CHAIN, TOKEN, make_request, make_settings, make_snapshot, place
 
 NEW_CHECK_IDS = {
     "genesis.accounted_once",
@@ -381,12 +381,90 @@ def test_one_corrupted_fixture_row_is_reported(
     assert set(expected) <= failed_ids
 
 
+def test_funded_shortfall_reconciles(session: Session, dex, jupiter) -> None:
+    # No-risk paper mode funds a buy for its exact cash shortfall through a
+    # funding:{order.id} journal group. That group is not an order group, so the link
+    # check must accept it while the cash projection still counts its cash leg.
+    funded = make_settings(paper_no_risk=True, paper_starting_cash_usd=Decimal("10"))
+    dex.set(make_snapshot(price=Decimal("2000"), liquidity=Decimal("500000")))
+    order = place(
+        session,
+        funded,
+        dex,
+        jupiter,
+        make_request(amount_usd="100", key="recon-funded-shortfall"),
+    )
+
+    assert order.status == "filled"
+    assert order.reason == "SHORTFALL_FUNDED"
+    report = reconciliation(session)
+
+    assert report["ok"] is True
+    checks = _checks(report)
+    assert checks["ledger.groups_linked"]["ok"] is True
+    assert "1 funding groups match a real order" in checks["ledger.groups_linked"]["detail"]
+    assert checks["cash.fills_match"]["ok"] is True
+    # Starting cash 10, fill 100 plus 0.3 fee: exactly 90.3 was funded, leaving cash 0.
+    funding = list(
+        session.scalars(
+            select(LedgerEntryRow).where(LedgerEntryRow.group_id == f"funding:{order.id}")
+        )
+    )
+    assert sorted((row.account, row.kind) for row in funding) == [
+        ("cash:USD", "funding"),
+        ("funding:USD", "funding"),
+    ]
+    assert report["totals"]["cash_usd"] == "0"
+    assert report["totals"]["fills_cash_usd"] == "0"
+
+
+def test_rogue_funding_named_group_is_reported(session: Session, settings) -> None:
+    # A balanced group that mimics the funding legs but has no paper order behind it
+    # must not be excused by its name. It is an orphan and its cash leg is unproven.
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    session.add_all(
+        [
+            LedgerEntryRow(
+                id="rogue-funding-cash",
+                group_id="funding-2",
+                account="cash:USD",
+                asset="USD",
+                amount=Decimal("5000"),
+                usd_value=Decimal("5000"),
+                kind="funding",
+            ),
+            LedgerEntryRow(
+                id="rogue-funding-leg",
+                group_id="funding-2",
+                account="funding:USD",
+                asset="USD",
+                amount=Decimal("-5000"),
+                usd_value=Decimal("-5000"),
+                kind="funding",
+            ),
+        ]
+    )
+    session.commit()
+
+    report = reconciliation(session)
+
+    checks = _checks(report)
+    assert report["ok"] is False
+    assert checks["ledger.groups_balanced"]["ok"] is True
+    assert checks["genesis.accounted_once"]["ok"] is True
+    assert checks["ledger.groups_linked"]["ok"] is False
+    assert "funding-2" in checks["ledger.groups_linked"]["detail"]
+    assert checks["cash.fills_match"]["ok"] is False
+    assert "15000" in checks["cash.fills_match"]["detail"]
+
+
 def test_second_genesis_leg_is_reported_even_when_the_books_balance(
     session: Session, settings
 ) -> None:
     paper.ensure_genesis(session, settings.paper_starting_cash_usd)
-    # A second balanced funding journal doubles cash and the genesis equity leg together,
-    # so every cash-vs-fills projection still agrees while starting cash is counted twice.
+    # A second balanced funding-named journal doubles cash and the genesis equity leg
+    # together. The name alone must not excuse it: with no order behind it, the group is
+    # an orphan and its cash leg is not part of the projected fill cash flow.
     session.add_all(
         [
             LedgerEntryRow(
@@ -415,7 +493,11 @@ def test_second_genesis_leg_is_reported_even_when_the_books_balance(
 
     checks = _checks(report)
     assert checks["ledger.groups_balanced"]["ok"] is True
+    # The second genesis equity leg also inflates the genesis projection, so the cash
+    # projection alone cannot see it; the orphan link check and the genesis check do.
     assert checks["cash.fills_match"]["ok"] is True
+    assert checks["ledger.groups_linked"]["ok"] is False
+    assert "funding-2" in checks["ledger.groups_linked"]["detail"]
     assert checks["genesis.accounted_once"]["ok"] is False
     assert "counted more than once" in checks["genesis.accounted_once"]["detail"]
 
