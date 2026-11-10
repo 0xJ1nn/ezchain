@@ -192,6 +192,13 @@ class HttpQuoteProvider(JsonApiClient):
             # token. Open the circuit so the next order does not pay the same timeout.
             self._breaker.record_failure()
             raise
+        except BaseException:
+            # NotFound / RateLimited / cancellation are facts about this request, not
+            # a dead host. The half-open probe was already consumed by is_open();
+            # release it or the breaker stays HALF_OPEN with probe_in_flight=True and
+            # every later call is rejected until the process restarts.
+            self._breaker.reset_probe()
+            raise
         self._breaker.record_success()
         return quote
 

@@ -104,3 +104,33 @@ async def test_429_sets_a_cooldown_without_opening_the_breaker(kyber: KyberSwapC
             await client.quote(quote_request(chain="base", token=WETH))
         assert second.value.__class__.__name__ == "RateLimited"
     assert route.call_count == 1
+
+
+@respx.mock
+async def test_request_fact_does_not_wedge_a_half_open_probe(
+    kyber: KyberSwapClient, clock: FakeClock
+) -> None:
+    """A 404 on the probe is not an outage; the next request must still reach the provider.
+
+    ``is_open()`` consumes the one half-open permit. Only ``UpstreamError`` used to
+    record an outcome, so NotFound/RateLimited/cancellation left the breaker in
+    HALF_OPEN with ``probe_in_flight=True`` for ever.
+    """
+    no_route = {"code": 4011, "message": "token not found"}
+    route = respx.get(BASE_ROUTES).mock(
+        side_effect=[
+            httpx.Response(530),
+            httpx.Response(200, json=no_route),
+            httpx.Response(200, json=no_route),
+        ]
+    )
+    async with kyber as client:
+        with pytest.raises(UpstreamError):
+            await client.quote(quote_request(chain="base", token=WETH, amount_usd="100"))
+        clock.advance(61)
+        with pytest.raises(NotFound):
+            await client.quote(quote_request(chain="base", token=WETH, amount_usd="101"))
+        # If the probe leaked, this raises "circuit open" and never reaches the route.
+        with pytest.raises(NotFound):
+            await client.quote(quote_request(chain="base", token=WETH, amount_usd="102"))
+    assert route.call_count == 3
