@@ -849,7 +849,14 @@ def test_limits_expose_settings_but_never_secrets(
     body = response.json()
     assert set(body) == {
         "mode",
+        "risk_profile",
+        "trade_risk_profile",
+        "min_order_usd",
         "max_order_usd",
+        "max_trade_usd",
+        "max_order_pct_of_equity",
+        "per_token_cap_usd",
+        "max_slippage_bps",
         "max_position_usd",
         "max_open_positions",
         "max_daily_loss_usd",
