@@ -228,8 +228,9 @@ export default async function StrategyDetailPage({
 						sub="declarative · applied on the next evaluation"
 						action={<Badge tone="ghost">PAPER</Badge>}
 					>
-						<div className="table-wrap">
+						<div className="table-wrap" tabIndex={0} role="region" aria-label="Parameters table">
 							<table className="table compact">
+								<caption className="sr-only">Parameters</caption>
 								<tbody>
 									<tr>
 										<td className="muted">Token</td>

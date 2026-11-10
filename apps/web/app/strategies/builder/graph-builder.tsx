@@ -1900,8 +1900,9 @@ function EffectsTable({ effects }: { effects: GraphEffect[] }) {
 		return <p className="small muted">No effects: the exec path reached no action.</p>;
 	}
 	return (
-		<div className="table-wrap">
+		<div className="table-wrap" tabIndex={0} role="region" aria-label="Effects table">
 			<table className="table compact">
+				<caption className="sr-only">Effects</caption>
 				<thead>
 					<tr>
 						<th scope="col">#</th>
@@ -2016,8 +2017,9 @@ function TraceTable({
 	const entries = Object.entries(values);
 	if (entries.length === 0) return <p className="small muted">—</p>;
 	return (
-		<div className={`table-wrap ${styles.traceTable}`}>
+		<div className={`table-wrap ${styles.traceTable}`} tabIndex={0} role="region" aria-label="Trace table">
 			<table className="table compact">
+				<caption className="sr-only">Trace</caption>
 				<thead>
 					<tr>
 						<th scope="col">Node</th>
@@ -2161,8 +2163,9 @@ function BacktestPanel({
 function TradesTable({ trades }: { trades: BacktestTrade[] }) {
 	if (trades.length === 0) return <p className="small muted">No trades in the sample.</p>;
 	return (
-		<div className={`table-wrap ${styles.trades}`}>
+		<div className={`table-wrap ${styles.trades}`} tabIndex={0} role="region" aria-label="Trades table">
 			<table className="table compact">
+				<caption className="sr-only">Trades</caption>
 				<thead>
 					<tr>
 						<th scope="col">Entry</th>
