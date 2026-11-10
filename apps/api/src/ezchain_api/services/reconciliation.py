@@ -175,6 +175,8 @@ def _check_groups_linked(
             or fill.token_address != order.token_address
         ):
             order_mismatches.append(f"{group_id} order and fill disagree")
+        if abs(Decimal(str(order.amount_usd)) - Decimal(str(fill.notional_usd))) > TOLERANCE:
+            order_mismatches.append(f"{group_id} order notional and fill notional disagree")
         expected = EXPECTED_KINDS.get(order.side)
         if expected is None or Counter(row.kind for row in rows) != expected:
             kind_mismatches.append(group_id)
@@ -404,6 +406,7 @@ def reconciliation(session: Session) -> dict[str, Any]:
             PaperOrderRow.token_address,
             PaperOrderRow.side,
             PaperOrderRow.status,
+            PaperOrderRow.amount_usd,
         )
     ).all()
     marks = {

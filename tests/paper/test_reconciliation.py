@@ -201,7 +201,7 @@ def test_unbalanced_group_orphan_fill_and_missing_fill_are_reported(
 
 def test_balanced_group_without_an_order_or_fill_is_reported(session: Session, settings) -> None:
     paper.ensure_genesis(session, settings.paper_starting_cash_usd)
-    # The issue's example: a balanced group that moves a position against PnL and never
+    # A balanced group that moves a position against PnL and never
     # touches cash. Group balance and the cash projection both pass; only the link and
     # fill-quantity checks can see it.
     session.add_all(
@@ -294,6 +294,13 @@ def _corrupt_wrong_sign(session: Session) -> dict[str, str]:
     }
 
 
+def _corrupt_order_notional(session: Session) -> dict[str, str]:
+    order = session.scalar(select(PaperOrderRow))
+    assert order is not None
+    order.amount_usd = order.amount_usd + Decimal("1")
+    return {"ledger.groups_linked": order.id}
+
+
 def _corrupt_orphan_fill(session: Session) -> dict[str, str]:
     orphan_order_id = new_id()
     fill_id = new_id()
@@ -339,6 +346,7 @@ CORRUPTIONS: list[Callable[[Session], dict[str, str]]] = [
     _corrupt_missing_group,
     _corrupt_duplicated_group,
     _corrupt_wrong_sign,
+    _corrupt_order_notional,
     _corrupt_orphan_fill,
     _corrupt_mismatched_position,
 ]
