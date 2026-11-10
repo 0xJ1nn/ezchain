@@ -64,6 +64,14 @@ test("dashboard renders a complete server composition with shares", async ({ pag
 	await expect(
 		chains.locator("tbody tr").filter({ hasText: "settlement" }).locator("td").nth(3),
 	).toHaveText("98.61%");
+
+	// The 125s fixture mark is stale, not a fresh "known" row; its chain aggregates stale.
+	const scam = assets.locator("tbody tr").filter({ hasText: "SCAM" });
+	await expect(scam).toContainText("stale · DexScreener");
+	await expect(scam).not.toContainText("fresh");
+	await expect(
+		chains.locator("tbody tr").filter({ hasText: "solana" }).locator(".badge"),
+	).toHaveText("stale");
 });
 
 test("an unmarked row never shows a source or age as its mark", async ({ page }) => {

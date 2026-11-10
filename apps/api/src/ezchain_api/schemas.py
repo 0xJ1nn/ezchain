@@ -458,7 +458,7 @@ class PaperAssetCompositionOut(BaseModel):
     market_value_usd: str | None = None
     share_pct: str | None = None
     source: SourceOut | None = None
-    mark_status: Literal["known", "unknown"]
+    mark_status: Literal["fresh", "stale", "unknown", "future"]
 
 
 class PaperWalletOut(BaseModel):
@@ -509,7 +509,7 @@ class PaperChainCompositionOut(BaseModel):
     unpriced_assets: int = 0
     market_value_usd: str | None = None
     share_pct: str | None = None
-    mark_status: Literal["known", "unknown"]
+    mark_status: Literal["fresh", "stale", "unknown", "future"]
 
 
 class PaperAccountOut(BaseModel):

@@ -342,7 +342,7 @@ def test_paper_account_is_incomplete_when_one_mark_is_unknown(
     assets = {row["token_address"]: row for row in body["by_asset"] if row["kind"] == "position"}
     assert assets[TOKEN_A]["market_value_usd"] == "300"
     assert assets[TOKEN_A]["share_pct"] is None
-    assert assets[TOKEN_A]["mark_status"] == "known"
+    assert assets[TOKEN_A]["mark_status"] == "fresh"
     assert assets[TOKEN_B]["mark_usd"] is None
     assert assets[TOKEN_B]["market_value_usd"] is None
     assert assets[TOKEN_B]["share_pct"] is None
@@ -666,7 +666,7 @@ def test_paper_account_flat_account_is_complete_cash_only(
             "unpriced_assets": 0,
             "market_value_usd": "10000",
             "share_pct": "100.00",
-            "mark_status": "known",
+            "mark_status": "fresh",
         }
     ]
     assert body["by_asset"] == [
@@ -680,7 +680,7 @@ def test_paper_account_flat_account_is_complete_cash_only(
             "market_value_usd": "10000",
             "share_pct": "100.00",
             "source": None,
-            "mark_status": "known",
+            "mark_status": "fresh",
         }
     ]
 

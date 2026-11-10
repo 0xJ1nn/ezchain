@@ -58,7 +58,7 @@ from ezchain_core.ledger import (
 )
 from ezchain_core.types import RISK_REASON_MESSAGES
 
-from ..config import Settings
+from ..config import Settings, get_settings
 from ..models import (
     LedgerEntryRow,
     MarketSnapshotRow,
@@ -402,15 +402,46 @@ def _source_ref(row: MarketSnapshotRow) -> SourceRef:
     return SourceRef(name=row.source, url=None, observed_at=observed)
 
 
+def _mark_status(
+    mark_usd: Any, source: Any, max_age_seconds: float, now: datetime | None = None
+) -> str:
+    """Typed freshness of one mark, separate from any quote's freshness."""
+    if mark_usd is None:
+        return "unknown"
+    if not isinstance(source, dict):
+        return "unknown"
+    observed_raw = source.get("observed_at")
+    if not isinstance(observed_raw, str):
+        return "unknown"
+    try:
+        stamp = _aware(datetime.fromisoformat(observed_raw))
+    except ValueError:
+        return "unknown"
+    if stamp is None:
+        return "unknown"
+    now = now or utcnow()
+    age = (now - stamp).total_seconds()
+    if age < 0:
+        return "future"
+    if age > max_age_seconds:
+        return "stale"
+    return "fresh"
+
+
 # ---------------------------------------------------------------------------
 # Read models
 # ---------------------------------------------------------------------------
 
 
 def _position_views(
-    replay: Replay, snapshots: dict[tuple[str, str], MarketSnapshotRow]
+    replay: Replay,
+    snapshots: dict[tuple[str, str], MarketSnapshotRow],
+    *,
+    max_age_seconds: float = 60.0,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     views: list[dict[str, Any]] = []
+    now = now or utcnow()
     for account, (quantity, cost) in replay.positions.items():
         if quantity <= 0:
             continue
@@ -435,7 +466,14 @@ def _position_views(
             source=None if snapshot is None or mark is None else _source_ref(snapshot),
             mode="paper",
         )
-        views.append(view.to_dict())
+        row = view.to_dict()
+        row["mark_status"] = _mark_status(
+            view.mark_usd,
+            row.get("source"),
+            max_age_seconds,
+            now,
+        )
+        views.append(row)
     views.sort(key=lambda item: (item["chain"], item["token_address"]))
     return views
 
@@ -451,8 +489,25 @@ def _share_pct(value: Decimal, equity: Decimal) -> str | None:
     return str((value * 100 / equity).quantize(SHARE_QUANTUM))
 
 
+def _chain_mark_status(members: list[dict[str, Any]]) -> str:
+    statuses = [str(member.get("mark_status", "unknown")) for member in members]
+    if any(status == "unknown" for status in statuses):
+        return "unknown"
+    if any(status == "future" for status in statuses):
+        return "future"
+    if any(status == "stale" for status in statuses):
+        return "stale"
+    return "fresh"
+
+
 def _composition(
-    views: list[dict[str, Any]], cash: Decimal, *, complete: bool, equity: Decimal
+    views: list[dict[str, Any]],
+    cash: Decimal,
+    *,
+    complete: bool,
+    equity: Decimal,
+    max_age_seconds: float = 60.0,
+    now: datetime | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Per-chain and per-asset composition, computed once on the server.
 
@@ -465,6 +520,7 @@ def _composition(
     A chain has no single native quantity: tokens are not fungible across assets, so chain
     rows carry an asset count and a USD total while native quantity lives on the asset row.
     """
+    now = now or utcnow()
     assets: list[dict[str, Any]] = []
     for view in views:
         market_value = view["market_value_usd"]
@@ -484,7 +540,11 @@ def _composition(
                 # source: otherwise the UI could show an observation age as if the row
                 # were priced (CONTRACT I3).
                 "source": view["source"] if priced else None,
-                "mark_status": "unknown" if not priced else "known",
+                "mark_status": (
+                    "unknown"
+                    if not priced
+                    else _mark_status(view["mark_usd"], view["source"], max_age_seconds, now)
+                ),
             }
         )
 
@@ -506,7 +566,11 @@ def _composition(
                 "unpriced_assets": unpriced,
                 "market_value_usd": None if total is None else str(total),
                 "share_pct": (None if total is None or not complete else _share_pct(total, equity)),
-                "mark_status": "unknown" if unpriced else "known",
+                "mark_status": (
+                    "unknown"
+                    if unpriced
+                    else _chain_mark_status([a for a in assets if a["chain"] == chain])
+                ),
             }
         )
 
@@ -518,7 +582,7 @@ def _composition(
             "unpriced_assets": 0,
             "market_value_usd": str(cash),
             "share_pct": cash_share,
-            "mark_status": "known",
+            "mark_status": "fresh",
         }
     )
     assets.append(
@@ -532,7 +596,7 @@ def _composition(
             "market_value_usd": str(cash),
             "share_pct": cash_share,
             "source": None,
-            "mark_status": "known",
+            "mark_status": "fresh",
         }
     )
     return chains, assets
@@ -666,8 +730,10 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
     """
     if starting_cash_usd is not None:
         ensure_genesis(session, starting_cash_usd)
+    now = utcnow()
+    max_age = get_settings().max_quote_age_seconds
     replay = _replay(_ledger_rows(session))
-    views = _position_views(replay, _snapshot_index(session))
+    views = _position_views(replay, _snapshot_index(session), max_age_seconds=max_age, now=now)
     known_market_value = Decimal(0)
     unrealized = Decimal(0)
     unpriced: list[dict[str, Any]] = []
@@ -687,7 +753,16 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
         unrealized += Decimal(str(view["unrealized_usd"]))
     complete = not unpriced
     equity = replay.cash + known_market_value
-    by_chain, by_asset = _composition(views, replay.cash, complete=complete, equity=equity)
+    max_age = get_settings().max_quote_age_seconds
+    now = utcnow()
+    by_chain, by_asset = _composition(
+        views,
+        replay.cash,
+        complete=complete,
+        equity=equity,
+        max_age_seconds=max_age,
+        now=now,
+    )
     wallet_rows = wallet_views(session, replay)
     by_wallet = _wallet_composition(views, wallet_rows, replay, complete=complete, equity=equity)
     return {

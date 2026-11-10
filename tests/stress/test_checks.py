@@ -57,7 +57,7 @@ def asset_row(**overrides: object) -> dict[str, object]:
         "kind": "position",
         "share_pct": "3.00",
         "source": None,
-        "mark_status": "known",
+        "mark_status": "fresh",
     }
     values.update(overrides)
     return values
@@ -74,7 +74,7 @@ def cash_row(**overrides: object) -> dict[str, object]:
         "market_value_usd": "97",
         "share_pct": "97.00",
         "source": None,
-        "mark_status": "known",
+        "mark_status": "fresh",
     }
     values.update(overrides)
     return values
@@ -87,7 +87,7 @@ def chain_row(**overrides: object) -> dict[str, object]:
         "unpriced_assets": 0,
         "market_value_usd": "3",
         "share_pct": "3.00",
-        "mark_status": "known",
+        "mark_status": "fresh",
     }
     values.update(overrides)
     return values
@@ -322,7 +322,7 @@ def test_account_unpriced_asset_must_not_carry_a_source_or_value() -> None:
                 unrealized_usd=None,
                 share_pct="0.00",
                 source={"name": "dexscreener", "observed_at": "2026-01-01T00:00:00Z"},
-                mark_status="known",
+                mark_status="fresh",
             ),
             cash_row(share_pct=None),
         ]
@@ -331,6 +331,27 @@ def test_account_unpriced_asset_must_not_carry_a_source_or_value() -> None:
     codes = {finding.code for finding in findings}
     assert "ACCOUNT_MARK_STATUS_MISMATCH" in codes
     assert "ACCOUNT_UNPRICED_ASSET_VALUED" in codes
+
+
+def test_account_priced_marks_carry_a_freshness_status() -> None:
+    # Freshness is its own axis: a priced mark is fresh, stale or future, never "known".
+    for status in ("fresh", "stale", "future"):
+        findings = check_account(
+            account(
+                by_asset=[asset_row(mark_status=status), cash_row()],
+                by_chain=[
+                    chain_row(mark_status=status),
+                    chain_row(chain="settlement", market_value_usd="97", share_pct="97.00"),
+                ],
+            ),
+            scenario="t",
+        )
+        assert findings == []
+
+    retired = check_account(
+        account(by_asset=[asset_row(mark_status="known"), cash_row()]), scenario="t"
+    )
+    assert any(finding.code == "ACCOUNT_MARK_STATUS_MISMATCH" for finding in retired)
 
 
 def test_account_that_withholds_a_complete_equity_is_a_finding() -> None:

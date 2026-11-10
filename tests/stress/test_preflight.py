@@ -59,7 +59,7 @@ class FakeHarness:
                     "market_value_usd": "10000",
                     "share_pct": "100.00",
                     "source": None,
-                    "mark_status": "known",
+                    "mark_status": "fresh",
                 }
             ],
             "by_chain": [
@@ -69,7 +69,7 @@ class FakeHarness:
                     "unpriced_assets": 0,
                     "market_value_usd": "10000",
                     "share_pct": "100.00",
-                    "mark_status": "known",
+                    "mark_status": "fresh",
                 }
             ],
             "mode": self.account_mode,
