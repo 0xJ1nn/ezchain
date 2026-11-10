@@ -36,11 +36,15 @@ MAX_BATCH = 30
 # inside one MAX_BATCH request in normal operation.
 MAX_CHAIN_HINTS = 12
 MAX_CONCURRENT_CHAINS = 4
+# Overall bound for one all-chain discovery fan-out. A single hanging chain must not
+# hold the whole scan open; completed chains still report their rows.
+DISCOVERY_DEADLINE_SECONDS = 8.0
+DISCOVERY_PROVIDER_SECONDS = 5.0
 # Safety cap for one ``tokens()`` call; it is not the API's response-pair cap.
 MAX_DISCOVERY_ADDRESSES = MAX_BATCH * 4
 
 SortMode = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
-CoverageReason = Literal["pairs", "no_pairs", "error"]
+CoverageReason = Literal["pairs", "no_pairs", "error", "timeout"]
 
 SAFETY_UNKNOWN = {"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"}
 
@@ -545,24 +549,43 @@ class DexScreenerClient(JsonApiClient):
                 return meta.id, [], 0, False
             try:
                 async with semaphore:
-                    rows, failed = await self._rows_for_addresses(
-                        meta.id, addresses, observed, sort
+                    rows, failed = await asyncio.wait_for(
+                        self._rows_for_addresses(meta.id, addresses, observed, sort),
+                        timeout=DISCOVERY_PROVIDER_SECONDS,
                     )
-            except Exception:  # one chain/provider failure must not stop discovery
+            except (TimeoutError, Exception):  # one chain/provider failure must not stop discovery
                 rows, failed = [], True
             return meta.id, rows, len(addresses), failed
 
-        results = await asyncio.gather(*(probe(chain) for chain in CHAINS))
+        tasks = [asyncio.create_task(probe(chain)) for chain in CHAINS]
+        done, pending = await asyncio.wait(tasks, timeout=DISCOVERY_DEADLINE_SECONDS)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+        results: list[tuple[str, list[MarketRow], int, bool, bool]] = []
+        for task, chain in zip(tasks, CHAINS, strict=True):
+            if task in done and not task.cancelled():
+                try:
+                    chain_id, rows, requested, failed = task.result()
+                    results.append((chain_id, rows, requested, failed, False))
+                    continue
+                except Exception:  # pragma: no cover - probe already swallows
+                    pass
+            results.append((chain.id, [], 0, True, True))
+
         coverage = [
             ChainCoverage(
                 chain,
                 requested,
                 len(rows),
-                "error" if failed else ("pairs" if rows else "no_pairs"),
+                "timeout"
+                if was_timeout
+                else ("error" if failed else ("pairs" if rows else "no_pairs")),
             )
-            for chain, rows, requested, failed in results
+            for chain, rows, requested, failed, was_timeout in results
         ]
-        return _round_robin([rows for _, rows, _, _ in results]), coverage
+        return _round_robin([rows for _, rows, _, _, _ in results]), coverage
 
     async def _discover_one(
         self, chain: str, observed: datetime, sort: SortMode

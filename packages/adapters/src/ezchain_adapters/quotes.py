@@ -174,7 +174,9 @@ class HttpQuoteProvider(JsonApiClient):
         # resolves its own mints and never asks.
         self._decimals = decimals or DecimalsResolver()
         self._breaker = breaker or CircuitBreaker(
-            cooldown_seconds=self.breaker_cooldown_seconds, clock=clock
+            cooldown_seconds=self.breaker_cooldown_seconds,
+            failure_threshold=1,
+            clock=clock,
         )
 
     def supports(self, chain: ChainMeta) -> bool:

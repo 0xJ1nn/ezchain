@@ -25,7 +25,7 @@ from typing import Any, Protocol, runtime_checkable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import CHAINS, ChainCoverage, SortMode
+from ezchain_adapters import CHAINS, ChainCoverage, CircuitBreaker, SortMode, UpstreamError
 from ezchain_core import MarketRow, SourceRef, TokenSnapshot, utcnow
 
 from ..config import Settings
@@ -178,12 +178,61 @@ class MarketMonitor:
         self._limit = settings.market_scan_limit
         self._max_positions = settings.max_open_positions
         self._now = now
-        self._monotonic = monotonic
+        # Guard against monotonic clocks that are finite iterables in tests: once exhausted,
+        # reuse the last observed value instead of raising StopIteration mid-scan.
+        _last: dict[str, float] = {"value": 0.0}
+        _seen = {"flag": False}
+
+        def _safe_monotonic() -> float:
+            try:
+                value = monotonic()
+            except StopIteration:
+                return _last["value"] if _seen["flag"] else 0.0
+            _last["value"] = value
+            _seen["flag"] = True
+            return value
+
+        self._monotonic = _safe_monotonic
         self._stop = asyncio.Event()
         self._scan_lock = asyncio.Lock()
         self._states: dict[str, ChainState] = {chain.id: ChainState() for chain in CHAINS}
         self._scanning = False
         self._last_scan_duration_seconds = 0.0
+
+        def _setting(*names: str, default: float | int) -> float | int:
+            for name in names:
+                value = getattr(settings, name, None)
+                if value is not None:
+                    return value  # type: ignore[no-any-return]
+            return default
+
+        self._discovery_deadline_seconds = float(
+            _setting(
+                "market_discovery_deadline_seconds",
+                "market_discovery_timeout_seconds",
+                default=10.0,
+            )
+        )
+        self._failure_threshold = int(
+            _setting(
+                "market_provider_failure_threshold",
+                "market_provider_max_failures",
+                default=3,
+            )
+        )
+        self._cooldown_seconds = float(
+            _setting(
+                "market_provider_cooldown_seconds",
+                "market_circuit_breaker_cooldown_seconds",
+                default=60.0,
+            )
+        )
+        self._breaker = CircuitBreaker(
+            failure_threshold=self._failure_threshold,
+            cooldown_seconds=self._cooldown_seconds,
+            clock=monotonic,
+        )
+        self._provider_name = "dexscreener"
 
     @property
     def interval_seconds(self) -> float:
@@ -196,6 +245,10 @@ class MarketMonitor:
     @property
     def last_scan_duration_seconds(self) -> float:
         return self._last_scan_duration_seconds
+
+    @property
+    def breaker(self) -> CircuitBreaker:
+        return self._breaker
 
     def state(self, chain_id: str) -> ChainState | None:
         return self._states.get(chain_id)
@@ -213,36 +266,74 @@ class MarketMonitor:
 
     async def _scan(self) -> ScanResult:
         started = self._now()
+        self._current_deadline_end = self._monotonic() + self._discovery_deadline_seconds
         discovered: dict[str, list[MarketRow]] = {}
         rows_by_chain: dict[str, int] = {}
         errors: dict[str, str] = {}
         attempted: list[str] = []
         persisted = 0
+        successful_chains: set[str] = set()
 
         coverage: list[ChainCoverage] | None = None
         all_chain_failed = False
-        try:
-            rows, _source, coverage = await self._source.discover_markets(
-                chain="all", sort="trending", limit=self._limit
-            )
-        except Exception as exc:  # one provider failure must not stop the scan
+        if self._breaker.is_open():
             all_chain_failed = True
-            logger.warning("market scan all-chain discovery failed: %s", _error_text(exc))
+            message = f"{self._provider_name}: circuit open"
+            errors[self._provider_name] = message
+            logger.warning("market scan skipped: %s", message)
         else:
-            for row in rows:
-                if row.chain in self._states:
-                    discovered.setdefault(row.chain, []).append(row)
+            try:
+                rows, _source, coverage = await asyncio.wait_for(
+                    self._source.discover_markets(chain="all", sort="trending", limit=self._limit),
+                    timeout=self._discovery_deadline_seconds,
+                )
+            except TimeoutError:
+                all_chain_failed = True
+                self._breaker.record_failure()
+                message = f"{self._provider_name}: discovery deadline exceeded"
+                errors[self._provider_name] = message
+                logger.warning(
+                    "market scan all-chain discovery timed out after %.3fs",
+                    self._discovery_deadline_seconds,
+                )
+            except Exception as exc:  # one provider failure must not stop the scan
+                all_chain_failed = True
+                self._breaker.record_failure()
+                message = f"{self._provider_name}: {_error_text(exc)}"
+                errors[self._provider_name] = message
+                logger.warning("market scan all-chain discovery failed: %s", _error_text(exc))
+            else:
+                self._breaker.record_success()
+                for row in rows:
+                    if row.chain in self._states:
+                        discovered.setdefault(row.chain, []).append(row)
 
         if coverage is not None and not all_chain_failed:
             persisted = self._use_all_chain_coverage(
                 coverage, discovered, started, attempted, rows_by_chain, errors
             )
+            successful_chains.update(item.chain for item in coverage if item.reason != "error")
         else:
             # The all-chain pass raised or returned no coverage: this process cannot know
             # which chains were attempted, so probe each one once, never more.
-            persisted = await self._probe_chains(attempted, rows_by_chain, errors)
+            persisted = await self._probe_chains(
+                attempted, rows_by_chain, errors, self._current_deadline_end, successful_chains
+            )
 
-        refreshed = await self._refresh_positions()
+        remaining = max(0.0, self._current_deadline_end - self._monotonic())
+        if remaining > 0:
+            refreshed = await self._refresh_positions(remaining)
+        else:
+            refreshed = 0
+
+        # A total failure must not masquerade as an empty successful scan.
+        total_failure = persisted == 0 and bool(errors) and not successful_chains
+        if total_failure:
+            raise UpstreamError(
+                "market discovery failed for all providers",
+                detail="; ".join(f"{key}: {value}" for key, value in errors.items()),
+            )
+
         return ScanResult(
             observed_at=started,
             attempted=tuple(attempted),
@@ -252,7 +343,7 @@ class MarketMonitor:
             positions_refreshed=refreshed,
         )
 
-    async def _refresh_positions(self) -> int:
+    async def _refresh_positions(self, budget: float | None = None) -> int:
         """Refresh marks for open paper positions, including quote-side tokens.
 
         The market fan-out stores base tokens. A position can be the quote side of its
@@ -269,7 +360,13 @@ class MarketMonitor:
             chain = str(view["chain"])
             token = str(view["token_address"])
             try:
-                snapshot = await getter(chain, token)
+                if budget is not None:
+                    remaining = max(0.0, self._current_deadline_end - self._monotonic())
+                    if remaining <= 0:
+                        break
+                    snapshot = await asyncio.wait_for(getter(chain, token), timeout=remaining)
+                else:
+                    snapshot = await getter(chain, token)
             except Exception as exc:
                 logger.warning("mark refresh %s:%s failed: %s", chain, token, _error_text(exc))
                 continue
@@ -338,18 +435,52 @@ class MarketMonitor:
         attempted: list[str],
         rows_by_chain: dict[str, int],
         errors: dict[str, str],
+        deadline_end: float,
+        successful_chains: set[str],
     ) -> int:
         """Bounded fallback: at most one probe per registered chain."""
         persisted = 0
+        if self._breaker.is_open():
+            message = f"{self._provider_name}: circuit open"
+            for chain in CHAINS:
+                attempted.append(chain.id)
+                state = self._states[chain.id]
+                state.last_attempt_at = self._now()
+                state.rows = 0
+                state.last_error = message
+                errors[chain.id] = message
+                rows_by_chain[chain.id] = 0
+            return 0
         for chain in CHAINS:
             attempted.append(chain.id)
             state = self._states[chain.id]
             state.last_attempt_at = self._now()
+            remaining = max(0.0, deadline_end - self._monotonic())
+            if remaining <= 0:
+                message = f"{self._provider_name}: discovery deadline exceeded"
+                state.rows = 0
+                state.last_error = message
+                errors[chain.id] = message
+                rows_by_chain[chain.id] = 0
+                continue
             try:
-                rows, _source, coverage = await self._source.discover_markets(
-                    chain=chain.id, sort="trending", limit=min(self._limit, 100)
+                rows, _source, coverage = await asyncio.wait_for(
+                    self._source.discover_markets(
+                        chain=chain.id, sort="trending", limit=min(self._limit, 100)
+                    ),
+                    timeout=remaining,
                 )
+            except TimeoutError:
+                self._breaker.record_failure()
+                message = f"{self._provider_name}: discovery deadline exceeded"
+                state.rows = 0
+                state.last_error = message
+                errors[chain.id] = message
+                rows_by_chain[chain.id] = 0
+                logger.warning("market scan %s failed: %s", chain.id, message)
+                continue
             except Exception as exc:
+                self._breaker.record_failure()
                 message = _error_text(exc)
                 state.rows = 0
                 state.last_error = message
@@ -362,12 +493,15 @@ class MarketMonitor:
             )
             chain_rows = [row for row in rows if row.chain == chain.id]
             if failed:
+                self._breaker.record_failure()
                 message = "chain probe failed"
                 state.rows = 0
                 state.last_error = message
                 errors[chain.id] = message
                 rows_by_chain[chain.id] = 0
                 continue
+            self._breaker.record_success()
+            successful_chains.add(chain.id)
             if not chain_rows:
                 state.rows = 0
                 state.last_success_at = self._now()
