@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 // Position protection: arm a stop from the positions page, edit it, and see
 // the armed arm reflected on the automations page. Fixture mode only; the

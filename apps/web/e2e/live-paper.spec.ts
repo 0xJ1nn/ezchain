@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 
 // Live PAPER end-to-end. This spec is deliberately excluded from the fixture suite and
 // run by `tools/verify.sh --live` against a disposable PAPER stack. It fails on a

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "@ezchain/ui/tokens.css";
 import "./ui.css";
+import { HydrationMarker } from "./hydration-marker";
 
 const inter = localFont({
 	src: "./fonts/inter-latin-var.woff2",
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 			    expected attribute difference instead of warning and regenerating the tree. */}
 			<body suppressHydrationWarning>
 				<script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+				<HydrationMarker />
 				{children}
 			</body>
 		</html>

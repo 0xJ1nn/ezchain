@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { fromDocument, toDocument, type GraphDocument } from "../lib/graph-doc";
 import { validateGraphDocument } from "../lib/graph-fixtures";
 
