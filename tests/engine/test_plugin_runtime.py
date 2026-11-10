@@ -15,6 +15,11 @@ from ezchain_api.models import StrategyRow
 from ezchain_engine import PluginHost, PluginRegistry, evaluate_plugin_strategy
 from ezchain_sdk import Candle, PluginContext
 
+# Subprocess startup is fast on an idle machine and slow under a loaded gate.
+# The product default stays at 3 seconds; these tests only need to observe
+# the error path, not race a hard deadline.
+TEST_TIMEOUT_SECONDS = 30
+
 MANIFEST = {
     "id": "com.example.runtime",
     "name": "Runtime plugin",
@@ -100,7 +105,7 @@ async def test_a_plugin_buy_intent_becomes_a_buy_decision(session_factory, tmp_p
                 return [Intent(side="buy", notional_usd=Decimal("25"), reason="PLUGIN_ENTRY")]
         """,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         with session_factory() as session:
             strategy = _strategy(session)
@@ -138,7 +143,7 @@ async def test_reserved_intent_fields_fail_closed(session_factory, tmp_path: Pat
                 ]
         """,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         with session_factory() as session:
             strategy = _strategy(session)
@@ -173,7 +178,7 @@ async def test_multiple_intents_are_refused(session_factory, tmp_path: Path) -> 
                 ]
         """,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         with session_factory() as session:
             strategy = _strategy(session)
@@ -205,7 +210,7 @@ async def test_plugin_buy_is_clamped_to_the_strategy_caps(session_factory, tmp_p
                 return [Intent(side="buy", notional_usd=Decimal("1000"), reason="HUGE")]
         """,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         with session_factory() as session:
             strategy = _strategy(
@@ -249,7 +254,7 @@ async def test_plugin_without_submit_intent_cannot_trade(session_factory, tmp_pa
         """,
         manifest,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         with session_factory() as session:
             strategy = _strategy(session)

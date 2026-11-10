@@ -17,6 +17,11 @@ import pytest
 from ezchain_engine import PluginHost, PluginRegistry
 from ezchain_sdk import Candle, PluginContext
 
+# Subprocess startup is fast on an idle machine and slow under a loaded gate.
+# The product default stays at 3 seconds; these tests only need to observe
+# the error path, not race a hard deadline.
+TEST_TIMEOUT_SECONDS = 30
+
 MANIFEST = {
     "id": "com.example.test",
     "name": "Test plugin",
@@ -82,7 +87,7 @@ async def test_worker_returns_intents_and_replayable_state(tmp_path: Path) -> No
         """,
     )
     record = registry.get("com.example.test")
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         first = await host.tick(
             "strategy-1",
@@ -135,7 +140,7 @@ async def test_plugin_output_cannot_corrupt_the_protocol_and_env_is_scrubbed(
                 return []
         """,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         context = _context()
         tick = await host.tick(
@@ -194,7 +199,7 @@ async def test_plugin_exception_is_reported_without_a_traceback(tmp_path: Path) 
                 raise RuntimeError("boom")
         """,
     )
-    host = PluginHost(timeout_seconds=3)
+    host = PluginHost(timeout_seconds=TEST_TIMEOUT_SECONDS)
     try:
         context = _context()
         tick = await host.tick(
