@@ -57,7 +57,7 @@ def asset_row(**overrides: object) -> dict[str, object]:
         "kind": "position",
         "share_pct": "3.00",
         "source": None,
-        "mark_status": "known",
+        "mark_status": "fresh",
     }
     values.update(overrides)
     return values
@@ -74,7 +74,7 @@ def cash_row(**overrides: object) -> dict[str, object]:
         "market_value_usd": "97",
         "share_pct": "97.00",
         "source": None,
-        "mark_status": "known",
+        "mark_status": "fresh",
     }
     values.update(overrides)
     return values
@@ -87,7 +87,7 @@ def chain_row(**overrides: object) -> dict[str, object]:
         "unpriced_assets": 0,
         "market_value_usd": "3",
         "share_pct": "3.00",
-        "mark_status": "known",
+        "mark_status": "fresh",
     }
     values.update(overrides)
     return values
@@ -322,7 +322,7 @@ def test_account_unpriced_asset_must_not_carry_a_source_or_value() -> None:
                 unrealized_usd=None,
                 share_pct="0.00",
                 source={"name": "dexscreener", "observed_at": "2026-01-01T00:00:00Z"},
-                mark_status="known",
+                mark_status="fresh",
             ),
             cash_row(share_pct=None),
         ]

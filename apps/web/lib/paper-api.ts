@@ -45,7 +45,7 @@ export interface PaperUnpricedPosition {
 	quantity: string;
 }
 
-export type PaperMarkStatus = "known" | "unknown";
+export type PaperMarkStatus = "fresh" | "stale" | "unknown" | "future";
 
 /** One chain's server-computed total. Native quantity lives on the asset row. */
 export interface PaperChainComposition {
@@ -292,7 +292,7 @@ export const fixturePaperAccount: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "67.90",
 			share_pct: null,
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "solana",
@@ -308,7 +308,7 @@ export const fixturePaperAccount: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "9709.36",
 			share_pct: null,
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	by_asset: [
@@ -322,7 +322,7 @@ export const fixturePaperAccount: PaperAccount = {
 			market_value_usd: "67.90",
 			share_pct: null,
 			source: { name: "dexscreener", observed_at: observed(3) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "solana",
@@ -334,7 +334,7 @@ export const fixturePaperAccount: PaperAccount = {
 			market_value_usd: "62.84",
 			share_pct: null,
 			source: { name: "jupiter", observed_at: observed(2) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "solana",
@@ -358,7 +358,7 @@ export const fixturePaperAccount: PaperAccount = {
 			market_value_usd: "5.70",
 			share_pct: null,
 			source: { name: "dexscreener", observed_at: observed(125) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "settlement",
@@ -370,7 +370,7 @@ export const fixturePaperAccount: PaperAccount = {
 			market_value_usd: "9709.36",
 			share_pct: null,
 			source: null,
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	positions: fixturePositions(),
@@ -397,7 +397,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "67.90",
 			share_pct: "0.69",
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "solana",
@@ -405,7 +405,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "68.54",
 			share_pct: "0.70",
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "settlement",
@@ -413,7 +413,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "9709.36",
 			share_pct: "98.61",
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	by_asset: [
@@ -427,7 +427,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			market_value_usd: "67.90",
 			share_pct: "0.69",
 			source: { name: "dexscreener", observed_at: observed(3) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "solana",
@@ -439,7 +439,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			market_value_usd: "62.84",
 			share_pct: "0.64",
 			source: { name: "jupiter", observed_at: observed(2) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "solana",
@@ -451,7 +451,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			market_value_usd: "5.70",
 			share_pct: "0.06",
 			source: { name: "dexscreener", observed_at: observed(125) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "settlement",
@@ -463,7 +463,7 @@ export const fixturePaperAccountComplete: PaperAccount = {
 			market_value_usd: "9709.36",
 			share_pct: "98.61",
 			source: null,
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	positions: fixturePositions().filter((position) => position.mark_usd !== null),
@@ -487,7 +487,7 @@ export const fixturePaperAccountFlat: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "10000.00",
 			share_pct: "100.00",
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	by_asset: [
@@ -501,7 +501,7 @@ export const fixturePaperAccountFlat: PaperAccount = {
 			market_value_usd: "10000.00",
 			share_pct: "100.00",
 			source: null,
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	positions: [],
@@ -549,7 +549,7 @@ export const fixturePaperAccountMany: PaperAccount = (() => {
 		market_value_usd: "8900.00",
 		share_pct: "89.00",
 		source: null,
-		mark_status: "known",
+		mark_status: "fresh",
 	};
 	return {
 		cash_usd: "8900.00",
@@ -567,7 +567,7 @@ export const fixturePaperAccountMany: PaperAccount = (() => {
 				unpriced_assets: 0,
 				market_value_usd: "400.00",
 				share_pct: "4.00",
-				mark_status: "known",
+				mark_status: "fresh",
 			},
 			{
 				chain: "solana",
@@ -575,7 +575,7 @@ export const fixturePaperAccountMany: PaperAccount = (() => {
 				unpriced_assets: 0,
 				market_value_usd: "400.00",
 				share_pct: "4.00",
-				mark_status: "known",
+				mark_status: "fresh",
 			},
 			{
 				chain: "ethereum",
@@ -583,7 +583,7 @@ export const fixturePaperAccountMany: PaperAccount = (() => {
 				unpriced_assets: 0,
 				market_value_usd: "300.00",
 				share_pct: "3.00",
-				mark_status: "known",
+				mark_status: "fresh",
 			},
 			{
 				chain: "settlement",
@@ -591,7 +591,7 @@ export const fixturePaperAccountMany: PaperAccount = (() => {
 				unpriced_assets: 0,
 				market_value_usd: "8900.00",
 				share_pct: "89.00",
-				mark_status: "known",
+				mark_status: "fresh",
 			},
 		],
 		by_asset: [
@@ -606,7 +606,7 @@ export const fixturePaperAccountMany: PaperAccount = (() => {
 					market_value_usd: position.market_value_usd,
 					share_pct: "1.00",
 					source: position.source,
-					mark_status: "known",
+					mark_status: "fresh",
 				}),
 			),
 			cash,
@@ -633,7 +633,7 @@ export const fixturePaperAccountSingle: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "15.00",
 			share_pct: "0.15",
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "settlement",
@@ -641,7 +641,7 @@ export const fixturePaperAccountSingle: PaperAccount = {
 			unpriced_assets: 0,
 			market_value_usd: "9990.00",
 			share_pct: "99.85",
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	by_asset: [
@@ -655,7 +655,7 @@ export const fixturePaperAccountSingle: PaperAccount = {
 			market_value_usd: "15.00",
 			share_pct: "0.15",
 			source: { name: "dexscreener", observed_at: observed(2) },
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 		{
 			chain: "settlement",
@@ -667,7 +667,7 @@ export const fixturePaperAccountSingle: PaperAccount = {
 			market_value_usd: "9990.00",
 			share_pct: "99.85",
 			source: null,
-			mark_status: "known",
+			mark_status: "fresh",
 		},
 	],
 	positions: [
