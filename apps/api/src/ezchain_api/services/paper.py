@@ -441,6 +441,7 @@ def _position_views(
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     views: list[dict[str, Any]] = []
+    now = now or utcnow()
     for account, (quantity, cost) in replay.positions.items():
         if quantity <= 0:
             continue
@@ -466,7 +467,6 @@ def _position_views(
             mode="paper",
         )
         row = view.to_dict()
-        now = now or utcnow()
         row["mark_status"] = _mark_status(
             view.mark_usd,
             row.get("source"),
@@ -489,7 +489,7 @@ def _share_pct(value: Decimal, equity: Decimal) -> str | None:
     return str((value * 100 / equity).quantize(SHARE_QUANTUM))
 
 
-def _chain_mark_status(members: list[dict[str, Any]], max_age_seconds: float, now: datetime) -> str:
+def _chain_mark_status(members: list[dict[str, Any]]) -> str:
     statuses = [str(member.get("mark_status", "unknown")) for member in members]
     if any(status == "unknown" for status in statuses):
         return "unknown"
@@ -569,11 +569,7 @@ def _composition(
                 "mark_status": (
                     "unknown"
                     if unpriced
-                    else _chain_mark_status(
-                        [a for a in assets if a["chain"] == chain],
-                        max_age_seconds,
-                        now,
-                    )
+                    else _chain_mark_status([a for a in assets if a["chain"] == chain])
                 ),
             }
         )
