@@ -50,7 +50,8 @@ def test_backtests_upgrades_a_sqlite_database(tmp_path: Path) -> None:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
         connection.execute(
             text(
-                "CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"
+                "CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, "
+                "idempotency_key VARCHAR(120))"
             )
         )
     command.stamp(config, "0005_price_precision")
