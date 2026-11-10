@@ -1,6 +1,6 @@
 # PLAN — Live paper slice (P0)
 
-Status: **P0.0–P0.6 implemented.** This plan is the contract for the first working
+Status: **The paper slice is implemented.** This plan is the contract for the first working
 vertical slice; the phase checklist below records the completed work breakdown. It
 supersedes the M1 fixture-only assumption for the surfaces it touches; the rest of M1
 (wallets, automations, system pages) stays where it is.

@@ -29,7 +29,7 @@ run in paper mode. No keys, no live money. Full contract:
 - [x] P0.4 web live markets and token pages.
 - [x] P0.5 web paper ticket and strategy builder.
 - [x] P0.6 integration: full gate, live smoke, restart/API-down drills, docs.
-- [ ] P0.7 follow-ups: dashboard equity history and live position tiles (#57), an EVM
+- [ ] Paper follow-ups: dashboard equity history and live position tiles (#57), an EVM
   venue adapter (#58) and a standalone engine process (no tracked issue). The P0
   evidence pack is recorded and closed (#59).
 
