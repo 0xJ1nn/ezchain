@@ -33,6 +33,7 @@ from ezchain_engine.protection import (
     evaluate_all_arms,
     evaluate_arm_row,
 )
+from ezchain_engine.scheduler import OrderRejected
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
 
@@ -522,3 +523,71 @@ async def test_repeated_hold_is_audited_once_per_reason(
     # One observation of the same transition, not one row per tick.
     assert [(event.action, event.reason) for event in trail] == [("held", "ARMED")]
     assert trail[0].mark == Decimal("0.95")
+
+
+async def test_a_hold_at_a_new_mark_appends_with_the_newer_observation(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Dedupe keeps a stale mark only if the observation itself did not move."""
+    add_position(session_factory)
+    add_arm(session_factory)
+    later = NOW + timedelta(minutes=1)
+
+    with session_factory() as session:
+        await evaluate_arm_row(
+            session,
+            session.get(ProtectionArmRow, "arm-1"),
+            FakeSource(make_snapshot(price="0.95", change_h1="0")),
+            FakeExecutor(),
+            now=NOW,
+        )
+    with session_factory() as session:
+        await evaluate_arm_row(
+            session,
+            session.get(ProtectionArmRow, "arm-1"),
+            FakeSource(make_snapshot(price="0.94", change_h1="0")),
+            FakeExecutor(),
+            now=later,
+        )
+
+    trail = _trail(session_factory)
+    assert [(event.action, event.reason) for event in trail] == [
+        ("held", "ARMED"),
+        ("held", "ARMED"),
+    ]
+    assert [event.mark for event in trail] == [Decimal("0.95"), Decimal("0.94")]
+    assert trail[0].observed_at.replace(tzinfo=UTC) == NOW
+    assert trail[1].observed_at.replace(tzinfo=UTC) == later
+
+
+class TypedRejectingExecutor:
+    """A risk gate rejection carries its reason code and the rejected order id."""
+
+    def __init__(self, reason: str, order_id: str) -> None:
+        self.reason = reason
+        self.order_id = order_id
+
+    async def place_order(self, request: OrderRequest) -> str:
+        raise OrderRejected(self.reason, order_id=self.order_id)
+
+
+async def test_a_typed_rejection_keeps_its_reason_code(
+    session_factory: sessionmaker[Session],
+) -> None:
+    add_position(session_factory)
+    add_arm(session_factory)
+    source = FakeSource(make_snapshot(price="0.85", change_h1="0"))
+    rejecting = TypedRejectingExecutor("MAX_POSITION_USD", "ord-rejected-1")
+
+    with session_factory() as session:
+        result = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, rejecting, now=NOW
+        )
+
+    assert result.action == "hold"
+    assert result.reason == "MAX_POSITION_USD"
+    rejected = _trail(session_factory)
+    assert [(event.action, event.reason) for event in rejected] == [
+        ("rejected", "MAX_POSITION_USD")
+    ]
+    assert rejected[0].order_id == "ord-rejected-1"

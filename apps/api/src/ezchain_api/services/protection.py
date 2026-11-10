@@ -35,6 +35,7 @@ from ..models import (
     ProtectionEventRow,
     ProtectionProfileRow,
     new_id,
+    next_protection_event_seq,
 )
 
 
@@ -147,9 +148,11 @@ def record_event(
     """Append one audit row in the caller's transaction.
 
     ``dedupe`` suppresses a repeat of the immediately preceding transition:
-    a hold that stays on the same reason for a thousand ticks is one row, not
-    a thousand. Triggers, arms, updates and cancels always append.
+    a hold that stays on the same reason, mark and observation time for a
+    thousand ticks is one row, not a thousand. A moved mark or observation is
+    a new fact and appends. Triggers, arms, updates and cancels always append.
     """
+    observation = observed_at if observed_at is not None else core_now()
     if dedupe:
         last = session.scalars(
             select(ProtectionEventRow)
@@ -157,7 +160,13 @@ def record_event(
             .order_by(ProtectionEventRow.seq.desc())
             .limit(1)
         ).first()
-        if last is not None and last.action == action and last.reason == reason:
+        if (
+            last is not None
+            and last.action == action
+            and last.reason == reason
+            and last.mark == mark
+            and _aware(last.observed_at) == _aware(observation)
+        ):
             return None
     row = ProtectionEventRow(
         arm_id=arm_id,
@@ -165,8 +174,11 @@ def record_event(
         reason=reason,
         rule_snapshot=None if rule_snapshot is None else dict(rule_snapshot),
         mark=mark,
-        observed_at=observed_at if observed_at is not None else core_now(),
+        observed_at=observation,
         order_id=order_id,
+        # The per-arm lock is taken before MAX(seq) is read, so two writers
+        # cannot choose the same sequence and roll back one arm edit.
+        seq=next_protection_event_seq(session, arm_id),
     )
     session.add(row)
     return row
@@ -281,6 +293,13 @@ def patch_arm(
     params: dict[str, Any],
     expected_version: int | None = None,
 ) -> ProtectionArmRow:
+    """Replace an armed arm's rule and append the before/after snapshot.
+
+    ``expected_version`` is optional so existing external callers keep working;
+    callers that supply it get compare-and-swap semantics and a 409 when they
+    lost the race. Requiring the precondition for every caller is a separate
+    contract change.
+    """
     row = get_arm(session, arm_id)
     if row is None:
         raise ProtectionServiceError("ARM_NOT_FOUND", "protection arm not found")
@@ -292,11 +311,33 @@ def patch_arm(
     if row.status != "armed":
         raise ProtectionServiceError("ARM_NOT_EDITABLE", f"a {row.status} arm cannot be edited")
     validate_arm(row.kind, params)
+    old_params = dict(row.params or {})
     now = core_now()
     if expected_version is None:
-        row.params = dict(params)
-        row.version = int(row.version or 1) + 1
-        row.updated_at = now
+        # Even without a caller precondition, the version is a database-relative
+        # increment: never write back the version this session loaded.
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(ProtectionArmRow)
+                .where(
+                    ProtectionArmRow.id == arm_id,
+                    ProtectionArmRow.status == "armed",
+                )
+                .values(
+                    params=dict(params),
+                    version=ProtectionArmRow.version + 1,
+                    updated_at=now,
+                )
+            ),
+        )
+        if result.rowcount != 1:
+            session.rollback()
+            raise ProtectionServiceError(
+                "ARM_NOT_EDITABLE",
+                "protection arm is no longer editable",
+            )
+        session.refresh(row)
     else:
         # Compare-and-swap, not read-check-write: two writers that both saw the
         # same version cannot both win. The loser gets a 409 below.
@@ -323,13 +364,14 @@ def patch_arm(
                 "protection arm version mismatch",
             )
         session.refresh(row)
-    # An update is a new rule snapshot; the trail keeps both sides of the change.
+    # An update is a new rule snapshot; the trail keeps both sides of the change
+    # so a reader can reconstruct the rule that was in force before it.
     record_event(
         session,
         arm_id=row.id,
         action="updated",
         reason=None,
-        rule_snapshot=dict(row.params),
+        rule_snapshot={"before": old_params, "after": dict(row.params or {})},
         mark=None,
         observed_at=now,
         order_id=row.order_id,
@@ -358,9 +400,28 @@ def cancel_arm(
         )
     now = core_now()
     if expected_version is None:
-        row.status = "cancelled"
-        row.version = int(row.version or 1) + 1
-        row.updated_at = now
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(ProtectionArmRow)
+                .where(
+                    ProtectionArmRow.id == arm_id,
+                    ProtectionArmRow.status == "armed",
+                )
+                .values(
+                    status="cancelled",
+                    version=ProtectionArmRow.version + 1,
+                    updated_at=now,
+                )
+            ),
+        )
+        if result.rowcount != 1:
+            session.rollback()
+            raise ProtectionServiceError(
+                "ARM_NOT_CANCELLABLE",
+                "protection arm is no longer cancellable",
+            )
+        session.refresh(row)
     else:
         result = cast(
             CursorResult[Any],

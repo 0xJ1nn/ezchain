@@ -10,6 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 from ezchain_api.models import (
@@ -247,7 +248,12 @@ def test_event_trail_is_ordered_and_append_only(client_for, session: Session) ->
     # Newest first, by the per-arm sequence, not by wall-clock time.
     assert [event["action"] for event in events] == ["cancelled", "updated", "armed"]
     assert [event["seq"] for event in events] == [3, 2, 1]
-    assert [event["rule_snapshot"]["price_usd"] for event in events] == ["85", "85", "90"]
+    assert events[0]["rule_snapshot"] == {"price_usd": "85"}
+    assert events[1]["rule_snapshot"] == {
+        "before": {"price_usd": "90"},
+        "after": {"price_usd": "85"},
+    }
+    assert events[2]["rule_snapshot"] == {"price_usd": "90"}
 
     newest = client.get(f"{ARMS}/{arm['id']}/events", params={"limit": 1}).json()
     assert [event["seq"] for event in newest] == [3]
@@ -275,3 +281,39 @@ def test_event_trail_is_ordered_and_append_only(client_for, session: Session) ->
     assert unchanged is not None
     assert unchanged.reason is None
     assert unchanged.action == "cancelled"
+
+
+def test_bulk_updates_and_deletes_cannot_touch_the_trail(client_for, session: Session) -> None:
+    """Bulk statements do not populate dirty/deleted; the statement itself is stopped."""
+    _hold_position(session)
+    client = client_for(protection.router)
+    arm = _create_arm(client)
+
+    with pytest.raises(AppendOnlyViolation):
+        session.execute(update(ProtectionEventRow).values(reason="tampered"))
+    session.rollback()
+
+    with pytest.raises(AppendOnlyViolation):
+        session.execute(delete(ProtectionEventRow))
+    session.rollback()
+
+    trail = client.get(f"{ARMS}/{arm['id']}/events").json()
+    assert [(event["action"], event["reason"]) for event in trail] == [("armed", None)]
+
+
+def test_an_update_event_carries_the_rule_it_replaced(client_for, session: Session) -> None:
+    """The trail can reconstruct the previous rule, not only the new one."""
+    _hold_position(session)
+    client = client_for(protection.router)
+    arm = _create_arm(client, price="90")
+
+    patched = client.patch(f"{ARMS}/{arm['id']}", json={"params": {"price_usd": "85"}})
+    assert patched.status_code == 200
+
+    updated = next(
+        event
+        for event in client.get(f"{ARMS}/{arm['id']}/events").json()
+        if event["action"] == "updated"
+    )
+    assert updated["rule_snapshot"]["before"] == {"price_usd": "90"}
+    assert updated["rule_snapshot"]["after"] == {"price_usd": "85"}

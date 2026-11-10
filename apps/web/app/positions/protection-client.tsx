@@ -119,6 +119,7 @@ export function ProtectionClient({ mode, initialArms, initialProfiles, positions
 				arm.id,
 				{
 					params: { ...arm.params, price_usd: editPrice.trim() },
+					expected_version: arm.version,
 				},
 				mode,
 			);

@@ -15,9 +15,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Protocol, cast, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from ezchain_api.models import LedgerEntryRow, ProtectionArmRow
@@ -32,6 +33,8 @@ from ezchain_core.protection import (
     validate_arm,
 )
 from ezchain_core.types import OrderRequest, TokenSnapshot, utcnow
+
+from .scheduler import OrderRejected
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,54 @@ def _aware(value: datetime | None) -> datetime | None:
 
 def _stamp(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+_ARM_WRITE_RETRIES = 5
+
+
+def _conditional_arm_write(
+    session: Session,
+    row: ProtectionArmRow,
+    values_for: Callable[[ProtectionArmRow], dict[str, Any] | None],
+    *,
+    now: datetime,
+    require_armed: bool = True,
+) -> bool:
+    """Compare-and-swap one arm transition against the version this session read.
+
+    ``row`` is loaded before an awaited market fetch. An API writer can commit
+    in that gap, so an absolute ``row.version`` assignment would write the old
+    version back and silently drop the API edit. The statement matches on the
+    loaded version and increments in the database; when another writer won,
+    this session reloads and recomputes from the winner's row. Returns false
+    when the arm is no longer editable or every retry lost.
+    """
+    for _ in range(_ARM_WRITE_RETRIES):
+        if require_armed and row.status != "armed":
+            return False
+        values = values_for(row)
+        if values is None:
+            return False
+        statement = (
+            update(ProtectionArmRow)
+            .where(
+                ProtectionArmRow.id == row.id,
+                ProtectionArmRow.version == int(row.version or 1),
+            )
+            .values(version=ProtectionArmRow.version + 1, updated_at=_stamp(now), **values)
+        )
+        if require_armed:
+            statement = statement.where(ProtectionArmRow.status == "armed")
+        result = cast(CursorResult[Any], session.execute(statement))
+        if result.rowcount == 1:
+            session.refresh(row)
+            return True
+        # The lost statement wrote nothing. Ending the transaction also releases
+        # an SQLite read snapshot taken before the winning write, so the reload
+        # sees the winner instead of retrying against the stale snapshot.
+        session.rollback()
+        session.refresh(row)
+    return False
 
 
 def protection_idempotency_key(arm_id: str, level_index: int | None) -> str:
@@ -148,9 +199,9 @@ async def evaluate_arm_row(
     if row.status != "armed":
         return _hold(row, "NOT_ARMED", row.peak_usd)
     if row.expires_at is not None and now >= _aware(row.expires_at):  # type: ignore[operator]
-        row.status = "expired"
-        row.version = int(row.version or 1) + 1
-        row.updated_at = _stamp(now)
+        expired = _conditional_arm_write(session, row, lambda _: {"status": "expired"}, now=now)
+        if not expired:
+            return _hold(row, "ARM_CHANGED", row.peak_usd)
         protection_service.record_event(
             session,
             arm_id=row.id,
@@ -162,6 +213,7 @@ async def evaluate_arm_row(
             order_id=row.order_id,
         )
         session.commit()
+        session.refresh(row)
         return _hold(row, "EXPIRED", row.peak_usd)
 
     try:
@@ -210,18 +262,25 @@ async def evaluate_arm_row(
     )
 
     # Persist trailing peaks even on a hold: the peak is persisted input for replay.
+    def peak_values(current: ProtectionArmRow) -> dict[str, Any] | None:
+        if evaluation.peak_usd is None:
+            return None
+        current_peak = Decimal(str(current.peak_usd)) if current.peak_usd is not None else None
+        if current_peak is not None and current_peak >= evaluation.peak_usd:
+            return None
+        return {"peak_usd": evaluation.peak_usd}
+
     if evaluation.peak_usd != (Decimal(str(row.peak_usd)) if row.peak_usd is not None else None):
-        row.peak_usd = evaluation.peak_usd
-        row.version = int(row.version or 1) + 1
-        row.updated_at = _stamp(now)
-        session.commit()
+        if _conditional_arm_write(session, row, peak_values, now=now):
+            session.commit()
+            session.refresh(row)
 
     if evaluation.action == "hold":
         mark = snapshot.price_usd
         if evaluation.reason == "EXPIRED":
-            row.status = "expired"
-            row.version = int(row.version or 1) + 1
-            row.updated_at = _stamp(now)
+            expired = _conditional_arm_write(session, row, lambda _: {"status": "expired"}, now=now)
+            if not expired:
+                return _hold(row, "ARM_CHANGED", row.peak_usd)
             protection_service.record_event(
                 session,
                 arm_id=row.id,
@@ -233,6 +292,7 @@ async def evaluate_arm_row(
                 order_id=row.order_id,
             )
             session.commit()
+            session.refresh(row)
             return _hold(row, evaluation.reason, evaluation.peak_usd)
         # Record a held observation (including fail-closed holds) for replay.
         protection_service.record_event(
@@ -267,6 +327,25 @@ async def evaluate_arm_row(
     )
     try:
         order_id = await order_executor.place_order(request)
+    except OrderRejected as exc:
+        # The order service persisted a typed rejection: keep its real reason
+        # (for example a risk-limit code) instead of collapsing it to a generic
+        # execution failure.
+        logger.warning("protection arm %s order %s rejected: %s", row.id, exc.order_id, exc.reason)
+        reason = exc.reason or exc.code
+        protection_service.record_event(
+            session,
+            arm_id=row.id,
+            action="rejected",
+            reason=reason,
+            rule_snapshot=dict(row.params or {}),
+            mark=snapshot.price_usd,
+            observed_at=now,
+            order_id=exc.order_id,
+            dedupe=True,
+        )
+        session.commit()
+        return _hold(row, reason, evaluation.peak_usd)
     except Exception:  # fail closed: retry next tick, keep the arm armed
         logger.warning("protection arm %s order failed; staying armed", row.id)
         protection_service.record_event(
@@ -284,16 +363,22 @@ async def evaluate_arm_row(
         return _hold(row, "ORDER_FAILED", evaluation.peak_usd)
 
     if evaluation.level_index is not None and arm.params.levels:
-        triggered = list(row.triggered_levels or [])
-        if evaluation.level_index not in triggered:
-            triggered.append(evaluation.level_index)
-        row.triggered_levels = triggered
-        if len(triggered) >= len(arm.params.levels):
-            row.status = "triggered"
-            row.triggered_at = _stamp(now)
-            row.order_id = order_id
-        row.version = int(row.version or 1) + 1
-        row.updated_at = _stamp(now)
+
+        def ladder_values(current: ProtectionArmRow) -> dict[str, Any]:
+            triggered = list(current.triggered_levels or [])
+            if evaluation.level_index not in triggered:
+                triggered.append(cast(int, evaluation.level_index))
+            values: dict[str, Any] = {"triggered_levels": triggered}
+            if len(triggered) >= len(arm.params.levels):
+                values.update(
+                    status="triggered",
+                    triggered_at=_stamp(now),
+                    order_id=order_id,
+                )
+            return values
+
+        if not _conditional_arm_write(session, row, ladder_values, now=now):
+            return _hold(row, "ARM_CHANGED", evaluation.peak_usd)
         protection_service.record_event(
             session,
             arm_id=row.id,
@@ -305,6 +390,7 @@ async def evaluate_arm_row(
             order_id=order_id,
         )
         session.commit()
+        session.refresh(row)
         return ProtectionResult(
             arm_id=row.id,
             action="trigger",
@@ -316,11 +402,18 @@ async def evaluate_arm_row(
             peak_usd=evaluation.peak_usd,
         )
 
-    row.status = "triggered"
-    row.triggered_at = _stamp(now)
-    row.order_id = order_id
-    row.version = int(row.version or 1) + 1
-    row.updated_at = _stamp(now)
+    triggered = _conditional_arm_write(
+        session,
+        row,
+        lambda _: {
+            "status": "triggered",
+            "triggered_at": _stamp(now),
+            "order_id": order_id,
+        },
+        now=now,
+    )
+    if not triggered:
+        return _hold(row, "ARM_CHANGED", evaluation.peak_usd)
     protection_service.record_event(
         session,
         arm_id=row.id,
@@ -332,6 +425,7 @@ async def evaluate_arm_row(
         order_id=order_id,
     )
     session.commit()
+    session.refresh(row)
     return ProtectionResult(
         arm_id=row.id,
         action="trigger",

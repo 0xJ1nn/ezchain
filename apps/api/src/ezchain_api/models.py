@@ -11,6 +11,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     DateTime,
+    Delete,
     ForeignKey,
     Index,
     Integer,
@@ -19,12 +20,15 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    Update,
     event,
+    select,
     text,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, ORMExecuteState, Session, mapped_column
 from sqlalchemy.types import TypeEngine
 
 from .db import Base
@@ -389,13 +393,49 @@ class AppendOnlyViolation(RuntimeError):
     """A caller tried to mutate or delete a protection audit row."""
 
 
+def lock_protection_arm(session: Session, arm_id: str) -> None:
+    """Serialize event appends for one arm before reading ``MAX(seq)``.
+
+    Postgres takes a row lock on the arm. SQLite ignores ``FOR UPDATE``, so a
+    no-op update there takes the database write lock instead. Without this,
+    two transactions read the same maximum and the loser's unique-constraint
+    failure rolls back its arm edit along with its rejected event.
+    """
+    if session.get_bind().dialect.name == "sqlite":
+        session.execute(
+            update(ProtectionArmRow)
+            .where(ProtectionArmRow.id == arm_id)
+            .values(id=ProtectionArmRow.id)
+        )
+    else:
+        session.execute(
+            select(ProtectionArmRow.id).where(ProtectionArmRow.id == arm_id).with_for_update()
+        )
+
+
+def next_protection_event_seq(session: Session, arm_id: str) -> int:
+    """The next per-arm sequence, allocated while the arm row is locked."""
+    lock_protection_arm(session, arm_id)
+    return (
+        int(
+            session.execute(
+                text("SELECT COALESCE(MAX(seq), 0) FROM protection_events WHERE arm_id = :arm_id"),
+                {"arm_id": arm_id},
+            ).scalar()
+            or 0
+        )
+        + 1
+    )
+
+
 @event.listens_for(Session, "before_flush")
 def _assign_protection_event_seqs(session: Session, _flush_context: Any, _instances: Any) -> None:
     """Assign a per-arm monotonic sequence before the rows reach the database.
 
     The ledger uses the same strategy: assign in Python so SQLite tests and
     Postgres agree, and so the order is stable inside one transaction. Rows
-    that already carry a ``seq`` are left alone.
+    that already carry a ``seq`` (the service allocates one under the arm lock)
+    are left alone.
     """
     pending = [
         obj
@@ -407,16 +447,9 @@ def _assign_protection_event_seqs(session: Session, _flush_context: Any, _instan
     highest: dict[str, int] = {}
     for obj in pending:
         if obj.arm_id not in highest:
-            highest[obj.arm_id] = int(
-                session.execute(
-                    text(
-                        "SELECT COALESCE(MAX(seq), 0) FROM protection_events WHERE arm_id = :arm_id"
-                    ),
-                    {"arm_id": obj.arm_id},
-                ).scalar()
-                or 0
-            )
-        highest[obj.arm_id] += 1
+            highest[obj.arm_id] = next_protection_event_seq(session, obj.arm_id)
+        else:
+            highest[obj.arm_id] += 1
         obj.seq = highest[obj.arm_id]
 
 
@@ -431,3 +464,19 @@ def _reject_protection_event_mutations(
     for obj in session.dirty:
         if isinstance(obj, ProtectionEventRow) and session.is_modified(obj):
             raise AppendOnlyViolation("protection events are append-only and cannot be updated")
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _reject_protection_event_bulk_mutations(state: ORMExecuteState) -> None:
+    """Reject bulk ``UPDATE``/``DELETE`` statements aimed at the audit trail.
+
+    ``session.execute(update(...))`` and ``session.execute(delete(...))`` do
+    not populate ``session.dirty`` or ``session.deleted``, so the ``before_flush``
+    guard above never sees them. The statement itself is the only signal.
+    """
+    statement = state.statement
+    if not isinstance(statement, (Update, Delete)):
+        return
+    if statement.table.compare(ProtectionEventRow.__table__):
+        verb = "updated" if isinstance(statement, Update) else "deleted"
+        raise AppendOnlyViolation(f"protection events are append-only and cannot be {verb}")

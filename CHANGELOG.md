@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Protection writes are compare-and-swap and the event sequence is
+  serialized (PAPER).** Engine ticks and API edits increment the arm version in
+  the database and reload from the winner's row when they lose, so a concurrent
+  edit is never overwritten and the version never moves backwards. Event
+  appends take a per-arm lock before reading the next sequence, so two
+  transactions cannot choose the same sequence and roll back one arm edit.
+  Bulk `UPDATE`/`DELETE` against the audit table are refused at the ORM seam,
+  and an update event records the rule it replaced.
+
 ### Added
 
 - **Protection audit trail and optimistic versioning (PAPER).** Every arm
@@ -13,7 +24,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   describes, and `GET /api/v1/protection/arms/{id}/events` returns the trail
   newest first. Arm rows carry a version; updates and cancels that supply an
   expected version return `409 PROTECTION_CONFLICT` when another writer won the
-  race. Migration `0011_protection_events` adds the event table and the version
+  race. Migration `0012_protection_events` adds the event table and the version
   column. Nothing in the order path changed.
 - **Position protection arms and profiles (PAPER, issue #103):** stop-loss,
   trailing stop (percent or price distance, above-water only) and take-profit
