@@ -201,9 +201,21 @@ def idempotency_key(
     window = max(1, interval) * 60
     bucket = int(now.timestamp()) // window
     if action is not None or amount_usd is not None:
-        amount = "" if amount_usd is None else str(amount_usd)
-        return f"strategy:{strategy_id}:{action}:{amount}:{bucket}"
+        return f"strategy:{strategy_id}:{action or ''}:{_canonical_amount(amount_usd)}:{bucket}"
     return f"strategy:{strategy_id}:{bucket}"
+
+
+def _canonical_amount(value: Any) -> str:
+    """One spelling per amount, so 10, 10.0 and 10.00 name the same decision."""
+    if value is None:
+        return ""
+    try:
+        text = format(Decimal(str(value)), "f")
+    except Exception:
+        return str(value)
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
 
 
 def _record(

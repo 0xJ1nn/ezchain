@@ -55,7 +55,7 @@ GENESIS_GROUP = "genesis"
 # order row (True) or replayed an existing one (False). A context variable keeps
 # it correct under concurrent async requests.
 _ORDER_CREATED: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "paper_order_created", default=True
+    "paper_order_created", default=False
 )
 
 
@@ -554,6 +554,8 @@ _FINGERPRINT_FIELDS = ("chain", "token_address", "side", "amount_usd", "strategy
 
 def _canonical_decimal(value: Decimal) -> str:
     """One spelling per value, so ``50``, ``50.0`` and ``50.00`` hash alike."""
+    if not value.is_finite():
+        raise ValueError("a fingerprint cannot be built from a non-finite decimal")
     text = format(value, "f")
     if "." in text:
         text = text.rstrip("0").rstrip(".")
@@ -609,6 +611,10 @@ def _replay_existing(
         expected = _stored_fingerprint(existing)
         if expected != actual:
             raise IdempotencyConflict(payload.idempotency_key)
+        if not session.is_active:
+            # A failed flush earlier in the request leaves the session unusable; the
+            # replay is still valid, so start a clean transaction for the backfill.
+            session.rollback()
         existing.request_fingerprint = actual
         # The replay path has no other writes; commit the backfill so it survives a
         # rolled-back or closed request session.
@@ -739,6 +745,7 @@ async def place_order(
     held is rejected ``POSITION_CHANGED`` rather than resized against a stale quote: the
     trader retries with a fresh, executable size.
     """
+    _ORDER_CREATED.set(True)
     ensure_genesis(session, settings.paper_starting_cash_usd)
     existing = _find_order(session, payload.idempotency_key)
     if existing is not None:

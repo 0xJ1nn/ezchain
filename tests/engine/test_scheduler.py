@@ -586,3 +586,10 @@ def test_idempotency_key_binds_the_action_and_resolved_amount() -> None:
     assert buy != idempotency_key(
         "s1", start + timedelta(hours=1), 60, action="buy", amount_usd=Decimal("10")
     )
+    # Canonical amounts: the same decision keeps one key however the decimal is spelled.
+    assert buy == idempotency_key("s1", start, 60, action="buy", amount_usd=Decimal("10.00"))
+    assert idempotency_key("s1", start, 60, amount_usd=Decimal("10")) == idempotency_key(
+        "s1", start, 60, amount_usd=Decimal("10.0")
+    )
+    # A missing action is not the literal string "None".
+    assert ":None:" not in idempotency_key("s1", start, 60, amount_usd=Decimal("10"))

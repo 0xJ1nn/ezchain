@@ -39,4 +39,5 @@ def downgrade() -> None:
     bind = op.get_bind()
     if "paper_orders" not in sa_inspect(bind).get_table_names():
         return
-    op.drop_column("paper_orders", "request_fingerprint")
+    with op.batch_alter_table("paper_orders") as batch:
+        batch.drop_column("request_fingerprint")
