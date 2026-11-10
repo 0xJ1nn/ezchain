@@ -286,6 +286,26 @@ class PaperOrderIn(BaseModel):
     side: Literal["buy", "sell"]
     amount_usd: Decimal = Field(gt=0)
     idempotency_key: str = Field(min_length=8, max_length=120)
+    # The exact token quantity of a sell. The service bounds it to the open position.
+    quantity: Decimal | None = Field(default=None, gt=0)
+    # A sell that exists to reduce the open position. Entry-only risk gates do not apply;
+    # the position bound, quote freshness and an executable route still do.
+    reduce_only: bool = False
+
+    @model_validator(mode="after")
+    def sell_only_fields(self) -> PaperOrderIn:
+        if self.side == "buy" and (self.reduce_only or self.quantity is not None):
+            raise ValueError("reduce_only and quantity are only valid for a sell")
+        return self
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def finite_quantity(cls, value: object) -> object:
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("quantity must be finite")
+        if isinstance(value, Decimal) and not value.is_finite():
+            raise ValueError("quantity must be finite")
+        return value
 
     @field_validator("amount_usd", mode="before")
     @classmethod

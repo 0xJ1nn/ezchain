@@ -4,6 +4,14 @@ The ledger is the only accountant (CONTRACT I1). An order is claimed by its uniq
 idempotency key, risk is evaluated before any fill, and the order, fill and ledger journal
 commit in one transaction. Cash, positions and PnL are projected by replaying ledger
 entries, never read from a mutable scalar.
+
+Every sell is bounded by the held quantity and can never open a short. A reduce-only exit
+— a sell explicitly flagged ``reduce_only``, or one whose requested size clamps to the
+whole position — bypasses entry-only gates: its executable sell quote is the exit's
+price, so a missing or stale market mark may not trap the position. Exit integrity still
+fails closed: a held position, a fresh quote, an executable route and a quantity no
+larger than the position are all required, and a sell with no route is persisted as
+``EXIT_NO_ROUTE`` with its quote evidence.
 """
 
 from __future__ import annotations
@@ -23,7 +31,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import DexScreenerClient, QuoteRouter
+from ezchain_adapters import AdapterError, DexScreenerClient, NoRoute, QuoteRouter
 from ezchain_core import (
     CostPreview,
     LedgerEntry,
@@ -517,15 +525,21 @@ def _preview_cost(notional: Decimal, quote: Quote, settings: Settings) -> CostPr
     )
 
 
-def _record(quote: Quote, notional: Decimal, settings: Settings) -> dict[str, Any]:
+def _record(
+    quote: Quote, notional: Decimal, settings: Settings, *, reduce_only: bool = False
+) -> dict[str, Any]:
     """The persisted intent record: the quote plus its pre-trade cost preview.
 
     Every order that reached a quote records this before it fires (or is rejected),
     so the recorded preview belongs to the intent, never to a strategy: automated and
     manual orders share this path, and the preview is replayable from the order row.
+    A reduce-only exit also records the flag, so the entry-gate exemption that was
+    applied to this decision is visible on the order it produced.
     """
     record = quote.to_dict()
     record["cost_preview"] = _preview_cost(notional, quote, settings).to_dict()
+    if reduce_only:
+        record["reduce_only"] = True
     return record
 
 
@@ -665,8 +679,9 @@ def _reject_new(
     payload: OrderRequest,
     reason: str,
     snapshot: TokenSnapshot | None = None,
+    quote_json: dict[str, Any] | None = None,
 ) -> PaperOrderRow:
-    """Persist a rejection before a quote exists (insufficient position, unknown mark)."""
+    """Persist a rejection before a quote exists (insufficient position, no exit route)."""
     order, created = _claim_or_existing(session, payload)
     if not created:
         return order
@@ -674,6 +689,7 @@ def _reject_new(
         record_snapshot(session, snapshot)
     order.status = "rejected"
     order.reason = reason
+    order.quote_json = quote_json
     session.commit()
     return order
 
@@ -686,6 +702,7 @@ def _reject_after_quote(
     snapshot: TokenSnapshot,
     quote: Quote,
     settings: Settings,
+    reduce_only: bool = False,
 ) -> PaperOrderRow:
     """Persist a rejection that has a quote, so the refused size stays replayable.
 
@@ -700,7 +717,7 @@ def _reject_after_quote(
     order.reason = reason
     order.quote_kind = quote.kind
     notional = quote.amount_in if payload.side == "buy" else quote.amount_out
-    order.quote_json = _record(quote, notional, settings)
+    order.quote_json = _record(quote, notional, settings, reduce_only=reduce_only)
     session.commit()
     return order
 
@@ -719,13 +736,44 @@ def _attach_quote_price(snapshot: TokenSnapshot, quote: Quote) -> TokenSnapshot:
     return replace(snapshot, price_usd=quote.price, source=quote.source)
 
 
-def _sized_sell(
+def _sell_quantity(
     payload: OrderRequest, snapshot: TokenSnapshot, held_qty: Decimal
 ) -> Decimal | None:
+    """The token quantity to quote for a sell, never more than is held.
+
+    Quantity comes first: a caller that knows the position (a protection arm, a
+    position screen) sends the token amount, so the exit is exact even when no mark is
+    available. Without one, a normal sell converts its USD notional at the market mark
+    and fails closed (``None``) without it. A reduce-only exit with no quantity and no
+    usable mark asks for the whole position: the router's executable quote is the
+    exit's price, and a mark the platform cannot verify must not decide how much of
+    the position to leave behind.
+    """
+    if payload.quantity is not None:
+        return min(payload.quantity, held_qty)
     mark = snapshot.price_usd
-    if mark is None or mark <= 0:
-        return None
+    usable_mark = mark is not None and mark > 0 and not (payload.reduce_only and snapshot.stale)
+    if not usable_mark:
+        return held_qty if payload.reduce_only else None
+    assert mark is not None
     return min(payload.amount_usd / mark, held_qty)
+
+
+def _exit_evidence(
+    *,
+    held_qty: Decimal,
+    quantity: Decimal,
+    reduce_only: bool,
+    error: AdapterError,
+) -> dict[str, Any]:
+    """Why an exit reached no quote: the router's refusal, kept on the order row."""
+    return {
+        "side": "sell",
+        "reduce_only": reduce_only,
+        "held_quantity": str(held_qty),
+        "requested_quantity": str(quantity),
+        "error": {"code": error.code, "message": error.message, "detail": error.detail},
+    }
 
 
 async def place_order(
@@ -751,6 +799,13 @@ async def place_order(
     if existing is not None:
         return _replay_existing(session, payload, existing)
 
+    # Integrity before any network call. The API schema already refuses these; an
+    # internal caller that skips the edge still gets a typed rejection, not a quote.
+    if payload.side not in ("buy", "sell"):
+        return _reject_new(session, payload, "INVALID_SIDE")
+    if payload.amount_usd <= 0:
+        return _reject_new(session, payload, "INVALID_AMOUNT")
+
     # Defence in depth for callers that bypass KillSwitchExecutor: an order that claims
     # strategy attribution is refused before any quote while the operator switch is armed.
     if payload.strategy_id is not None and read_kill_switch(session, settings).active:
@@ -758,6 +813,7 @@ async def place_order(
 
     account = position_account(payload.chain, payload.token_address)
     held_qty = Decimal(0)
+    reduce_only = payload.side == "sell" and payload.reduce_only
     if payload.side == "sell":
         # Size the quote from a read-only snapshot, then close the transaction before the
         # network call. The authoritative read happens again under the position lock.
@@ -772,17 +828,41 @@ async def place_order(
     if payload.side == "sell":
         if held_qty <= 0:
             return _reject_new(session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot)
-        quantity = _sized_sell(payload, snapshot, held_qty)
-        if quantity is None or quantity <= 0:
+        quantity = _sell_quantity(payload, snapshot, held_qty)
+        if quantity is None:
             return _reject_new(session, payload, "PRICE_UNKNOWN", snapshot=snapshot)
-        assert snapshot.price_usd is not None
-        quote = await quotes.quote(
-            chain=payload.chain,
-            token_address=payload.token_address,
-            side="sell",
-            amount_usd=quantity * snapshot.price_usd,
-            quantity=quantity,
+        if quantity <= 0:
+            return _reject_new(session, payload, "INVALID_AMOUNT", snapshot=snapshot)
+        # Sell providers size by quantity. The USD figure is a metadata hint only and is
+        # absent when the market mark is; it never decides the exit's size.
+        quote_amount_usd = (
+            quantity * snapshot.price_usd
+            if snapshot.price_usd is not None and snapshot.price_usd > 0
+            else Decimal(0)
         )
+        try:
+            quote = await quotes.quote(
+                chain=payload.chain,
+                token_address=payload.token_address,
+                side="sell",
+                amount_usd=quote_amount_usd,
+                quantity=quantity,
+            )
+        except NoRoute as exc:
+            # No fill without a route. The refusal is typed and persisted with the
+            # router's own evidence instead of disappearing into an HTTP error.
+            return _reject_new(
+                session,
+                payload,
+                "EXIT_NO_ROUTE",
+                snapshot=snapshot,
+                quote_json=_exit_evidence(
+                    held_qty=held_qty,
+                    quantity=quantity,
+                    reduce_only=reduce_only,
+                    error=exc,
+                ),
+            )
     else:
         quote = await quotes.quote(
             chain=payload.chain,
@@ -798,6 +878,12 @@ async def place_order(
         # Replay under the lock: this is the only position view the fill may use.
         replay = _replay(_ledger_rows(session), day_start=_day_start())
         held_qty, held_cost = replay.positions.get(account, (Decimal(0), Decimal(0)))
+        # An exit is either explicitly flagged or sized to the whole position. The bound
+        # is computed from the authoritative held quantity, never from the pre-quote
+        # read, so a position that grew in between makes this a partial sell again.
+        exit_only = payload.side == "sell" and (
+            payload.reduce_only or (held_qty > 0 and quote.amount_in >= held_qty - MONEY_QUANTUM)
+        )
 
         if payload.side == "sell":
             if held_qty <= 0:
@@ -808,6 +894,7 @@ async def place_order(
                     snapshot=snapshot,
                     quote=quote,
                     settings=settings,
+                    reduce_only=exit_only,
                 )
             # Never fill a quantity that another writer already spent. A smaller quote is
             # fine (the position grew); a larger quote is stale and must be re-priced.
@@ -819,6 +906,7 @@ async def place_order(
                     snapshot=snapshot,
                     quote=quote,
                     settings=settings,
+                    reduce_only=exit_only,
                 )
             fill_quantity = min(quote.amount_in, held_qty)
             notional = (
@@ -837,8 +925,14 @@ async def place_order(
 
         if fill_quantity <= 0 or notional <= 0:
             order.quote_kind = quote.kind
-            order.quote_json = _record(quote, notional, settings)
-            return _mark_rejected(session, order, "NO_ROUTE")
+            # ``_record`` needs a positive notional for the cost sheet; a malformed
+            # zero-size quote has no cost, only the route evidence.
+            order.quote_json = {
+                "quote": quote.to_dict(),
+                "reduce_only": exit_only,
+                "held_quantity": str(held_qty),
+            }
+            return _mark_rejected(session, order, "EXIT_NO_ROUTE" if exit_only else "NO_ROUTE")
 
         position_mark = snapshot.price_usd if snapshot.price_usd is not None else quote.price
         request = OrderRequest(
@@ -848,6 +942,7 @@ async def place_order(
             amount_usd=notional,
             idempotency_key=payload.idempotency_key,
             strategy_id=payload.strategy_id,
+            reduce_only=exit_only,
         )
         allowed, reasons = evaluate_order(
             request=request,
@@ -865,7 +960,7 @@ async def place_order(
 
         if not allowed:
             order.quote_kind = quote.kind
-            order.quote_json = _record(quote, notional, settings)
+            order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
             return _mark_rejected(session, order, ",".join(reasons))
 
         stamp = utcnow()
@@ -918,7 +1013,7 @@ async def place_order(
         order.status = "filled"
         order.filled_at = stamp
         order.quote_kind = quote.kind
-        order.quote_json = _record(quote, notional, settings)
+        order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
         session.commit()
         return order
 

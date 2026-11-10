@@ -709,3 +709,48 @@ live-anything surface. Follow-ups: partial-ladder fraction caps assume the posit
 does not change size between levels (a resize updates the remaining value at the next
 tick); expiry is checked at evaluation time, not by a sweep loop; replay reads the arm
 row plus the append-only event trail, not an unbounded per-tick log.
+
+---
+
+## ADR-0031 — Reduce-only exits bypass entry-only risk gates
+
+**Date:** 2026-11-10 · **Status:** Accepted
+
+**Context:** the risk policy grew one gate at a time. Size, position, open-position,
+daily-loss and price-impact limits were already sell-exempt, but quote staleness,
+unknown price, unknown or thin liquidity and a missing pair still denied every sell.
+A protection arm therefore inherited gates whose purpose is to size new risk: a token
+DexScreener could not mark could not be exited through a venue that could sell it, so
+the position was trapped by the very checks meant to protect it.
+
+**Options:** (a) keep one policy and let every sell skip every data gate; (b) treat a
+sell as an exit only when it is explicitly flagged or sized to the whole position, and
+keep ordinary partial sells under the entry gates; (c) add a second execution path for
+protection exits.
+
+**Decision:** (b), inside the one `Intent → RiskDecision → Quote → Order → Fill →
+Journal` path.
+
+- `OrderRequest` carries `reduce_only` and an optional exact `quantity`. A reduce-only
+  sell skips the entry gates: unknown or stale mark, unknown or thin liquidity, absent
+  pair, order/position/open-position/daily-loss limits and price impact. A sell whose
+  requested size clamps to the whole position is an exit by construction and gets the
+  same treatment. An ordinary partial sell keeps the entry gates.
+- The exit still fails closed on its own integrity: an open position, a quote whose
+  source is fresh, a positive executable price with a positive amount, a route that
+  returns a quantity, and a filled quantity no larger than the position. A stale quote
+  is never waived.
+- Sell sizing is quantity first. A caller that knows the position sends `quantity`; when
+  it does not, a reduce-only sell with no usable mark asks the router for the whole
+  held quantity instead of dividing by an absent price. A normal sell without a mark
+  still fails closed with `PRICE_UNKNOWN`.
+- The intent record on the order row carries `reduce_only`, and a sell with no route is
+  persisted as `EXIT_NO_ROUTE` with the router's error code, message and detail. No
+  fill happens without a route.
+
+**Consequences:** a protection exit and a manual full close can always reach a venue
+that can price them, and their refusals are replayable from the order row. Partial
+ladder exits are exact because the arm passes the token quantity it already holds.
+`reduce_only` on a buy is rejected at the API edge and ignored by the service, which
+treats every buy as new risk. The policy still cannot verify the position bound itself;
+that remains the order service's job, as it was before this decision.
