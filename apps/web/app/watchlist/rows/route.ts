@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const CHAIN_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
-const TOKEN_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+const TOKEN_RE = /^[A-Za-z0-9._-]{1,128}$/;
 
 interface WatchlistRowResult {
 	key: string;

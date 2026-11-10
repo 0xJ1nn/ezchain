@@ -283,3 +283,20 @@ test("watchlist screenshot at desktop and mobile widths", async ({ page }) => {
 	await expect(page.locator("table").first().locator("tbody tr")).toHaveCount(2);
 	await page.screenshot({ path: ".shots/watchlist-390.png", fullPage: true });
 });
+
+test("watchlist lookup caps the requested key list", async ({ request }) => {
+	const keys = Array.from({ length: 51 }, (_, i) => `BAD${i}:token`);
+	const qs = keys.map((key) => `key=${encodeURIComponent(key)}`).join("&");
+	const response = await request.get(`/watchlist/rows?${qs}`);
+	expect(response.ok()).toBeTruthy();
+	const body = await response.json();
+	expect(body.rows.length + body.unavailable.length).toBe(50);
+});
+
+test("watchlist lookup reports an invalid key", async ({ request }) => {
+	const response = await request.get("/watchlist/rows?key=not-a-key");
+	expect(response.ok()).toBeTruthy();
+	const body = await response.json();
+	expect(body.unavailable).toHaveLength(1);
+	expect(body.unavailable[0].code).toBe("WATCHLIST_KEY_INVALID");
+});
