@@ -253,13 +253,14 @@ export default async function OperationsPage() {
 					>
 						{reconciliation.ok ? (
 							<>
-								<div className="table-wrap">
+								<div className="table-wrap" tabIndex={0} role="region" aria-label="Reconciliation table">
 									<table className="table compact">
+										<caption className="sr-only">Reconciliation</caption>
 										<thead>
 											<tr>
-												<th>Check</th>
-												<th>Result</th>
-												<th>Detail</th>
+												<th scope="col">Check</th>
+												<th scope="col">Result</th>
+												<th scope="col">Detail</th>
 											</tr>
 										</thead>
 										<tbody>
