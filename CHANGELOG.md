@@ -7,6 +7,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Protection audit trail and optimistic versioning (PAPER).** Every arm
+  transition appends an immutable event (rule snapshot, mark, observation time,
+  action, resulting order id) in the same transaction as the state change it
+  describes, and `GET /api/v1/protection/arms/{id}/events` returns the trail
+  newest first. Arm rows carry a version; updates and cancels that supply an
+  expected version return `409 PROTECTION_CONFLICT` when another writer won the
+  race. Migration `0011_protection_events` adds the event table and the version
+  column. Nothing in the order path changed.
 - **Position protection arms and profiles (PAPER, issue #103):** stop-loss,
   trailing stop (percent or price distance, above-water only) and take-profit
   (single or laddered) on any open position, each immediately editable and

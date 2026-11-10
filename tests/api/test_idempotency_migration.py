@@ -49,6 +49,6 @@ def test_idempotency_fingerprint_upgrades_a_legacy_sqlite_database(tmp_path: Pat
             ).one()
         assert legacy[0] is None
         with Session(engine) as session:
-            assert database_revision(session) == head_revision() == "0011_idempotency_fingerprint"
+            assert database_revision(session) == head_revision()
     finally:
         engine.dispose()

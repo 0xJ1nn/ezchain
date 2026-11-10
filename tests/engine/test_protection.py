@@ -15,12 +15,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from helpers import CHAIN, TOKEN, make_snapshot
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 import ezchain_api.models  # noqa: F401
-from ezchain_api.models import LedgerEntryRow, ProtectionArmRow
-
+from ezchain_api.models import LedgerEntryRow, ProtectionArmRow, ProtectionEventRow
 from ezchain_core.protection import (
     ProtectionArm,
     ProtectionProfile,
@@ -33,8 +33,6 @@ from ezchain_engine.protection import (
     evaluate_all_arms,
     evaluate_arm_row,
 )
-
-from helpers import CHAIN, TOKEN, make_snapshot
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
 
@@ -371,12 +369,11 @@ async def test_arm_trigger_journals_like_any_other_fill(
     The trade result must journal through paper.place_order groups, each
     group balanced, with the same sell entries a manual sell writes.
     """
-    from ezchain_adapters import QuoteRequest, QuoteRouter
+    from ezchain_adapters import QuoteRouter
     from ezchain_api.config import Settings
     from ezchain_api.services import paper
     from ezchain_api.services.executor import PaperOrderExecutor
     from ezchain_core.types import OrderRequest as PaperOrderRequest
-    from ezchain_core.types import Quote, SourceRef, utcnow
 
     async def _place(sess: Session, req: PaperOrderRequest, dex: PaperDexSource) -> str:
         router = QuoteRouter(providers=[FakeJupiterFake(price=dex.price)], dexscreener=dex)  # type: ignore[arg-type]
@@ -439,3 +436,86 @@ async def test_arm_trigger_journals_like_any_other_fill(
         fill = session.scalar(select(PaperFillRow).where(PaperFillRow.side == "sell"))
         assert fill is not None
         assert fill.order_id == triggered[0].order_id
+
+
+class RejectingExecutor:
+    """A risk gate saying no: no order id comes back, nothing journals."""
+
+    def __init__(self) -> None:
+        self.requests: list[OrderRequest] = []
+
+    async def place_order(self, request: OrderRequest) -> str:
+        self.requests.append(request)
+        raise RuntimeError("order rejected by the risk gate")
+
+
+def _trail(session_factory: sessionmaker[Session]) -> list[ProtectionEventRow]:
+    with session_factory() as session:
+        return list(
+            session.scalars(select(ProtectionEventRow).order_by(ProtectionEventRow.seq)).all()
+        )
+
+
+async def test_rejected_order_keeps_the_arm_armed_and_the_event_trail(
+    session_factory: sessionmaker[Session],
+) -> None:
+    add_position(session_factory)
+    add_arm(session_factory)
+    source = FakeSource(make_snapshot(price="0.85", change_h1="0"))
+    rejecting = RejectingExecutor()
+
+    with session_factory() as session:
+        result = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, rejecting, now=NOW
+        )
+
+    assert result.action == "hold"
+    assert result.reason == "ORDER_FAILED"
+    assert len(rejecting.requests) == 1
+    with session_factory() as session:
+        arm = session.get(ProtectionArmRow, "arm-1")
+        assert arm is not None
+        assert arm.status == "armed"
+        assert arm.version == 1
+    rejected = _trail(session_factory)
+    assert [(event.action, event.reason) for event in rejected] == [("rejected", "ORDER_FAILED")]
+    assert rejected[0].seq == 1
+    assert rejected[0].mark == Decimal("0.85")
+    assert rejected[0].order_id is None
+    assert rejected[0].rule_snapshot == {"price_usd": "0.90"}
+    assert rejected[0].observed_at.replace(tzinfo=UTC) == NOW
+
+    # A later successful tick triggers; the rejected attempt is still on record.
+    with session_factory() as session:
+        second = await evaluate_arm_row(
+            session, session.get(ProtectionArmRow, "arm-1"), source, FakeExecutor(), now=NOW
+        )
+    assert second.action == "trigger"
+    trail = _trail(session_factory)
+    assert [(event.action, event.reason) for event in trail] == [
+        ("rejected", "ORDER_FAILED"),
+        ("triggered", "STOP_LOSS"),
+    ]
+    assert [event.seq for event in trail] == [1, 2]
+    assert trail[1].order_id == "ord-prot-1"
+    assert trail[1].mark == Decimal("0.85")
+
+
+async def test_repeated_hold_is_audited_once_per_reason(
+    session_factory: sessionmaker[Session],
+) -> None:
+    add_position(session_factory)
+    add_arm(session_factory)
+    source = FakeSource(make_snapshot(price="0.95", change_h1="0"))
+
+    for _ in range(3):
+        with session_factory() as session:
+            result = await evaluate_arm_row(
+                session, session.get(ProtectionArmRow, "arm-1"), source, FakeExecutor(), now=NOW
+            )
+            assert result.reason == "ARMED"
+
+    trail = _trail(session_factory)
+    # One observation of the same transition, not one row per tick.
+    assert [(event.action, event.reason) for event in trail] == [("held", "ARMED")]
+    assert trail[0].mark == Decimal("0.95")

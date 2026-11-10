@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -331,6 +332,7 @@ class ProtectionArmRow(Base):
     order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     profile_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -348,3 +350,77 @@ class ProtectionProfileRow(Base):
     rules: Mapped[list[str]] = mapped_column(JSONType, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProtectionEventRow(Base):
+    """Append-only audit trail for one protection arm.
+
+    One row per transition (armed, updated, hold reason, trigger, reject,
+    cancel, expire). ``seq`` is monotonic within an arm, so the trail has a
+    total order even when two observations share a timestamp. Rows are never
+    updated or deleted; the ORM refuses both, and the HTTP surface has no
+    mutation route. The arm's story is replayable from this table plus the arm
+    row itself (CONTRACT I9).
+    """
+
+    __tablename__ = "protection_events"
+    __table_args__ = (UniqueConstraint("arm_id", "seq", name="uq_protection_event_seq"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    arm_id: Mapped[str] = mapped_column(String(36), index=True)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rule_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    mark: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class AppendOnlyViolation(RuntimeError):
+    """A caller tried to mutate or delete a protection audit row."""
+
+
+@event.listens_for(Session, "before_flush")
+def _assign_protection_event_seqs(session: Session, _flush_context: Any, _instances: Any) -> None:
+    """Assign a per-arm monotonic sequence before the rows reach the database.
+
+    The ledger uses the same strategy: assign in Python so SQLite tests and
+    Postgres agree, and so the order is stable inside one transaction. Rows
+    that already carry a ``seq`` are left alone.
+    """
+    pending = [
+        obj
+        for obj in session.new
+        if isinstance(obj, ProtectionEventRow) and getattr(obj, "seq", None) is None
+    ]
+    if not pending:
+        return
+    highest: dict[str, int] = {}
+    for obj in pending:
+        if obj.arm_id not in highest:
+            highest[obj.arm_id] = int(
+                session.execute(
+                    text(
+                        "SELECT COALESCE(MAX(seq), 0) FROM protection_events WHERE arm_id = :arm_id"
+                    ),
+                    {"arm_id": obj.arm_id},
+                ).scalar()
+                or 0
+            )
+        highest[obj.arm_id] += 1
+        obj.seq = highest[obj.arm_id]
+
+
+@event.listens_for(Session, "before_flush")
+def _reject_protection_event_mutations(
+    session: Session, _flush_context: Any, _instances: Any
+) -> None:
+    """Keep the audit trail append-only at the ORM seam."""
+    for obj in session.deleted:
+        if isinstance(obj, ProtectionEventRow):
+            raise AppendOnlyViolation("protection events are append-only and cannot be deleted")
+    for obj in session.dirty:
+        if isinstance(obj, ProtectionEventRow) and session.is_modified(obj):
+            raise AppendOnlyViolation("protection events are append-only and cannot be updated")

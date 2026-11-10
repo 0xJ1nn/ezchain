@@ -694,10 +694,18 @@ engine runner that evaluates armed rows on scheduler ticks and fires the same
   `paper.place_order` groups; profiles carry defaults (one home each in core) and,
   for smart profiles, the verbatim rule list. A per-chain profile overrides the global
   one by whole-profile selection (newest wins within a scope).
+- Every transition appends to `protection_events` in the same transaction as the
+  state change it describes: the rule snapshot, mark, `observed_at`, action and
+  resulting order id. The trail is append-only at the ORM seam and has no HTTP
+  mutation route; `seq` is monotonic within an arm, so newest-first reads do not
+  depend on clock resolution. A hold that stays on the same reason is one row, not
+  one per tick. Arms carry a `version`; an update or cancel that supplies an
+  expected version is a conditional update and returns `409 PROTECTION_CONFLICT`
+  when another writer won the race.
 
 **Consequences:** arm closes reconcile with manual fills and the existing
 reconciliation checks; no second bus, no dual math, no strategy code in-tree, and no
 live-anything surface. Follow-ups: partial-ladder fraction caps assume the position
 does not change size between levels (a resize updates the remaining value at the next
-tick); expiry is checked at evaluation time, not by a sweep loop; the API records no
-per-tick arm run log — evaluation inputs live on the arm row for replay.
+tick); expiry is checked at evaluation time, not by a sweep loop; replay reads the arm
+row plus the append-only event trail, not an unbounded per-tick log.

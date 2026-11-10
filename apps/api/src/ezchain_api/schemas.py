@@ -590,6 +590,11 @@ class ProtectionArmIn(BaseModel):
 
 class ProtectionArmPatch(BaseModel):
     params: dict[str, Any]
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class ProtectionArmCancelIn(BaseModel):
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class ProtectionArmOut(BaseModel):
@@ -606,6 +611,7 @@ class ProtectionArmOut(BaseModel):
     order_id: str | None = None
     expires_at: str | None = None
     profile_id: str | None = None
+    version: int = 1
     last_evaluation: dict[str, Any] | None = None
     created_at: str
     updated_at: str
@@ -645,6 +651,19 @@ class ProtectionEvaluateOut(BaseModel):
 class ProtectionEffectiveOut(BaseModel):
     chain: str
     profile: ProtectionProfileOut | None = None
+
+
+class ProtectionEventOut(BaseModel):
+    id: str
+    arm_id: str
+    seq: int
+    action: str
+    reason: str | None = None
+    rule_snapshot: dict[str, Any] | None = None
+    mark: str | None = None
+    observed_at: str
+    order_id: str | None = None
+    created_at: str | None = None
 
 
 class StrategyPerformanceOut(BaseModel):

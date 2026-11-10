@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from ezchain_core.ledger import position_account, replay_position
@@ -31,6 +32,7 @@ from ezchain_core.types import utcnow as core_now
 from ..models import (
     LedgerEntryRow,
     ProtectionArmRow,
+    ProtectionEventRow,
     ProtectionProfileRow,
     new_id,
 )
@@ -130,6 +132,73 @@ def resolve_profile_row(session: Session, chain: str) -> ProtectionProfileRow | 
     return session.get(ProtectionProfileRow, resolved.id)
 
 
+def record_event(
+    session: Session,
+    *,
+    arm_id: str,
+    action: str,
+    reason: str | None = None,
+    rule_snapshot: dict[str, Any] | None = None,
+    mark: Decimal | None = None,
+    observed_at: datetime | None = None,
+    order_id: str | None = None,
+    dedupe: bool = False,
+) -> ProtectionEventRow | None:
+    """Append one audit row in the caller's transaction.
+
+    ``dedupe`` suppresses a repeat of the immediately preceding transition:
+    a hold that stays on the same reason for a thousand ticks is one row, not
+    a thousand. Triggers, arms, updates and cancels always append.
+    """
+    if dedupe:
+        last = session.scalars(
+            select(ProtectionEventRow)
+            .where(ProtectionEventRow.arm_id == arm_id)
+            .order_by(ProtectionEventRow.seq.desc())
+            .limit(1)
+        ).first()
+        if last is not None and last.action == action and last.reason == reason:
+            return None
+    row = ProtectionEventRow(
+        arm_id=arm_id,
+        action=action,
+        reason=reason,
+        rule_snapshot=None if rule_snapshot is None else dict(rule_snapshot),
+        mark=mark,
+        observed_at=observed_at if observed_at is not None else core_now(),
+        order_id=order_id,
+    )
+    session.add(row)
+    return row
+
+
+def list_events(session: Session, arm_id: str, *, limit: int = 200) -> list[ProtectionEventRow]:
+    """Newest first by the per-arm sequence, so equal timestamps never reorder."""
+    return list(
+        session.scalars(
+            select(ProtectionEventRow)
+            .where(ProtectionEventRow.arm_id == arm_id)
+            .order_by(ProtectionEventRow.seq.desc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def event_to_dict(row: ProtectionEventRow) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "arm_id": row.arm_id,
+        "seq": int(row.seq),
+        "action": row.action,
+        "reason": row.reason,
+        "rule_snapshot": row.rule_snapshot,
+        "mark": None if row.mark is None else str(row.mark),
+        "observed_at": _dt(row.observed_at) or "",
+        "order_id": row.order_id,
+        "created_at": _dt(row.created_at),
+    }
+
+
 def create_arm(
     session: Session,
     *,
@@ -170,6 +239,16 @@ def create_arm(
         expires_at=_parse_expiry(expires_at),
     )
     session.add(row)
+    record_event(
+        session,
+        arm_id=row.id,
+        action="armed",
+        reason=None,
+        rule_snapshot=dict(merged),
+        mark=None,
+        observed_at=core_now(),
+        order_id=None,
+    )
     session.commit()
     session.refresh(row)
     return row
@@ -196,32 +275,126 @@ def get_arm(session: Session, arm_id: str) -> ProtectionArmRow | None:
     return session.get(ProtectionArmRow, arm_id)
 
 
-def patch_arm(session: Session, arm_id: str, params: dict[str, Any]) -> ProtectionArmRow:
+def patch_arm(
+    session: Session,
+    arm_id: str,
+    params: dict[str, Any],
+    expected_version: int | None = None,
+) -> ProtectionArmRow:
     row = get_arm(session, arm_id)
     if row is None:
         raise ProtectionServiceError("ARM_NOT_FOUND", "protection arm not found")
+    if expected_version is not None and int(row.version) != int(expected_version):
+        raise ProtectionServiceError(
+            "PROTECTION_CONFLICT",
+            "protection arm version mismatch",
+        )
     if row.status != "armed":
         raise ProtectionServiceError("ARM_NOT_EDITABLE", f"a {row.status} arm cannot be edited")
     validate_arm(row.kind, params)
-    row.params = dict(params)
-    row.updated_at = core_now()
+    now = core_now()
+    if expected_version is None:
+        row.params = dict(params)
+        row.version = int(row.version or 1) + 1
+        row.updated_at = now
+    else:
+        # Compare-and-swap, not read-check-write: two writers that both saw the
+        # same version cannot both win. The loser gets a 409 below.
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(ProtectionArmRow)
+                .where(
+                    ProtectionArmRow.id == arm_id,
+                    ProtectionArmRow.version == int(expected_version),
+                    ProtectionArmRow.status == "armed",
+                )
+                .values(
+                    params=dict(params),
+                    version=ProtectionArmRow.version + 1,
+                    updated_at=now,
+                )
+            ),
+        )
+        if result.rowcount != 1:
+            session.rollback()
+            raise ProtectionServiceError(
+                "PROTECTION_CONFLICT",
+                "protection arm version mismatch",
+            )
+        session.refresh(row)
+    # An update is a new rule snapshot; the trail keeps both sides of the change.
+    record_event(
+        session,
+        arm_id=row.id,
+        action="updated",
+        reason=None,
+        rule_snapshot=dict(row.params),
+        mark=None,
+        observed_at=now,
+        order_id=row.order_id,
+    )
     session.commit()
     session.refresh(row)
     return row
 
 
-def cancel_arm(session: Session, arm_id: str) -> ProtectionArmRow:
+def cancel_arm(
+    session: Session, arm_id: str, expected_version: int | None = None
+) -> ProtectionArmRow:
     row = get_arm(session, arm_id)
     if row is None:
         raise ProtectionServiceError("ARM_NOT_FOUND", "protection arm not found")
+    if expected_version is not None and int(row.version) != int(expected_version):
+        raise ProtectionServiceError(
+            "PROTECTION_CONFLICT",
+            "protection arm version mismatch",
+        )
     if row.status == "cancelled":
         return row
     if row.status in ("triggered", "expired"):
         raise ProtectionServiceError(
             "ARM_NOT_CANCELLABLE", f"a {row.status} arm cannot be cancelled"
         )
-    row.status = "cancelled"
-    row.updated_at = core_now()
+    now = core_now()
+    if expected_version is None:
+        row.status = "cancelled"
+        row.version = int(row.version or 1) + 1
+        row.updated_at = now
+    else:
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(ProtectionArmRow)
+                .where(
+                    ProtectionArmRow.id == arm_id,
+                    ProtectionArmRow.version == int(expected_version),
+                    ProtectionArmRow.status == "armed",
+                )
+                .values(
+                    status="cancelled",
+                    version=ProtectionArmRow.version + 1,
+                    updated_at=now,
+                )
+            ),
+        )
+        if result.rowcount != 1:
+            session.rollback()
+            raise ProtectionServiceError(
+                "PROTECTION_CONFLICT",
+                "protection arm version mismatch",
+            )
+        session.refresh(row)
+    record_event(
+        session,
+        arm_id=row.id,
+        action="cancelled",
+        reason=None,
+        rule_snapshot=dict(row.params or {}),
+        mark=None,
+        observed_at=now,
+        order_id=row.order_id,
+    )
     session.commit()
     session.refresh(row)
     return row
@@ -291,6 +464,7 @@ def arm_to_dict(row: ProtectionArmRow) -> dict[str, Any]:
         "order_id": row.order_id,
         "expires_at": _dt(row.expires_at),
         "profile_id": row.profile_id,
+        "version": int(row.version or 1),
         "created_at": _dt(row.created_at) or "",
         "updated_at": _dt(row.updated_at) or "",
         "mode": "paper",
