@@ -812,3 +812,40 @@ checks the single paper cash account, so a negative chain wallet (fees and notio
 settled before proceeds) is expected. Coverage of attribution is checked at read time by
 the `unallocated` row rather than assumed. `WALLET_UNKNOWN` is a new rejection code
 clients may observe on `POST /paper/orders`, alongside `SETTLEMENT_ASSET_UNKNOWN`.
+
+## ADR-0033 — Provider credentials are operator-supplied and encrypted outside the ledger
+
+**Status:** accepted 2026-11-10.
+
+**Context:** the adapters are paced by a shared provider budget with no operator control, and a
+deployment cannot carry its own provider credentials. An operator with a paid provider key has no
+way to give it to the deployment except through configuration, which means a restart and a secret
+in an environment file. The alternative — the platform shipping its own keys — puts the platform
+between the operator's money and the venue, and makes one leaked key every deployment's problem.
+
+**Decision:** credentials belong to the operator and the platform stores them encrypted.
+
+- `POST /api/v1/provider-keys` accepts a key, stores it through the configured secret store (an
+  `age` recipient or the OS keyring; there is no plaintext fallback), and returns only a
+  fingerprint. No route returns the stored key, and no log line or error body carries it. If the
+  store is unavailable, creation is refused rather than degraded to plaintext.
+- Rows are workspace-scoped: every key carries the deployment's workspace id, so a database shared
+  between two workspaces cannot mix their credentials.
+- One active key per workspace and provider, enforced by a partial unique index on the active
+  rows. Creating a second key requires revoking the first, so a revoked key can never silently
+  become the active one again.
+- Revocation is reference-preserving. A failed external delete keeps the stored reference and a
+  pending-purge state; replaying the same revoke completes the purge of that reference instead of
+  orphaning a secret behind a 404. A revoked key resolves for no new call; a call already holding
+  a decrypted copy can still be in flight, which is stated in the contract rather than papered
+  over.
+- The provider budget bounds each caller's cumulative wait by the quote attempt's absolute
+  deadline, so an exhausted budget returns the typed refusal before the route's own timeout can
+  turn it into a route failure.
+- A permanent decryption failure (a rotated key) is not retryable; a store outage is.
+
+**Consequences:** the platform can carry an operator's keys without holding a plaintext copy, and
+a revoked key cannot be resurrected by creating another. The deployment now depends on the secret
+store being reachable at creation time, and on the operator revoking a key before adding its
+replacement. Losing the encryption secret loses the stored keys — they are re-entered, not
+recovered, which is the intended failure direction for credentials.

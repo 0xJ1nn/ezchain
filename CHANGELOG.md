@@ -47,6 +47,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Operator-supplied provider credentials (PAPER).** `POST /api/v1/provider-keys` stores a
+  provider key through the configured secret store — an `age` recipient or the OS keyring, with
+  no plaintext fallback — and returns only a fingerprint; no route returns the key and no log
+  line or error body carries it. Rows are workspace-scoped, one key is active per provider, and
+  revocation keeps the stored reference until the external delete succeeds, so a retry finishes
+  the purge instead of orphaning a secret. The provider budget now bounds a caller's cumulative
+  wait by the quote attempt's deadline, so an exhausted budget returns the typed 429 rather than
+  a route failure. Decision recorded in ADR-0033.
+
 - **Paper wallets and per-chain settlement (PAPER).** Every paper-capable chain now has
   a wallet besides the genesis settlement wallet. The cash legs of an order are
   attributed to the wallet for that chain, and a wallet's balance is the sum of those
