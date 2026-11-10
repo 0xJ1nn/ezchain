@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell";
+import { CandleTimeframes } from "@/components/candle-timeframes";
 import { CandleView } from "@/components/token-chart";
 import { Badge, Panel, Stat } from "@/components/ui";
 import { getCandles, getToken, asApiError } from "@/lib/api";
@@ -258,23 +259,17 @@ export default async function PositionDetailPage({
 						title="Price history"
 						sub={`${position.chain} · closed ${timeframe} bars`}
 						action={
-							<nav className={styles.timeframes} aria-label="Candle timeframe">
-								{TIMEFRAMES.map((option) => (
-									<Link
-										key={option.value}
-										className={`${styles.timeframe}${
-											option.value === timeframe ? ` ${styles.timeframeActive}` : ""
-										}`}
-										href={positionRouteHref(position.chain, position.token_address, {
-											...routeQuery,
-											timeframe: option.value,
-										})}
-										aria-current={option.value === timeframe ? "page" : undefined}
-									>
-										{option.label}
-									</Link>
-								))}
-							</nav>
+							<CandleTimeframes
+								options={TIMEFRAMES}
+								active={timeframe}
+								hrefFor={(option) =>
+									positionRouteHref(
+										position.chain,
+										position.token_address,
+										{ ...routeQuery, timeframe: option },
+									)
+								}
+							/>
 						}
 						footer={
 							<span>
