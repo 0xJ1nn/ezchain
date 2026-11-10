@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     market_scan_interval_seconds: int = Field(default=90, ge=30)
     market_scan_limit: int = Field(default=200, ge=1, le=500)
 
+    # Bound the market discovery fan-out so one slow or failing provider cannot hold
+    # a scan or a request open. Safe defaults; validated below.
+    market_discovery_deadline_seconds: float = Field(default=10.0, ge=0.1, le=120)
+    market_provider_failure_threshold: int = Field(default=3, ge=1, le=20)
+    market_provider_cooldown_seconds: float = Field(default=60.0, ge=1, le=3600)
+    # Aliases kept for callers that use the shorter names. ``None`` means "use the
+    # canonical setting", so an alias supplied on its own still takes effect.
+    market_discovery_timeout_seconds: float | None = Field(default=None, ge=0.1, le=120)
+    market_provider_max_failures: int | None = Field(default=None, ge=1, le=20)
+    market_circuit_breaker_cooldown_seconds: float | None = Field(default=None, ge=1, le=3600)
+
     paper_starting_cash_usd: Decimal = Field(default=Decimal("10000"))
     paper_fee_bps: int = 30
     max_order_usd: Decimal = Field(default=Decimal("1000"))
