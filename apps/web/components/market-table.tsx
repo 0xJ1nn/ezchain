@@ -107,8 +107,9 @@ export function MarketTable({
 			)}
 
 			{visibleRows.length > 0 && (
-				<div className="table-wrap">
+				<div className="table-wrap" tabIndex={0} role="region" aria-label="Markets table">
 					<table className="table">
+						<caption className="sr-only">Markets</caption>
 						<thead>
 							<tr>
 								<th scope="col">Token</th>

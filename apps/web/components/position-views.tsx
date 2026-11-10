@@ -97,8 +97,14 @@ export function PositionList({
 	query: PositionQuery;
 }) {
 	return (
-		<div className="table-wrap">
+		<div
+			className="table-wrap"
+			tabIndex={0}
+			role="region"
+			aria-label="Server positions table"
+		>
 			<table className="table" data-view="list">
+				<caption className="sr-only">Server positions</caption>
 				<thead>
 					<tr>
 						<th scope="col">Token</th>
