@@ -589,9 +589,12 @@ def test_overview_and_stored_endpoints(
     assert all(isinstance(row["price_usd"], str) for row in rows)
     assert rows[0]["source"] == "dexscreener"
     assert rows[0]["observed_at"]
-    assert "pair_address" not in rows[0]
-    assert "dex" not in rows[0]
-    assert "url" not in rows[0]
+    assert {row["pair_address"] for row in rows} == {
+        "pair-ethereum-" + ETH_TOKEN,
+        "pair-solana-" + SOL_TOKEN,
+    }
+    assert all(row["dex"] == "uniswap" for row in rows)
+    assert all(row["pair_age_seconds"] is None for row in rows)
 
     solana = client.get("/api/v1/markets/stored", params={"chain": "solana"})
     assert [row["token_address"] for row in solana.json()["rows"]] == [SOL_TOKEN]

@@ -173,7 +173,7 @@ class MarketOverviewOut(BaseModel):
 
 
 class StoredSnapshotOut(BaseModel):
-    """A persisted token observation. Fields mirror the snapshot table; no pair/dex/url."""
+    """A persisted token observation. Pair identity is carried over from the observation."""
 
     chain: str
     token_address: str
@@ -189,6 +189,13 @@ class StoredSnapshotOut(BaseModel):
     source: str
     observed_at: str
     age_seconds: int | None = None
+    pair_address: str | None = None
+    dex: str | None = None
+    base_token_address: str | None = None
+    quote_token_address: str | None = None
+    pair_created_at: str | None = None
+    url: str | None = None
+    pair_age_seconds: int | None = None
 
 
 class PairOut(BaseModel):
@@ -217,6 +224,13 @@ class TokenOut(BaseModel):
     safety: dict[str, Any]
     source: SourceOut | None = None
     stale: bool
+    pair_address: str | None = None
+    dex: str | None = None
+    base_token_address: str | None = None
+    quote_token_address: str | None = None
+    pair_created_at: str | None = None
+    url: str | None = None
+    pair_age_seconds: int | None = None
 
 
 class CandleOut(BaseModel):

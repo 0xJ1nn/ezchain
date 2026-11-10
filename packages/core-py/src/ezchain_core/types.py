@@ -157,6 +157,13 @@ class TokenSnapshot:
     # Creation time of the deepest pair the snapshot was taken from. None means the
     # source did not report it; risk treats that as unknown, never as an old pair.
     pair_created_at: datetime | None = None
+    # Pair identity carried over from the observation. Null when the source did not
+    # report it; never inferred from the symbol or the token address.
+    pair_address: str | None = None
+    dex: str | None = None
+    base_token_address: str | None = None
+    quote_token_address: str | None = None
+    url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -180,6 +187,11 @@ class TokenSnapshot:
             "pair_created_at": None
             if self.pair_created_at is None
             else self.pair_created_at.isoformat(),
+            "pair_address": self.pair_address,
+            "dex": self.dex,
+            "base_token_address": self.base_token_address,
+            "quote_token_address": self.quote_token_address,
+            "url": self.url,
         }
 
 

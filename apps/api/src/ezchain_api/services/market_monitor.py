@@ -125,9 +125,12 @@ def _snapshot(row: MarketRow) -> TokenSnapshot:
         pairs=(),
         source=row.source,
         stale=False,
-        # ``market_snapshots`` does not persist pair age. The order path re-fetches a live
-        # token snapshot and applies the gate there; do not imply this value is stored.
-        pair_created_at=None,
+        pair_created_at=row.pair_created_at,
+        pair_address=row.pair_address,
+        dex=row.dex,
+        base_token_address=row.base_token,
+        quote_token_address=row.quote_token,
+        url=row.url,
     )
 
 

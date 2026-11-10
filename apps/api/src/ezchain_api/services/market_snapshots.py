@@ -18,7 +18,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -50,6 +50,17 @@ _REPLACED_COLUMNS = (
     "raw",
 )
 
+# Identity fields are filled when missing but never overwritten by a later
+# observation, so a newer row cannot silently change a stored pair address.
+_IDENTITY_COLUMNS = (
+    "pair_address",
+    "dex",
+    "base_token_address",
+    "quote_token_address",
+    "pair_created_at",
+    "url",
+)
+
 
 def _aware(value: datetime) -> datetime:
     return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
@@ -73,6 +84,12 @@ def _values(snapshot: TokenSnapshot, observed_at: datetime) -> dict[str, Any]:
         "price_change_h24": snapshot.price_change_h24,
         "source": source.name if source is not None else "unknown",
         "observed_at": observed_at,
+        "pair_address": snapshot.pair_address,
+        "dex": snapshot.dex,
+        "base_token_address": snapshot.base_token_address,
+        "quote_token_address": snapshot.quote_token_address,
+        "pair_created_at": snapshot.pair_created_at,
+        "url": snapshot.url,
         "raw": {},
     }
 
@@ -124,9 +141,16 @@ def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshot
         values["observed_at"] = now
         write = statement.values(**values).on_conflict_do_nothing(index_elements=conflict_target)
     else:
+        identity_set = {
+            column: func.coalesce(getattr(MarketSnapshotRow, column), getattr(excluded, column))
+            for column in _IDENTITY_COLUMNS
+        }
         write = statement.values(**values).on_conflict_do_update(
             index_elements=conflict_target,
-            set_={column: getattr(excluded, column) for column in _REPLACED_COLUMNS},
+            set_={
+                **{column: getattr(excluded, column) for column in _REPLACED_COLUMNS},
+                **identity_set,
+            },
             where=MarketSnapshotRow.observed_at <= excluded.observed_at,
         )
     session.execute(write)

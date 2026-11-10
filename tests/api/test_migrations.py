@@ -46,7 +46,7 @@ def destructive_upgrade_operations(source: str) -> list[str]:
 
 
 def test_migration_head_is_the_latest_revision() -> None:
-    assert head_revision() == "0013_risk_reasons"
+    assert head_revision() == "0014_pair_identity"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:
@@ -92,6 +92,7 @@ def test_protection_events_migration_creates_the_audit_table(tmp_path: Path) -> 
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
         connection.execute(text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"))
+        connection.execute(text("CREATE TABLE market_snapshots (id VARCHAR(36) PRIMARY KEY, chain VARCHAR(40), token_address VARCHAR(160), observed_at DATETIME)"))
     command.stamp(config, "0005_price_precision")
     command.upgrade(config, "head")
     try:

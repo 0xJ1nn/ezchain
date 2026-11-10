@@ -275,6 +275,17 @@ def _stored(row: MarketSnapshotRow, now: datetime) -> StoredSnapshotOut:
         source=row.source,
         observed_at=observed.isoformat(),
         age_seconds=int(max(0.0, (now - observed).total_seconds())),
+        pair_address=row.pair_address,
+        dex=row.dex,
+        base_token_address=row.base_token_address,
+        quote_token_address=row.quote_token_address,
+        pair_created_at=(
+            None if row.pair_created_at is None else _aware(row.pair_created_at).isoformat()
+        ),
+        url=row.url,
+        pair_age_seconds=None
+        if row.pair_created_at is None
+        else int(max(0.0, (observed - _aware(row.pair_created_at)).total_seconds())),
     )
 
 
@@ -302,8 +313,9 @@ def _apply_stored_filters(
             row.price_change_h24 is None
         ):
             unknown_fields.add("price_change_h24")
-        if min_pair_age_minutes is not None or max_pair_age_minutes is not None:
-            # Stored snapshots do not persist pair age.
+        if (min_pair_age_minutes is not None or max_pair_age_minutes is not None) and (
+            row.pair_created_at is None
+        ):
             unknown_fields.add("pair_created_at")
         if unknown_fields:
             for field in unknown_fields:
@@ -321,10 +333,17 @@ def _apply_stored_filters(
         if max_change_h24 is not None and row.price_change_h24 is not None:
             if row.price_change_h24 > max_change_h24:
                 continue
-        # pair age unknown already excluded above
+        if row.pair_created_at is not None and (
+            min_pair_age_minutes is not None or max_pair_age_minutes is not None
+        ):
+            age_minutes = max(0.0, (now - _aware(row.pair_created_at)).total_seconds() / 60.0)
+            if min_pair_age_minutes is not None and age_minutes < min_pair_age_minutes:
+                continue
+            if max_pair_age_minutes is not None and age_minutes > max_pair_age_minutes:
+                continue
         if dex is not None:
-            # Stored observations do not carry a DEX; no row can satisfy a DEX filter.
-            continue
+            if row.dex is None or row.dex.casefold() != dex.casefold():
+                continue
         kept.append(row)
     return kept, unknown
 
