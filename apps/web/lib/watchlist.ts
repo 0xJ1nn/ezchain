@@ -252,6 +252,12 @@ export function getWatchlistServerSnapshot(): WatchlistEntry[] {
 }
 
 export function toggleWatchlist(input: WatchlistInput): WatchlistToggleResult {
+	if (!loaded) {
+		// A caller outside the React subscription (for example a token-page action) must
+		// not overwrite entries that are already in storage with a one-item snapshot.
+		loaded = true;
+		snapshot = readWatchlist();
+	}
 	const wasStarred = isWatchlisted(snapshot, input.chain, input.base_token);
 	const next = toggleWatchlistEntry(snapshot, input);
 	const full = !wasStarred && next === snapshot && snapshot.length >= WATCHLIST_MAX_ENTRIES;

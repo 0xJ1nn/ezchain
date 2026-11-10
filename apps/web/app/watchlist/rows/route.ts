@@ -43,6 +43,26 @@ function parseKey(raw: string): { chain: string; baseToken: string } | null {
 	return { chain: normalizeChain(chain), baseToken: normalizeBaseToken(baseToken) };
 }
 
+// A watchlist can hold many tokens; four concurrent reads keep a large list from
+// flooding the markets feed while still finishing in a few round trips.
+async function mapLimit<T, R>(
+	items: T[],
+	limit: number,
+	run: (item: T) => Promise<R>,
+): Promise<R[]> {
+	const results = new Array<R>(items.length);
+	let next = 0;
+	async function worker() {
+		while (next < items.length) {
+			const index = next;
+			next += 1;
+			results[index] = await run(items[index]);
+		}
+	}
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+	return results;
+}
+
 export async function GET(request: NextRequest) {
 	const requested = [...new Set(request.nextUrl.searchParams.getAll("key"))].slice(
 		0,
@@ -59,8 +79,10 @@ export async function GET(request: NextRequest) {
 	const rows: WatchlistRowResult[] = [];
 	const unavailable: WatchlistUnavailable[] = [];
 
-	const lookups = await Promise.all(
-		requested.map(async (raw): Promise<WatchlistLookup> => {
+	const lookups = await mapLimit(
+		requested,
+		4,
+		async (raw): Promise<WatchlistLookup> => {
 			const parsed = parseKey(raw);
 			if (!parsed) {
 				return {
@@ -103,7 +125,7 @@ export async function GET(request: NextRequest) {
 					},
 				};
 			}
-		}),
+		},
 	);
 
 	for (const result of lookups) {

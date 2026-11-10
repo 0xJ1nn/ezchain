@@ -285,11 +285,12 @@ export function WatchlistView({
 				<Panel
 					flush
 					title="Starred markets"
-					sub="same row rendering as Markets"
+					sub="current market rows for starred tokens"
 					action={<Badge tone="ghost">{availableRows.length} AVAILABLE</Badge>}
 					footer={
 						<span>
-							Source and age are per row. Prices are discovery data, not executable quotes.
+							Use the pressed star to remove a token from this browser. Source and age are
+							per row; prices are discovery data, not executable quotes.
 						</span>
 					}
 				>
