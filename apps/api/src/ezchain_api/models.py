@@ -108,6 +108,29 @@ class LedgerEntryRow(Base):
     amount: Mapped[Decimal] = mapped_column(QUANTITY)
     usd_value: Mapped[Decimal] = mapped_column(MONEY)
     kind: Mapped[str] = mapped_column(String(32))
+    # The paper wallet this cash leg settles to. Null means the row predates wallets or
+    # belongs to the genesis journal, which settles to the paper settlement wallet. The
+    # ledger account is unchanged; this only attributes an existing cash row to a wallet.
+    wallet_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class PaperWalletRow(Base):
+    """A paper wallet: one settlement account per chain, plus the genesis wallet.
+
+    A wallet is a view over the ledger, never a second accountant. The row declares which
+    chain a wallet settles and in which asset; its balance is the sum of the ``cash:USD``
+    ledger rows attributed to it. Nothing here caches a balance, and deleting a wallet
+    cannot orphan a journal row because the attribution lives on the append-only entry.
+    """
+
+    __tablename__ = "paper_wallets"
+    __table_args__ = (UniqueConstraint("chain", "asset", name="uq_paper_wallet_chain_asset"),)
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=new_id)
+    chain: Mapped[str] = mapped_column(String(40), index=True)
+    asset: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 

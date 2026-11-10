@@ -45,6 +45,13 @@ member is invited.
 A wallet never stores a balance. Balances are `SUM(ledger_entries)` per asset account,
 plus a chain-sync adjustment entry when reality diverges (with reason).
 
+The paper slice follows the same rule. `paper_wallets` declares the settlement wallet and
+one wallet per paper-capable chain; each cash leg of an order carries that wallet's id.
+A wallet's balance is the sum of its cash legs, so the wallets always add up to the paper
+cash account. An order on a chain with no wallet is refused with `WALLET_UNKNOWN`, and a
+wallet that does not settle in the ledger asset is refused with
+`SETTLEMENT_ASSET_UNKNOWN`; neither is guessed into the journal.
+
 ### StrategyInstall
 
 | Field | Notes |

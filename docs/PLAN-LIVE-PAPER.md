@@ -96,8 +96,9 @@ detail}`.
 | GET | `/markets/stored?chain=all&limit=50` | latest persisted observations, liquidity desc |
 | GET | `/tokens/{chain}/{address}` | token header, pairs, safety unknowns, quote preview |
 | GET | `/quotes?chain=&token=&side=&amount_usd=` | quote or `paper_mark` envelope |
-| GET | `/paper/account` | cash, equity, realized/unrealized, positions count |
+| GET | `/paper/account` | cash, equity, realized/unrealized, positions count, per-wallet composition |
 | GET | `/paper/positions` | one `PositionView` shape |
+| GET | `/paper/wallets` | one paper wallet per chain with its ledger-derived settlement cash |
 | GET | `/paper/orders?limit=` | order history |
 | POST | `/paper/orders` | `{chain, token_address, side, amount_usd, idempotency_key}` |
 | GET | `/paper/fills?limit=` | fill history |

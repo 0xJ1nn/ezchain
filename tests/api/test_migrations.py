@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import ast
 import re
+from decimal import Decimal
 from pathlib import Path
 
 from alembic import command
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.orm import Session
 
 from ezchain_api.db import alembic_config, head_revision
+from ezchain_api.models import PaperWalletRow
+from ezchain_api.services import paper
 
 VERSIONS = Path(__file__).resolve().parents[2] / "apps/api/alembic/versions"
 FORBIDDEN_UPGRADE_OPERATIONS = (
@@ -46,7 +50,7 @@ def destructive_upgrade_operations(source: str) -> list[str]:
 
 
 def test_migration_head_is_the_latest_revision() -> None:
-    assert head_revision() == "0014_pair_identity"
+    assert head_revision() == "0015_paper_wallets"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:
@@ -79,6 +83,58 @@ def downgrade():
     assert destructive_upgrade_operations(sample) == ["drop_column"]
 
 
+def test_paper_wallet_upgrade_attributes_legacy_ledger_rows(tmp_path: Path) -> None:
+    """An upgraded SQLite database keeps its cash: legacy rows settle in the genesis wallet."""
+    database = tmp_path / "legacy_wallets.db"
+    url = f"sqlite+pysqlite:///{database}"
+    config = alembic_config()
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    config.attributes["database_url"] = url
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE ledger_entries ("
+                "id VARCHAR(36) PRIMARY KEY, seq BIGINT, group_id VARCHAR(36), "
+                "account VARCHAR(160), asset VARCHAR(160), amount TEXT, usd_value TEXT, "
+                "kind VARCHAR(32), created_at DATETIME)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO ledger_entries VALUES "
+                "('legacy-cash', 1, 'genesis', 'cash:USD', 'USD', "
+                "'10000', '10000', 'genesis', '2026-01-01 00:00:00'), "
+                "('legacy-equity', 2, 'genesis', 'equity:genesis', 'USD', "
+                "'-10000', '-10000', 'genesis', '2026-01-01 00:00:00')"
+            )
+        )
+    command.stamp(config, "0014_pair_identity")
+    command.upgrade(config, "head")
+    try:
+        inspector = inspect(engine)
+        assert "paper_wallets" in inspector.get_table_names()
+        assert "wallet_id" in {column["name"] for column in inspector.get_columns("ledger_entries")}
+        assert {column["name"] for column in inspector.get_columns("paper_wallets")} == {
+            "id",
+            "chain",
+            "asset",
+            "label",
+            "created_at",
+        }
+        with Session(engine) as session:
+            # The migration seeds the genesis wallet; boot adds the chain wallets.
+            assert session.scalar(select(PaperWalletRow.id)) == paper.SETTLEMENT_WALLET_ID
+            paper.ensure_wallets(session)
+            wallets = {row["chain"]: row for row in paper.wallets(session)}
+            assert wallets["settlement"]["balance_usd"] == "10000"
+            assert sum(
+                (Decimal(str(row["balance_usd"])) for row in wallets.values()), Decimal(0)
+            ) == Decimal("10000")
+    finally:
+        engine.dispose()
+
+
 def test_protection_events_migration_creates_the_audit_table(tmp_path: Path) -> None:
     """The upgrade tail builds the table the models expect, on SQLite too."""
     database = tmp_path / "protection.db"
@@ -91,8 +147,16 @@ def test_protection_events_migration_creates_the_audit_table(tmp_path: Path) -> 
     # revisions add columns to ``strategies``, so seed its primary key.
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
-        connection.execute(text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"))
-        connection.execute(text("CREATE TABLE market_snapshots (id VARCHAR(36) PRIMARY KEY, chain VARCHAR(40), token_address VARCHAR(160), observed_at DATETIME)"))
+        connection.execute(
+            text(
+                "CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE market_snapshots (id VARCHAR(36) PRIMARY KEY, chain VARCHAR(40), token_address VARCHAR(160), observed_at DATETIME)"
+            )
+        )
     command.stamp(config, "0005_price_precision")
     command.upgrade(config, "head")
     try:

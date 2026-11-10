@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ## [Unreleased]
 
+### Changed
+
+- **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
+  cash now comes from the same Python `Decimal` replay that computes the account's cash,
+  bucketed per wallet in one pass, instead of a SQL `SUM` over the cash account. SQLite
+  stores money as TEXT, so that sum coerced every row to REAL and the wallets drifted from
+  the account around the 13th decimal place; a seeded random-walk property test now proves
+  `sum(wallet.balance_usd) == replay.cash` after every step. The wallet route no longer
+  declares wallets — they are seeded at boot and on order placement — so a GET cannot
+  write. Cash or positions whose wallet row is missing stay visible in `by_wallet`'s
+  `unallocated` row instead of disappearing from the total. `POST /paper/orders` on a
+  chain without a wallet is refused with the new `WALLET_UNKNOWN` reason code before a
+  quote (a wallet that does not settle in the ledger asset is refused with
+  `SETTLEMENT_ASSET_UNKNOWN`). Decision recorded in ADR-0032.
+
 ### Fixed
 
 - **Protection writes are compare-and-swap and the event sequence is
@@ -17,6 +32,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   and an update event records the rule it replaced.
 
 ### Added
+
+- **Paper wallets and per-chain settlement (PAPER).** Every paper-capable chain now has
+  a wallet besides the genesis settlement wallet. The cash legs of an order are
+  attributed to the wallet for that chain, and a wallet's balance is the sum of those
+  rows: the wallets add up to the paper cash account and no balance is stored twice.
+  `GET /api/v1/paper/wallets` lists them, and `/paper/account` decomposes equity into
+  each wallet's settled cash plus its chain's marked positions. An order on a chain with
+  no wallet is refused with `WALLET_UNKNOWN`; a wallet that does not settle in the ledger
+  asset is refused with `SETTLEMENT_ASSET_UNKNOWN`. Migration `0015_paper_wallets` adds
+  the wallet table and the cash-leg attribution. Existing ledger rows are unchanged and
+  count towards the genesis wallet.
 
 - **Protection audit trail and optimistic versioning (PAPER).** Every arm
   transition appends an immutable event (rule snapshot, mark, observation time,

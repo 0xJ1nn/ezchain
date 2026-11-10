@@ -20,6 +20,7 @@ from ..schemas import (
     OrderOut,
     PaperAccountOut,
     PaperOrderIn,
+    PaperWalletOut,
     PositionOut,
     ReconciliationOut,
     RiskReasonOut,
@@ -94,6 +95,17 @@ def account(
 ) -> PaperAccountOut:
     paper.ensure_genesis(session, settings.paper_starting_cash_usd)
     return PaperAccountOut.model_validate(paper.account_snapshot(session))
+
+
+@router.get("/wallets", response_model=list[PaperWalletOut])
+def wallets(session: Session = Depends(get_session)) -> list[PaperWalletOut]:
+    """Every paper wallet with the cash the ledger has settled to it.
+
+    Read-only: the declared wallets are seeded at boot and on order placement, and a
+    wallet is a view over the journal whose balance does not exist as a stored number.
+    The route never writes, so a read cannot change what the next read sees.
+    """
+    return [PaperWalletOut.model_validate(row) for row in paper.wallets(session)]
 
 
 @router.get("/positions", response_model=list[PositionOut])

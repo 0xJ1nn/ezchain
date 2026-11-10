@@ -754,3 +754,56 @@ ladder exits are exact because the arm passes the token quantity it already hold
 `reduce_only` on a buy is rejected at the API edge and ignored by the service, which
 treats every buy as new risk. The policy still cannot verify the position bound itself;
 that remains the order service's job, as it was before this decision.
+
+---
+
+## ADR-0032 — Paper wallet attribution lives on the ledger entry
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context:** paper trading reported one cash figure for every chain, so a trader could not
+see where settlement happened and no order was attributable to a chain's wallet. A wallet
+that stored its own balance would become a second accountant next to the journal and
+could drift from it. The first cut also read wallet cash with a SQL aggregate over the
+cash account; SQLite stores money as TEXT, so `SUM()` coerced every row to REAL and the
+wallet figures stopped adding up to the account cash around the 13th decimal place.
+
+**Options:** (a) a `balance` column per wallet, updated on every fill; (b) a separate
+wallet-cash projection table rebuilt by a background job; (c) attribute each cash ledger
+entry to a wallet and derive every balance in the same Decimal replay that computes the
+cash account, refusing an order whose chain cannot be attributed; (d) infer the wallet
+from the order or the position instead of storing attribution on the journal.
+
+**Decision:** (c), inside the existing ledger model.
+
+- `ledger_entries.wallet_id` is nullable attribution on the cash leg only, added by
+  migration `0015_paper_wallets` without rewriting existing rows. `NULL` means the row
+  predates wallets or belongs to the genesis journal, and it settles in the genesis
+  wallet (`paper-wallet:settlement`). The ledger account is still `cash:USD`; nothing
+  about double entry changes.
+- `paper_wallets` declares chain, settlement asset and label, unique per
+  `(chain, asset)`. It stores identity, never money. Wallets are seeded at boot and on
+  order placement; `GET /paper/wallets` only reads, so a GET cannot write.
+- An order on a chain with no declared wallet is refused `WALLET_UNKNOWN` before any
+  quote, market read, fill or journal row; a wallet that does not settle in the ledger
+  asset is refused `SETTLEMENT_ASSET_UNKNOWN`. Both are structured risk reasons with the
+  chain (and asset) in the detail, so the refusal is replayable from the order row.
+- Cash per wallet is `Replay.wallet_cash`, accumulated in the same single pass over the
+  same loaded rows as `Replay.cash`, at an exact decimal precision. No SQL aggregate
+  computes money read models. The buckets are therefore an exact partition of the cash
+  account: `sum(wallet.balance_usd) == replay.cash`, and a property test asserts that
+  after every step of a seeded random walk.
+- `by_wallet` decomposes equity into each wallet's settled cash plus its chain's marked
+  positions. A chain with positions but no wallet row, and cash attributed to a wallet id
+  with no row, appear in an explicit `unallocated` row instead of vanishing from the
+  total; an unpriced chain withholds `positions_usd` and `market_value_usd` rather than
+  valuing them at zero.
+
+**Consequences:** the wallets always reconcile with the journal, and deleting a wallet
+row cannot orphan money — attribution lives on the append-only entry. Adding a paper
+chain needs no migration, only its registry capability flag; the wallet appears on the
+next boot or order. Per-wallet cash is attribution, not a spendable limit: risk still
+checks the single paper cash account, so a negative chain wallet (fees and notional
+settled before proceeds) is expected. Coverage of attribution is checked at read time by
+the `unallocated` row rather than assumed. `WALLET_UNKNOWN` is a new rejection code
+clients may observe on `POST /paper/orders`, alongside `SETTLEMENT_ASSET_UNKNOWN`.

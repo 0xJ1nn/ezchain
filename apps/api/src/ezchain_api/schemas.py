@@ -461,6 +461,42 @@ class PaperAssetCompositionOut(BaseModel):
     mark_status: Literal["known", "unknown"]
 
 
+class PaperWalletOut(BaseModel):
+    """A paper wallet and the cash the ledger has settled to it.
+
+    The wallet stores no balance: ``balance_usd`` is the sum of the cash legs attributed
+    to it. ``mode`` travels with the number so a wallet read can never be mistaken for a
+    live balance.
+    """
+
+    id: str
+    chain: str
+    asset: str
+    label: str
+    balance_usd: str
+    mode: str = "paper"
+
+
+class PaperWalletCompositionOut(BaseModel):
+    """One wallet's contribution to equity: settled cash and its chain's positions.
+
+    ``market_value_usd`` is null when any position on the wallet's chain is unpriced; the
+    chain is never valued at zero. ``settled_usd`` is always known because it is a ledger
+    sum. ``wallet_id`` is null only for the ``unallocated`` row that keeps positions on a
+    chain with no wallet from disappearing out of the total.
+    """
+
+    wallet_id: str | None = None
+    chain: str
+    asset: str
+    label: str
+    settled_usd: str
+    positions_usd: str | None = None
+    market_value_usd: str | None = None
+    share_pct: str | None = None
+    mark_status: Literal["known", "unknown"]
+
+
 class PaperChainCompositionOut(BaseModel):
     """One chain's server-computed total. Native quantity lives on the asset row.
 
@@ -489,6 +525,8 @@ class PaperAccountOut(BaseModel):
     unpriced_positions: list[PaperUnpricedPositionOut]
     by_chain: list[PaperChainCompositionOut]
     by_asset: list[PaperAssetCompositionOut]
+    wallets: list[PaperWalletOut]
+    by_wallet: list[PaperWalletCompositionOut]
     positions: list[PositionOut]
     mode: str = "paper"
 
