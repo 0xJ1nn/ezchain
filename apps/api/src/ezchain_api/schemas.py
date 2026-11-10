@@ -687,6 +687,14 @@ class ProtectionEventOut(BaseModel):
 
 
 class StrategyPerformanceOut(BaseModel):
+    """PAPER performance for one strategy, from the account ledger.
+
+    ``realized_pnl_usd`` is net of fees and books a buy fee when the ledger pays it.
+    ``market_value_usd`` is the strategy's contribution to account equity. An unknown
+    mark leaves ``market_value_usd`` and ``unrealized_pnl_usd`` null and sets
+    ``complete`` false; it is never valued at zero.
+    """
+
     strategy_id: str
     label: Literal["PAPER"] = "PAPER"
     realized_pnl_usd: str
@@ -696,7 +704,10 @@ class StrategyPerformanceOut(BaseModel):
     wins: int
     losses: int
     win_rate_pct: str | None = None
-    open_quantity: str
+    open_quantity: str | None = None
     avg_cost_usd: str | None = None
     mark_usd: str | None = None
+    market_value_usd: str | None = None
+    complete: bool = False
+    marks_unknown: bool = False
     equity_curve: list[dict[str, str]]

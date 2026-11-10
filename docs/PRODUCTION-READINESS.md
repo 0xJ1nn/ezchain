@@ -72,9 +72,10 @@ These are explicit gaps, not silent assumptions:
 8. **Timescale retention / market-event ingest / replay harness** are M2, not part of this
    stack. Snapshot storage is current-state `market_snapshots`, not a tick history.
 9. **Attribution scope.** `/paper/attribution` is per token, and
-   `/strategies/{id}/performance` is per strategy from that strategy's own fills. There is
-   no position-level attribution when a paper position is shared by multiple strategies;
-   the UI does not invent one.
+   `/strategies/{id}/performance` is per strategy from the ledger groups attributed to its
+   own fills. There is no position-level attribution when a paper position is shared by
+   multiple strategies; a strategy selection that cannot be replayed as its own inventory
+   reports `complete: false` rather than an invented position.
 10. **Desktop packaging is Linux-only so far.** The AppImage is built and launched; the
     `.deb` is built but not installed (no dpkg on the Arch build host). macOS and Windows
     targets are not built. Packaged builds use embedded SQLite, not Postgres.

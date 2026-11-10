@@ -163,6 +163,7 @@ def test_ledger_is_newest_first_and_filterable(
     assert body[0]["created_at"] >= body[-1]["created_at"]
     assert body[0]["created_at"] == (START + timedelta(hours=1)).isoformat()
     import sys
+
     print("KEYS:", sorted(body[0].keys()), file=sys.stderr)
     print("ROW:", body[0], file=sys.stderr)
 
@@ -218,6 +219,8 @@ def test_performance_matches_a_known_ledger(
     assert body["unrealized_usd"] == "60"
     assert body["equity_usd"] == "10099.04"
     assert body["fees_usd"] == "0.96"
+    assert body["complete"] is True
+    assert body["marks_unknown"] is False
     assert body["trades"] == 2
     assert body["wins"] == 1
     assert body["losses"] == 0
@@ -260,7 +263,12 @@ def test_unknown_mark_and_undefined_win_rate_are_null(
 
     assert body["unrealized_usd"] is None
     assert body["equity_usd"] is None
+    assert body["complete"] is False
+    assert body["marks_unknown"] is True
     assert body["win_rate_pct"] is None
+    # The buy fee is booked when it is paid, so it is realized even while the position
+    # stays open; the unknown mark only withholds the unrealized half.
+    assert body["realized_usd"] == "-0.6"
     assert body["wins"] == 0
     assert body["losses"] == 0
     token = body["by_token"][0]

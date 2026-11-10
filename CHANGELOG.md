@@ -253,6 +253,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `EXIT_NO_ROUTE` with the router's evidence. Protection arms send the exact token
   quantity and the reduce-only flag, so a stop or ladder level cannot be capped by an
   entry gate.
+- **Account and strategy performance share one PnL projector.** Account performance
+  replayed ledger groups while strategy performance walked its own fills, so a buy fee
+  and a partial close produced different realized and unrealized numbers. Both now
+  project the same ledger lines, with the strategy's attributed group ids as the scope.
+  The strategy response also reports its `market_value_usd` (equity contribution),
+  `complete` and `marks_unknown`; an unknown mark stays null on both surfaces. A buy fee
+  is realized when the ledger pays it, and win rate uses the same decided-close
+  denominator on both responses.
 - **Paper equity fails closed on unknown marks** (#96, #108):
   `GET /api/v1/paper/account` now returns `equity_usd: null` and `unrealized_usd: null`
   when any open position has no mark, and exposes `complete`, `marks_unknown`,

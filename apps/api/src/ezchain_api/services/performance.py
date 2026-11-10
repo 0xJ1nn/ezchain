@@ -1,13 +1,14 @@
-"""PAPER performance for one strategy, from its own fills only.
+"""PAPER performance for one strategy, projected from the account ledger.
 
 Attribution is the join from a fill to its order and then to ``orders.strategy_id``. A
 fill belonging to another strategy or to a manual order is never included, and there is
-no fallback that spreads the account's PnL across strategies.
+no fallback that spreads the account's PnL across strategies. The selected ledger groups
+go through :mod:`ezchain_api.services.pnl`, the same projector account performance calls,
+so a fee is booked once and the same rows cannot produce two numbers.
 
-The curve is cumulative realized PnL after fees. A buy fee is part of the cost basis and
-is recognized when the position closes; it is not subtracted a second time at the buy.
-A position's unrealized PnL is reported only when a mark is known, otherwise ``None``
-(CONTRACT I3).
+A buy fee is realized when the ledger pays it, not capitalised into the remaining cost
+basis. A position's market value and unrealized PnL are reported only when a mark is
+known; otherwise they are null and ``complete`` is false (CONTRACT I3).
 """
 
 from __future__ import annotations
@@ -19,23 +20,24 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import MarketSnapshotRow, PaperFillRow, PaperOrderRow, StrategyRow
+from ..models import PaperFillRow, PaperOrderRow, StrategyRow
+from . import pnl
 
-HUNDRED = Decimal(100)
+ZERO = Decimal(0)
 
 
 def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def _owned_fills(session: Session, strategy_id: str) -> list[tuple[PaperFillRow, PaperOrderRow]]:
-    rows = session.execute(
-        select(PaperFillRow, PaperOrderRow)
-        .join(PaperOrderRow, PaperFillRow.order_id == PaperOrderRow.id)
+def _owned_group_ids(session: Session, strategy_id: str) -> set[str]:
+    """Ledger group ids (order ids) whose fill is attributed to this strategy."""
+    orders = session.scalars(
+        select(PaperOrderRow.id)
+        .join(PaperFillRow, PaperFillRow.order_id == PaperOrderRow.id)
         .where(PaperOrderRow.strategy_id == strategy_id)
-        .order_by(PaperFillRow.created_at, PaperFillRow.id)
-    ).all()
-    return [(fill, order) for fill, order in rows]
+    )
+    return set(orders)
 
 
 def strategy_performance(session: Session, strategy_id: str) -> dict[str, Any] | None:
@@ -43,75 +45,55 @@ def strategy_performance(session: Session, strategy_id: str) -> dict[str, Any] |
     if strategy is None:
         return None
 
-    pairs = _owned_fills(session, strategy_id)
-    quantity = Decimal(0)
-    cost = Decimal(0)
-    realized = Decimal(0)
-    fees = Decimal(0)
-    trades = 0
-    wins = 0
-    losses = 0
-    cumulative = Decimal(0)
-    curve: list[dict[str, str]] = []
-
-    for fill, _order in pairs:
-        fill_quantity = Decimal(str(fill.quantity))
-        notional = Decimal(str(fill.notional_usd))
-        fee = Decimal(str(fill.fee_usd))
-        fees += fee
-        if fill.side == "buy":
-            quantity += fill_quantity
-            cost += notional + fee
-        else:
-            closed = min(fill_quantity, quantity)
-            if closed > 0 and quantity > 0:
-                average = cost / quantity
-                basis = average * closed
-                pnl = notional - basis - fee
-                realized += pnl
-                trades += 1
-                if pnl > 0:
-                    wins += 1
-                elif pnl < 0:
-                    losses += 1
-                cumulative += pnl
-                quantity -= closed
-                cost -= basis
-                if quantity <= 0:
-                    quantity = Decimal(0)
-                    cost = Decimal(0)
-            else:
-                cumulative -= fee
-        curve.append({"t": _aware(fill.created_at).isoformat(), "pnl_usd": str(cumulative)})
-
-    snapshot = session.scalar(
-        select(MarketSnapshotRow).where(
-            MarketSnapshotRow.chain == strategy.chain,
-            MarketSnapshotRow.token_address == strategy.token_address,
-        )
+    marks = pnl.mark_index(session)
+    projection = pnl.project(
+        pnl.ledger_lines(session),
+        marks=pnl.prices(marks),
+        group_ids=_owned_group_ids(session, strategy_id),
     )
-    mark = None if snapshot is None else snapshot.price_usd
-    if quantity <= 0:
-        unrealized: Decimal | None = Decimal(0)
-    elif mark is None:
-        unrealized = None
+    target = (strategy.chain, strategy.token_address)
+    position = projection.position(target)
+    mark = marks.get(target)
+    if position is not None and position.quantity < 0:
+        # A strategy that sold more than its own attributed buys cannot have a position;
+        # the selection is reported incomplete without inventing a truncation.
+        open_quantity: Decimal | None = None
     else:
-        unrealized = quantity * Decimal(str(mark)) - cost
+        open_quantity = ZERO if position is None else position.quantity
 
-    win_rate = None if trades == 0 else Decimal(wins) / Decimal(trades) * HUNDRED
+    cumulative = ZERO
+    curve: list[dict[str, str]] = []
+    for group in projection.groups:
+        if group.token is None:
+            continue
+        cumulative += group.realized_usd
+        observed = group.observed_at or _aware(strategy.created_at)
+        curve.append({"t": observed.isoformat(), "pnl_usd": pnl.num(cumulative)})
+
     return {
         "strategy_id": strategy.id,
         "label": "PAPER",
-        "realized_pnl_usd": str(realized),
-        "unrealized_pnl_usd": None if unrealized is None else str(unrealized),
-        "fees_usd": str(fees),
-        "trades": trades,
-        "wins": wins,
-        "losses": losses,
-        "win_rate_pct": None if win_rate is None else str(win_rate),
-        "open_quantity": str(quantity),
-        "avg_cost_usd": None if quantity <= 0 else str(cost / quantity),
-        "mark_usd": None if mark is None else str(mark),
+        "realized_pnl_usd": pnl.num(projection.realized_usd),
+        "unrealized_pnl_usd": (
+            None if projection.unrealized_usd is None else pnl.num(projection.unrealized_usd)
+        ),
+        "fees_usd": pnl.num(projection.fees_usd),
+        "trades": sum(1 for group in projection.groups if group.closed),
+        "wins": projection.wins,
+        "losses": projection.losses,
+        "win_rate_pct": pnl.win_rate_pct(projection.wins, projection.losses),
+        "open_quantity": None if open_quantity is None else pnl.num(open_quantity),
+        "avg_cost_usd": (
+            None
+            if position is None or position.avg_cost_usd is None
+            else pnl.num(position.avg_cost_usd)
+        ),
+        "mark_usd": (None if mark is None or mark.price_usd is None else pnl.num(mark.price_usd)),
+        "market_value_usd": (
+            None if projection.market_value_usd is None else pnl.num(projection.market_value_usd)
+        ),
+        "complete": projection.complete,
+        "marks_unknown": projection.marks_unknown,
         "equity_curve": curve,
     }
 
