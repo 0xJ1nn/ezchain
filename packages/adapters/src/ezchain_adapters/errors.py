@@ -39,9 +39,7 @@ class ProviderKeyUnavailable(AdapterError):
     code = "PROVIDER_KEY_UNAVAILABLE"
     retryable = False
 
-    def __init__(
-        self, message: str, *, detail: str | None = None, retryable: bool = False
-    ) -> None:
+    def __init__(self, message: str, *, detail: str | None = None, retryable: bool = False) -> None:
         super().__init__(message, detail=detail)
         self.retryable = retryable
 

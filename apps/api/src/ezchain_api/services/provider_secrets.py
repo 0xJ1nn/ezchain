@@ -199,9 +199,7 @@ class KeyringCipher:
         try:
             module.delete_password(self._service, reference)
         except Exception as exc:  # noqa: BLE001 - a store that cannot delete is unusable
-            raise CipherUnavailable(
-                "the OS keyring could not remove its test entry"
-            ) from exc
+            raise CipherUnavailable("the OS keyring could not remove its test entry") from exc
         if read_back != probe:
             raise CipherUnavailable("the OS keyring did not return what it stored")
 
