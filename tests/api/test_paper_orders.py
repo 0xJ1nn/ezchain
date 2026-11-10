@@ -21,6 +21,9 @@ TOKEN = "0x0000000000000000000000000000000000000abc"
 
 
 class FakeDex:
+    def __init__(self, price: Decimal | None = Decimal("2")) -> None:
+        self.price = price
+
     async def get_token(self, chain: str, address: str) -> TokenSnapshot:
         observed = datetime.now(UTC)
         return TokenSnapshot(
@@ -28,7 +31,7 @@ class FakeDex:
             address=address,
             symbol="TEST",
             name="Test",
-            price_usd=Decimal("2"),
+            price_usd=self.price,
             liquidity_usd=Decimal("500000"),
             volume_24h_usd=Decimal("1000000"),
             price_change_m5=Decimal("0"),
@@ -40,7 +43,7 @@ class FakeDex:
                     "0xpair",
                     "uniswap",
                     "USDC",
-                    Decimal("2"),
+                    self.price or Decimal(0),
                     Decimal("500000"),
                     Decimal("1000000"),
                     None,
@@ -177,6 +180,88 @@ def test_non_ascii_idempotency_key_is_422(client_for, session: Session) -> None:
 
     assert response.status_code == 422
     assert session.scalar(select(PaperOrderRow)) is None
+
+
+def test_reduce_only_on_a_buy_is_422(client_for, session: Session) -> None:
+    """The flag is a sell concept; a contradictory buy is refused at the edge."""
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+    payload = _valid_payload()
+    payload["reduce_only"] = True
+
+    response = client.post("/api/v1/paper/orders", json=payload)
+
+    assert response.status_code == 422
+    assert session.scalar(select(PaperOrderRow)) is None
+
+
+def test_quantity_on_a_buy_is_422(client_for, session: Session) -> None:
+    """Buys size in USD; a token quantity on a buy is a contradictory request."""
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+    payload = _valid_payload()
+    payload["quantity"] = "12.5"
+
+    response = client.post("/api/v1/paper/orders", json=payload)
+
+    assert response.status_code == 422
+    assert session.scalar(select(PaperOrderRow)) is None
+
+
+def test_reduce_only_sell_without_a_mark_is_recorded_as_exit_no_route(
+    client_for, session: Session
+) -> None:
+    """The API keeps the intent, the typed reason and the router evidence."""
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+
+    opened = client.post(
+        "/api/v1/paper/orders",
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "side": "buy",
+            "amount_usd": "25",
+            "idempotency_key": "reduce-buy-1",
+        },
+    )
+    assert opened.status_code == 201
+    assert opened.json()["status"] == "filled"
+
+    dex.price = None
+    response = client.post(
+        "/api/v1/paper/orders",
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "side": "sell",
+            "amount_usd": "25",
+            "idempotency_key": "reduce-sell-1",
+            "reduce_only": True,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "rejected"
+    assert body["reason"] == "EXIT_NO_ROUTE"
+    row = session.get(PaperOrderRow, body["id"])
+    assert row is not None
+    assert row.quote_json is not None
+    assert row.quote_json["reduce_only"] is True
+    assert row.quote_json["error"]["code"] == "NO_SELL_ROUTE"
 
 
 def test_json_float_overflow_is_422_not_500(client_for, session: Session) -> None:

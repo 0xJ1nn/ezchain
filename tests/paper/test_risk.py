@@ -45,13 +45,14 @@ def make_quote(
     )
 
 
-def request(side: str = "buy", amount: str = "100") -> OrderRequest:
+def request(side: str = "buy", amount: str = "100", *, reduce_only: bool = False) -> OrderRequest:
     return OrderRequest(
         chain=CHAIN,
         token_address=TOKEN,
         side="buy" if side == "buy" else "sell",
         amount_usd=Decimal(amount),
         idempotency_key="risk-key-1",
+        reduce_only=reduce_only,
     )
 
 
@@ -359,3 +360,56 @@ def test_sell_without_route_denies() -> None:
     )
     assert allowed is False
     assert "NO_SELL_ROUTE" in reasons
+
+
+def test_reduce_only_exit_bypasses_entry_data_gates() -> None:
+    """A fresh executable sell quote is the exit's mark; the feed cannot veto it."""
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="100", reduce_only=True),
+        quote=make_quote(side="sell", amount_out="100", amount_in="50", kind="jupiter"),
+        snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_reduce_only_exit_still_requires_a_route() -> None:
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="100", reduce_only=True),
+        quote=make_quote(side="sell", amount_out="0", kind="jupiter"),
+        snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
+    )
+    assert allowed is False
+    assert reasons == ("EXIT_NO_ROUTE",)
+
+
+def test_reduce_only_exit_still_requires_a_fresh_quote() -> None:
+    from datetime import timedelta
+
+    stale = utcnow() - timedelta(seconds=61)
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="100", reduce_only=True),
+        quote=make_quote(side="sell", amount_out="100", amount_in="50", observed_at=stale),
+        snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
+    )
+    assert allowed is False
+    assert reasons == ("QUOTE_STALE",)
+
+
+def test_reduce_only_never_exempts_a_buy() -> None:
+    allowed, reasons = evaluate(
+        req=request(side="buy", amount="100", reduce_only=True),
+        snapshot=make_snapshot(liquidity=None),
+    )
+    assert allowed is False
+    assert "LIQUIDITY_UNKNOWN" in reasons
+
+
+def test_reduce_only_still_rejects_a_zero_amount() -> None:
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="0", reduce_only=True),
+        quote=make_quote(side="sell", amount_out="100", amount_in="50", kind="jupiter"),
+        snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
+    )
+    assert allowed is False
+    assert reasons == ("INVALID_AMOUNT",)

@@ -119,6 +119,8 @@ async def create_order(
         side=payload.side,
         amount_usd=payload.amount_usd,
         idempotency_key=payload.idempotency_key,
+        quantity=payload.quantity,
+        reduce_only=payload.reduce_only,
     )
     try:
         row = await paper.place_order(session, request, settings, dexscreener, quotes)

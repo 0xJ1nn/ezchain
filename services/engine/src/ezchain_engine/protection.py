@@ -258,6 +258,12 @@ async def evaluate_arm_row(
         side="sell",
         amount_usd=amount,
         idempotency_key=protection_idempotency_key(row.id, evaluation.level_index),
+        # The arm knows the position, so it sells an exact token quantity rather than a
+        # USD notional divided by a mark that may move between evaluation and order.
+        quantity=quantity * evaluation.sell_fraction,
+        # A protection exit reduces an existing position; entry-only risk gates must not
+        # be able to veto it after the arm has decided to fire.
+        reduce_only=True,
     )
     try:
         order_id = await order_executor.place_order(request)

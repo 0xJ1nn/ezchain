@@ -111,8 +111,12 @@ class FakeDexScreener:
 class FakeJupiter:
     """Deterministic Jupiter Lite stand-in with a configurable USD price."""
 
-    def __init__(self, price: Decimal = Decimal("2000")) -> None:
+    def __init__(
+        self, price: Decimal = Decimal("2000"), *, source_observed_at: datetime | None = None
+    ) -> None:
         self.price = price
+        # A test can age the venue's quote to prove an exit still checks freshness.
+        self.source_observed_at = source_observed_at
         self.calls: list[tuple[str, Decimal | None, Decimal]] = []
 
     async def quote_paper(
@@ -150,7 +154,7 @@ class FakeJupiter:
                 fee_usd=Decimal(0),
                 kind="jupiter",
                 route="Jupiter",
-                source=SourceRef("jupiter", "https://jup.ag", utcnow()),
+                source=SourceRef("jupiter", "https://jup.ag", self.source_observed_at or utcnow()),
             ),
             6,
             9,
@@ -165,6 +169,8 @@ def make_request(
     chain: str = CHAIN,
     token: str = TOKEN,
     strategy_id: str | None = None,
+    quantity: str | None = None,
+    reduce_only: bool = False,
 ) -> OrderRequest:
     return OrderRequest(
         chain=chain,
@@ -173,6 +179,8 @@ def make_request(
         amount_usd=Decimal(amount_usd),
         idempotency_key=key,
         strategy_id=strategy_id,
+        quantity=None if quantity is None else Decimal(quantity),
+        reduce_only=reduce_only,
     )
 
 

@@ -149,6 +149,8 @@ async def test_stop_loss_triggers_on_the_same_order_path(
     assert result.reason == "STOP_LOSS"
     assert len(executor.requests) == 1
     assert executor.requests[0].side == "sell"
+    assert executor.requests[0].reduce_only is True
+    assert executor.requests[0].quantity == Decimal("100")
     # 100 held at 0.85 = 85 USD of value, one full-close order.
     assert executor.requests[0].amount_usd == Decimal("85")
     with session_factory() as session:
@@ -242,6 +244,7 @@ async def test_take_profit_ladder_sells_one_level_at_a_time(
     assert result.level_index == 0
     # Half of 100 x 1.25 = 62.50 USD, not the whole position.
     assert executor.requests[0].amount_usd == Decimal("62.50")
+    assert executor.requests[0].quantity == Decimal("50")
     with session_factory() as session:
         row = session.get(ProtectionArmRow, "arm-1")
         assert row is not None

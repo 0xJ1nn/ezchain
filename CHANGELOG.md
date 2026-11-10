@@ -244,6 +244,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   window cannot collapse into one order. Migration `0011_idempotency_fingerprint`
   adds the nullable column; rows written before it derive and store their hash on
   first reuse, so an identical retry still replays and a changed payload conflicts.
+- **Reduce-only exits are no longer blocked by entry-only risk gates** (#109):
+  a sell flagged `reduce_only`, or one sized to the whole position, now reaches an
+  executable sell quote even when the market feed has no mark, thin or unknown
+  liquidity, or no pair. Exit integrity still fails closed: an open position, a fresh
+  quote, a positive executable price, a route and a quantity no larger than the position
+  are required. Sell sizing is quantity first; a sell with no route is recorded as
+  `EXIT_NO_ROUTE` with the router's evidence. Protection arms send the exact token
+  quantity and the reduce-only flag, so a stop or ladder level cannot be capped by an
+  entry gate.
 - **Paper equity fails closed on unknown marks** (#96, #108):
   `GET /api/v1/paper/account` now returns `equity_usd: null` and `unrealized_usd: null`
   when any open position has no mark, and exposes `complete`, `marks_unknown`,

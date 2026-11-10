@@ -288,6 +288,14 @@ class OrderRequest:
     amount_usd: Decimal
     idempotency_key: str
     strategy_id: str | None = None
+    # The exact token quantity for a sell. A sell is always bounded to what is held; a
+    # caller that knows the position (a protection arm, a position screen) sizes it
+    # directly instead of converting a USD notional through a mark. Buys size in USD.
+    quantity: Decimal | None = None
+    # A sell that exists to reduce an open position, never to open or extend risk. The
+    # order service sets this only after it has bounded the quantity to what is held;
+    # risk then knows the intent is an exit and does not apply entry-only gates.
+    reduce_only: bool = False
 
 
 @dataclass(frozen=True)
