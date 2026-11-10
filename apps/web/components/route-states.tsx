@@ -178,3 +178,94 @@ export function PerformanceSkeleton() {
 		</Loading>
 	);
 }
+
+export function StrategiesSkeleton() {
+	return (
+		<Loading label="Loading strategies…" testId="strategies-loading">
+			<Head actions={3} />
+			<TablePanel rows={6} />
+			<div className="grid cols-2 mt-16" aria-hidden="true">
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={4} />
+					</div>
+				</section>
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Skeleton className="skel-block" />
+					</div>
+				</section>
+			</div>
+		</Loading>
+	);
+}
+
+export function LedgerSkeleton() {
+	return (
+		<Loading label="Loading activity…" testId="ledger-loading">
+			<Head actions={3} />
+			<Band stats={4} />
+			<TablePanel rows={6} />
+			<TablePanel rows={4} />
+		</Loading>
+	);
+}
+
+export function OperationsSkeleton() {
+	return (
+		<Loading label="Loading operations…" testId="operations-loading">
+			<Head actions={2} />
+			<Band stats={5} />
+			<div className="split" aria-hidden="true">
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={6} />
+					</div>
+				</section>
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={6} />
+					</div>
+				</section>
+			</div>
+		</Loading>
+	);
+}
+
+export function SecuritySkeleton() {
+	return (
+		<Loading label="Loading security…" testId="security-loading">
+			<Head actions={2} />
+			<div className="grid cols-2" aria-hidden="true">
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={6} />
+					</div>
+				</section>
+				<section className="panel">
+					<div className="panel-head">
+						<Skeleton className="skel-h" />
+					</div>
+					<div className="panel-body">
+						<Rows rows={6} />
+					</div>
+				</section>
+			</div>
+		</Loading>
+	);
+}
