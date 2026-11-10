@@ -24,10 +24,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -87,6 +87,12 @@ def last_created() -> bool:
 POSITION_PREFIX = "position:"
 MONEY_QUANTUM = Decimal("0.00000001")
 SHARE_QUANTUM = Decimal("0.01")
+# The ledger sums money exactly. Python's default decimal context carries 28 significant
+# digits, which is a display precision: SQLite stores money as TEXT and keeps the
+# unrounded value of a division, so a few hundred rows can need more digits than that.
+# Summing cash and its wallet buckets at this precision makes the buckets an exact
+# partition of cash, independent of order (CONTRACT I1).
+LEDGER_PRECISION = 60
 SETTLEMENT_CHAIN = "settlement"
 SETTLEMENT_ASSET = "USD"
 # Deterministic ids keep the genesis wallet stable across a migration, a restart and a
@@ -163,9 +169,10 @@ def _seeded_wallets() -> list[tuple[str, str, str, str]]:
 def ensure_wallets(session: Session) -> None:
     """Insert any declared wallet that is missing, exactly once.
 
-    Idempotent and safe to call on every boot, every order and every wallet read. A
-    concurrent insert loses the unique constraint and re-reads rather than failing a
-    request; an unrelated integrity error is re-raised.
+    Idempotent and safe to call on every boot and every order. A concurrent insert loses
+    the unique constraint and re-reads rather than failing a request; an unrelated
+    integrity error is re-raised. Reads never call this: declaring a wallet writes no
+    money, but a GET must not write at all.
     """
     existing = set(session.scalars(select(PaperWalletRow.id)))
     pending = [row for row in _seeded_wallets() if row[0] not in existing]
@@ -219,30 +226,18 @@ class WalletView:
         }
 
 
-def _cash_balances(session: Session) -> dict[str, Decimal]:
-    """Cash settled per wallet, as one grouped ledger sum.
+def wallet_views(session: Session, replay: Replay | None = None) -> list[WalletView]:
+    """Every declared wallet with its balance projected from the ledger.
 
-    A row written before wallets existed has no attribution; it belongs to the genesis
-    settlement wallet, which is where the starting cash was booked. The sum of every
-    wallet balance therefore equals the cash account, by construction.
+    Balances come from ``Replay.wallet_cash``: the same Python ``Decimal`` pass that
+    computes the account's cash, never a SQL aggregate. SQLite stores money as TEXT, so
+    ``SUM()`` would coerce every row to a float and the wallets would no longer add up to
+    the account to the last unit (CONTRACT I1). A caller that already replayed the ledger
+    passes its ``Replay`` so one request reads the journal once.
     """
-    rows = session.execute(
-        select(LedgerEntryRow.wallet_id, func.sum(LedgerEntryRow.usd_value))
-        .where(LedgerEntryRow.account == cash_account())
-        .group_by(LedgerEntryRow.wallet_id)
-    ).all()
-    balances: dict[str, Decimal] = {}
-    for wallet_id, total in rows:
-        key = wallet_id or SETTLEMENT_WALLET_ID
-        balances[key] = balances.get(key, Decimal(0)) + Decimal(str(total))
-    return balances
-
-
-def wallet_views(session: Session) -> list[WalletView]:
-    """Every declared wallet with its balance projected from the ledger."""
     rows = list(session.scalars(select(PaperWalletRow)))
     rows.sort(key=lambda row: (row.chain != SETTLEMENT_CHAIN, row.chain))
-    balances = _cash_balances(session)
+    balances = (replay if replay is not None else _replay(_ledger_rows(session))).wallet_cash
     return [
         WalletView(
             id=row.id,
@@ -287,6 +282,9 @@ class Replay:
     daily_realized: Decimal
     positions: dict[str, tuple[Decimal, Decimal]]
     realized_by_account: dict[str, Decimal]
+    # Cash per settlement wallet, bucketed in the same pass as ``cash``. A row without
+    # an attribution (written before wallets existed) belongs to the genesis wallet.
+    wallet_cash: dict[str, Decimal]
 
 
 def group_position_delta(rows: list[LedgerEntryRow]) -> Decimal:
@@ -320,17 +318,26 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
     Per-position net realized is derived per order group: a group's cash deltas plus its
     position delta equal the trade's result after fees (negative fees on a buy). This is
     additive, so it does not depend on replay order and reconciles with cash + mark.
+
+    ``cash`` and ``wallet_cash`` are accumulated in one pass at ``LEDGER_PRECISION`` so the
+    wallet buckets are an exact partition of the cash account: the wallet rows add up to
+    the account figure to the last digit, and no SQL aggregate ever re-sums them.
     """
     cash = Decimal(0)
+    wallet_cash: dict[str, Decimal] = {}
     groups: dict[str, list[LedgerEntryRow]] = {}
     position_entries: dict[str, list[LedgerEntry]] = {}
 
-    for row in rows:
-        if row.account == cash_account():
-            cash += row.usd_value
-        groups.setdefault(row.group_id, []).append(row)
-        if row.account.startswith(POSITION_PREFIX):
-            position_entries.setdefault(row.account, []).append(_domain_entry(row))
+    with localcontext() as context:
+        context.prec = LEDGER_PRECISION
+        for row in rows:
+            if row.account == cash_account():
+                cash += row.usd_value
+                wallet = row.wallet_id or SETTLEMENT_WALLET_ID
+                wallet_cash[wallet] = wallet_cash.get(wallet, Decimal(0)) + row.usd_value
+            groups.setdefault(row.group_id, []).append(row)
+            if row.account.startswith(POSITION_PREFIX):
+                position_entries.setdefault(row.account, []).append(_domain_entry(row))
 
     positions = {account: replay_position(entries) for account, entries in position_entries.items()}
 
@@ -357,6 +364,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
         daily_realized=daily,
         positions=positions,
         realized_by_account=realized_by_account,
+        wallet_cash=wallet_cash,
     )
 
 
@@ -533,6 +541,7 @@ def _composition(
 def _wallet_composition(
     views: list[dict[str, Any]],
     wallet_rows: list[WalletView],
+    replay: Replay,
     *,
     complete: bool,
     equity: Decimal,
@@ -545,8 +554,9 @@ def _wallet_composition(
     not a second one. An unpriced position on a chain withholds that wallet's
     ``positions_usd`` and ``market_value_usd``, and never values it at zero.
 
-    A position chain with no wallet row keeps its value in an explicit ``unallocated``
-    row instead of disappearing from the total.
+    A position chain with no wallet row, and cash attributed to a wallet id that has no
+    row, keep their value in an explicit ``unallocated`` row instead of disappearing from
+    the total. The account is still one account; only its attribution is incomplete.
     """
     positions_by_chain: dict[str, list[dict[str, Any]]] = {}
     for view in views:
@@ -554,6 +564,7 @@ def _wallet_composition(
 
     rows: list[dict[str, Any]] = []
     allocated = {wallet.chain for wallet in wallet_rows}
+    declared_ids = {wallet.id for wallet in wallet_rows}
     for wallet in wallet_rows:
         members = (
             positions_by_chain.get(wallet.chain, []) if wallet.chain != SETTLEMENT_CHAIN else []
@@ -579,7 +590,15 @@ def _wallet_composition(
         )
 
     unallocated = sorted(chain for chain in positions_by_chain if chain not in allocated)
-    if unallocated:
+    unattributed_cash = sum(
+        (
+            balance
+            for wallet_id, balance in replay.wallet_cash.items()
+            if wallet_id not in declared_ids
+        ),
+        Decimal(0),
+    )
+    if unallocated or unattributed_cash != 0:
         members = [view for chain in unallocated for view in positions_by_chain[chain]]
         unpriced = sum(1 for view in members if view["market_value_usd"] is None)
         positions_value = (
@@ -592,8 +611,8 @@ def _wallet_composition(
                 wallet_id=None,
                 chain="unallocated",
                 asset=SETTLEMENT_ASSET,
-                label="Unallocated chain positions",
-                settled=Decimal(0),
+                label="Unallocated paper cash and positions",
+                settled=unattributed_cash,
                 positions_value=positions_value,
                 unpriced=unpriced,
                 complete=complete,
@@ -669,8 +688,8 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
     complete = not unpriced
     equity = replay.cash + known_market_value
     by_chain, by_asset = _composition(views, replay.cash, complete=complete, equity=equity)
-    wallet_rows = wallet_views(session)
-    by_wallet = _wallet_composition(views, wallet_rows, complete=complete, equity=equity)
+    wallet_rows = wallet_views(session, replay)
+    by_wallet = _wallet_composition(views, wallet_rows, replay, complete=complete, equity=equity)
     return {
         "cash_usd": str(replay.cash),
         "equity_usd": str(equity) if complete else None,

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+import random
+from decimal import Decimal, localcontext
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,7 +13,15 @@ from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow, Pape
 from ezchain_api.services import paper
 from ezchain_core.ledger import cash_account
 
-from .conftest import CHAIN, TOKEN, make_request, make_snapshot, place
+from .conftest import (
+    CHAIN,
+    TOKEN,
+    FakeDexScreener,
+    FakeJupiter,
+    make_request,
+    make_snapshot,
+    place,
+)
 
 STARTING_CASH = Decimal("10000")
 
@@ -154,6 +164,8 @@ def test_unknown_settlement_asset_fails_closed(session, settings, dex, jupiter) 
     assert order.reason == "SETTLEMENT_ASSET_UNKNOWN"
     assert order.reasons is not None
     assert order.reasons[0]["detail"] == {"chain": CHAIN, "asset": "EUR"}
+    # The refusal happens before the quote: no market read, no fill, no journal.
+    assert dex.calls == 0
     assert session.scalar(select(PaperFillRow)) is None
     assert session.scalar(select(LedgerEntryRow).where(LedgerEntryRow.group_id == order.id)) is None
 
@@ -226,3 +238,93 @@ def test_a_rejected_chain_keeps_the_order_and_its_reason(session, settings, dex,
     assert row is not None
     assert row.status == "rejected"
     assert row.reason == "WALLET_UNKNOWN"
+
+
+@pytest.mark.parametrize("seed", [11, 23])
+def test_wallet_balances_are_the_cash_replay_on_a_random_walk(
+    session: Session, settings, seed: int
+) -> None:
+    """Every wallet balance sums to the exact Decimal cash the account reports.
+
+    SQLite stores money as TEXT, so a SQL ``SUM()`` would coerce the rows to REAL and the
+    wallets would drift from the account around the 13th decimal place. The property is
+    exact equality after every step: one replay, one accountant (CONTRACT I1).
+    """
+    rng = random.Random(seed)
+    price = Decimal("10")
+    dex = FakeDexScreener(make_snapshot(price=price, liquidity=Decimal("1000000")))
+    jupiter = FakeJupiter(price=price)
+
+    for step in range(120):
+        drift = Decimal(str(rng.uniform(-0.04, 0.04)))
+        price = max(Decimal("0.5"), (price * (Decimal(1) + drift)).quantize(Decimal("0.0001")))
+        dex.set(make_snapshot(price=price, liquidity=Decimal("1000000")))
+        side = "buy" if rng.random() < 0.6 else "sell"
+        amount = Decimal(rng.randint(5, 200))
+        place(
+            session,
+            settings,
+            dex,
+            jupiter,
+            make_request(side=side, amount_usd=str(amount), key=f"wallet-walk-{seed}-{step}"),
+        )
+
+        replay = paper.project_ledger(paper.ledger_rows(session))
+        wallet_rows = paper.wallets(session)
+        # SQLite keeps unrounded money strings, so an exact sum can exceed the default
+        # 28-digit context. The property is exact equality in the same precision the
+        # replay uses, never a tolerance.
+        with localcontext() as context:
+            context.prec = paper.LEDGER_PRECISION
+            assert (
+                sum((Decimal(str(row["balance_usd"])) for row in wallet_rows), Decimal(0))
+                == replay.cash
+            ), f"step {step}: wallets do not add up to cash"
+
+            expected: dict[str, Decimal] = {}
+            for row in paper.ledger_rows(session):
+                if row.account != cash_account():
+                    continue
+                wallet_id = row.wallet_id or paper.SETTLEMENT_WALLET_ID
+                expected[wallet_id] = expected.get(wallet_id, Decimal(0)) + row.usd_value
+            assert sum(expected.values(), Decimal(0)) == replay.cash
+            for row in wallet_rows:
+                wallet_id = str(row["id"])
+                assert Decimal(str(row["balance_usd"])) == expected.get(wallet_id, Decimal(0)), (
+                    f"step {step}: {wallet_id}"
+                )
+
+        assert Decimal(paper.account_snapshot(session)["cash_usd"]) == replay.cash
+
+
+def test_unallocated_row_keeps_cash_and_positions_without_a_wallet(
+    session, settings, dex, jupiter
+) -> None:
+    """Cash and positions whose chain lost its wallet row stay visible in ``by_wallet``."""
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    paper.ensure_genesis(session, STARTING_CASH)
+    place(session, settings, dex, jupiter, make_request(amount_usd="100", key="orphan-wallet"))
+
+    wallet = session.scalar(select(PaperWalletRow).where(PaperWalletRow.chain == CHAIN))
+    assert wallet is not None
+    session.delete(wallet)
+    session.commit()
+
+    account = paper.account_snapshot(session)
+    by_wallet = {row["chain"]: row for row in account["by_wallet"]}
+    assert CHAIN not in by_wallet
+    orphan = by_wallet["unallocated"]
+    assert orphan["wallet_id"] is None
+    # 100 notional plus the 30 bps fee left the chain's wallet, and its position is intact.
+    assert Decimal(orphan["settled_usd"]) == Decimal("-100.3")
+    assert Decimal(orphan["positions_usd"]) == Decimal("100")
+    assert Decimal(orphan["market_value_usd"]) == Decimal("-0.3")
+    assert orphan["mark_status"] == "known"
+
+    # The decomposition still reconciles with the account: nothing vanished.
+    assert sum(
+        (Decimal(row["settled_usd"]) for row in account["by_wallet"]), Decimal(0)
+    ) == Decimal(account["cash_usd"])
+    assert sum((Decimal(row["market_value_usd"]) for row in account["by_wallet"]), Decimal(0)) == (
+        Decimal(account["equity_usd"])
+    )

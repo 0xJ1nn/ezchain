@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ## [Unreleased]
 
+### Changed
+
+- **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
+  cash now comes from the same Python `Decimal` replay that computes the account's cash,
+  bucketed per wallet in one pass, instead of a SQL `SUM` over the cash account. SQLite
+  stores money as TEXT, so that sum coerced every row to REAL and the wallets drifted from
+  the account around the 13th decimal place; a seeded random-walk property test now proves
+  `sum(wallet.balance_usd) == replay.cash` after every step. The wallet route no longer
+  declares wallets — they are seeded at boot and on order placement — so a GET cannot
+  write. Cash or positions whose wallet row is missing stay visible in `by_wallet`'s
+  `unallocated` row instead of disappearing from the total. `POST /paper/orders` on a
+  chain without a wallet is refused with the new `WALLET_UNKNOWN` reason code before a
+  quote (a wallet that does not settle in the ledger asset is refused with
+  `SETTLEMENT_ASSET_UNKNOWN`). Decision recorded in ADR-0032.
+
 ### Fixed
 
 - **Protection writes are compare-and-swap and the event sequence is

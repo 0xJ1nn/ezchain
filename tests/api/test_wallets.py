@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import QuoteRouter
 from ezchain_api.deps import get_dexscreener, get_quote_router
-from ezchain_api.models import MarketSnapshotRow
+from ezchain_api.models import MarketSnapshotRow, PaperWalletRow
 from ezchain_api.routers import paper as paper_router
 from ezchain_api.services import paper
 from ezchain_core.types import PairInfo, SourceRef, TokenSnapshot
@@ -76,6 +77,23 @@ def test_wallets_route_lists_the_settlement_wallet_first(client_for, session: Se
     chains = {row["chain"] for row in body}
     assert CHAIN in chains
     assert all(row["balance_usd"] == "0" for row in body if row["chain"] != "settlement")
+
+
+def test_wallets_route_never_writes(client_for, session: Session) -> None:
+    """A read reports the declared wallets; it never seeds, commits or re-creates one."""
+    paper.ensure_genesis(session, Decimal("10000"))
+    session.execute(  # a GET must leave this deletion alone
+        PaperWalletRow.__table__.delete().where(PaperWalletRow.chain == CHAIN)
+    )
+    session.commit()
+    before = session.scalar(select(func.count()).select_from(PaperWalletRow))
+    client = _client(client_for, FakeDex())
+
+    response = client.get("/api/v1/paper/wallets")
+
+    assert response.status_code == 200
+    assert CHAIN not in {row["chain"] for row in response.json()}
+    assert session.scalar(select(func.count()).select_from(PaperWalletRow)) == before
 
 
 def test_account_exposes_wallets_inside_the_equity_composition(
@@ -152,6 +170,7 @@ def test_wallet_composition_withholds_an_unpriced_chain(client_for, session: Ses
     assert by_wallet[CHAIN]["mark_status"] == "unknown"
     assert by_wallet[CHAIN]["positions_usd"] is None
     assert by_wallet[CHAIN]["market_value_usd"] is None
-    assert by_wallet[CHAIN]["settled_usd"] == "-100.3"
+    # The exact Decimal sum keeps the ledger's money scale, so compare values not scales.
+    assert Decimal(by_wallet[CHAIN]["settled_usd"]) == Decimal("-100.3")
     assert by_wallet["settlement"]["market_value_usd"] == "10000"
     assert by_wallet[CHAIN]["share_pct"] is None
