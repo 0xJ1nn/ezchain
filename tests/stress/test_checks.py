@@ -333,6 +333,27 @@ def test_account_unpriced_asset_must_not_carry_a_source_or_value() -> None:
     assert "ACCOUNT_UNPRICED_ASSET_VALUED" in codes
 
 
+def test_account_priced_marks_carry_a_freshness_status() -> None:
+    # Freshness is its own axis: a priced mark is fresh, stale or future, never "known".
+    for status in ("fresh", "stale", "future"):
+        findings = check_account(
+            account(
+                by_asset=[asset_row(mark_status=status), cash_row()],
+                by_chain=[
+                    chain_row(mark_status=status),
+                    chain_row(chain="settlement", market_value_usd="97", share_pct="97.00"),
+                ],
+            ),
+            scenario="t",
+        )
+        assert findings == []
+
+    retired = check_account(
+        account(by_asset=[asset_row(mark_status="known"), cash_row()]), scenario="t"
+    )
+    assert any(finding.code == "ACCOUNT_MARK_STATUS_MISMATCH" for finding in retired)
+
+
 def test_account_that_withholds_a_complete_equity_is_a_finding() -> None:
     findings = check_account(account(equity_usd=None, complete=True), scenario="t")
     assert any(finding.code == "ACCOUNT_EQUITY_WITHHELD" for finding in findings)

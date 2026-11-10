@@ -22,6 +22,9 @@ QUANTITY_TOLERANCE = Decimal("0.00000001")
 
 ALLOWED_ORDER_STATUSES = frozenset({"pending", "filled", "rejected", "cancelled", "expired"})
 ALLOWED_ORDER_SIDES = frozenset({"buy", "sell"})
+# Mark freshness is a separate axis from whether a mark exists: a priced row is fresh,
+# stale or future, while ``unknown`` means the mark itself is missing.
+PRICED_MARK_STATUSES = frozenset({"fresh", "stale", "future"})
 
 # The engine logs this reason when the operator kill switch stops a strategy decision
 # (``services/engine/src/ezchain_engine/scheduler.py``). ``ORDER_EXECUTOR_UNAVAILABLE`` is
@@ -935,14 +938,14 @@ def check_account(
                         )
                     )
         else:
-            if mark_status != "known":
+            if mark_status not in PRICED_MARK_STATUSES:
                 findings.append(
                     Finding(
                         code="ACCOUNT_MARK_STATUS_MISMATCH",
                         scenario=scenario,
                         invariant="account.equity_complete",
                         summary=f"asset {label} has a mark but is reported as {mark_status!r}",
-                        expected="mark_status 'known'",
+                        expected="mark_status 'fresh', 'stale' or 'future'",
                         actual=repr(mark_status),
                     )
                 )
@@ -1008,15 +1011,19 @@ def check_account(
                 )
             )
             continue
-        expected_status = "unknown" if unpriced_assets > 0 else "known"
-        if row.get("mark_status") != expected_status:
+        expected_statuses = frozenset({"unknown"}) if unpriced_assets > 0 else PRICED_MARK_STATUSES
+        if row.get("mark_status") not in expected_statuses:
             findings.append(
                 Finding(
                     code="ACCOUNT_MARK_STATUS_MISMATCH",
                     scenario=scenario,
                     invariant="account.equity_complete",
                     summary=f"chain {chain!r} mark_status disagrees with its unpriced assets",
-                    expected=f"mark_status {expected_status!r}",
+                    expected=(
+                        "mark_status 'unknown'"
+                        if unpriced_assets > 0
+                        else "mark_status 'fresh', 'stale' or 'future'"
+                    ),
                     actual=repr(row.get("mark_status")),
                 )
             )
@@ -1967,7 +1974,7 @@ def self_test() -> None:
                 "kind": "position",
                 "share_pct": "3.00",
                 "source": None,
-                "mark_status": "known",
+                "mark_status": "fresh",
             },
             {
                 "chain": "settlement",
@@ -1979,7 +1986,7 @@ def self_test() -> None:
                 "market_value_usd": "97",
                 "share_pct": "97.00",
                 "source": None,
-                "mark_status": "known",
+                "mark_status": "fresh",
             },
         ],
         "by_chain": [
@@ -1989,7 +1996,7 @@ def self_test() -> None:
                 "unpriced_assets": 0,
                 "market_value_usd": "3",
                 "share_pct": "3.00",
-                "mark_status": "known",
+                "mark_status": "fresh",
             },
             {
                 "chain": "settlement",
@@ -1997,7 +2004,7 @@ def self_test() -> None:
                 "unpriced_assets": 0,
                 "market_value_usd": "97",
                 "share_pct": "97.00",
-                "mark_status": "known",
+                "mark_status": "fresh",
             },
         ],
     }
@@ -2039,7 +2046,7 @@ def self_test() -> None:
                 "market_value_usd": "97",
                 "share_pct": None,
                 "source": None,
-                "mark_status": "known",
+                "mark_status": "fresh",
             },
         ],
         "by_chain": [
@@ -2057,7 +2064,7 @@ def self_test() -> None:
                 "unpriced_assets": 0,
                 "market_value_usd": "97",
                 "share_pct": None,
-                "mark_status": "known",
+                "mark_status": "fresh",
             },
         ],
     }
