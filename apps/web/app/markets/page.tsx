@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MarketTable } from "@/components/market-table";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel } from "@/components/ui";
 import {
@@ -9,20 +10,13 @@ import {
 	type ApiError,
 	type Chain,
 	type MarketList,
-	type MarketRow,
 	type MarketSort,
 } from "@/lib/api";
 import { ModeBanner } from "@/lib/live-banner";
 import {
 	ageLabel,
-	chainInitial,
 	changeText,
-	changeTone,
 	formatUsdCompact,
-	formatUsdPrice,
-	initials,
-	pairAgeLabel,
-	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
 import styles from "./markets.module.css";
@@ -110,6 +104,7 @@ interface MarketParams {
 	minPairAgeMinutes: string;
 	maxPairAgeMinutes: string;
 	dex: string;
+	starredOnly: boolean;
 }
 
 function marketsHref(params: MarketParams, patch: Partial<MarketParams> = {}): string {
@@ -129,6 +124,7 @@ function marketsHref(params: MarketParams, patch: Partial<MarketParams> = {}): s
 	if (merged.minPairAgeMinutes) query.set("min_pair_age_minutes", merged.minPairAgeMinutes);
 	if (merged.maxPairAgeMinutes) query.set("max_pair_age_minutes", merged.maxPairAgeMinutes);
 	if (merged.dex) query.set("dex", merged.dex);
+	if (merged.starredOnly) query.set("starred", "1");
 	const suffix = query.toString();
 	return suffix ? `/markets?${suffix}` : "/markets";
 }
@@ -204,6 +200,13 @@ function filterChips(params: MarketParams, labelFor: (id: string) => string): Fi
 			href: marketsHref(params, { dex: "" }),
 		});
 	}
+	if (params.starredOnly) {
+		chips.push({
+			key: "starredOnly",
+			label: "Starred only",
+			href: marketsHref(params, { starredOnly: false }),
+		});
+	}
 	if (params.sort !== "trending") {
 		chips.push({
 			key: "sort",
@@ -212,27 +215,6 @@ function filterChips(params: MarketParams, labelFor: (id: string) => string): Fi
 		});
 	}
 	return chips;
-}
-
-function TokenCell({ row }: { row: MarketRow }) {
-	return (
-		<Link className="row" href={`/tokens/${row.chain}/${row.base_token}`}>
-			<span className="token" style={{ width: 22, height: 22, fontSize: 8 }} aria-hidden="true">
-				{initials(row.symbol)}
-			</span>
-			<span>
-				<span className="strong">{row.symbol}</span>
-				<span className="sub" style={{ display: "block" }}>
-					{row.name} · {shortAddress(row.base_token)}
-				</span>
-			</span>
-		</Link>
-	);
-}
-
-function Change({ value }: { value: string | null }) {
-	const tone = changeTone(value);
-	return <span className={`mono small ${tone === "muted" ? "muted" : tone}`}>{changeText(value)}</span>;
 }
 
 function ErrorPanel({ error, retryHref }: { error: ApiError; retryHref: string }) {
@@ -305,6 +287,7 @@ export default async function MarketsPage({
 		minPairAgeMinutes: readUnsigned(one(raw.min_pair_age_minutes)),
 		maxPairAgeMinutes: readUnsigned(one(raw.max_pair_age_minutes)),
 		dex: readText(one(raw.dex)),
+		starredOnly: one(raw.starred) === "1" || one(raw.starred) === "true",
 	};
 
 	const [chainsOutcome, marketsOutcome] = await Promise.all([
@@ -334,6 +317,8 @@ export default async function MarketsPage({
 	const list = marketsOutcome.ok ? marketsOutcome.list : null;
 	const error = marketsOutcome.ok ? null : marketsOutcome.error;
 	const labelFor = (id: string) => chains.find((chain) => chain.id === id)?.name ?? id;
+	const chainNames = Object.fromEntries(chains.map((chain) => [chain.id, chain.name]));
+	const now = Date.now();
 	// Refresh keeps the current page and filters; only a filter change resets the page.
 	const refreshHref = marketsHref(params, { offset: params.offset });
 	const chips = filterChips(params, labelFor);
@@ -374,6 +359,9 @@ export default async function MarketsPage({
 					<Link className="btn" href={refreshHref}>
 						Refresh
 					</Link>
+					<Link className="btn" href="/watchlist">
+						Watchlist
+					</Link>
 					<Link className="btn" href="/chains">
 						Chains &amp; RPC
 					</Link>
@@ -410,6 +398,21 @@ export default async function MarketsPage({
 						Chain registry unavailable · {chainsError.code}
 					</span>
 				)}
+			</div>
+
+			<div className={`row mb-12 ${styles.watchFilter}`} role="group" aria-label="Watchlist filter">
+				<Link
+					className={`chip ${styles.starredChip}`}
+					href={marketsHref(params, { starredOnly: !params.starredOnly })}
+					aria-current={params.starredOnly ? "page" : undefined}
+					aria-label={params.starredOnly ? "Show all markets" : "Show starred markets only"}
+				>
+					<span aria-hidden="true">★</span> Starred only
+				</Link>
+				<span className="small muted">
+					The star stores a token in this browser. The other filters and the pager remain
+					server-side.
+				</span>
 			</div>
 
 			{chips.length > 0 && (
@@ -488,6 +491,7 @@ export default async function MarketsPage({
 							{params.limit !== DEFAULT_LIMIT && (
 								<input type="hidden" name="limit" value={String(params.limit)} />
 							)}
+							{params.starredOnly && <input type="hidden" name="starred" value="1" />}
 							<label className="field" style={{ minWidth: 140 }}>
 								<span className="small muted">Chain</span>
 								<select
@@ -642,7 +646,7 @@ export default async function MarketsPage({
 
 					<div className={`small muted ${styles.swipeHint}`}>Swipe to see more columns</div>
 
-					{list.rows.length === 0 ? (
+					{list.rows.length === 0 && !params.starredOnly ? (
 						<div className="panel-body">
 							<div className="row mb-8">
 								<Badge tone="warn">EMPTY_RESULT</Badge>
@@ -682,75 +686,13 @@ export default async function MarketsPage({
 							</div>
 						</div>
 					) : (
-						<div className="table-wrap">
-							<table className="table">
-								<thead>
-									<tr>
-										<th scope="col">Token</th>
-										<th scope="col">Chain</th>
-										<th scope="col" className="num">
-											Price
-										</th>
-										<th scope="col" className="num col-hide-sm">
-											1h
-										</th>
-										<th scope="col" className="num">
-											24h
-										</th>
-										<th scope="col" className="num">
-											Liquidity
-										</th>
-										<th scope="col" className="num col-hide-sm">
-											Vol 24h
-										</th>
-										<th scope="col">Source · age</th>
-										<th scope="col" className="col-hide-sm">
-											Pair age
-										</th>
-										<th scope="col">Safety</th>
-									</tr>
-								</thead>
-								<tbody>
-									{list.rows.map((row) => (
-										<tr key={`${row.chain}:${row.pair_address}`}>
-											<td>
-												<TokenCell row={row} />
-											</td>
-											<td>
-												<span className="chain">
-													<span className="sq">{chainInitial(labelFor(row.chain))}</span>
-													{labelFor(row.chain)}
-												</span>
-											</td>
-											<td className="num mono">{formatUsdPrice(row.price_usd)}</td>
-											<td className="num col-hide-sm">
-												<Change value={row.price_change_h1} />
-											</td>
-											<td className="num">
-												<Change value={row.price_change_h24} />
-											</td>
-											<td className="num">{formatUsdCompact(row.liquidity_usd)}</td>
-											<td className="num col-hide-sm">
-												{formatUsdCompact(row.volume_24h_usd)}
-											</td>
-											<td>
-												<span className="small muted">
-													{sourceLabel(row.source.name)} · {ageLabel(row.source.observed_at)}
-												</span>
-											</td>
-											<td className="small muted col-hide-sm">
-												{pairAgeLabel(row.pair_created_at)}
-											</td>
-											<td>
-												<Badge tone="warn" title="Safety is not implemented in P0">
-													unknown
-												</Badge>
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
+						<MarketTable
+							rows={list.rows}
+							chainNames={chainNames}
+							starredOnly={params.starredOnly}
+							showAllHref={marketsHref(params, { starredOnly: false })}
+							now={now}
+						/>
 					)}
 
 					<div className={`table-foot ${styles.pager}`}>
@@ -816,6 +758,10 @@ export default async function MarketsPage({
 							<div>
 								• <span className="ink">Safety</span> is unknown for every token in P0. A
 								miss is not a pass; execution gates stay fail-closed.
+							</div>
+							<div>
+								• <span className="ink">★</span> is a browser-local watchlist entry. It
+								creates no account, alert or order; clearing site data removes it.
 							</div>
 						</div>
 					</Panel>

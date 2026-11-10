@@ -1,0 +1,27 @@
+/* The star and the token link share one identity cell so the table keeps ten columns. */
+.identity {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.starredNote {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	flex-wrap: wrap;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--line);
+	background: var(--surface-2);
+}
+
+.noteText {
+	flex: 1 1 260px;
+	color: var(--muted);
+}
+
+.showAll {
+	flex: 0 0 auto;
+	align-self: center;
+}

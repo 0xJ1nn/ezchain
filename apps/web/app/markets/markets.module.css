@@ -21,6 +21,19 @@
 	font-size: 10.5px;
 }
 
+/* The starred filter is a URL state, not a server filter: it is applied to the returned
+   page in the browser and every pager link carries it. */
+.watchFilter {
+	gap: 8px;
+}
+
+.starredChip[aria-current="page"] {
+	background: var(--ink);
+	border-color: var(--ink);
+	color: var(--color-text-inverse);
+	text-decoration: none;
+}
+
 .footer {
 	display: flex;
 	justify-content: space-between;
