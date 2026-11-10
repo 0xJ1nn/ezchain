@@ -90,10 +90,14 @@ def _fill(row: PaperFillRow) -> FillOut:
 
 
 @router.get("/account", response_model=PaperAccountOut)
-def account(
-    session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
-) -> PaperAccountOut:
-    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+def account(session: Session = Depends(get_session)) -> PaperAccountOut:
+    """The paper account as a pure ledger projection.
+
+    Read-only by construction: genesis and the wallet declarations are bootstrapped at
+    boot and on order placement, so this route never creates a row. A missing wallet is
+    reported as missing (its cash appears in the unallocated bucket) instead of being
+    healed by the read that is supposed to expose it.
+    """
     return PaperAccountOut.model_validate(paper.account_snapshot(session))
 
 
@@ -103,7 +107,9 @@ def wallets(session: Session = Depends(get_session)) -> list[PaperWalletOut]:
 
     Read-only: the declared wallets are seeded at boot and on order placement, and a
     wallet is a view over the journal whose balance does not exist as a stored number.
-    The route never writes, so a read cannot change what the next read sees.
+    The route never writes, so a read cannot change what the next read sees. Cash whose
+    attributed wallet row is gone is reported in a final ``unallocated`` row with a null
+    id, so the rows always add up to the account's cash instead of dropping it.
     """
     return [PaperWalletOut.model_validate(row) for row in paper.wallets(session)]
 

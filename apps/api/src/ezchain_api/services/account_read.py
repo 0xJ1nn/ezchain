@@ -82,6 +82,7 @@ def ledger(
             "amount": _num(Decimal(str(row.amount))),
             "usd_value": _num(Decimal(str(row.usd_value))),
             "kind": row.kind,
+            "wallet_id": row.wallet_id,
             "created_at": _dt(row.created_at),
         }
         for row in rows

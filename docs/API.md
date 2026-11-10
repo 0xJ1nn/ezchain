@@ -136,6 +136,7 @@ its source, age, stale state and reason; it never draws a fabricated line.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/api/v1/paper/account` | read | Cash, equity, realized/unrealized PnL and composition |
+| GET | `/api/v1/paper/wallets` | read | Paper wallets and the unallocated cash bucket |
 | GET | `/api/v1/paper/positions` | read | One server-computed `PositionView` per open position |
 | GET | `/api/v1/paper/orders?limit=` | read | Order attempts, including rejected orders and reasons |
 | POST | `/api/v1/paper/orders` | trade | Submit one paper order |
@@ -177,6 +178,26 @@ The idempotency key is unique. A retry with the same key returns the stored orde
 new key for a new intent. What could not be computed is `null`: `equity_usd` and
 `unrealized_usd` are withheld when any open mark is unknown, and the account payload
 lists the unpriced positions instead of reporting a partial total as complete.
+
+`GET /paper/account` and `GET /paper/wallets` are read-only. They never create genesis or
+re-declare a missing wallet: bootstrap happens at boot and on `POST /paper/orders` only, so
+a GET reports a missing wallet row as missing. A sell is an exit, not an entry: when its
+chain's wallet is missing or declares a settlement asset other than USD, the fill still
+happens and its proceeds settle to the settlement wallet. An identical buy is refused with
+`WALLET_UNKNOWN` or `SETTLEMENT_ASSET_UNKNOWN`, naming the chain and, for an asset
+mismatch, the asset the wallet declares.
+
+`GET /paper/wallets` lists the declared wallets, settlement first, with the cash the
+ledger settled to each. A final `unallocated` row (`id: null`, `chain: "unallocated"`,
+`asset: "USD"`) holds cash whose attributed wallet id no longer has a row, so
+`sum(balance_usd)` is a complete partition of `cash_usd` rather than a partial answer.
+
+Every ledger entry reports `wallet_id`, the paper wallet that received its cash leg. It is
+`null` on legs that are not cash (positions, the `fees:USD` expense, `pnl:realized:USD`
+and `equity:genesis`). The no-risk funding top-up is cash: its `cash:USD` leg carries the
+settlement wallet id because the shortfall is booked as settlement capital, while its
+`funding:USD` contra leg carries none. A `null` is never resolved to a wallet at read
+time; on a legacy cash row it means the row predates wallet attribution.
 
 ### Strategies
 

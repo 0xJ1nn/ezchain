@@ -16,7 +16,15 @@ Mode = Literal["paper"]
 
 
 class LedgerEntryOut(BaseModel):
-    """One append-only journal entry, exactly as persisted."""
+    """One append-only journal entry, exactly as persisted.
+
+    ``wallet_id`` names the paper wallet a cash leg settled to when it was written. It is
+    null on every leg that is not cash (position, the `fees:USD` expense, PnL and equity
+    legs). The no-risk funding top-up *is* cash and carries the settlement wallet id
+    because it is booked as settlement capital; its ``funding:USD`` contra leg carries
+    none. A null is never given a wallet at read time: on a legacy cash row it means the
+    row predates wallet attribution, not that it settled nowhere.
+    """
 
     id: str
     seq: int
@@ -26,6 +34,7 @@ class LedgerEntryOut(BaseModel):
     amount: str
     usd_value: str
     kind: str
+    wallet_id: str | None = None
     created_at: str
 
 
