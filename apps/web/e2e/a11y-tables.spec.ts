@@ -135,3 +135,29 @@ test("Trades table is keyboard focusable with a name and scoped headers", async 
 	await expect(wrapper.locator("thead th")).toHaveCount(7);
 	await expect(wrapper.locator('thead th[scope="col"]')).toHaveCount(7);
 });
+
+test("Armed protection table is keyboard focusable with a name and scoped headers", async ({ page }) => {
+	await page.goto("/positions");
+	await expect(page.getByRole("heading", { name: "Positions", level: 1 })).toBeVisible();
+
+	const form = page
+		.locator("section.panel")
+		.filter({ has: page.getByRole("heading", { name: "Position protection" }) });
+	await form.getByLabel("Position").selectOption({ index: 0 });
+	await form.getByLabel("Kind").selectOption("stop_loss");
+	await form.getByLabel("Trigger price (USD)").fill("0.00002");
+	await form.getByRole("button", { name: "Arm protection" }).click();
+	await expect(form.getByRole("status")).toContainText("Armed stop-loss");
+
+	await page.goto("/automations");
+	await expect(page.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
+
+	const wrapper = page.getByRole("region", { name: "Armed protection table" });
+	await expect(wrapper).toBeVisible();
+	await wrapper.focus();
+	await expect(wrapper).toBeFocused();
+	await expect(wrapper).toHaveAttribute("tabindex", "0");
+	await expect(wrapper.locator("caption")).toHaveText("Armed protection");
+	await expect(wrapper.locator("thead th")).toHaveCount(5);
+	await expect(wrapper.locator('thead th[scope="col"]')).toHaveCount(5);
+});
