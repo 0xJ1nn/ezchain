@@ -92,8 +92,8 @@ class Settings(BaseSettings):
     max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
     # Server-side trade risk profile. A client may request this profile by name only
     # when the server allows it for the account; the active profile is configuration.
-    trade_risk_profile: Literal["low", "mid", "high"] = Field(
-        default="mid",
+    trade_risk_profile: Literal["low", "mid", "high"] | None = Field(
+        default=None,
         validation_alias=AliasChoices("trade_risk_profile", "risk_profile", "trade_profile"),
     )
     # Paper-to-live promotion gate (ADR-0009). Computed, never auto-promoted.
@@ -114,7 +114,9 @@ class Settings(BaseSettings):
 
     @field_validator("trade_risk_profile")
     @classmethod
-    def _valid_trade_risk_profile(cls, value: str) -> str:
+    def _valid_trade_risk_profile(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         if value not in {"low", "mid", "high"}:
             raise ValueError("EZCHAIN_TRADE_RISK_PROFILE must be one of low, mid, high")
         return value
@@ -185,11 +187,11 @@ class Settings(BaseSettings):
         return [item.strip() for item in self.plugin_paths.split(",") if item.strip()]
 
     @property
-    def risk_profile(self) -> str:
+    def risk_profile(self) -> str | None:
         return self.trade_risk_profile
 
     @property
-    def trade_profile(self) -> str:
+    def trade_profile(self) -> str | None:
         return self.trade_risk_profile
 
 

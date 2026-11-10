@@ -460,18 +460,40 @@ def fills(session: Session, limit: int = 50) -> list[PaperFillRow]:
 
 def trade_profile_from_settings(
     settings: Settings, requested: str | None = None
-) -> TradeRiskProfile:
-    name = requested or settings.trade_risk_profile
+) -> TradeRiskProfile | None:
+    name = requested if requested is not None else settings.trade_risk_profile
+    if name is None:
+        return None
     if name not in TRADE_RISK_PROFILES:
         raise ValueError("PROFILE_UNKNOWN")
     allowed = {settings.trade_risk_profile}
     if name not in allowed:
         raise ValueError("PROFILE_UNKNOWN")
+    if name is None:
+        return None
     return TRADE_RISK_PROFILES[name]
 
 
 def limits_from_settings(settings: Settings) -> RiskLimits:
-    profile = TRADE_RISK_PROFILES.get(settings.trade_risk_profile, TRADE_RISK_PROFILES["mid"])
+    profile = None
+    if settings.trade_risk_profile is not None:
+        profile = (
+            TRADE_RISK_PROFILES.get(settings.trade_risk_profile)
+            if settings.trade_risk_profile is not None
+            else None
+        )
+    if profile is None:
+        return RiskLimits(
+            max_order_usd=settings.max_order_usd,
+            max_position_usd=settings.max_position_usd,
+            max_open_positions=settings.max_open_positions,
+            max_daily_loss_usd=settings.max_daily_loss_usd,
+            max_quote_age_seconds=float(settings.max_quote_age_seconds),
+            min_pair_age_minutes=settings.min_pair_age_minutes,
+            min_liquidity_usd=settings.min_liquidity_usd,
+            paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
+            max_price_impact_pct=settings.max_price_impact_pct,
+        )
     return RiskLimits(
         min_order_usd=profile.min_order_usd,
         max_order_usd=min(settings.max_order_usd, profile.max_order_usd),
@@ -862,9 +884,15 @@ async def place_order(
         except ValueError:
             return _reject_new(session, payload, "PROFILE_UNKNOWN")
 
-    if payload.side == "buy":
+    if payload.side == "buy" and settings.trade_risk_profile is not None:
+        profile = (
+            TRADE_RISK_PROFILES.get(settings.trade_risk_profile)
+            if settings.trade_risk_profile is not None
+            else None
+        )
+        if profile is None:
+            return _reject_new(session, payload, "PROFILE_UNKNOWN")
         # Minimum size and (absolute) maximum size apply before any quote.
-        profile = TRADE_RISK_PROFILES.get(settings.trade_risk_profile, TRADE_RISK_PROFILES["mid"])
         if payload.amount_usd < profile.min_order_usd:
             return _reject_new(session, payload, "SIZE_BELOW_MIN")
         if payload.amount_usd > profile.max_order_usd:
@@ -890,12 +918,10 @@ async def place_order(
         if payload.amount_usd > cap:
             return _reject_new(session, payload, "SIZE_ABOVE_MAX")
         # Per-token cap including the proposed order.
-        # Existing exposure for this token.
         existing_value = Decimal(0)
         held_qty, held_cost = replay.positions.get(
             position_account(payload.chain, payload.token_address), (Decimal(0), Decimal(0))
         )
-        # Use mark if known; position_mark may be from snapshot.
         snap = snapshots.get((payload.chain, payload.token_address))
         mark = snap.price_usd if snap is not None else None
         if mark is not None:

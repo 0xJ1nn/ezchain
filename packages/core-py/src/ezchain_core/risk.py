@@ -30,11 +30,11 @@ class TradeRiskProfile:
 
 @dataclass(frozen=True)
 class RiskLimits:
-    min_order_usd: Decimal = Decimal("1")
+    min_order_usd: Decimal = Decimal("0")
     max_order_usd: Decimal = Decimal("1000")
-    max_order_pct_of_equity: Decimal = Decimal("0.05")
-    per_token_cap_usd: Decimal = Decimal("2500")
-    max_slippage_bps: int = 200
+    max_order_pct_of_equity: Decimal = Decimal("0")
+    per_token_cap_usd: Decimal = Decimal("0")
+    max_slippage_bps: int = 0
     max_position_usd: Decimal = Decimal("2500")
     max_open_positions: int = 10
     max_daily_loss_usd: Decimal = Decimal("500")
@@ -125,7 +125,7 @@ def evaluate_order(
         )
     # Trade policy (profile) limits. These are entry-only: a reduce-only exit is exempt.
     if request.side == "buy":
-        if request.amount_usd < limits.min_order_usd:
+        if limits.min_order_usd > 0 and request.amount_usd < limits.min_order_usd:
             reasons.append(
                 RiskReason(
                     "SIZE_BELOW_MIN",
@@ -175,6 +175,7 @@ def evaluate_order(
         # Slippage ceiling.
         if (
             limits.max_slippage_bps is not None
+            and limits.max_slippage_bps > 0
             and quote.price_impact_pct is not None
             and abs(quote.price_impact_pct) * 10000 > limits.max_slippage_bps
         ):
