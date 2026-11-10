@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -57,6 +58,11 @@ class ProviderKeyNotFound(ProviderKeyError):
 
 class ProviderKeyCipherUnavailable(ProviderKeyError):
     code = "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
+    status_code = 503
+
+
+class ProviderKeyForgetFailed(ProviderKeyError):
+    code = "PROVIDER_KEY_FORGET_FAILED"
     status_code = 503
 
 
@@ -120,6 +126,10 @@ def create_key(
     workspace = _validated_workspace(workspace_id)
     provider_id = _validated_provider(provider)
     plaintext = _validated_secret(secret)
+    # Every input is validated before the key is handed to an external store. A bad
+    # label must not leave an orphaned secret in the keyring.
+    label_value = _validated_label(label)
+    fingerprint_value = fingerprint(plaintext, fingerprint_pepper)
     try:
         cipher.ensure_available()
         ciphertext = cipher.encrypt(plaintext)
@@ -129,13 +139,22 @@ def create_key(
         id=new_id(),
         workspace_id=workspace,
         provider=provider_id,
-        label=_validated_label(label),
-        fingerprint=fingerprint(plaintext, fingerprint_pepper),
+        label=label_value,
+        fingerprint=fingerprint_value,
         secret_ciphertext=ciphertext,
         created_at=utcnow(),
     )
     session.add(row)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        # The row did not land, so the external copy must not survive either.
+        try:
+            cipher.forget(ciphertext)
+        except Exception:  # noqa: BLE001 - preserve the commit failure
+            pass
+        session.rollback()
+        raise
     session.refresh(row)
     return row
 
@@ -188,18 +207,30 @@ def revoke_key(
     *,
     workspace_id: str,
     key_id: str,
-    cipher: SecretCipher,
+    forget: Callable[[str], None],
 ) -> bool:
-    """Revoke one key inside the workspace and clear its stored material."""
+    """Revoke one key inside the workspace and clear its stored material.
+
+    ``forget`` is bound to the row's stored prefix, not to the current configuration, so
+    a key written by one backend is deleted through that backend. The row is committed as
+    revoked before the external deletion is attempted; a deletion failure is surfaced as
+    :class:`ProviderKeyForgetFailed` so an operator can retry it.
+    """
     workspace = _validated_workspace(workspace_id)
     row = session.get(ProviderKeyRow, key_id)
     if row is None or row.workspace_id != workspace or row.revoked_at is not None:
         return False
-    if row.secret_ciphertext:
-        cipher.forget(row.secret_ciphertext)
+    stored = row.secret_ciphertext
     row.secret_ciphertext = ""
     row.revoked_at = utcnow()
     session.commit()
+    if stored:
+        try:
+            forget(stored)
+        except Exception as exc:  # noqa: BLE001 - every backend failure is a 503
+            raise ProviderKeyForgetFailed(
+                "the key is revoked in ezCHAIN, but the external store could not delete it"
+            ) from exc
     return True
 
 
@@ -232,6 +263,7 @@ __all__ = [
     "FINGERPRINT_HEX_CHARS",
     "ProviderKeyCipherUnavailable",
     "ProviderKeyError",
+    "ProviderKeyForgetFailed",
     "ProviderKeyInvalid",
     "ProviderKeyNotFound",
     "ProviderKeyProviderUnknown",

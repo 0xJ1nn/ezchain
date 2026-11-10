@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import cast
 
 from fastapi import Depends, Request
@@ -14,7 +14,11 @@ from ezchain_engine import PluginHost, PluginRegistry
 from .config import Settings, get_settings
 from .db import session_factory
 from .services.market_monitor import MarketMonitor
-from .services.provider_secrets import SecretCipher, build_secret_cipher
+from .services.provider_secrets import (
+    SecretCipher,
+    build_secret_cipher,
+    forget_stored_secret,
+)
 
 
 def get_session() -> Iterator[Session]:
@@ -25,6 +29,17 @@ def get_session() -> Iterator[Session]:
 def get_secret_cipher(settings: Settings = Depends(get_settings)) -> SecretCipher:
     """The configured provider-key store. Availability is checked on creation."""
     return build_secret_cipher(settings)
+
+
+def get_secret_forgetter(
+    settings: Settings = Depends(get_settings),
+) -> Callable[[str], None]:
+    """Delete a stored key through the backend named by its prefix."""
+
+    def forget(stored: str) -> None:
+        forget_stored_secret(stored, settings)
+
+    return forget
 
 
 def get_dexscreener(request: Request) -> DexScreenerClient:

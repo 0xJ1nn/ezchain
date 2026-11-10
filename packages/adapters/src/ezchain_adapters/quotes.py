@@ -34,8 +34,8 @@ from .breaker import CircuitBreaker
 from .cache import BoundedTTLCache
 from .decimals import DecimalsResolver
 from .dexscreener import DexScreenerClient
-from .errors import AdapterError, NoRoute, NotFound, UpstreamError
-from .http import DEFAULT_TIMEOUT_SECONDS, Clock, JsonApiClient, Sleeper
+from .errors import AdapterError, NoRoute, NotFound, ProviderKeyUnavailable, UpstreamError
+from .http import DEFAULT_TIMEOUT_SECONDS, ApiKeyProvider, Clock, JsonApiClient, Sleeper
 from .provider_budget import ProviderBudgetExhausted, ProviderBudgetManager
 from .ratelimit import TokenBucket, default_sleep
 from .registry import BY_ID, PAPER_MARK, ChainMeta, QuoteAsset
@@ -168,6 +168,7 @@ class HttpQuoteProvider(JsonApiClient):
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         breaker: CircuitBreaker | None = None,
         budget: ProviderBudgetManager | None = None,
+        api_key_provider: ApiKeyProvider | None = None,
     ) -> None:
         super().__init__(
             client,
@@ -177,6 +178,7 @@ class HttpQuoteProvider(JsonApiClient):
             sleep=sleep,
             timeout=timeout,
             budget=budget,
+            api_key_provider=api_key_provider,
         )
         # A provider that cannot resolve decimals fails closed on that token; Jupiter
         # resolves its own mints and never asks.
@@ -284,9 +286,9 @@ class QuoteRouter:
             except TimeoutError:
                 failures.append(f"{kind}:TIMEOUT")
                 continue
-            except ProviderBudgetExhausted:
-                # A full queue is not "this venue has no route". Surface the typed
-                # budget error so the edge can answer 429 instead of a misleading 409.
+            except (ProviderBudgetExhausted, ProviderKeyUnavailable):
+                # A full queue or an unreadable key is not "this venue has no route".
+                # Surface the typed error so the edge answers 429/503, not a 409.
                 raise
             except AdapterError as exc:
                 failures.append(f"{kind}:{exc.code}")
@@ -346,6 +348,10 @@ class QuoteRouter:
         )
         try:
             exit_quote = await provider.quote(exit_request)
+        except (ProviderBudgetExhausted, ProviderKeyUnavailable):
+            # The exit leg is a provider call too. Do not turn its budget or credential
+            # failure into a NO_SELL_ROUTE when the real answer is "retry later".
+            raise
         except AdapterError:
             return False
         return exit_quote.amount_out > 0

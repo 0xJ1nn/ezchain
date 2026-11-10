@@ -48,6 +48,9 @@ async def immediate(value: str) -> str:
 def test_jupiter_is_limited_to_one_request_per_second() -> None:
     assert JUPITER_LIMIT.requests_per_second == 1.0
     assert JUPITER_LIMIT.burst == 1
+    # The quote router gives a provider 5 s per attempt. A budget wait must end inside
+    # that window so exhaustion is a typed 429, not a generic timeout/NO_ROUTE.
+    assert JUPITER_LIMIT.max_wait_seconds < 5.0
 
 
 async def test_a_provider_call_waits_for_the_budget() -> None:

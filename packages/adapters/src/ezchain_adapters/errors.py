@@ -27,6 +27,13 @@ class RateLimited(AdapterError):
     retryable = True
 
 
+class ProviderKeyUnavailable(AdapterError):
+    """A stored provider credential could not be loaded for a provider call."""
+
+    code = "PROVIDER_KEY_UNAVAILABLE"
+    retryable = True
+
+
 class NoRoute(AdapterError):
     code = "NO_SELL_ROUTE"
 

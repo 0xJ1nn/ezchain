@@ -14,6 +14,7 @@ from ezchain_adapters import (
     NoRoute,
     NotFound,
     ProviderBudgetExhausted,
+    ProviderKeyUnavailable,
     QuoteRequest,
     QuoteRouter,
     RateLimited,
@@ -131,13 +132,41 @@ async def test_rate_limited_rung_falls_through() -> None:
     assert quote.kind == "velora"
 
 
-async def test_provider_budget_exhaustion_is_not_swallowed() -> None:
+async def test_provider_budget_exhaustion_on_entry_is_not_swallowed() -> None:
     jupiter = FakeProvider(
         "jupiter",
         error=ProviderBudgetExhausted("jupiter", detail="queue is full"),
     )
 
     with pytest.raises(ProviderBudgetExhausted):
+        await router(jupiter).quote(
+            chain="solana", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+
+
+class BudgetExhaustedOnExit(FakeProvider):
+    async def quote(self, request: QuoteRequest) -> Quote:
+        if request.side == "sell":
+            raise ProviderBudgetExhausted("jupiter", detail="queue is full")
+        return await super().quote(request)
+
+
+async def test_provider_budget_exhaustion_on_exit_is_not_swallowed() -> None:
+    jupiter = BudgetExhaustedOnExit("jupiter")
+
+    with pytest.raises(ProviderBudgetExhausted):
+        await router(jupiter).quote(
+            chain="solana", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+
+
+async def test_provider_key_unavailable_is_not_swallowed() -> None:
+    jupiter = FakeProvider(
+        "jupiter",
+        error=ProviderKeyUnavailable("the stored key could not be decrypted"),
+    )
+
+    with pytest.raises(ProviderKeyUnavailable):
         await router(jupiter).quote(
             chain="solana", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
         )

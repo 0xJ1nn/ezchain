@@ -15,6 +15,7 @@ from .errors import (
     CandlesUnsupported,
     NoRoute,
     NotFound,
+    ProviderKeyUnavailable,
     RateLimited,
     UpstreamError,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "PROVIDERS",
     "ProviderBudgetExhausted",
     "ProviderBudgetManager",
+    "ProviderKeyUnavailable",
     "ProviderLimit",
     "QuoteAsset",
     "QuoteProvider",

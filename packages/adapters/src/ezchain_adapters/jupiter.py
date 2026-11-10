@@ -14,12 +14,13 @@ from ezchain_core import DEFAULT_SLIPPAGE_BPS, Quote, QuoteKind, SourceRef
 
 from .cache import BoundedTTLCache
 from .errors import NotFound, UpstreamError
-from .http import DEFAULT_TIMEOUT_SECONDS, Clock, Sleeper
+from .http import DEFAULT_TIMEOUT_SECONDS, ApiKeyProvider, Clock, Sleeper
 from .provider_budget import ProviderBudgetManager
 from .quotes import HttpQuoteProvider, QuoteRequest
 from .ratelimit import TokenBucket, default_sleep
 
 LITE_BASE = "https://lite-api.jup.ag"
+KEYED_BASE = "https://api.jup.ag"
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 SOL_MINT = "So11111111111111111111111111111111111111112"
 CACHE_TTL_SECONDS = 5.0
@@ -74,6 +75,7 @@ class JupiterClient(HttpQuoteProvider):
     label = "Jupiter"
     kind: ClassVar[QuoteKind] = "jupiter"
     base_url = LITE_BASE
+    keyed_base_url = KEYED_BASE
     cache_ttl_seconds = CACHE_TTL_SECONDS
     rate_per_second = 2.0
     burst = 4
@@ -90,6 +92,7 @@ class JupiterClient(HttpQuoteProvider):
         sleep: Sleeper = default_sleep,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         budget: ProviderBudgetManager | None = None,
+        api_key_provider: ApiKeyProvider | None = None,
     ) -> None:
         super().__init__(
             client,
@@ -99,6 +102,7 @@ class JupiterClient(HttpQuoteProvider):
             sleep=sleep,
             timeout=timeout,
             budget=budget,
+            api_key_provider=api_key_provider,
         )
         # Jupiter resolves its own mints; this table is unrelated to the shared resolver.
         self._mint_decimals: OrderedDict[str, int] = OrderedDict(

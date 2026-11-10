@@ -61,7 +61,7 @@ class SecretCipher(Protocol):
         ...
 
     def forget(self, stored: str) -> None:
-        """Best-effort removal of the stored secret. Never raises."""
+        """Remove the stored secret. Raise :class:`CipherUnavailable` on failure."""
         ...
 
 
@@ -205,9 +205,33 @@ class KeyringCipher:
             return
         reference = stored[len(KEYRING_PREFIX) :]
         try:
-            self._keyring().delete_password(self._service, reference)
-        except Exception:  # noqa: BLE001 - removal is best effort; the row is still revoked
-            return
+            module = self._keyring()
+            if module.get_password(self._service, reference) is None:
+                return
+            module.delete_password(self._service, reference)
+        except Exception as exc:  # noqa: BLE001 - any backend fault is a failed deletion
+            raise CipherUnavailable("the OS keyring could not delete the provider key") from exc
+
+
+def forget_stored_secret(stored: str, settings: Settings) -> None:
+    """Delete a stored key through the backend named by its own prefix.
+
+    The current configuration is not authoritative: a row written by the keyring must be
+    deleted through the keyring even if ``EZCHAIN_PROVIDER_KEY_STORE`` now selects age.
+    """
+    if not stored:
+        return
+    if stored.startswith(KEYRING_PREFIX):
+        KeyringCipher().forget(stored)
+        return
+    if stored.startswith(AGE_PREFIX):
+        AgeCipher(
+            recipient=settings.provider_key_age_recipient,
+            identity_file=settings.provider_key_age_identity,
+            binary=settings.provider_key_age_binary,
+        ).forget(stored)
+        return
+    raise CipherUnavailable("the stored provider key has an unknown storage prefix")
 
 
 def build_secret_cipher(settings: Settings) -> SecretCipher:
@@ -238,4 +262,5 @@ __all__ = [
     "KeyringCipher",
     "SecretCipher",
     "build_secret_cipher",
+    "forget_stored_secret",
 ]

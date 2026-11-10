@@ -24,6 +24,7 @@ USER_AGENT = "ezCHAIN/0.1 (+https://github.com/0xJ1nn/ezchain)"
 
 Clock = Callable[[], float]
 Sleeper = Callable[[float], Awaitable[None]]
+ApiKeyProvider = Callable[[], Awaitable[str | None]]
 
 
 def _retrieve_exception(future: asyncio.Future[Any]) -> None:
@@ -43,6 +44,9 @@ class JsonApiClient:
     cache_max_entries: ClassVar[int] = 256
     not_found_statuses: ClassVar[frozenset[int]] = frozenset()
     extra_headers: ClassVar[dict[str, str]] = {}
+    # A keyed endpoint when a credential is present; the keyless base remains the
+    # default. Jupiter uses ``api.jup.ag`` with a key and ``lite-api.jup.ag`` without.
+    keyed_base_url: ClassVar[str | None] = None
     # Fail an over-budget request instead of sleeping for minutes (LI.FI: 75 requests / 2 h).
     limiter_max_wait_seconds: ClassVar[float | None] = None
 
@@ -56,12 +60,14 @@ class JsonApiClient:
         sleep: Sleeper = default_sleep,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         budget: ProviderBudgetManager | None = None,
+        api_key_provider: ApiKeyProvider | None = None,
     ) -> None:
         self._client = client
         self._owns_client = client is None
         self._timeout = timeout
         self._clock = clock
         self._budget = budget
+        self._api_key_provider = api_key_provider
         self._limiter = limiter or TokenBucket(
             rate_per_second=self.rate_per_second,
             burst=self.burst,
@@ -136,8 +142,21 @@ class JsonApiClient:
         if self._budget is not None:
             await self._budget.acquire(self.label.lower())
         await self._limiter.acquire()
+        # Resolve the key after waiting, immediately before the request. A revocation
+        # committed while this caller was queued is then honoured by this call.
+        api_key: str | None = None
+        if self._api_key_provider is not None:
+            api_key = await self._api_key_provider()
+        target = path
+        headers: dict[str, str] | None = None
+        if api_key:
+            # Send the credential only to the provider's keyed endpoint. The key is never
+            # placed in a URL, a cache key, a log line or an error message.
+            headers = {"x-api-key": api_key}
+            if self.keyed_base_url:
+                target = f"{self.keyed_base_url.rstrip('/')}/{path.lstrip('/')}"
         try:
-            response = await self._client.request(method, path, params=params)
+            response = await self._client.request(method, target, params=params, headers=headers)
         except httpx.HTTPError as exc:
             raise UpstreamError(f"{self.label} request failed: {exc}") from exc
         if response.status_code == 429:

@@ -7,6 +7,7 @@ key, and the key is never written to a log line or an error body.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -14,7 +15,7 @@ from pydantic import BaseModel, SecretStr
 from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
-from ..deps import get_secret_cipher, get_session
+from ..deps import get_secret_cipher, get_secret_forgetter, get_session
 from ..services import provider_keys
 from ..services.provider_secrets import SecretCipher
 
@@ -65,6 +66,19 @@ def create_provider_key(
     cipher: SecretCipher = Depends(get_secret_cipher),
 ) -> dict[str, Any]:
     """Store a user-supplied key and return its fingerprint, not the key."""
+    pepper = _fingerprint_pepper(settings)
+    if settings.environment == "prod" and pepper is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "PROVIDER_KEY_PEPPER_REQUIRED",
+                "message": (
+                    "set EZCHAIN_PROVIDER_KEY_FINGERPRINT_PEPPER (or "
+                    "EZCHAIN_API_KEY_PEPPER) before storing provider keys in production"
+                ),
+                "retryable": False,
+            },
+        )
     try:
         row = provider_keys.create_key(
             session,
@@ -73,7 +87,7 @@ def create_provider_key(
             secret=payload.key.get_secret_value(),
             label=payload.label,
             cipher=cipher,
-            fingerprint_pepper=_fingerprint_pepper(settings),
+            fingerprint_pepper=pepper,
         )
     except provider_keys.ProviderKeyError as exc:
         raise _http_error(exc) from exc
@@ -89,14 +103,17 @@ def revoke_provider_key(
     key_id: str,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
-    cipher: SecretCipher = Depends(get_secret_cipher),
+    forget: Callable[[str], None] = Depends(get_secret_forgetter),
 ) -> Response:
-    revoked = provider_keys.revoke_key(
-        session,
-        workspace_id=settings.workspace_id,
-        key_id=key_id,
-        cipher=cipher,
-    )
+    try:
+        revoked = provider_keys.revoke_key(
+            session,
+            workspace_id=settings.workspace_id,
+            key_id=key_id,
+            forget=forget,
+        )
+    except provider_keys.ProviderKeyError as exc:
+        raise _http_error(exc) from exc
     if not revoked:
         raise HTTPException(
             status_code=404,

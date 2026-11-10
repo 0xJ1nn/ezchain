@@ -50,8 +50,11 @@ JUPITER_LIMIT = ProviderLimit(
     provider="jupiter",
     requests_per_second=1.0,
     burst=1,
-    max_queue=8,
-    max_wait_seconds=10.0,
+    # Keep the longest possible budget wait below the quote router's per-provider
+    # attempt timeout (5 s), so a slow queue raises the typed budget error before the
+    # outer wait_for turns it into a generic timeout/NO_ROUTE.
+    max_queue=4,
+    max_wait_seconds=2.0,
 )
 DEFAULT_LIMITS: dict[str, ProviderLimit] = {JUPITER_LIMIT.provider: JUPITER_LIMIT}
 

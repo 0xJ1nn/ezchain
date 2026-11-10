@@ -2,23 +2,34 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
+from ezchain_adapters import JupiterClient
+from ezchain_adapters.jupiter import KEYED_BASE, SOL_MINT
 from ezchain_api.auth import required_scope, requires_auth
-from ezchain_api.config import Settings
-from ezchain_api.deps import get_secret_cipher
+from ezchain_api.config import Settings, get_settings
+from ezchain_api.deps import get_secret_cipher, get_secret_forgetter
 from ezchain_api.models import ProviderKeyRow
 from ezchain_api.routers import provider_keys as provider_keys_router
-from ezchain_api.services import provider_keys
+from ezchain_api.services import provider_keys, provider_secrets
 from ezchain_api.services.provider_secrets import (
+    AGE_PREFIX,
+    KEYRING_PREFIX,
     AgeCipher,
     CipherUnavailable,
     KeyringCipher,
     build_secret_cipher,
+    forget_stored_secret,
 )
 
 TEST_KEY = "TEST_KEY_DO_NOT_USE"
@@ -55,7 +66,10 @@ class UnavailableCipher(MemoryCipher):
 def make_client(client_for: Any, cipher: MemoryCipher) -> TestClient:
     return client_for(
         provider_keys_router.router,
-        {get_secret_cipher: lambda: cipher},
+        {
+            get_secret_cipher: lambda: cipher,
+            get_secret_forgetter: lambda: cipher.forget,
+        },
     )
 
 
@@ -171,7 +185,7 @@ def test_workspace_boundary_hides_and_protects_keys(session: Any) -> None:
             session,
             workspace_id="beta",
             key_id=row.id,
-            cipher=cipher,
+            forget=cipher.forget,
         )
         is False
     )
@@ -311,3 +325,288 @@ def test_keyring_keeps_only_a_reference() -> None:
     assert cipher.decrypt(stored) == TEST_KEY
     cipher.forget(stored)
     assert module.values == {}
+
+
+def test_malformed_body_never_echoes_the_key(client_for: Any) -> None:
+    client = make_client(client_for, MemoryCipher())
+
+    missing_provider = client.post("/api/v1/provider-keys", json={"key": TEST_KEY})
+    array_body = client.post("/api/v1/provider-keys", json=[TEST_KEY])
+    string_body = client.post(
+        "/api/v1/provider-keys",
+        content=f'"{TEST_KEY}"',
+        headers={"content-type": "application/json"},
+    )
+
+    for response in (missing_provider, array_body, string_body):
+        assert response.status_code == 422
+        assert TEST_KEY not in response.text
+        assert "input" not in response.json()["detail"][0]
+
+
+def test_production_requires_a_fingerprint_pepper(client_for: Any, settings: Settings) -> None:
+    cipher = MemoryCipher()
+    prod = settings.model_copy(
+        update={
+            "environment": "prod",
+            "provider_key_fingerprint_pepper": None,
+            "api_key_pepper": None,
+        }
+    )
+    client = client_for(
+        provider_keys_router.router,
+        {
+            get_settings: lambda: prod,
+            get_secret_cipher: lambda: cipher,
+            get_secret_forgetter: lambda: cipher.forget,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "PROVIDER_KEY_PEPPER_REQUIRED"
+    assert TEST_KEY not in response.text
+
+
+def test_production_uses_the_configured_fingerprint_pepper(
+    client_for: Any, settings: Settings
+) -> None:
+    cipher = MemoryCipher()
+    prod = settings.model_copy(
+        update={
+            "environment": "prod",
+            "provider_key_fingerprint_pepper": SecretStr("prod-pepper"),
+            "api_key_pepper": None,
+        }
+    )
+    client = client_for(
+        provider_keys_router.router,
+        {
+            get_settings: lambda: prod,
+            get_secret_cipher: lambda: cipher,
+            get_secret_forgetter: lambda: cipher.forget,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["fingerprint"] == provider_keys.fingerprint(TEST_KEY, "prod-pepper")
+
+
+def test_production_falls_back_to_the_api_key_pepper(client_for: Any, settings: Settings) -> None:
+    cipher = MemoryCipher()
+    prod = settings.model_copy(
+        update={
+            "environment": "prod",
+            "provider_key_fingerprint_pepper": None,
+            "api_key_pepper": SecretStr("shared-pepper"),
+        }
+    )
+    client = client_for(
+        provider_keys_router.router,
+        {
+            get_settings: lambda: prod,
+            get_secret_cipher: lambda: cipher,
+            get_secret_forgetter: lambda: cipher.forget,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["fingerprint"] == provider_keys.fingerprint(TEST_KEY, "shared-pepper")
+
+
+def test_fingerprint_is_keyed_by_the_pepper() -> None:
+    first = provider_keys.fingerprint(TEST_KEY, "pepper-a")
+    second = provider_keys.fingerprint(TEST_KEY, "pepper-b")
+
+    assert first != second
+    assert first == provider_keys.fingerprint(TEST_KEY, "pepper-a")
+    assert first != provider_keys.fingerprint(TEST_KEY)
+
+
+def test_invalid_label_is_rejected_before_encryption(session: Any, settings: Settings) -> None:
+    cipher = MemoryCipher()
+
+    with pytest.raises(provider_keys.ProviderKeyInvalid):
+        provider_keys.create_key(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            secret=TEST_KEY,
+            label="x" * 121,
+            cipher=cipher,
+        )
+
+    assert cipher.values == {}
+
+
+class FailingSession:
+    def __init__(self) -> None:
+        self.rolled_back = False
+        self.added: list[Any] = []
+
+    def add(self, row: Any) -> None:
+        self.added.append(row)
+
+    def commit(self) -> None:
+        raise RuntimeError("database is down")
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+
+def test_commit_failure_forgets_the_encrypted_secret(settings: Settings) -> None:
+    cipher = MemoryCipher()
+    session = FailingSession()
+
+    with pytest.raises(RuntimeError):
+        provider_keys.create_key(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            secret=TEST_KEY,
+            cipher=cipher,
+        )
+
+    assert session.rolled_back is True
+    assert cipher.values == {}
+
+
+def test_revoke_reports_a_failed_external_delete(session: Any, settings: Settings) -> None:
+    cipher = MemoryCipher()
+    row = provider_keys.create_key(
+        session,
+        workspace_id=settings.workspace_id,
+        provider="jupiter",
+        secret=TEST_KEY,
+        cipher=cipher,
+    )
+
+    def failing_forget(_stored: str) -> None:
+        raise CipherUnavailable("the external store refused the deletion")
+
+    with pytest.raises(provider_keys.ProviderKeyForgetFailed):
+        provider_keys.revoke_key(
+            session,
+            workspace_id=settings.workspace_id,
+            key_id=row.id,
+            forget=failing_forget,
+        )
+
+    refreshed = session.get(ProviderKeyRow, row.id)
+    assert refreshed is not None
+    assert refreshed.revoked_at is not None
+    assert refreshed.secret_ciphertext == ""
+
+
+def test_revoke_returns_503_when_the_external_delete_fails(client_for: Any) -> None:
+    cipher = MemoryCipher()
+
+    def failing_forget(_stored: str) -> None:
+        raise CipherUnavailable("the external store refused the deletion")
+
+    client = client_for(
+        provider_keys_router.router,
+        {
+            get_secret_cipher: lambda: cipher,
+            get_secret_forgetter: lambda: failing_forget,
+        },
+    )
+    created = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    ).json()
+
+    response = client.delete(f"/api/v1/provider-keys/{created['id']}")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "PROVIDER_KEY_FORGET_FAILED"
+    assert TEST_KEY not in response.text
+
+
+def test_forget_dispatches_by_the_stored_prefix(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    calls: list[str] = []
+
+    class Spy:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def forget(self, stored: str) -> None:
+            calls.append(stored)
+
+    monkeypatch.setattr(provider_secrets, "KeyringCipher", Spy)
+    forget_stored_secret(KEYRING_PREFIX + "reference", settings)
+    assert calls == [KEYRING_PREFIX + "reference"]
+
+    monkeypatch.setattr(provider_secrets, "AgeCipher", Spy)
+    forget_stored_secret(AGE_PREFIX + "ciphertext", settings)
+    assert calls == [KEYRING_PREFIX + "reference", AGE_PREFIX + "ciphertext"]
+
+
+class DeniedKeyring(FakeKeyring):
+    def delete_password(self, service: str, reference: str) -> None:
+        raise RuntimeError("deletion denied")
+
+
+def test_keyring_forget_surfaces_a_deletion_failure() -> None:
+    module = DeniedKeyring()
+    module.values[("ezchain-provider-keys", "reference")] = "stored"
+    cipher = KeyringCipher(module=module)
+
+    with pytest.raises(CipherUnavailable):
+        cipher.forget(KEYRING_PREFIX + "reference")
+
+
+def test_keyring_forget_treats_a_missing_entry_as_done() -> None:
+    cipher = KeyringCipher(module=FakeKeyring())
+
+    cipher.forget(KEYRING_PREFIX + "missing")
+
+
+@respx.mock
+async def test_the_resolved_key_is_sent_to_the_keyed_endpoint(
+    session: Any, settings: Settings
+) -> None:
+    cipher = MemoryCipher()
+    provider_keys.create_key(
+        session,
+        workspace_id=settings.workspace_id,
+        provider="jupiter",
+        secret=TEST_KEY,
+        cipher=cipher,
+    )
+
+    async def api_key() -> str:
+        return provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=cipher,
+        )
+
+    fixture = Path(__file__).resolve().parents[2] / "tests/adapters/fixtures/jupiter_quote_buy.json"
+    route = respx.get(f"{KEYED_BASE}/swap/v1/quote").mock(
+        return_value=httpx.Response(200, json=json.loads(fixture.read_text()))
+    )
+    client = JupiterClient(api_key_provider=api_key)
+
+    async with client as scoped:
+        await scoped.quote_paper(token_address=SOL_MINT, side="buy", amount_usd=Decimal("1"))
+
+    assert route.calls[0].request.headers["x-api-key"] == TEST_KEY
+    assert str(route.calls[0].request.url).startswith(KEYED_BASE)

@@ -32,8 +32,9 @@ existing metadata; it will not write a key it cannot protect.
 
 Set `EZCHAIN_PROVIDER_KEY_FINGERPRINT_PEPPER` to keep fingerprints from being reproduced
 by someone holding only the database. When it is unset, `EZCHAIN_API_KEY_PEPPER` is used.
-Fingerprints are the first 32 hexadecimal characters of an HMAC-SHA-256 over the key and
-are never sufficient to recover it.
+In production one of the two must be set; creation returns HTTP 503
+`PROVIDER_KEY_PEPPER_REQUIRED` otherwise. Fingerprints are the first 32 hexadecimal
+characters of an HMAC-SHA-256 over the key and are never sufficient to recover it.
 
 ## API
 
@@ -52,7 +53,22 @@ timestamps. It never contains the key or its ciphertext. Jupiter is the only pro
 accepts a stored key today.
 
 A revoked key cannot be resolved for a provider call. The row keeps its fingerprint and
-timestamps so the revocation is still visible in the list.
+timestamps so the revocation is still visible in the list. Revocation deletes the stored
+secret through the backend named by its own prefix, even when the current configuration
+selects a different one. If that external deletion fails, the row is already revoked and
+cannot be used, and the request returns HTTP 503 `PROVIDER_KEY_FORGET_FAILED` so an
+operator can retry or clean the external store by hand.
+
+## Use
+
+The active Jupiter key is resolved for each provider request and sent as the `x-api-key`
+header to `https://api.jup.ag`. Without a key, the client uses the keyless
+`https://lite-api.jup.ag` endpoint and sends no key header. Create and revoke take effect on
+the next provider request; a revoked key is never loaded again.
+
+If a stored key exists but cannot be decrypted, the provider call fails with HTTP 503
+`PROVIDER_KEY_UNAVAILABLE`. It does not silently downgrade to the keyless endpoint, because
+that would hide a broken credential store and change the provider's rate limit.
 
 ## Request budgets
 
@@ -63,3 +79,8 @@ full, or the next slot is beyond the wait window, the manager raises
 `ProviderBudgetExhausted`; the API renders that exception as HTTP 429 with
 `PROVIDER_BUDGET_EXHAUSTED` and `Retry-After: 1`. A caller is never left waiting
 indefinitely for a provider budget.
+
+The budget is per process, not shared between processes. Two API workers behind one
+provider key each get their own one-request-per-second allowance, so a deployment that
+runs more than one worker must either accept that multiplication or put a shared limiter
+in front of the provider. Run one API worker unless a shared limiter exists.
