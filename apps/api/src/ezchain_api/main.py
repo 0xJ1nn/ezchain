@@ -93,8 +93,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 return None
             except provider_key_service.ProviderKeyError as exc:
                 # A stored key that cannot be decrypted must fail the provider call, not
-                # silently downgrade to the keyless endpoint.
-                raise ProviderKeyUnavailable("the stored Jupiter key is unavailable") from exc
+                # silently downgrade to the keyless endpoint. Retryability follows the
+                # store's: a rotated identity or deleted entry never fixes itself.
+                raise ProviderKeyUnavailable(
+                    "the stored Jupiter key is unavailable", retryable=exc.retryable
+                ) from exc
 
         return await asyncio.to_thread(load)
 

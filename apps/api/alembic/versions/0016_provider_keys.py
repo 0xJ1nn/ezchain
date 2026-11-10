@@ -38,9 +38,21 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_provider_keys_fingerprint"), "provider_keys", ["fingerprint"], unique=False
     )
+    # One active key per workspace and provider. A second active row would be shadowed by
+    # the newest on read and would silently become the active key again when that one is
+    # revoked, so the database refuses it rather than trusting the service check alone.
+    op.create_index(
+        "uq_provider_keys_active",
+        "provider_keys",
+        ["workspace_id", "provider"],
+        unique=True,
+        postgresql_where=sa.text("revoked_at IS NULL"),
+        sqlite_where=sa.text("revoked_at IS NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_provider_keys_active", table_name="provider_keys")
     op.drop_index(op.f("ix_provider_keys_fingerprint"), table_name="provider_keys")
     op.drop_index(op.f("ix_provider_keys_provider"), table_name="provider_keys")
     op.drop_index(op.f("ix_provider_keys_workspace_id"), table_name="provider_keys")

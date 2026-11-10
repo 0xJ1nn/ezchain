@@ -13,12 +13,14 @@ import pytest
 import respx
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy.exc import IntegrityError
 
-from ezchain_adapters import JupiterClient
+from ezchain_adapters import JupiterClient, ProviderKeyUnavailable
 from ezchain_adapters.jupiter import KEYED_BASE, SOL_MINT
 from ezchain_api.auth import required_scope, requires_auth
 from ezchain_api.config import Settings, get_settings
 from ezchain_api.deps import get_secret_cipher, get_secret_forgetter
+from ezchain_api.errors import adapter_http_error
 from ezchain_api.models import ProviderKeyRow
 from ezchain_api.routers import provider_keys as provider_keys_router
 from ezchain_api.services import provider_keys, provider_secrets
@@ -31,8 +33,10 @@ from ezchain_api.services.provider_secrets import (
     build_secret_cipher,
     forget_stored_secret,
 )
+from ezchain_core import utcnow
 
 TEST_KEY = "TEST_KEY_DO_NOT_USE"
+OTHER_TEST_KEY = "OTHER_TEST_KEY_DO_NOT_USE"
 
 
 class MemoryCipher:
@@ -160,6 +164,123 @@ def test_revoke_clears_material_and_stops_use(
     again = client.delete(f"/api/v1/provider-keys/{created['id']}")
     assert again.status_code == 404
     assert again.json()["detail"]["code"] == "PROVIDER_KEY_NOT_FOUND"
+
+
+def test_a_second_active_key_is_refused_and_the_first_still_resolves(
+    client_for: Any, session: Any, settings: Settings
+) -> None:
+    cipher = MemoryCipher()
+    client = make_client(client_for, cipher)
+    first = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    )
+    assert first.status_code == 201
+
+    again = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": OTHER_TEST_KEY},
+    )
+
+    assert again.status_code == 409
+    assert again.json()["detail"]["code"] == "PROVIDER_KEY_ALREADY_EXISTS"
+    assert again.json()["detail"]["retryable"] is False
+    assert OTHER_TEST_KEY not in again.text
+    # A refused create leaves exactly one key, and it is still the first one.
+    assert len(provider_keys.list_keys(session, workspace_id=settings.workspace_id)) == 1
+    assert (
+        provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=cipher,
+        )
+        == TEST_KEY
+    )
+
+
+def test_replacing_a_key_retires_the_old_one_for_good(
+    client_for: Any, session: Any, settings: Settings
+) -> None:
+    cipher = MemoryCipher()
+    client = make_client(client_for, cipher)
+    old = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    ).json()
+    old_row = session.get(ProviderKeyRow, old["id"])
+    assert old_row is not None
+    old_stored = old_row.secret_ciphertext
+
+    replaced = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": OTHER_TEST_KEY, "replace": True},
+    )
+
+    assert replaced.status_code == 201
+    assert (
+        provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=cipher,
+        )
+        == OTHER_TEST_KEY
+    )
+    session.expire_all()
+    retired = session.get(ProviderKeyRow, old["id"])
+    assert retired is not None
+    # The replaced key is retired and its external copy deleted, not merely shadowed...
+    assert retired.revoked_at is not None
+    assert retired.secret_ciphertext == ""
+    assert old_stored not in cipher.values
+
+    # ...so revoking the newest one cannot make the older key resolvable again.
+    revoked = client.delete(f"/api/v1/provider-keys/{replaced.json()['id']}")
+    assert revoked.status_code == 204
+    with pytest.raises(provider_keys.ProviderKeyNotFound):
+        provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=cipher,
+        )
+
+
+def test_the_database_refuses_two_active_keys_for_one_provider(
+    session: Any, settings: Settings
+) -> None:
+    """The service check is not the only guard; concurrent creates race in the database."""
+    now = utcnow()
+    for key_id in ("first", "second"):
+        session.add(
+            ProviderKeyRow(
+                id=key_id,
+                workspace_id=settings.workspace_id,
+                provider="jupiter",
+                fingerprint=key_id,
+                secret_ciphertext="memory:v1:x",
+                created_at=now,
+            )
+        )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+    # A retired row does not block the pair: only the active one is unique.
+    for key_id, revoked in (("old", now), ("new", None)):
+        session.add(
+            ProviderKeyRow(
+                id=key_id,
+                workspace_id=settings.workspace_id,
+                provider="jupiter",
+                fingerprint=key_id,
+                secret_ciphertext="memory:v1:x",
+                created_at=now,
+                revoked_at=revoked,
+            )
+        )
+    session.commit()
 
 
 def test_workspace_boundary_hides_and_protects_keys(session: Any) -> None:
@@ -327,6 +448,129 @@ def test_keyring_keeps_only_a_reference() -> None:
     assert module.values == {}
 
 
+class NullKeyring:
+    """The shape of a misconfigured backend: it answers nothing and discards writes."""
+
+    def get_password(self, _service: str, _reference: str) -> None:
+        return None
+
+    def set_password(self, _service: str, _reference: str, _value: str) -> None:
+        return None
+
+    def delete_password(self, _service: str, _reference: str) -> None:
+        return None
+
+
+class TransientCipher(MemoryCipher):
+    """A store that is briefly unreachable, as opposed to one that lost the key."""
+
+    def decrypt(self, stored: str) -> str:
+        raise CipherUnavailable("the OS keyring backend is offline", retryable=True)
+
+
+class RotatedCipher(MemoryCipher):
+    """The identity was rotated or the entry deleted; a retry cannot fix either."""
+
+    def decrypt(self, stored: str) -> str:
+        raise CipherUnavailable("the OS keyring no longer holds this provider key")
+
+
+def test_a_permanent_key_failure_is_not_retryable() -> None:
+    error = ProviderKeyUnavailable("the stored Jupiter key is unavailable")
+
+    assert error.retryable is False
+    assert adapter_http_error(error).detail["retryable"] is False
+
+
+def test_a_transient_store_failure_stays_retryable() -> None:
+    error = ProviderKeyUnavailable("the key store is briefly unreachable", retryable=True)
+
+    assert error.retryable is True
+    assert adapter_http_error(error).detail["retryable"] is True
+
+
+def test_resolve_secret_keeps_a_rotated_key_non_retryable(
+    session: Any, settings: Settings
+) -> None:
+    cipher = MemoryCipher()
+    provider_keys.create_key(
+        session,
+        workspace_id=settings.workspace_id,
+        provider="jupiter",
+        secret=TEST_KEY,
+        cipher=cipher,
+    )
+
+    with pytest.raises(provider_keys.ProviderKeyCipherUnavailable) as caught:
+        provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=RotatedCipher(),
+        )
+
+    assert caught.value.retryable is False
+
+
+def test_resolve_secret_keeps_a_transient_store_fault_retryable(
+    session: Any, settings: Settings
+) -> None:
+    cipher = MemoryCipher()
+    provider_keys.create_key(
+        session,
+        workspace_id=settings.workspace_id,
+        provider="jupiter",
+        secret=TEST_KEY,
+        cipher=cipher,
+    )
+
+    with pytest.raises(provider_keys.ProviderKeyCipherUnavailable) as caught:
+        provider_keys.resolve_secret(
+            session,
+            workspace_id=settings.workspace_id,
+            provider="jupiter",
+            cipher=TransientCipher(),
+        )
+
+    assert caught.value.retryable is True
+
+
+def test_keyring_availability_proves_the_store_can_return_what_it_took() -> None:
+    module = FakeKeyring()
+
+    KeyringCipher(module=module).ensure_available()
+
+    # The probe writes, reads back and deletes: nothing is left behind.
+    assert module.values == {}
+
+
+def test_keyring_availability_refuses_a_store_that_discards_writes() -> None:
+    cipher = KeyringCipher(module=NullKeyring())
+
+    with pytest.raises(CipherUnavailable):
+        cipher.ensure_available()
+
+
+def test_create_refuses_a_keyring_that_cannot_return_the_key(
+    client_for: Any, session: Any, settings: Settings
+) -> None:
+    client = client_for(
+        provider_keys_router.router,
+        {get_secret_cipher: lambda: KeyringCipher(module=NullKeyring())},
+    )
+
+    response = client.post(
+        "/api/v1/provider-keys",
+        json={"provider": "jupiter", "key": TEST_KEY},
+    )
+
+    # Accepting the write would commit a reference nothing can read back; every later
+    # provider call would fail instead of creation failing once.
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
+    assert provider_keys.list_keys(session, workspace_id=settings.workspace_id) == []
+
+
 def test_malformed_body_never_echoes_the_key(client_for: Any) -> None:
     client = make_client(client_for, MemoryCipher())
 
@@ -457,6 +701,10 @@ class FailingSession:
     def __init__(self) -> None:
         self.rolled_back = False
         self.added: list[Any] = []
+
+    def scalar(self, _statement: Any) -> None:
+        """No active key exists; the create gets as far as the failing commit."""
+        return None
 
     def add(self, row: Any) -> None:
         self.added.append(row)

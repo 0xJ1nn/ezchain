@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
@@ -56,9 +57,26 @@ class ProviderKeyNotFound(ProviderKeyError):
     status_code = 404
 
 
+class ProviderKeyAlreadyExists(ProviderKeyError):
+    """This workspace already has an active key for the provider.
+
+    A second active row is not additive: the resolver reads the newest, so revoking that
+    one would silently make the older key live again. Replacement must be asked for.
+    """
+
+    code = "PROVIDER_KEY_ALREADY_EXISTS"
+    status_code = 409
+
+
 class ProviderKeyCipherUnavailable(ProviderKeyError):
     code = "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
     status_code = 503
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        # Mirrors the store: a backend that is momentarily unreachable may recover, a
+        # missing identity or deleted entry fails identically on every retry.
+        self.retryable = retryable
 
 
 class ProviderKeyForgetFailed(ProviderKeyError):
@@ -115,6 +133,29 @@ def _validated_label(label: str | None) -> str | None:
     return value
 
 
+def _active_key(session: Session, workspace_id: str, provider: str) -> ProviderKeyRow | None:
+    """The one active key for this workspace and provider, if any."""
+    return session.scalar(
+        select(ProviderKeyRow).where(
+            ProviderKeyRow.workspace_id == workspace_id,
+            ProviderKeyRow.provider == provider,
+            ProviderKeyRow.revoked_at.is_(None),
+        )
+    )
+
+
+def _discard(cipher: SecretCipher, stored: str) -> None:
+    """Best-effort removal of a secret that never reached a row.
+
+    A failure here must not replace the error being reported: the caller needs the reason
+    the create failed, and the orphan class this cannot close is documented.
+    """
+    try:
+        cipher.forget(stored)
+    except Exception:  # noqa: BLE001 - preserve the original failure
+        pass
+
+
 def create_key(
     session: Session,
     *,
@@ -124,20 +165,46 @@ def create_key(
     cipher: SecretCipher,
     label: str | None = None,
     fingerprint_pepper: str | None = None,
+    replace: bool = False,
+    forget: Callable[[str], None] | None = None,
 ) -> ProviderKeyRow:
-    """Encrypt and store one key. The plaintext is not retained anywhere."""
+    """Encrypt and store one key. The plaintext is not retained anywhere.
+
+    A workspace may hold one active key per provider, and a create that would add a
+    second one is refused unless ``replace`` is set. Replacement is destructive: the
+    previous row is revoked and its external copy deleted through ``forget`` before the
+    new key is stored, so a later revoke cannot bring the old key back.
+    """
     workspace = _validated_workspace(workspace_id)
     provider_id = _validated_provider(provider)
     plaintext = _validated_secret(secret)
     # Every input is validated before the key is handed to an external store. A bad
     # label must not leave an orphaned secret in the keyring.
     label_value = _validated_label(label)
+    active = _active_key(session, workspace, provider_id)
+    if active is not None and not replace:
+        raise ProviderKeyAlreadyExists(
+            f"an active {provider_id} key already exists in this workspace; "
+            "revoke it, or resend with replace=true to retire it"
+        )
     fingerprint_value = fingerprint(plaintext, fingerprint_pepper)
     try:
         cipher.ensure_available()
         ciphertext = cipher.encrypt(plaintext)
     except CipherUnavailable as exc:
-        raise ProviderKeyCipherUnavailable(exc.message) from exc
+        raise ProviderKeyCipherUnavailable(exc.message, retryable=exc.retryable) from exc
+    if active is not None:
+        # Encrypting first means a store failure leaves the active key untouched. The
+        # retirement then goes through the revoke path, which deletes the external copy
+        # before the row stops pointing at it.
+        if forget is None:
+            _discard(cipher, ciphertext)
+            raise ProviderKeyError("replacing an active key requires a delete hook")
+        try:
+            revoke_key(session, workspace_id=workspace, key_id=active.id, forget=forget)
+        except Exception:
+            _discard(cipher, ciphertext)
+            raise
     row = ProviderKeyRow(
         id=new_id(),
         workspace_id=workspace,
@@ -150,12 +217,17 @@ def create_key(
     session.add(row)
     try:
         session.commit()
+    except IntegrityError as exc:
+        # Two creates raced and the other one won the database's partial unique index.
+        # The loser's secret never belongs to a row, so remove it before refusing.
+        session.rollback()
+        _discard(cipher, ciphertext)
+        raise ProviderKeyAlreadyExists(
+            f"an active {provider_id} key already exists in this workspace"
+        ) from exc
     except Exception:
         # The row did not land, so the external copy must not survive either.
-        try:
-            cipher.forget(ciphertext)
-        except Exception:  # noqa: BLE001 - preserve the commit failure
-            pass
+        _discard(cipher, ciphertext)
         session.rollback()
         raise
     session.refresh(row)
@@ -190,7 +262,8 @@ def resolve_secret(
             ProviderKeyRow.revoked_at.is_(None),
             ProviderKeyRow.secret_ciphertext != "",
         )
-        .order_by(ProviderKeyRow.created_at.desc())
+        # The partial unique index allows one active row for the pair, so there is no
+        # "newest" to choose. The limit only keeps an un-migrated database deterministic.
         .limit(1)
     )
     row = session.scalar(statement)
@@ -199,7 +272,7 @@ def resolve_secret(
     try:
         secret = cipher.decrypt(row.secret_ciphertext)
     except CipherUnavailable as exc:
-        raise ProviderKeyCipherUnavailable(exc.message) from exc
+        raise ProviderKeyCipherUnavailable(exc.message, retryable=exc.retryable) from exc
     row.last_used_at = utcnow()
     session.commit()
     return secret
@@ -273,6 +346,7 @@ def _iso(value: datetime | None) -> str | None:
 
 __all__ = [
     "FINGERPRINT_HEX_CHARS",
+    "ProviderKeyAlreadyExists",
     "ProviderKeyCipherUnavailable",
     "ProviderKeyError",
     "ProviderKeyForgetFailed",

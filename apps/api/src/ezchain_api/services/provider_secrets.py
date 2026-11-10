@@ -34,13 +34,19 @@ AGE_TIMEOUT_SECONDS = 15.0
 
 
 class CipherUnavailable(RuntimeError):
-    """The configured secret store cannot be used. Never contains key material."""
+    """The configured secret store cannot be used. Never contains key material.
+
+    ``retryable`` separates a store that is momentarily unreachable (a keyring daemon
+    restarting) from one that cannot answer for this key at all (a rotated age identity,
+    a deleted entry). Retrying the second only repeats the same permanent failure.
+    """
 
     code = "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
         self.message = message
+        self.retryable = retryable
 
 
 class SecretCipher(Protocol):
@@ -171,13 +177,40 @@ class KeyringCipher:
             ) from exc
 
     def ensure_available(self) -> None:
+        """Prove the backend stores and returns a value before a key is accepted.
+
+        A read of a missing entry only proves the module answers. The keyring "null"
+        backend answers ``None`` and discards ``set_password``, which passes that probe;
+        the create then commits a reference nothing can read, and every provider call
+        after it fails. The probe therefore writes a random value, reads it back, and
+        deletes it, refusing on any step that does not behave like a store.
+        """
         module = self._keyring()
+        reference = f"ezchain-availability-{secrets.token_urlsafe(12)}"
+        probe = secrets.token_urlsafe(24)
         try:
-            # A read against a missing entry proves the backend answers. The fail
-            # backend raises here, which is exactly the refusal we want.
-            module.get_password(self._service, "ezchain-availability-probe")
+            module.set_password(self._service, reference, probe)
+            read_back = module.get_password(self._service, reference)
         except Exception as exc:  # noqa: BLE001 - any backend fault means unavailable
-            raise CipherUnavailable("the OS keyring backend is not available") from exc
+            self._discard_probe(module, reference)
+            raise CipherUnavailable(
+                "the OS keyring backend is not available", retryable=True
+            ) from exc
+        try:
+            module.delete_password(self._service, reference)
+        except Exception as exc:  # noqa: BLE001 - a store that cannot delete is unusable
+            raise CipherUnavailable(
+                "the OS keyring could not remove its test entry"
+            ) from exc
+        if read_back != probe:
+            raise CipherUnavailable("the OS keyring did not return what it stored")
+
+    def _discard_probe(self, module: Any, reference: str) -> None:
+        """Best-effort cleanup of a probe that failed midway; never masks the cause."""
+        try:
+            module.delete_password(self._service, reference)
+        except Exception:  # noqa: BLE001 - the availability error is the one to report
+            pass
 
     def encrypt(self, secret: str) -> str:
         self.ensure_available()
@@ -195,7 +228,10 @@ class KeyringCipher:
         try:
             value = self._keyring().get_password(self._service, reference)
         except Exception as exc:  # noqa: BLE001 - any backend fault means unavailable
-            raise CipherUnavailable("the OS keyring could not read the provider key") from exc
+            # The backend itself failed, which can be momentary; a missing entry is not.
+            raise CipherUnavailable(
+                "the OS keyring could not read the provider key", retryable=True
+            ) from exc
         if not value:
             raise CipherUnavailable("the OS keyring no longer holds this provider key")
         return str(value)

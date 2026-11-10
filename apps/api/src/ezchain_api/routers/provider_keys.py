@@ -26,6 +26,8 @@ class ProviderKeyIn(BaseModel):
     provider: str
     key: SecretStr
     label: str | None = None
+    # Retiring the active key is destructive, so it is never implied by a second create.
+    replace: bool = False
 
 
 def _fingerprint_pepper(settings: Settings) -> str | None:
@@ -64,8 +66,13 @@ def create_provider_key(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
     cipher: SecretCipher = Depends(get_secret_cipher),
+    forget: Callable[[str], None] = Depends(get_secret_forgetter),
 ) -> dict[str, Any]:
-    """Store a user-supplied key and return its fingerprint, not the key."""
+    """Store a user-supplied key and return its fingerprint, not the key.
+
+    One key is active per provider. A second create is a 409 unless ``replace`` is set,
+    which retires the previous key through the revoke path before storing the new one.
+    """
     pepper = _fingerprint_pepper(settings)
     if settings.environment == "prod" and pepper is None:
         raise HTTPException(
@@ -88,6 +95,8 @@ def create_provider_key(
             label=payload.label,
             cipher=cipher,
             fingerprint_pepper=pepper,
+            replace=payload.replace,
+            forget=forget,
         )
     except provider_keys.ProviderKeyError as exc:
         raise _http_error(exc) from exc

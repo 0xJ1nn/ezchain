@@ -276,9 +276,24 @@ class ProviderKeyRow(Base):
     that owns it. ``revoked_at`` is what retires a key: a revoked row is never resolved,
     and its ciphertext is cleared once the external copy is deleted. A failed deletion
     leaves the reference in place so the purge can be retried.
+
+    One workspace holds at most one *active* key per provider. The partial unique index
+    below is the rule's home: a resolver that picked the newest row would otherwise
+    resurrect an older key the moment the newer one was revoked. Retired rows keep their
+    history and are outside the index.
     """
 
     __tablename__ = "provider_keys"
+    __table_args__ = (
+        Index(
+            "uq_provider_keys_active",
+            "workspace_id",
+            "provider",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(String(64), index=True)
