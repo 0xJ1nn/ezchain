@@ -50,6 +50,7 @@ export function PaperTicket({
 	amount,
 	quote,
 	quoteReason,
+	now,
 }: {
 	chain: string;
 	tokenAddress: string;
@@ -58,6 +59,8 @@ export function PaperTicket({
 	amount: string;
 	quote: Quote | null;
 	quoteReason: Reason | null;
+	/** Server render time, so the client hydrates the same age text. */
+	now: number;
 }) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -67,6 +70,13 @@ export function PaperTicket({
 	const [formError, setFormError] = useState<string | null>(null);
 	const [state, setState] = useState<TicketState>({ kind: "idle" });
 	const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+
+	// Keep the ticket's controls aligned with the server selection when another surface
+	// (the quick-trade bar or the quote form) navigates the page.
+	useEffect(() => {
+		setLocalSide(side);
+		setLocalAmount(amount);
+	}, [side, amount]);
 
 	const quoteIdentity = quote
 		? `${quote.side}|${quote.amount_in}|${quote.token_out}|${quote.source.observed_at}`
@@ -219,7 +229,7 @@ export function PaperTicket({
 							<span className="spacer" style={{ flex: 1 }} />
 							<Badge tone="warn">{quoteKindLabel(quote.kind)}</Badge>
 							<span className="mono small">
-								{sourceLabel(quote.source.name)} · {ageLabel(quote.source.observed_at)}
+								{sourceLabel(quote.source.name)} · {ageLabel(quote.source.observed_at, now)}
 							</span>
 						</span>
 					</span>
@@ -228,7 +238,7 @@ export function PaperTicket({
 				)}
 			</div>
 
-			{quote && matches && <CostSheet quote={quote} symbol={symbol} />}
+			{quote && matches && <CostSheet quote={quote} symbol={symbol} now={now} />}
 
 			<div className="row">
 				<button

@@ -26,6 +26,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   expected version return `409 PROTECTION_CONFLICT` when another writer won the
   race. Migration `0012_protection_events` adds the event table and the version
   column. Nothing in the order path changed.
+
+- **Quick-trade bar on the token page (PAPER).** Presets of 50, 100 and 250 USD plus
+  any custom notional the browser remembers, a buy/sell toggle, and one paper submit
+  through the existing order endpoint. The landed pre-trade cost sheet renders before
+  the click, and the bar repeats the quote's route, source and age. After a filled
+  buy, an explicit `Protect this position` action opens a prefilled stop-loss form;
+  arming is never automatic.
+
 - **Position protection arms and profiles (PAPER, issue #103):** stop-loss,
   trailing stop (percent or price distance, above-water only) and take-profit
   (single or laddered) on any open position, each immediately editable and

@@ -32,7 +32,9 @@ import {
 	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
+import { webMode as protectionWebMode } from "@/lib/protection-api";
 import { PaperTicket } from "./paper-ticket";
+import { QuickTradeBar } from "./quick-trade-bar";
 import styles from "./token.module.css";
 
 export const dynamic = "force-dynamic";
@@ -187,6 +189,9 @@ export default async function TokenPage({
 	const chainMeta = chainsResult.find((candidate) => candidate.id === chain);
 	const chainLabel = chainMeta?.name ?? chain;
 	const sourceName = token.source?.name;
+	// One server timestamp for every client component on the page, so hydration computes
+	// the same age text instead of a slightly later Date.now().
+	const renderedAt = Date.now();
 
 	return (
 		<AppShell active="markets">
@@ -596,7 +601,7 @@ export default async function TokenPage({
 											/>
 										</tbody>
 									</table>
-									<CostSheet quote={quote} symbol={token.symbol} />
+									<CostSheet quote={quote} symbol={token.symbol} now={renderedAt} />
 									{quote.kind === "paper_mark" && (
 										<div className="note warn">
 											<strong>PAPER · MARK.</strong> This chain has no executable venue in
@@ -622,22 +627,43 @@ export default async function TokenPage({
 						</Panel>
 					</div>
 
+					<div id="quick-trade">
+						<Panel
+							title="Quick trade"
+							action={<Badge tone="ghost">PAPER</Badge>}
+							footer="Paper only. Presets are browser-local USD notionals; submit uses the same paper order endpoint and idempotency key."
+						>
+							<QuickTradeBar
+								mode={protectionWebMode()}
+								chain={chain}
+								tokenAddress={token.address}
+								symbol={token.symbol}
+								side={side}
+								amount={amount}
+								quote={quote}
+								quoteReason={quoteReason}
+								now={renderedAt}
+							/>
+						</Panel>
+					</div>
+
 					<div id="ticket">
-					<Panel
-						title="Paper trade ticket"
-						action={<Badge tone="ghost">PAPER</Badge>}
-						footer="Paper only. The ticket sends chain, token, side, USD amount and a browser-generated idempotency key. No key material is collected."
-					>
-						<PaperTicket
-							chain={chain}
-							tokenAddress={token.address}
-							symbol={token.symbol}
-							side={side}
-							amount={amount}
-							quote={quote}
-							quoteReason={quoteReason}
-						/>
-					</Panel>
+						<Panel
+							title="Paper trade ticket"
+							action={<Badge tone="ghost">PAPER</Badge>}
+							footer="Paper only. The ticket sends chain, token, side, USD amount and a browser-generated idempotency key. No key material is collected."
+						>
+							<PaperTicket
+								chain={chain}
+								tokenAddress={token.address}
+								symbol={token.symbol}
+								side={side}
+								amount={amount}
+								quote={quote}
+								quoteReason={quoteReason}
+								now={renderedAt}
+							/>
+						</Panel>
 					</div>
 				</div>
 			</div>

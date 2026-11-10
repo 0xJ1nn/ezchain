@@ -205,7 +205,21 @@ a full row and the topbar wraps.
   All money strings are decimal strings from the server; the web formats only.
   Every value is PAPER. Live execution is not part of this change.
 
-## 9. Handoff to visual design
+## 9. Quick-trade bar delta
+
+- **Token (`07-token.html`):** a `Quick trade` bar sits above the paper ticket. It offers
+  amount presets (50 / 100 / 250 / custom), a buy/sell toggle, a `Preview` control (Enter
+  also works), a single submit that places the paper order through the existing
+  `/api/v1/paper/orders` endpoint, and the landed pre-trade cost sheet before the click.
+  Presets are browser-local USD notionals (no server state); a custom amount is
+  remembered as a preset in the same browser. The bar repeats the quote's route, source
+  and age. After a filled buy, an explicit `Protect this position` button opens a
+  prefilled stop-loss arm form; arming is never automatic and uses the same armed
+  confirmation as the positions page. Honest states (quote failure, NO_SELL_ROUTE,
+  insufficient cash, paper-mode badges) match the existing ticket; unknown stays `—`.
+- **Data:** `/quote`, `/paper/orders`, `/protection/arms` (no new API surface).
+
+## 10. Handoff to visual design
 
 `design/BRIEF.md` defines the design tokens, tone, component inventory and the pages in
 priority order. The wireframe deliberately uses grayscale and dashed placeholders so that
