@@ -633,8 +633,9 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 								No runs yet. Run-now or let the scheduler evaluate an active strategy.
 							</div>
 						) : (
-							<div className={`table-wrap ${styles.logTable}`}>
+							<div className={`table-wrap ${styles.logTable}`} tabIndex={0} role="region" aria-label="Decision log table">
 								<table className="table compact">
+									<caption className="sr-only">Decision log</caption>
 									<thead>
 										<tr>
 											<th scope="col">Time</th>

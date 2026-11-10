@@ -124,17 +124,18 @@ export default async function AutomationsPage() {
 					>
 						{strategiesResult.ok ? (
 							strategies.length > 0 ? (
-								<div className="table-wrap">
+								<div className="table-wrap" tabIndex={0} role="region" aria-label="Scheduled strategies table">
 									<table className="table">
+										<caption className="sr-only">Scheduled strategies</caption>
 										<thead>
 											<tr>
-												<th>Strategy</th>
-												<th>Status</th>
-												<th>Kind</th>
-												<th>Chain</th>
-												<th>Interval</th>
-												<th>Last run</th>
-												<th />
+												<th scope="col">Strategy</th>
+												<th scope="col">Status</th>
+												<th scope="col">Kind</th>
+												<th scope="col">Chain</th>
+												<th scope="col">Interval</th>
+												<th scope="col">Last run</th>
+												<th scope="col" />
 											</tr>
 										</thead>
 										<tbody>
@@ -196,12 +197,13 @@ export default async function AutomationsPage() {
 					</Panel>
 
 					<Panel title="Automation vs strategy" sub="the actual model" flush>
-						<div className="table-wrap">
+						<div className="table-wrap" tabIndex={0} role="region" aria-label="Automation vs strategy table">
 							<table className="table compact">
+								<caption className="sr-only">Automation vs strategy</caption>
 								<thead>
 									<tr>
-										<th>Concept</th>
-										<th>In this build</th>
+										<th scope="col">Concept</th>
+										<th scope="col">In this build</th>
 									</tr>
 								</thead>
 								<tbody>

@@ -171,8 +171,9 @@ export default async function StrategyDetailPage({
 							No runs yet. Run the strategy from the list to record the first decision.
 						</div>
 					) : (
-						<div className={`table-wrap ${styles.logTable}`}>
+						<div className={`table-wrap ${styles.logTable}`} tabIndex={0} role="region" aria-label="Runs table">
 							<table className="table compact">
+								<caption className="sr-only">Runs</caption>
 								<thead>
 									<tr>
 										<th scope="col">Time</th>
