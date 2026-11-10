@@ -47,6 +47,8 @@ def test_rejected_order_is_also_idempotent(session, settings, dex, jupiter) -> N
         pytest.param({"token": "0x0000000000000000000000000000000000000def"}, id="token"),
         pytest.param({"chain": "solana"}, id="chain"),
         pytest.param({"strategy_id": "strategy-2"}, id="strategy"),
+        pytest.param({"reduce_only": True}, id="reduce-only"),
+        pytest.param({"quantity": "1"}, id="quantity"),
     ],
 )
 def test_idempotency_conflicts_on_payload_mismatch(

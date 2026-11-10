@@ -563,7 +563,20 @@ class IdempotencyConflict(Exception):
 # tests/paper/test_orders.py fails until the new field is covered. Rows written before
 # the fingerprint column have no stored hash; their values are read from the persisted
 # order, so a new field also needs a column and a backfill at that point.
-_FINGERPRINT_FIELDS = ("chain", "token_address", "side", "amount_usd", "strategy_id")
+_FINGERPRINT_FIELDS = (
+    "chain",
+    "token_address",
+    "side",
+    "amount_usd",
+    "strategy_id",
+    "quantity",
+    "reduce_only",
+)
+# Fields added after the fingerprint column existed have no stored order column. A row
+# written before them is replayed with the value it could have had: no exact quantity and
+# not a reduce-only exit. A request that supplies either value therefore conflicts with a
+# legacy row instead of replaying a different intent.
+_LEGACY_FINGERPRINT_DEFAULTS = {"quantity": None, "reduce_only": False}
 
 
 def _canonical_decimal(value: Decimal) -> str:
@@ -599,7 +612,12 @@ def _request_fingerprint(payload: OrderRequest) -> str:
 
 def _stored_fingerprint(order: PaperOrderRow) -> str:
     """The fingerprint of the order as persisted, for rows written before 0011."""
-    return _fingerprint({name: getattr(order, name) for name in _FINGERPRINT_FIELDS})
+    return _fingerprint(
+        {
+            name: getattr(order, name, _LEGACY_FINGERPRINT_DEFAULTS.get(name))
+            for name in _FINGERPRINT_FIELDS
+        }
+    )
 
 
 def _find_order(session: Session, idempotency_key: str) -> PaperOrderRow | None:
