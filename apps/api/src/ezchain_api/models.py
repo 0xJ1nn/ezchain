@@ -251,6 +251,13 @@ class SystemFlagRow(Base):
 
 
 class MarketSnapshotRow(Base):
+    """The latest observation per (chain, token), keyed by its unique index.
+
+    ``market_snapshots.record_snapshot`` upserts on that key, so concurrent writers
+    converge on one row. ``observed_at`` orders observations: a write never moves the
+    stored mark backwards, and a timestamp ahead of the writer's clock never replaces one.
+    """
+
     __tablename__ = "market_snapshots"
     __table_args__ = (
         Index("ix_market_snapshot_chain_token", "chain", "token_address", unique=True),

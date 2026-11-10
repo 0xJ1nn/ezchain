@@ -56,6 +56,7 @@ from ezchain_core.ledger import (
 
 from ..config import Settings
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow, new_id
+from . import market_snapshots
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -230,37 +231,7 @@ def _day_start() -> datetime:
 
 def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow:
     """Upsert the latest observation for (chain, token); older events never overwrite."""
-    token = snapshot.address
-    row = session.scalar(
-        select(MarketSnapshotRow).where(
-            MarketSnapshotRow.chain == snapshot.chain,
-            MarketSnapshotRow.token_address == token,
-        )
-    )
-    source = snapshot.source
-    observed = _aware(source.observed_at) if source is not None else None
-    observed = observed or utcnow()
-    if row is not None:
-        current = _aware(row.observed_at)
-        if current is not None and current > observed:
-            return row
-    if row is None:
-        row = MarketSnapshotRow(id=new_id(), chain=snapshot.chain, token_address=token)
-        session.add(row)
-    row.symbol = snapshot.symbol or token
-    row.name = snapshot.name or snapshot.symbol or token
-    row.price_usd = snapshot.price_usd
-    row.liquidity_usd = snapshot.liquidity_usd
-    row.volume_24h_usd = snapshot.volume_24h_usd
-    row.price_change_m5 = snapshot.price_change_m5
-    row.price_change_h1 = snapshot.price_change_h1
-    row.price_change_h6 = snapshot.price_change_h6
-    row.price_change_h24 = snapshot.price_change_h24
-    row.source = source.name if source is not None else "unknown"
-    row.observed_at = observed
-    row.raw = {}
-    session.flush()
-    return row
+    return market_snapshots.record_snapshot(session, snapshot)
 
 
 def _snapshot_index(session: Session) -> dict[tuple[str, str], MarketSnapshotRow]:

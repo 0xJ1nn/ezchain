@@ -261,6 +261,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `complete` and `marks_unknown`; an unknown mark stays null on both surfaces. A buy fee
   is realized when the ledger pays it, and win rate uses the same decided-close
   denominator on both responses.
+- **A market mark race can no longer fail a valid paper order** (#112). Order pricing and
+  the market monitor now write the latest observation for a token with one atomic upsert
+  on the existing `(chain, token)` unique index (SQLite and Postgres), so two writers at
+  once converge on one row instead of one raising an integrity error. A stored mark only
+  moves forward: a delayed observation cannot replace a newer one, and an observation
+  dated ahead of the writer's clock cannot freeze it. A single refused row no longer drops
+  the rest of a monitor scan batch.
 - **Paper equity fails closed on unknown marks** (#96, #108):
   `GET /api/v1/paper/account` now returns `equity_usd: null` and `unrealized_usd: null`
   when any open position has no mark, and exposes `complete`, `marks_unknown`,
