@@ -26,6 +26,7 @@ export interface ProtectionArm {
 	order_id: string | null;
 	expires_at: string | null;
 	profile_id: string | null;
+	version: number;
 	created_at: string;
 	updated_at: string;
 	mode: "paper";
@@ -61,6 +62,7 @@ export interface ProtectionArmInput {
 
 export interface ProtectionArmPatch {
 	params: Record<string, unknown>;
+	expected_version?: number;
 }
 
 export class ProtectionApiError extends Error {
@@ -254,6 +256,7 @@ export async function createProtectionArm(
 			order_id: null,
 			expires_at: input.expires_at ?? null,
 			profile_id: input.profile_id ?? null,
+			version: 1,
 			created_at: now(),
 			updated_at: now(),
 			mode: "paper",
@@ -277,7 +280,19 @@ export async function patchProtectionArm(
 		const arms = readFixtureArms();
 		const found = arms.find((arm) => arm.id === id);
 		if (!found) throw new ProtectionApiError("ARM_NOT_FOUND", "protection arm not found", 404);
-		const updated = { ...found, params: { ...patch.params }, updated_at: now() };
+		if (patch.expected_version !== undefined && patch.expected_version !== found.version) {
+			throw new ProtectionApiError(
+				"PROTECTION_CONFLICT",
+				"protection arm version mismatch",
+				409,
+			);
+		}
+		const updated = {
+			...found,
+			params: { ...patch.params },
+			version: found.version + 1,
+			updated_at: now(),
+		};
 		writeFixtureArms(arms.map((arm) => (arm.id === id ? updated : arm)));
 		return updated;
 	}
@@ -292,7 +307,12 @@ export async function cancelProtectionArm(id: string, mode: PaperApiMode = webMo
 		const arms = readFixtureArms();
 		const found = arms.find((arm) => arm.id === id);
 		if (!found) throw new ProtectionApiError("ARM_NOT_FOUND", "protection arm not found", 404);
-		const updated = { ...found, status: "cancelled" as const, updated_at: now() };
+		const updated = {
+			...found,
+			status: "cancelled" as const,
+			version: found.version + 1,
+			updated_at: now(),
+		};
 		writeFixtureArms(arms.map((arm) => (arm.id === id ? updated : arm)));
 		return updated;
 	}
@@ -303,7 +323,12 @@ export async function cancelProtectionArm(id: string, mode: PaperApiMode = webMo
 }
 
 function normalizeArm(row: ProtectionArm): ProtectionArm {
-	return { ...row, params: row.params ?? {}, triggered_levels: row.triggered_levels ?? [] };
+	return {
+		...row,
+		params: row.params ?? {},
+		triggered_levels: row.triggered_levels ?? [],
+		version: typeof row.version === "number" ? row.version : 1,
+	};
 }
 
 export function armLabel(kind: ProtectionKind): string {

@@ -1,7 +1,7 @@
 """Create append-only protection events and add optimistic versioning.
 
 Revision ID: 0012_protection_events
-Revises: 0010_ledger_sequence
+Revises: 0011_idempotency_fingerprint
 """
 
 from __future__ import annotations
