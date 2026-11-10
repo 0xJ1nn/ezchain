@@ -462,14 +462,16 @@ class PaperAssetCompositionOut(BaseModel):
 
 
 class PaperWalletOut(BaseModel):
-    """A paper wallet and the cash the ledger has settled to it.
+    """A paper wallet, or the unallocated cash bucket, and its ledger-derived cash.
 
-    The wallet stores no balance: ``balance_usd`` is the sum of the cash legs attributed
-    to it. ``mode`` travels with the number so a wallet read can never be mistaken for a
-    live balance.
+    The row stores no balance: ``balance_usd`` is the sum of the cash legs attributed to
+    it. ``mode`` travels with the number so a wallet read can never be mistaken for a live
+    balance. ``id`` is null only for the ``unallocated`` row, which keeps cash whose
+    attributed wallet id no longer has a row; it is a bucket, not a wallet, and it exists
+    so the list is a complete partition of ``cash_usd``.
     """
 
-    id: str
+    id: str | None = None
     chain: str
     asset: str
     label: str

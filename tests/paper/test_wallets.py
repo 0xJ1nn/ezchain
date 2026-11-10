@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow, PaperWalletRow
 from ezchain_api.services import paper
-from ezchain_core.ledger import cash_account
+from ezchain_core.ledger import buy_entries, cash_account
 
 from .conftest import (
     CHAIN,
@@ -19,6 +19,7 @@ from .conftest import (
     FakeDexScreener,
     FakeJupiter,
     make_request,
+    make_settings,
     make_snapshot,
     place,
 )
@@ -125,7 +126,7 @@ def test_sell_settles_proceeds_back_to_the_chain_wallet(session, settings, dex, 
 
 
 def test_unknown_chain_fails_closed_with_a_typed_reason(session, settings, dex, jupiter) -> None:
-    """A chain with no wallet is refused before a quote, a fill or a journal row."""
+    """A buy on a chain with no declared wallet is refused before a quote or a fill."""
     order = place(
         session,
         settings,
@@ -145,7 +146,7 @@ def test_unknown_chain_fails_closed_with_a_typed_reason(session, settings, dex, 
 
 
 def test_unknown_settlement_asset_fails_closed(session, settings, dex, jupiter) -> None:
-    """A wallet that does not settle in the ledger asset cannot receive its cash legs."""
+    """A buy into a wallet that does not settle in the ledger asset is refused before a quote."""
     paper.ensure_genesis(session, STARTING_CASH)
     wallet = session.scalar(select(PaperWalletRow).where(PaperWalletRow.chain == CHAIN))
     assert wallet is not None
@@ -168,6 +169,191 @@ def test_unknown_settlement_asset_fails_closed(session, settings, dex, jupiter) 
     assert dex.calls == 0
     assert session.scalar(select(PaperFillRow)) is None
     assert session.scalar(select(LedgerEntryRow).where(LedgerEntryRow.group_id == order.id)) is None
+
+
+def _orphaned_position(session: Session, monkeypatch) -> None:
+    """Open a held position, then remove its chain's wallet declaration.
+
+    ``ensure_wallets`` heals a declared chain, so a held position's chain can have no
+    wallet row only when the deployment stopped declaring it (or a journal was restored
+    without its wallets). The journal below carries the cash attribution the wallet had
+    before it was deleted, so the read model has something to report as unallocated.
+    """
+    paper.ensure_genesis(session, STARTING_CASH)
+    for entry in buy_entries(
+        chain=CHAIN,
+        token_address=TOKEN,
+        quantity=Decimal("50"),
+        price_usd=Decimal("2"),
+        fee_bps=30,
+    ):
+        row = entry.to_row("seeded-position")
+        if row["account"] == cash_account():
+            row["wallet_id"] = f"{paper.WALLET_PREFIX}{CHAIN}"
+        session.add(LedgerEntryRow(**row))
+    session.commit()
+
+    wallet = session.scalar(select(PaperWalletRow).where(PaperWalletRow.chain == CHAIN))
+    assert wallet is not None
+    session.delete(wallet)
+    session.commit()
+    monkeypatch.setattr(
+        paper,
+        "_seeded_wallets",
+        lambda: [
+            (
+                paper.SETTLEMENT_WALLET_ID,
+                paper.SETTLEMENT_CHAIN,
+                paper.SETTLEMENT_ASSET,
+                "Paper settlement",
+            )
+        ],
+    )
+
+
+@pytest.mark.parametrize("reduce_only", [True, False], ids=["reduce-only", "held-position"])
+def test_a_sell_survives_a_chain_with_no_declared_wallet(
+    session, settings, dex, jupiter, monkeypatch, reduce_only: bool
+) -> None:
+    """A missing wallet row is an entry condition and cannot trap the exit it left behind.
+
+    The position is sold with the flag and, separately, as a plain sell sized to the whole
+    position. Both are exits, both settle to the settlement wallet, and an entry on the
+    undeclared chain is still refused with the truthful reason the client needs.
+    """
+    _orphaned_position(session, monkeypatch)
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+
+    sell = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(
+            side="sell", amount_usd="100", key="exit-no-declared-wallet", reduce_only=reduce_only
+        ),
+    )
+
+    assert sell.status == "filled"
+    fill = session.scalar(select(PaperFillRow).where(PaperFillRow.order_id == sell.id))
+    assert fill is not None
+    assert fill.quantity == Decimal("50")
+    cash_rows = list(
+        session.scalars(
+            select(LedgerEntryRow).where(
+                LedgerEntryRow.group_id == sell.id,
+                LedgerEntryRow.account == cash_account(),
+            )
+        )
+    )
+    assert {row.wallet_id for row in cash_rows} == {paper.SETTLEMENT_WALLET_ID}
+
+    entry = place(
+        session, settings, dex, jupiter, make_request(amount_usd="25", key="entry-undeclared")
+    )
+    assert entry.status == "rejected"
+    assert entry.reason == "WALLET_UNKNOWN"
+    assert entry.reasons is not None
+    assert entry.reasons[0]["detail"] == {"chain": CHAIN}
+
+
+def test_a_sell_settles_to_the_settlement_wallet_when_the_chain_wallet_cannot_hold_usd(
+    session, settings, dex, jupiter
+) -> None:
+    """A wrong-asset wallet is an entry refusal, never a trapped exit.
+
+    The chain wallet declares another settlement asset, so it cannot receive USD; the
+    exit still fills and its cash falls back to the settlement wallet, while an entry is
+    still refused with the truthful reason the client needs.
+    """
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    assert (
+        place(
+            session, settings, dex, jupiter, make_request(amount_usd="100", key="asset-buy")
+        ).status
+        == "filled"
+    )
+    wallet = session.scalar(select(PaperWalletRow).where(PaperWalletRow.chain == CHAIN))
+    assert wallet is not None
+    wallet.asset = "EUR"
+    session.commit()
+
+    sell = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(side="sell", amount_usd="100", key="asset-exit", reduce_only=True),
+    )
+
+    assert sell.status == "filled"
+    cash_rows = list(
+        session.scalars(
+            select(LedgerEntryRow).where(
+                LedgerEntryRow.group_id == sell.id,
+                LedgerEntryRow.account == cash_account(),
+            )
+        )
+    )
+    assert {row.wallet_id for row in cash_rows} == {paper.SETTLEMENT_WALLET_ID}
+
+    entry = place(session, settings, dex, jupiter, make_request(amount_usd="25", key="asset-entry"))
+    assert entry.status == "rejected"
+    assert entry.reason == "SETTLEMENT_ASSET_UNKNOWN"
+    assert entry.reasons is not None
+    assert entry.reasons[0]["detail"] == {"chain": CHAIN, "asset": "EUR"}
+
+
+def test_the_no_risk_funding_leg_is_settlement_capital(session, dex, jupiter) -> None:
+    """The funded top-up says where it went: the settlement wallet, not nowhere.
+
+    A no-risk shortfall is minted into the cash account as settlement capital, so its
+    cash leg names the settlement wallet. The ``funding:USD`` contra leg is not a cash
+    account and carries no wallet id.
+    """
+    funded = make_settings(paper_no_risk=True, paper_starting_cash_usd=Decimal("10"))
+    dex.set(make_snapshot(price=Decimal("2000"), liquidity=Decimal("500000")))
+
+    order = place(
+        session, funded, dex, jupiter, make_request(amount_usd="100", key="funded-wallet")
+    )
+
+    assert order.status == "filled"
+    rows = list(
+        session.scalars(
+            select(LedgerEntryRow).where(LedgerEntryRow.group_id == f"funding:{order.id}")
+        )
+    )
+    by_account = {row.account: row for row in rows}
+    assert by_account[cash_account()].wallet_id == paper.SETTLEMENT_WALLET_ID
+    assert by_account["funding:USD"].wallet_id is None
+
+
+def test_wallet_list_adds_the_unallocated_bucket_so_the_rows_sum_to_cash(
+    session, settings, dex, jupiter
+) -> None:
+    """Cash attributed to a deleted wallet stays visible and keeps the sum complete."""
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    assert (
+        place(
+            session, settings, dex, jupiter, make_request(amount_usd="100", key="bucket-buy")
+        ).status
+        == "filled"
+    )
+    wallet = session.scalar(select(PaperWalletRow).where(PaperWalletRow.chain == CHAIN))
+    assert wallet is not None
+    session.delete(wallet)
+    session.commit()
+
+    rows = paper.wallets(session)
+    bucket = next(row for row in rows if row["chain"] == "unallocated")
+    assert bucket["id"] is None
+    assert bucket["asset"] == "USD"
+    assert bucket["label"] == "Unallocated paper cash"
+    assert Decimal(str(bucket["balance_usd"])) == Decimal("-100.3")
+    assert sum((Decimal(str(row["balance_usd"])) for row in rows), Decimal(0)) == Decimal(
+        paper.account_snapshot(session)["cash_usd"]
+    )
 
 
 def test_wallet_balances_equal_their_ledger_sums(session, settings, dex, jupiter) -> None:

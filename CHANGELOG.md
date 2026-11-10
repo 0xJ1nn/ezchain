@@ -15,10 +15,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `sum(wallet.balance_usd) == replay.cash` after every step. The wallet route no longer
   declares wallets — they are seeded at boot and on order placement — so a GET cannot
   write. Cash or positions whose wallet row is missing stay visible in `by_wallet`'s
-  `unallocated` row instead of disappearing from the total. `POST /paper/orders` on a
-  chain without a wallet is refused with the new `WALLET_UNKNOWN` reason code before a
-  quote (a wallet that does not settle in the ledger asset is refused with
-  `SETTLEMENT_ASSET_UNKNOWN`). Decision recorded in ADR-0032.
+  `unallocated` row instead of disappearing from the total. A buy through
+  `POST /paper/orders` on a chain without a wallet is refused with the new
+  `WALLET_UNKNOWN` reason code before a quote (a wallet that does not settle in the
+  ledger asset is refused with `SETTLEMENT_ASSET_UNKNOWN`); a sell is never refused for
+  it and settles to the settlement wallet. Decision recorded in ADR-0032.
 
 ### Fixed
 

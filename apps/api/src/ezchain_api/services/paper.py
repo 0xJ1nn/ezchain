@@ -8,10 +8,12 @@ entries, never read from a mutable scalar.
 Every sell is bounded by the held quantity and can never open a short. A reduce-only exit
 — a sell explicitly flagged ``reduce_only``, or one whose requested size clamps to the
 whole position — bypasses entry-only gates: its executable sell quote is the exit's
-price, so a missing or stale market mark may not trap the position. Exit integrity still
-fails closed: a held position, a fresh quote, an executable route and a quantity no
-larger than the position are all required, and a sell with no route is persisted as
-``EXIT_NO_ROUTE`` with its quote evidence.
+price, so a missing or stale market mark may not trap the position. Settlement routing is
+an entry gate too: a sell settles to its chain's wallet when that wallet is valid and to
+the settlement wallet otherwise, so a missing or wrong-asset wallet cannot trap an exit
+either. Exit integrity still fails closed: a held position, a fresh quote, an executable
+route and a quantity no larger than the position are all required, and a sell with no
+route is persisted as ``EXIT_NO_ROUTE`` with its quote evidence.
 """
 
 from __future__ import annotations
@@ -99,6 +101,10 @@ SETTLEMENT_ASSET = "USD"
 # second process. A wallet is addressed by its chain, which is unique per asset.
 SETTLEMENT_WALLET_ID = "paper-wallet:settlement"
 WALLET_PREFIX = "paper-wallet:"
+# The read-model bucket for cash whose attributed wallet id has no row. It is not a
+# wallet: it exists so the wallet list stays a complete partition of the cash account.
+UNALLOCATED_CHAIN = "unallocated"
+UNALLOCATED_LABEL = "Unallocated paper cash"
 
 
 # ---------------------------------------------------------------------------
@@ -207,9 +213,13 @@ def wallet_for_chain(session: Session, chain: str) -> tuple[PaperWalletRow | Non
 
 @dataclass(frozen=True)
 class WalletView:
-    """One paper wallet's identity and ledger-derived settlement balance."""
+    """One paper wallet's identity and ledger-derived settlement balance.
 
-    id: str
+    ``id`` is null for the ``unallocated`` bucket: that row is not a wallet, it keeps
+    cash attributed to a wallet id whose row no longer exists.
+    """
+
+    id: str | None
     chain: str
     asset: str
     label: str
@@ -227,18 +237,23 @@ class WalletView:
 
 
 def wallet_views(session: Session, replay: Replay | None = None) -> list[WalletView]:
-    """Every declared wallet with its balance projected from the ledger.
+    """Every declared wallet plus an unallocated bucket, with ledger-derived balances.
 
     Balances come from ``Replay.wallet_cash``: the same Python ``Decimal`` pass that
     computes the account's cash, never a SQL aggregate. SQLite stores money as TEXT, so
     ``SUM()`` would coerce every row to a float and the wallets would no longer add up to
     the account to the last unit (CONTRACT I1). A caller that already replayed the ledger
     passes its ``Replay`` so one request reads the journal once.
+
+    The returned rows are a complete partition of the cash account. Cash attributed to a
+    wallet id whose row is gone is reported in one labelled ``unallocated`` row with a
+    null id, so ``sum(balance_usd)`` still equals ``cash_usd`` instead of silently
+    dropping money. The bucket is a read model, never a wallet.
     """
     rows = list(session.scalars(select(PaperWalletRow)))
     rows.sort(key=lambda row: (row.chain != SETTLEMENT_CHAIN, row.chain))
     balances = (replay if replay is not None else _replay(_ledger_rows(session))).wallet_cash
-    return [
+    views = [
         WalletView(
             id=row.id,
             chain=row.chain,
@@ -248,10 +263,28 @@ def wallet_views(session: Session, replay: Replay | None = None) -> list[WalletV
         )
         for row in rows
     ]
+    declared = {row.id for row in rows}
+    with localcontext() as context:
+        context.prec = LEDGER_PRECISION
+        unattributed = sum(
+            (balance for wallet_id, balance in balances.items() if wallet_id not in declared),
+            Decimal(0),
+        )
+    if unattributed != 0:
+        views.append(
+            WalletView(
+                id=None,
+                chain=UNALLOCATED_CHAIN,
+                asset=SETTLEMENT_ASSET,
+                label=UNALLOCATED_LABEL,
+                balance_usd=unattributed,
+            )
+        )
+    return views
 
 
 def wallets(session: Session) -> list[dict[str, Any]]:
-    """The paper wallets as API rows, settlement wallet first."""
+    """The paper wallets as API rows, settlement first and an unallocated bucket last."""
     return [view.to_dict() for view in wallet_views(session)]
 
 
@@ -627,9 +660,13 @@ def _wallet_composition(
         positions_by_chain.setdefault(str(view["chain"]), []).append(view)
 
     rows: list[dict[str, Any]] = []
-    allocated = {wallet.chain for wallet in wallet_rows}
-    declared_ids = {wallet.id for wallet in wallet_rows}
-    for wallet in wallet_rows:
+    # The unallocated bucket in ``wallet_rows`` is a cash read model, not a declared
+    # wallet: only declared wallet rows take the per-wallet loop. The bucket's cash is
+    # added below with the positions of chains that have no wallet, exactly once.
+    declared_wallets = [wallet for wallet in wallet_rows if wallet.id is not None]
+    allocated = {wallet.chain for wallet in declared_wallets}
+    declared_ids = {wallet.id for wallet in declared_wallets}
+    for wallet in declared_wallets:
         members = (
             positions_by_chain.get(wallet.chain, []) if wallet.chain != SETTLEMENT_CHAIN else []
         )
@@ -714,22 +751,23 @@ def _wallet_row(
     }
 
 
-def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None) -> dict[str, Any]:
+def account_snapshot(session: Session) -> dict[str, Any]:
     """Cash, realized, unrealized, equity and composition projected from the ledger.
 
-    ``starting_cash_usd`` is optional so bootstrapping callers can create genesis before
-    reading. Marks come from the latest market snapshot. A position without a mark reports
-    ``mark_usd = null`` and makes the account incomplete: ``equity_usd`` and
-    ``unrealized_usd`` are withheld (CONTRACT I3), while ``known_market_value_usd`` names
-    the partial sum explicitly. ``by_asset``, ``by_chain`` and ``by_wallet`` are always
-    server-computed; their shares are null while the total is unknown.
+    A read model never writes: genesis and the wallet declarations are bootstrapped at
+    boot and on order placement, so this function can report a deleted wallet row as
+    missing instead of healing the state it is meant to expose. Marks come from the
+    latest market snapshot. A position without a mark reports ``mark_usd = null`` and
+    makes the account incomplete: ``equity_usd`` and ``unrealized_usd`` are withheld
+    (CONTRACT I3), while ``known_market_value_usd`` names the partial sum explicitly.
+    ``by_asset``, ``by_chain`` and ``by_wallet`` are always server-computed; their shares
+    are null while the total is unknown.
 
-    ``wallets`` reports each wallet's identity and its settled cash, and ``by_wallet``
-    decomposes the same equity into settled cash plus the marked positions of that
-    wallet's chain. Both are projections of the ledger, never stored balances.
+    ``wallets`` reports each wallet's identity and its settled cash and adds the
+    ``unallocated`` bucket, and ``by_wallet`` decomposes the same equity into settled
+    cash plus the marked positions of that wallet's chain. Both are projections of the
+    ledger, never stored balances.
     """
-    if starting_cash_usd is not None:
-        ensure_genesis(session, starting_cash_usd)
     now = utcnow()
     max_age = get_settings().max_quote_age_seconds
     replay = _replay(_ledger_rows(session))
@@ -1224,19 +1262,28 @@ async def place_order(
     if payload.strategy_id is not None and read_kill_switch(session, settings).active:
         return _reject_new(session, payload, "KILL_SWITCH_ACTIVE")
 
-    # Settlement routing. Every fill settles to the wallet for its chain; a chain with no
-    # wallet, or a wallet declaring a different settlement asset, is refused before any
-    # quote and before any journal row. The refusal names the chain and the asset asked
-    # for instead of guessing an account (CONTRACT I3).
+    # Settlement routing is an entry gate. A buy must settle to a wallet that exists for
+    # its chain and declares the ledger asset, so a refusal names the chain and the asset
+    # asked for instead of guessing an account (CONTRACT I3). A sell is bounded by the
+    # held quantity and can never open a short, so the gate must not refuse one: a
+    # missing or wrong-asset wallet would otherwise trap an exit, and a reduce-only exit
+    # is never blocked by an entry gate. An exit's proceeds settle to its chain's wallet
+    # when that wallet is valid, otherwise to the settlement wallet; cash attributed to a
+    # wallet row that is gone stays visible in the read model's unallocated bucket.
     wallet, wallet_reason = wallet_for_chain(session, payload.chain)
-    if wallet is None or wallet_reason is not None:
-        code = wallet_reason or "WALLET_UNKNOWN"
-        detail: dict[str, Any] = {"chain": payload.chain}
-        if wallet is not None:
-            detail["asset"] = wallet.asset
-        return _reject_new(session, payload, code, reasons=(RiskReason(code, detail=detail),))
-    # The id survives the rollback before the quote network call; the ORM instance need not.
-    settlement_wallet_id = wallet.id
+    if payload.side == "buy":
+        if wallet is None or wallet_reason is not None:
+            code = wallet_reason or "WALLET_UNKNOWN"
+            detail: dict[str, Any] = {"chain": payload.chain}
+            if wallet is not None:
+                detail["asset"] = wallet.asset
+            return _reject_new(session, payload, code, reasons=(RiskReason(code, detail=detail),))
+        # The id survives the rollback before the quote network call; the ORM instance need not.
+        settlement_wallet_id = wallet.id
+    else:
+        settlement_wallet_id = (
+            wallet.id if wallet is not None and wallet_reason is None else SETTLEMENT_WALLET_ID
+        )
 
     # Profile selection is server-side. An unknown or disallowed profile is a typed
     # rejection and never falls back to the active profile.
@@ -1476,7 +1523,14 @@ async def place_order(
 
             assert_balanced(funding_entries)
             for entry in funding_entries:
-                session.add(LedgerEntryRow(**entry.to_row(funding_group, created_at=stamp)))
+                row = entry.to_row(funding_group, created_at=stamp)
+                # The no-risk top-up is settlement capital, not a venue settlement: its
+                # cash leg names the settlement wallet so the journal says where the money
+                # went. The ``funding:USD`` contra leg is not a cash account and carries
+                # no wallet id.
+                if row["account"] == cash_account():
+                    row["wallet_id"] = SETTLEMENT_WALLET_ID
+                session.add(LedgerEntryRow(**row))
         if payload.side == "buy":
             entries = buy_entries(
                 chain=payload.chain,
