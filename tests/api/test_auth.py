@@ -3,20 +3,41 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from sqlalchemy.orm import Session
 
 from ezchain_api import auth
-from ezchain_api.auth import READ_METHODS, BearerAuthMiddleware
+from ezchain_api.auth import (
+    AUTHENTICATED_READ_PATHS,
+    LOOPBACK_ONLY_PATHS,
+    OPERATIONAL_PATHS,
+    READ_METHODS,
+    BearerAuthMiddleware,
+    required_scope,
+    requires_auth,
+)
 from ezchain_api.config import Settings, get_settings
 from ezchain_api.deps import get_session
 from ezchain_api.main import create_app
+from ezchain_api.models import PaperOrderRow
 from ezchain_api.routers import system
+
+REMOTE_PEER = ("203.0.113.9", 50000)
+LOCAL_PEER = ("127.0.0.1", 50000)
+METRICS_CONTRACT = (
+    "# HELP ezchain_up",
+    "ezchain_up ",
+    "# HELP ezchain_http_requests_total",
+    "# HELP ezchain_http_request_duration_ms",
+    "# HELP ezchain_paper_orders_total",
+    "# HELP ezchain_paper_fills_total",
+)
 
 EXPECTED_PROTECTED_ROUTES = (
     ("DELETE", "/api/v1/agent/keys/{key_id}"),
@@ -44,6 +65,8 @@ def make_client(
     settings: Settings,
     session: Session,
     session_factory=None,
+    *,
+    peer: tuple[str, int] = REMOTE_PEER,
 ) -> TestClient:
     app = FastAPI()
     app.add_middleware(
@@ -54,7 +77,7 @@ def make_client(
     app.include_router(system.router)
     app.dependency_overrides[get_session] = lambda: session
     app.dependency_overrides[get_settings] = lambda: settings
-    return TestClient(app)
+    return TestClient(app, client=peer)
 
 
 @pytest.fixture
@@ -227,3 +250,236 @@ def test_every_mutating_api_route_is_in_the_protected_list() -> None:
         if method not in READ_METHODS
     )
     assert tuple(protected) == EXPECTED_PROTECTED_ROUTES
+
+
+# --- operational endpoint boundary ----------------------------------------
+
+
+def test_operational_classification_is_explicit(protected_settings: Settings) -> None:
+    assert OPERATIONAL_PATHS == {"/health", "/metrics"}
+    assert LOOPBACK_ONLY_PATHS == {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
+    assert AUTHENTICATED_READ_PATHS == {"/api/v1/agent/state"}
+    for path in ("/health", "/metrics"):
+        assert requires_auth("GET", path, protected_settings) is True
+        assert required_scope("GET", path) == "admin"
+    assert requires_auth("GET", "/api/v1/agent/state", protected_settings) is True
+    assert required_scope("GET", "/api/v1/agent/state") == "read"
+    for path in ("/healthz", "/readyz"):
+        assert requires_auth("GET", path, protected_settings) is False
+
+
+def test_every_root_route_is_classified() -> None:
+    app = create_app()
+    root = {
+        route.path_format
+        for route in _api_routes(list(app.routes))
+        if not route.path_format.startswith("/api/")
+    }
+
+    assert root == {"/healthz", "/readyz"} | set(OPERATIONAL_PATHS), (
+        "classify a new root route as public-safe or operational"
+    )
+
+
+def test_metrics_is_available_from_loopback_without_a_token(
+    protected_settings: Settings, session: Session
+) -> None:
+    client = make_client(protected_settings, session, peer=LOCAL_PEER)
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    for line in METRICS_CONTRACT:
+        assert line in response.text
+
+
+@pytest.mark.parametrize(
+    "peer",
+    [
+        ("127.0.0.1", 50000),
+        ("::1", 50000),
+        ("::ffff:127.0.0.1", 50000),
+    ],
+)
+def test_loopback_address_forms_are_accepted(
+    protected_settings: Settings, session: Session, peer: tuple[str, int]
+) -> None:
+    assert make_client(protected_settings, session, peer=peer).get("/metrics").status_code == 200
+
+
+def test_metrics_rejects_a_remote_client_without_a_token(
+    protected_settings: Settings, session: Session
+) -> None:
+    client = make_client(protected_settings, session, peer=REMOTE_PEER)
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["detail"]["code"] == "UNAUTHORIZED"
+    assert response.json()["detail"]["retryable"] is False
+
+
+def test_metrics_accepts_the_operator_token_from_a_remote_client(
+    protected_settings: Settings, session: Session
+) -> None:
+    session.add(
+        PaperOrderRow(
+            idempotency_key="remote-metrics-order",
+            chain="solana",
+            token_address="token-address",
+            side="buy",
+            amount_usd=Decimal("10"),
+            status="filled",
+        )
+    )
+    session.commit()
+    client = make_client(protected_settings, session, peer=REMOTE_PEER)
+
+    accepted = client.get(
+        "/metrics",
+        headers={"authorization": "Bearer correct-token"},
+    )
+    rejected = client.get(
+        "/metrics",
+        headers={"authorization": "Bearer not-the-token"},
+    )
+
+    assert accepted.status_code == 200
+    for line in METRICS_CONTRACT:
+        assert line in accepted.text
+    # The authenticated remote scrape sees the same paper counters as a local one.
+    assert 'ezchain_paper_orders_total{status="filled"} 1' in accepted.text
+    assert rejected.status_code == 401
+
+
+def test_health_requires_a_token_from_a_remote_client(
+    protected_settings: Settings, session: Session
+) -> None:
+    remote = make_client(protected_settings, session, peer=REMOTE_PEER)
+    local = make_client(protected_settings, session, peer=LOCAL_PEER)
+
+    assert remote.get("/health").status_code == 401
+    assert local.get("/health").status_code == 200
+    assert (
+        remote.get("/health", headers={"authorization": "Bearer correct-token"}).status_code == 200
+    )
+
+
+def test_public_probes_stay_public_from_a_remote_client(
+    protected_settings: Settings, session: Session
+) -> None:
+    client = make_client(protected_settings, session, peer=REMOTE_PEER)
+
+    assert client.get("/healthz").status_code == 200
+    # The session fixture has no Alembic stamp, so readiness reports 503; the point is
+    # that it answers without a credential rather than returning 401.
+    assert client.get("/readyz").status_code == 503
+
+
+def test_spoofed_forwarded_headers_do_not_grant_loopback(
+    protected_settings: Settings, session: Session
+) -> None:
+    client = make_client(protected_settings, session, peer=REMOTE_PEER)
+
+    response = client.get(
+        "/metrics",
+        headers={
+            "x-forwarded-for": "127.0.0.1",
+            "x-real-ip": "127.0.0.1",
+            "forwarded": "for=127.0.0.1",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_a_same_host_proxy_does_not_launder_a_remote_client(
+    protected_settings: Settings, session: Session
+) -> None:
+    proxy = make_client(protected_settings, session, peer=LOCAL_PEER)
+
+    # A local browser through a local proxy is still local.
+    assert proxy.get("/metrics", headers={"x-forwarded-for": "127.0.0.1"}).status_code == 200
+    # A public client through that same proxy is not.
+    assert proxy.get("/metrics", headers={"x-forwarded-for": "203.0.113.9"}).status_code == 401
+    assert (
+        proxy.get("/metrics", headers={"x-forwarded-for": "203.0.113.9, 127.0.0.1"}).status_code
+        == 401
+    )
+
+
+def test_a_configured_trusted_proxy_can_report_a_loopback_client(
+    protected_settings: Settings, session: Session
+) -> None:
+    proxied = protected_settings.model_copy(update={"trusted_proxy_cidrs": ["10.0.0.0/8"]})
+    proxy = make_client(proxied, session, peer=("10.1.2.3", 50000))
+
+    # One trusted hop in front of a local browser or scrape.
+    assert proxy.get("/metrics", headers={"x-forwarded-for": "127.0.0.1"}).status_code == 200
+    # A real remote client stays remote even when it sends the same header.
+    assert proxy.get("/metrics", headers={"x-forwarded-for": "198.51.100.7"}).status_code == 401
+    # Walk past trusted hops to the first address the proxy did not add.
+    assert (
+        proxy.get("/metrics", headers={"x-forwarded-for": "127.0.0.1, 10.2.3.4"}).status_code == 200
+    )
+    # A peer outside the trusted list is never allowed to supply the header.
+    direct = make_client(proxied, session, peer=("198.51.100.7", 50000))
+    assert direct.get("/metrics", headers={"x-forwarded-for": "127.0.0.1"}).status_code == 401
+
+
+def test_remote_operational_request_fails_closed_when_auth_is_disabled(
+    settings: Settings, session: Session
+) -> None:
+    disabled = settings.model_copy(update={"auth_enabled": False, "api_token": None})
+
+    remote = make_client(disabled, session, peer=REMOTE_PEER)
+    local = make_client(disabled, session, peer=LOCAL_PEER)
+
+    assert remote.get("/metrics").status_code == 401
+    assert local.get("/metrics").status_code == 200
+
+
+def test_interactive_schema_is_loopback_only(
+    protected_settings: Settings, session: Session
+) -> None:
+    remote = make_client(protected_settings, session, peer=REMOTE_PEER)
+    local = make_client(protected_settings, session, peer=LOCAL_PEER)
+
+    for path in ("/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"):
+        assert remote.get(path).status_code == 404, path
+        assert local.get(path).status_code == 200, path
+
+
+def test_agent_state_needs_a_principal_even_from_loopback(
+    protected_settings: Settings,
+) -> None:
+    app = FastAPI()
+    app.add_middleware(BearerAuthMiddleware, settings=protected_settings)
+
+    @app.get("/api/v1/agent/state")
+    def state() -> dict[str, bool]:
+        return {"ok": True}
+
+    remote = TestClient(app, client=REMOTE_PEER)
+    local = TestClient(app, client=LOCAL_PEER)
+    headers = {"authorization": "Bearer correct-token"}
+
+    assert remote.get("/api/v1/agent/state").status_code == 401
+    assert local.get("/api/v1/agent/state").status_code == 401
+    assert remote.get("/api/v1/agent/state", headers=headers).status_code == 200
+    assert local.get("/api/v1/agent/state", headers=headers).status_code == 200
+
+
+def test_trusted_proxy_list_refuses_a_typo_or_the_whole_internet() -> None:
+    with pytest.raises(ValidationError, match="EZCHAIN_TRUSTED_PROXY_CIDRS"):
+        Settings(environment="dev", trusted_proxy_cidrs=["not-a-network"])
+    with pytest.raises(ValidationError, match="must not trust every address"):
+        Settings(environment="dev", trusted_proxy_cidrs=["0.0.0.0/0"])
+
+    parsed = Settings(
+        environment="dev",
+        trusted_proxy_cidrs=[" 10.0.0.0/8 ", "", "2001:db8::1"],
+    )
+    assert parsed.trusted_proxy_cidrs == ["10.0.0.0/8", "2001:db8::1"]

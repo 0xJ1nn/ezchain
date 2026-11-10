@@ -1,8 +1,9 @@
 // Typed reads for the operational endpoints that live at the API root, not under `/api`.
 //
-// These run on the Next server only. They carry no token: `/healthz`, `/health`,
-// `/readyz` and `/metrics` are unauthenticated read surfaces by design. Fixture mode
-// reports "not probed" rather than inventing a healthy process.
+// These run on the Next server only. `/healthz` and `/readyz` are public probes;
+// `/health` and `/metrics` carry the server-side operator token because the API
+// serves them only to loopback or to an authenticated caller. Fixture mode reports
+// "not probed" rather than inventing a healthy process.
 
 import { serverAuthorizationHeader } from "./api-auth";
 
@@ -160,7 +161,7 @@ export async function getMetrics(): Promise<SystemResult<MetricsText>> {
 		let response: Response;
 		try {
 			response = await fetch(`${origin()}/metrics`, {
-				headers: { accept: "text/plain" },
+				headers: { accept: "text/plain", ...serverAuthorizationHeader() },
 				cache: "no-store",
 			});
 		} catch (error) {

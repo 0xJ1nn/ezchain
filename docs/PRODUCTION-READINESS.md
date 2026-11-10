@@ -56,8 +56,10 @@ These are explicit gaps, not silent assumptions:
    one paper workspace; there is no multi-tenant ledger partitioning. For hosted
    multi-user, run one workspace (or one reverse-proxied route) per user. The deployment
    admin token remains a shared operator secret and must not be handed to agents.
-3. **`/metrics` is unauthenticated.** It exposes paper order/fill counts and `ezchain_up`.
-   Keep it off the public internet.
+3. **`/metrics` requires the operator token off loopback.** It exposes paper order/fill
+   counts and `ezchain_up`; the API answers a loopback scrape without a credential and
+   requires `EZCHAIN_API_TOKEN` from every other client. The API boundary is covered by
+   tests, but the Docker edge has not been re-drilled with a remote scrape.
 4. **Live execution, keys, executor, vault.** Not built in `main`. The unmerged
    `feat/live-executor` foundation was reviewed and **BLOCKED** (venue transactions not
    bound to the intent, sell cap bypass, confirmed-sell bookkeeping gap). `services/ingest`

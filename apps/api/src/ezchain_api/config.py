@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
@@ -35,6 +36,10 @@ class Settings(BaseSettings):
     require_auth_for_reads: bool = False
     api_key_pepper: SecretStr | None = None
     agent_key_default_ttl_days: int = Field(default=90, ge=1, le=3650)
+    # A peer in this list may supply X-Forwarded-For for the loopback test on
+    # operational endpoints, in addition to a loopback peer. Empty by default. List the
+    # reverse proxy's own address, never a client network.
+    trusted_proxy_cidrs: list[str] = Field(default_factory=list)
 
     data_mode: Literal["live", "fixture"] = "live"
     # Server-derived execution mode. Live is refused until the executor exists; a client
@@ -84,6 +89,29 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def _valid_trusted_proxies(cls, values: list[str]) -> list[str]:
+        """Refuse a typo and a list that trusts the whole internet."""
+        cleaned: list[str] = []
+        for value in values:
+            item = value.strip()
+            if not item:
+                continue
+            try:
+                network = ipaddress.ip_network(item, strict=False)
+            except ValueError as exc:
+                raise ValueError(
+                    f"EZCHAIN_TRUSTED_PROXY_CIDRS contains an invalid network: {item!r}"
+                ) from exc
+            if network.prefixlen == 0:
+                raise ValueError(
+                    "EZCHAIN_TRUSTED_PROXY_CIDRS must not trust every address; "
+                    "list the proxy's own network"
+                )
+            cleaned.append(item)
+        return cleaned
 
     @model_validator(mode="after")
     def _validate_production(self) -> Settings:
