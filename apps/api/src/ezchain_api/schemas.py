@@ -734,6 +734,79 @@ class ProtectionEventOut(BaseModel):
     created_at: str | None = None
 
 
+SignalWindow = Literal["h1", "h24"]
+SignalDirection = Literal["up", "down"]
+
+
+class SignalMoverOut(BaseModel):
+    """One ranked mover. The change is the window's own price change, as a decimal string."""
+
+    rank: int
+    chain: str
+    token_address: str
+    pair_address: str
+    dex: str
+    symbol: str
+    name: str
+    price_usd: str
+    liquidity_usd: str
+    volume_24h_usd: str | None = None
+    change_pct: str
+    source: SourceOut
+    observed_at: str
+    age_seconds: int
+
+
+class SignalExclusionsOut(BaseModel):
+    """Why rows did not reach the table.
+
+    Every dropped row is counted under the first reason that applies to it. Unknown is
+    its own bucket: an unknown value is never counted as a zero that failed a filter.
+    """
+
+    unknown_token: int = 0
+    duplicate_token: int = 0
+    stale: int = 0
+    unknown_change: int = 0
+    unknown_liquidity: int = 0
+    below_liquidity_floor: int = 0
+    wrong_direction: int = 0
+
+
+class SignalAppliedOut(BaseModel):
+    """The filters and the bounds this response was produced under."""
+
+    chain: str
+    window: SignalWindow
+    direction: SignalDirection
+    min_liquidity_usd: str
+    max_age_seconds: int
+    candidate_rows: int
+    candidate_sort: str
+    limit: int
+
+
+class SignalMoversOut(BaseModel):
+    """The movers read model for one window and one direction.
+
+    An empty ``rows`` list carries a ``reason`` code. No mover is invented to fill it.
+    """
+
+    window: SignalWindow
+    direction: SignalDirection
+    as_of: str
+    rows: list[SignalMoverOut]
+    total: int
+    limit: int
+    truncated: bool = False
+    reason: str | None = None
+    rows_read: int = 0
+    exclusions: SignalExclusionsOut = Field(default_factory=SignalExclusionsOut)
+    applied: SignalAppliedOut
+    source: SourceOut
+    stale: bool = False
+
+
 class StrategyPerformanceOut(BaseModel):
     """PAPER performance for one strategy, from the account ledger.
 

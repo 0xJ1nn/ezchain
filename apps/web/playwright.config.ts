@@ -31,8 +31,10 @@ export default defineConfig({
 		reuseExistingServer: false,
 		timeout: 120_000,
 		env: {
-			EZCHAIN_WEB_MODE: "fixture",
-			EZCHAIN_API_URL: PROXY_TEST_API_URL,
+			// The gate runs the fixture mode. A spec that needs the live read model can
+			// start the web server against a local API by setting both variables.
+			EZCHAIN_WEB_MODE: process.env.EZCHAIN_WEB_MODE ?? "fixture",
+			EZCHAIN_API_URL: process.env.EZCHAIN_API_URL ?? PROXY_TEST_API_URL,
 			EZCHAIN_API_TOKEN: PROXY_TEST_TOKEN,
 		},
 	},
