@@ -43,6 +43,7 @@ class CandleSummary:
     bars: int
     last_close_time: datetime | None
     stale: bool
+    source: str
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ def _summary(series: CandleSeries) -> CandleSummary:
         bars=len(series.candles),
         last_close_time=None if last is None else _aware(last),
         stale=series.stale,
+        source=series.source.name,
     )
 
 

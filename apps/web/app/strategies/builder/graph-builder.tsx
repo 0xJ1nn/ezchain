@@ -1516,9 +1516,9 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 					</div>
 					<div className={styles.drawerBody}>
 						{drawer === "dryrun" ? (
-							<DryRunPanel result={dryRun} mode={mode} catalogue={catalogue} />
+							<DryRunPanel result={dryRun} catalogue={catalogue} />
 						) : (
-							<BacktestPanel result={backtest} mode={mode} catalogue={catalogue} />
+							<BacktestPanel result={backtest} catalogue={catalogue} />
 						)}
 					</div>
 				</section>
@@ -1934,11 +1934,9 @@ function EffectsTable({ effects }: { effects: GraphEffect[] }) {
 
 function DryRunPanel({
 	result,
-	mode,
 	catalogue,
 }: {
 	result: DryRunResult | null;
-	mode: GraphMode;
 	catalogue: GraphCatalogue | null;
 }) {
 	if (!result) {
@@ -1955,7 +1953,10 @@ function DryRunPanel({
 			<div>
 				<div className={styles.resultHead}>
 					<Badge tone="info">DRY_RUN</Badge>
-					{mode === "fixture" && <Badge tone="ghost">FIXTURE</Badge>}
+					{(result.data_mode === "fixture" ||
+						Object.values(result.context.candles).some((candle) => candle.source === "fixture")) && (
+						<Badge tone="ghost">FIXTURE</Badge>
+					)}
 					<Badge tone={decision.action === "hold" ? "ghost" : "ok"}>{decision.action}</Badge>
 					<span className="small muted">{stamp(result.context.now)}</span>
 				</div>
@@ -2091,11 +2092,9 @@ function EquityChart({ points }: { points: BacktestEquityPoint[] }) {
 
 function BacktestPanel({
 	result,
-	mode,
 	catalogue,
 }: {
 	result: Backtest | null;
-	mode: GraphMode;
 	catalogue: GraphCatalogue | null;
 }) {
 	if (!result) {
@@ -2127,7 +2126,11 @@ function BacktestPanel({
 			<div className={styles.backtestTop}>
 				<div className={styles.resultHead}>
 					<Badge tone="info">BACKTEST</Badge>
-					{mode === "fixture" && <Badge tone="ghost">FIXTURE</Badge>}
+					{(result.data_mode === "fixture" ||
+						result.data_source === "fixture" ||
+						result.data_source?.startsWith("FIXTURE")) && (
+						<Badge tone="ghost">FIXTURE</Badge>
+					)}
 					<span className="small muted">
 						{result.fill_model ?? "fill model —"} · {result.data_source ?? "data source —"}
 					</span>

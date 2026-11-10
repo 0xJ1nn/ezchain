@@ -114,6 +114,7 @@ async def dry_run(
                     if summary.last_close_time is None
                     else summary.last_close_time.isoformat(),
                     "stale": summary.stale,
+                    "source": summary.source,
                 }
                 for timeframe, summary in tick.candles.items()
             },
@@ -139,6 +140,7 @@ async def dry_run(
             },
         },
         "mode": "DRY_RUN",
+        "data_mode": settings.data_mode,
     }
 
 
