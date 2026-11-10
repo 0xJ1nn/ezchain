@@ -145,6 +145,26 @@ test("wallets and performance withhold equity instead of excluding an unknown ma
 	await expect(page.getByText(/unknown mark excluded/i)).toHaveCount(0);
 });
 
+test("risk labels stale and fresh marks from the same server rows", async ({ page }) => {
+	await page.goto("/risk");
+
+	const table = page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Mark source" }) });
+	const scam = table.locator("tbody tr").filter({ hasText: "SCAM" });
+	await expect(scam.locator(".badge")).toHaveText("stale · dexscreener");
+	const bonk = table.locator("tbody tr").filter({ hasText: "BONK" });
+	await expect(bonk.locator(".badge")).toHaveText("fresh · jupiter");
+	const mochi = table.locator("tbody tr").filter({ hasText: "MOCHI" });
+	await expect(mochi.locator(".badge")).toHaveText("unknown");
+
+	const risk = page.locator('section.kpi-band[aria-label="Paper risk inputs"]');
+	await expect(
+		risk.locator(".stat").filter({ hasText: /^Stale marks/ }).locator(".value"),
+	).toHaveText("1");
+	await expect(
+		risk.locator(".stat").filter({ hasText: /^Unknown marks/ }).locator(".value"),
+	).toHaveText("1");
+});
+
 test("risk and workspace label withheld equity with its reason", async ({ page }) => {
 	await page.goto("/risk");
 	const risk = page.locator('section.kpi-band[aria-label="Paper risk inputs"]');

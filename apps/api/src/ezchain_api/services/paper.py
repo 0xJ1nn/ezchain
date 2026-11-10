@@ -764,9 +764,7 @@ def account_snapshot(session: Session, starting_cash_usd: Decimal | None = None)
         now=now,
     )
     wallet_rows = wallet_views(session, replay)
-    by_wallet = _wallet_composition(
-        views, wallet_rows, replay, complete=complete, equity=equity
-    )
+    by_wallet = _wallet_composition(views, wallet_rows, replay, complete=complete, equity=equity)
     return {
         "cash_usd": str(replay.cash),
         "equity_usd": str(equity) if complete else None,
