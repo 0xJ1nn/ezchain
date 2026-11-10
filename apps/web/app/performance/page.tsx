@@ -307,6 +307,56 @@ export default async function PerformancePage({
 
 				<div className="stack">
 					<Panel
+						title="Equity and drawdown"
+						sub={performance ? `${performance.equity_series?.length ?? 0} server points · ${performance.source ?? "ledger"} · ${performance.window ?? "all"}` : "unavailable"}
+						action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">PAPER</Badge>}
+						flush
+					>
+						{performance && (performance.equity_series?.length ?? 0) > 0 ? (
+							<div className="panel-body">
+								<svg viewBox="0 0 320 120" width="100%" height="120" role="img" aria-label="Equity and drawdown">
+									<polyline
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.5"
+										points={(() => {
+											const series = performance.equity_series ?? [];
+											const finite = series
+												.map((p) => Number(p.value ?? p.equity_usd))
+												.filter((n) => Number.isFinite(n));
+											const min = finite.length ? Math.min(...finite) : 0;
+											const max = finite.length ? Math.max(...finite) : 0;
+											const span = max - min || 1;
+											return series
+												.map((point, index) => {
+													const num = Number(point.value ?? point.equity_usd);
+													if (!Number.isFinite(num)) return null;
+													const x = (index / Math.max(1, series.length - 1)) * 320;
+													const y = 100 - ((num - min) / span) * 80;
+													return `${x},${y}`;
+												})
+												.filter((p): p is string => p !== null)
+												.join(" ");
+										})()}
+									/>
+								</svg>
+								<div className="small muted mt-8">
+									Source: {performance.source ?? "ledger"} · Window: {performance.window ?? "all"} · Mode:{" "}
+									{mode === "fixture" ? "FIXTURE" : "live API"} · Complete: {String(performance.complete)} ·
+									Win rate: {performance.win_rate_pct ?? "—"}% · Trades: {performance.trades}
+								</div>
+								{performance.reason && <div className="note err mt-8">{performance.reason}</div>}
+							</div>
+						) : (
+							<div className="panel-body">
+								<div className="note">
+									{performance?.reason ?? "No server series available."}
+								</div>
+							</div>
+						)}
+					</Panel>
+
+					<Panel
 						title="Daily realized"
 						sub="ledger groups · UTC days"
 						action={<Badge tone="ghost">PAPER</Badge>}

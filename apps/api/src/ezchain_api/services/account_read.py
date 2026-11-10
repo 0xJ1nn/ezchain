@@ -187,9 +187,17 @@ def _ledger_view(
 # ---------------------------------------------------------------------------
 
 
-def performance(session: Session) -> dict[str, Any]:
+def performance(session: Session, *, window: Any = None) -> dict[str, Any]:
     now = utcnow()
     projection, fills, books = _ledger_view(session)
+    marks = pnl.mark_index(session)
+    series = pnl.performance_series(
+        pnl.ledger_lines(session),
+        marks=pnl.prices(marks),
+        group_ids=None,
+        window=window,
+        now=now,
+    )
 
     return {
         "mode": "paper",
@@ -201,7 +209,7 @@ def performance(session: Session) -> dict[str, Any]:
             None if projection.unrealized_usd is None else _num(projection.unrealized_usd)
         ),
         "fees_usd": _num(projection.fees_usd),
-        "trades": len(fills),
+        "trades": sum(1 for group in projection.groups if group.closed),
         "wins": projection.wins,
         "losses": projection.losses,
         "win_rate_pct": pnl.win_rate_pct(projection.wins, projection.losses),
@@ -210,6 +218,17 @@ def performance(session: Session) -> dict[str, Any]:
         "marks_unknown": projection.marks_unknown,
         "by_token": [_book_dict(book) for book in books],
         "daily_realized": _daily_realized(projection.groups, now),
+        "window": series["window"],
+        "source": series["source"],
+        "reason": series["reason"],
+        "equity_series": series["equity_series"],
+        "realized_pnl_series": series["realized_pnl_series"],
+        "drawdown_series": series["drawdown_series"],
+        "series": {
+            "equity": series["equity_series"],
+            "realized_pnl": series["realized_pnl_series"],
+            "drawdown": series["drawdown_series"],
+        },
     }
 
 

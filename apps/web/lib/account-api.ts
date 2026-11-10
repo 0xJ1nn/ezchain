@@ -66,6 +66,7 @@ export interface PaperPerformance {
 	cash_usd: string;
 	equity_usd: string | null;
 	realized_usd: string;
+	complete?: boolean;
 	unrealized_usd: string | null;
 	fees_usd: string;
 	trades: number;
@@ -75,6 +76,17 @@ export interface PaperPerformance {
 	open_positions: number;
 	by_token: PerformanceToken[];
 	daily_realized: { date: string; realized_usd: string; fees_usd: string }[];
+	window?: string;
+	source?: string;
+	reason?: string | null;
+	equity_series?: { t: string; timestamp?: string; value?: string | null; equity_usd?: string | null }[];
+	realized_pnl_series?: { t: string; timestamp?: string; value?: string | null; realized_pnl_usd?: string | null }[];
+	drawdown_series?: { t: string; timestamp?: string; value?: string | null; drawdown_pct?: string | null }[];
+	series?: {
+		equity?: { t: string; value?: string | null }[];
+		realized_pnl?: { t: string; value?: string | null }[];
+		drawdown?: { t: string; value?: string | null }[];
+	};
 }
 
 export interface LedgerEntry {

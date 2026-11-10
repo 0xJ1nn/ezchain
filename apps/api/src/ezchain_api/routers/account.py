@@ -102,9 +102,12 @@ def ledger_entries(
 
 
 @router.get("/performance", response_model=PaperPerformanceOut)
-def performance(session: Session = Depends(get_session)) -> PaperPerformanceOut:
+def performance(
+    window: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> PaperPerformanceOut:
     """PAPER cash, equity, realized/unrealized PnL, trade counts and daily realized."""
-    return PaperPerformanceOut.model_validate(account_read.performance(session))
+    return PaperPerformanceOut.model_validate(account_read.performance(session, window=window))
 
 
 @router.get("/attribution", response_model=list[AttributionRowOut])

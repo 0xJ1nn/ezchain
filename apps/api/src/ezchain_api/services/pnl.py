@@ -17,8 +17,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -357,6 +358,159 @@ def win_rate_pct(wins: int, losses: int) -> str | None:
     return num(rate)
 
 
+def _aware_local(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _window_cutoff(window: Any, now: datetime) -> tuple[datetime | None, str]:
+    """Return (cutoff, normalized window label). None cutoff means all history."""
+    if window is None:
+        return None, "all"
+    text = str(window).strip().lower()
+    if text in ("", "all", "none"):
+        return None, "all"
+    hours: float | None = None
+    if text.endswith("h"):
+        try:
+            hours = float(text[:-1])
+        except ValueError:
+            hours = None
+    elif text.endswith("d"):
+        try:
+            hours = float(text[:-1]) * 24
+        except ValueError:
+            hours = None
+    else:
+        try:
+            hours = float(text)
+        except ValueError:
+            hours = None
+    if hours is None or hours <= 0:
+        return None, "all"
+    return now - timedelta(hours=hours), f"{hours:g}h"
+
+
+def performance_series(
+    entries: Iterable[LedgerLine],
+    *,
+    marks: Mapping[TokenKey, Decimal | None],
+    group_ids: AbstractSet[str] | None = None,
+    window: Any = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Honest equity / realized PnL / drawdown series from ledger groups.
+
+    Points are one per journal group in journal order; no interpolation or filler.
+    Values are cumulative projections of the ledger rows through that group, using the
+    same projector as the account and strategy reads. ``window`` bounds which points
+    are returned; cumulative values still reflect all prior groups.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    cutoff, window_label = _window_cutoff(window, now)
+
+    by_group: dict[str, list[LedgerLine]] = {}
+    for line in entries:
+        if group_ids is not None and line.group_id not in group_ids:
+            continue
+        by_group.setdefault(line.group_id, []).append(line)
+
+    def observed(lines_for_group: list[LedgerLine]) -> datetime | None:
+        stamps: list[datetime] = []
+        for line in lines_for_group:
+            stamp = _aware_local(line.created_at)
+            if stamp is not None:
+                stamps.append(stamp)
+        return min(stamps) if stamps else None
+
+    # Preserve ledger/seq order: the projector consumes ledger rows in seq order,
+    # so the series must follow the same order rather than re-sorting by the
+    # observed timestamp, which can disagree with journal order.
+    ordered = list(by_group.items())
+
+    cumulative: list[LedgerLine] = []
+    equity_points: list[dict[str, Any]] = []
+    realized_points: list[dict[str, Any]] = []
+    last_projection: Projection | None = None
+
+    for _group_id, group_lines in ordered:
+        group_time = observed(group_lines) or now
+        cumulative.extend(group_lines)
+        projection = project(cumulative, marks=marks, group_ids=None)
+        last_projection = projection
+
+        if cutoff is not None and group_time < cutoff:
+            continue
+
+        t = group_time.isoformat()
+        equity_value = projection.equity_usd
+        realized_value = projection.realized_usd
+        equity_points.append(
+            {
+                "t": t,
+                "timestamp": t,
+                "value": None if equity_value is None else num(equity_value),
+                "equity_usd": None if equity_value is None else num(equity_value),
+            }
+        )
+        realized_points.append(
+            {
+                "t": t,
+                "timestamp": t,
+                "value": num(realized_value),
+                "realized_pnl_usd": num(realized_value),
+            }
+        )
+
+    drawdown_points: list[dict[str, Any]] = []
+    peak: Decimal | None = None
+    for point in equity_points:
+        value = point["value"]
+        t = point["t"]
+        if value is None:
+            drawdown_points.append({"t": t, "timestamp": t, "value": None, "drawdown_pct": None})
+            continue
+        numeric = Decimal(value)
+        if peak is None or numeric > peak:
+            peak = numeric
+        drawdown = Decimal(0) if peak is None or peak <= 0 else (numeric / peak - 1) * 100
+        drawdown_points.append(
+            {
+                "t": t,
+                "timestamp": t,
+                "value": num(drawdown),
+                "drawdown_pct": num(drawdown),
+            }
+        )
+
+    if last_projection is None:
+        complete = True
+        marks_unknown = False
+    else:
+        complete = last_projection.complete
+        marks_unknown = last_projection.marks_unknown
+
+    if not equity_points and not realized_points:
+        reason = "NO_SERIES_DATA"
+    elif marks_unknown:
+        reason = "MARKS_UNKNOWN"
+    else:
+        reason = None
+
+    return {
+        "window": window_label,
+        "source": "ledger",
+        "complete": complete,
+        "marks_unknown": marks_unknown,
+        "reason": reason,
+        "equity_series": equity_points,
+        "realized_pnl_series": realized_points,
+        "drawdown_series": drawdown_points,
+    }
+
+
 __all__ = [
     "GroupProjection",
     "LedgerLine",
@@ -368,6 +522,7 @@ __all__ = [
     "lines",
     "mark_index",
     "num",
+    "performance_series",
     "prices",
     "project",
     "split_position_account",

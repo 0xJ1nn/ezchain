@@ -40,16 +40,19 @@ def _owned_group_ids(session: Session, strategy_id: str) -> set[str]:
     return set(orders)
 
 
-def strategy_performance(session: Session, strategy_id: str) -> dict[str, Any] | None:
+def strategy_performance(
+    session: Session, strategy_id: str, *, window: Any = None
+) -> dict[str, Any] | None:
     strategy = session.get(StrategyRow, strategy_id)
     if strategy is None:
         return None
 
     marks = pnl.mark_index(session)
+    group_ids = _owned_group_ids(session, strategy_id)
     projection = pnl.project(
         pnl.ledger_lines(session),
         marks=pnl.prices(marks),
-        group_ids=_owned_group_ids(session, strategy_id),
+        group_ids=group_ids,
     )
     target = (strategy.chain, strategy.token_address)
     position = projection.position(target)
@@ -61,14 +64,14 @@ def strategy_performance(session: Session, strategy_id: str) -> dict[str, Any] |
     else:
         open_quantity = ZERO if position is None else position.quantity
 
-    cumulative = ZERO
-    curve: list[dict[str, str]] = []
-    for group in projection.groups:
-        if group.token is None:
-            continue
-        cumulative += group.realized_usd
-        observed = group.observed_at or _aware(strategy.created_at)
-        curve.append({"t": observed.isoformat(), "pnl_usd": pnl.num(cumulative)})
+    series = pnl.performance_series(
+        pnl.ledger_lines(session),
+        marks=pnl.prices(marks),
+        group_ids=group_ids,
+        window=window,
+        now=datetime.now(UTC),
+    )
+    curve = [{"t": p["t"], "pnl_usd": p["realized_pnl_usd"]} for p in series["realized_pnl_series"]]
 
     return {
         "strategy_id": strategy.id,
@@ -95,6 +98,17 @@ def strategy_performance(session: Session, strategy_id: str) -> dict[str, Any] |
         "complete": projection.complete,
         "marks_unknown": projection.marks_unknown,
         "equity_curve": curve,
+        "window": series["window"],
+        "source": series["source"],
+        "reason": series["reason"],
+        "equity_series": series["equity_series"],
+        "realized_pnl_series": series["realized_pnl_series"],
+        "drawdown_series": series["drawdown_series"],
+        "series": {
+            "equity": series["equity_series"],
+            "realized_pnl": series["realized_pnl_series"],
+            "drawdown": series["drawdown_series"],
+        },
     }
 
 

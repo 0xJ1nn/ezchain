@@ -6,7 +6,7 @@ Money and prices are decimal strings computed on the server; the UI formats only
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -87,6 +87,13 @@ class PaperPerformanceOut(BaseModel):
     marks_unknown: bool = False
     by_token: list[TokenPerformanceOut]
     daily_realized: list[DailyRealizedOut]
+    window: str = "all"
+    source: str = "ledger"
+    reason: str | None = None
+    equity_series: list[dict[str, Any]] = []
+    realized_pnl_series: list[dict[str, Any]] = []
+    drawdown_series: list[dict[str, Any]] = []
+    series: dict[str, Any] = {}
 
 
 class AttributionRowOut(TokenPerformanceOut):
