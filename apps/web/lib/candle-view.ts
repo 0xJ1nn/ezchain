@@ -8,7 +8,12 @@ import type {
 	CandleTimeframe,
 } from "./api";
 
-export const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
+export interface TimeframeOption {
+	value: CandleTimeframe;
+	label: string;
+}
+
+export const TIMEFRAMES: TimeframeOption[] = [
 	{ value: "1m", label: "1m" },
 	{ value: "5m", label: "5m" },
 	{ value: "15m", label: "15m" },
@@ -17,13 +22,38 @@ export const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
 	{ value: "1d", label: "1d" },
 ];
 
-const TIMEFRAME_VALUES = new Set(TIMEFRAMES.map((entry) => entry.value));
+/**
+ * The token page chart offers the four timeframes its panel advertises. A value outside
+ * this set falls back to 5m so the control always has exactly one active item.
+ */
+export const PANEL_TIMEFRAMES: TimeframeOption[] = [
+	{ value: "5m", label: "5m" },
+	{ value: "1h", label: "1h" },
+	{ value: "4h", label: "4h" },
+	{ value: "1d", label: "1d" },
+];
+
+export const DEFAULT_PANEL_TIMEFRAME: CandleTimeframe = "5m";
+
+function parseTimeframe(
+	value: string | string[] | undefined,
+	options: TimeframeOption[],
+	fallback: CandleTimeframe,
+): CandleTimeframe {
+	const raw = Array.isArray(value) ? value[0] : value;
+	return raw && options.some((entry) => entry.value === raw)
+		? (raw as CandleTimeframe)
+		: fallback;
+}
 
 export function parseCandleTimeframe(value: string | string[] | undefined): CandleTimeframe {
-	const raw = Array.isArray(value) ? value[0] : value;
-	return raw && TIMEFRAME_VALUES.has(raw as CandleTimeframe)
-		? (raw as CandleTimeframe)
-		: "1h";
+	return parseTimeframe(value, TIMEFRAMES, "1h");
+}
+
+export function parsePanelCandleTimeframe(
+	value: string | string[] | undefined,
+): CandleTimeframe {
+	return parseTimeframe(value, PANEL_TIMEFRAMES, DEFAULT_PANEL_TIMEFRAME);
 }
 
 const FIXTURE_STATES = new Set<CandleFixtureState>([

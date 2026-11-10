@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { CostSheet } from "@/components/cost-sheet";
 import { CandleChart, CandleEmptyState } from "@/components/candle-chart";
+import { CandleTimeframes } from "@/components/candle-timeframes";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel, Stat } from "@/components/ui";
 import {
@@ -12,12 +13,18 @@ import {
 	getToken,
 	getTokenCandles,
 	type ApiError,
+	type CandleTimeframe,
 	type CandlesOut,
 	type Chain,
 	type Quote,
 	type Reason,
 	type Side,
 } from "@/lib/api";
+import {
+	DEFAULT_PANEL_TIMEFRAME,
+	PANEL_TIMEFRAMES,
+	parsePanelCandleTimeframe,
+} from "@/lib/candle-view";
 import { ModeBanner } from "@/lib/live-banner";
 import {
 	ageLabel,
@@ -156,7 +163,15 @@ export default async function TokenPage({
 	const raw = await searchParams;
 	const side: Side = one(raw.side) === "sell" ? "sell" : "buy";
 	const amount = readAmount(one(raw.amount));
+	const timeframe = parsePanelCandleTimeframe(raw.timeframe);
 	const pagePath = `/tokens/${chain}/${id}`;
+	const timeframeQuery =
+		timeframe === DEFAULT_PANEL_TIMEFRAME ? "" : `&timeframe=${timeframe}`;
+	const chartHref = (next: CandleTimeframe) => {
+		const params = new URLSearchParams({ side, amount });
+		if (next !== DEFAULT_PANEL_TIMEFRAME) params.set("timeframe", next);
+		return `${pagePath}?${params.toString()}`;
+	};
 
 	const tokenResult = await getToken(chain, id)
 		.then((snapshot) => ({ ok: true as const, snapshot }))
@@ -179,7 +194,7 @@ export default async function TokenPage({
 		getChains()
 			.then((chains) => chains)
 			.catch(() => [] as Chain[]),
-		getTokenCandles(chain, token.address)
+		getTokenCandles(chain, token.address, timeframe)
 			.then((series) => ({ series: series as CandlesOut | null, error: null as ApiError | null }))
 			.catch((error: unknown) => ({ series: null as CandlesOut | null, error: asApiError(error) })),
 	]);
@@ -307,7 +322,7 @@ export default async function TokenPage({
 			<div id="chart">
 				<Panel
 					title="Candles"
-					sub={`${token.symbol} · closed OHLCV · 5m`}
+					sub={`${token.symbol} · closed OHLCV · ${timeframe}`}
 					action={
 						<>
 							{candlesResult.series?.stale ? <Badge tone="warn">STALE</Badge> : null}
@@ -315,6 +330,11 @@ export default async function TokenPage({
 								<Badge tone="ghost">FIXTURE</Badge>
 							) : null}
 							<Badge tone="ghost">PAPER</Badge>
+							<CandleTimeframes
+								options={PANEL_TIMEFRAMES}
+								active={timeframe}
+								hrefFor={chartHref}
+							/>
 						</>
 					}
 					footer={
@@ -527,7 +547,7 @@ export default async function TokenPage({
 									<Link
 										key={option}
 										className={`btn sm${side === option ? " primary" : ""}`}
-										href={`${pagePath}?side=${option}&amount=${encodeURIComponent(amount)}`}
+										href={`${pagePath}?side=${option}&amount=${encodeURIComponent(amount)}${timeframeQuery}`}
 										aria-current={side === option ? "true" : undefined}
 									>
 										{option === "buy" ? "Buy" : "Sell"}
@@ -536,6 +556,9 @@ export default async function TokenPage({
 							</div>
 							<form action={pagePath} method="get" className="stack-sm mb-12">
 								<input type="hidden" name="side" value={side} />
+								{timeframe !== DEFAULT_PANEL_TIMEFRAME && (
+									<input type="hidden" name="timeframe" value={timeframe} />
+								)}
 								<label className="field">
 									<span>Amount USD · PAPER</span>
 									<input
