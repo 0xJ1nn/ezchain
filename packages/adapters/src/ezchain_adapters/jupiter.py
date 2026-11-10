@@ -15,6 +15,7 @@ from ezchain_core import DEFAULT_SLIPPAGE_BPS, Quote, QuoteKind, SourceRef
 from .cache import BoundedTTLCache
 from .errors import NotFound, UpstreamError
 from .http import DEFAULT_TIMEOUT_SECONDS, Clock, Sleeper
+from .provider_budget import ProviderBudgetManager
 from .quotes import HttpQuoteProvider, QuoteRequest
 from .ratelimit import TokenBucket, default_sleep
 
@@ -88,9 +89,16 @@ class JupiterClient(HttpQuoteProvider):
         clock: Clock = time.monotonic,
         sleep: Sleeper = default_sleep,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        budget: ProviderBudgetManager | None = None,
     ) -> None:
         super().__init__(
-            client, limiter=limiter, cache=cache, clock=clock, sleep=sleep, timeout=timeout
+            client,
+            limiter=limiter,
+            cache=cache,
+            clock=clock,
+            sleep=sleep,
+            timeout=timeout,
+            budget=budget,
         )
         # Jupiter resolves its own mints; this table is unrelated to the shared resolver.
         self._mint_decimals: OrderedDict[str, int] = OrderedDict(

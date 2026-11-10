@@ -1,0 +1,245 @@
+"""Workspace-scoped provider credentials, encrypted at rest.
+
+The workspace supplies its own provider key (Jupiter today). The key is validated,
+encrypted by the configured secret store and stored without the plaintext. Every read
+path returns metadata and a non-reversible fingerprint; only :func:`resolve_secret`
+returns the key, for a provider call, and that value is never logged or serialised.
+
+A key belongs to exactly one workspace. Listing, revoking and resolving always filter by
+``workspace_id``, so a shared database cannot expose one workspace's credentials to
+another.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import re
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ezchain_core import utcnow
+
+from ..models import ProviderKeyRow, new_id
+from .provider_secrets import CipherUnavailable, SecretCipher
+
+SUPPORTED_PROVIDERS = frozenset({"jupiter"})
+_PROVIDER = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
+MAX_SECRET_LENGTH = 4096
+FINGERPRINT_HEX_CHARS = 32
+
+
+class ProviderKeyError(ValueError):
+    code = "PROVIDER_KEY_ERROR"
+    status_code = 422
+    retryable = False
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class ProviderKeyInvalid(ProviderKeyError):
+    code = "PROVIDER_KEY_INVALID"
+
+
+class ProviderKeyProviderUnknown(ProviderKeyError):
+    code = "PROVIDER_KEY_PROVIDER_UNKNOWN"
+
+
+class ProviderKeyNotFound(ProviderKeyError):
+    code = "PROVIDER_KEY_NOT_FOUND"
+    status_code = 404
+
+
+class ProviderKeyCipherUnavailable(ProviderKeyError):
+    code = "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
+    status_code = 503
+
+
+def fingerprint(secret: str, pepper: str | None = None) -> str:
+    """A stable display value that cannot be turned back into the key."""
+    key = (pepper or "").encode("utf-8")
+    digest = hmac.new(key, secret.encode("utf-8"), hashlib.sha256).hexdigest()
+    return digest[:FINGERPRINT_HEX_CHARS]
+
+
+def _validated_workspace(workspace_id: str) -> str:
+    value = workspace_id.strip()
+    if not value or len(value) > 64:
+        raise ProviderKeyInvalid("workspace_id must be 1-64 characters")
+    return value
+
+
+def _validated_provider(provider: str) -> str:
+    value = provider.strip().lower()
+    if not _PROVIDER.fullmatch(value):
+        raise ProviderKeyInvalid("provider must be a lower-case provider slug")
+    if value not in SUPPORTED_PROVIDERS:
+        raise ProviderKeyProviderUnknown(
+            f"provider {value!r} does not accept a stored key; "
+            f"supported: {', '.join(sorted(SUPPORTED_PROVIDERS))}"
+        )
+    return value
+
+
+def _validated_secret(secret: str) -> str:
+    value = secret.strip()
+    if not value or len(value) > MAX_SECRET_LENGTH:
+        raise ProviderKeyInvalid(f"key must be 1-{MAX_SECRET_LENGTH} characters")
+    if not value.isascii() or not value.isprintable() or any(c.isspace() for c in value):
+        raise ProviderKeyInvalid("key must be printable ASCII without whitespace")
+    return value
+
+
+def _validated_label(label: str | None) -> str | None:
+    if label is None:
+        return None
+    value = label.strip()
+    if not value:
+        return None
+    if len(value) > 120 or not value.isprintable():
+        raise ProviderKeyInvalid("label must be at most 120 printable characters")
+    return value
+
+
+def create_key(
+    session: Session,
+    *,
+    workspace_id: str,
+    provider: str,
+    secret: str,
+    cipher: SecretCipher,
+    label: str | None = None,
+    fingerprint_pepper: str | None = None,
+) -> ProviderKeyRow:
+    """Encrypt and store one key. The plaintext is not retained anywhere."""
+    workspace = _validated_workspace(workspace_id)
+    provider_id = _validated_provider(provider)
+    plaintext = _validated_secret(secret)
+    try:
+        cipher.ensure_available()
+        ciphertext = cipher.encrypt(plaintext)
+    except CipherUnavailable as exc:
+        raise ProviderKeyCipherUnavailable(exc.message) from exc
+    row = ProviderKeyRow(
+        id=new_id(),
+        workspace_id=workspace,
+        provider=provider_id,
+        label=_validated_label(label),
+        fingerprint=fingerprint(plaintext, fingerprint_pepper),
+        secret_ciphertext=ciphertext,
+        created_at=utcnow(),
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def list_keys(session: Session, workspace_id: str) -> list[ProviderKeyRow]:
+    workspace = _validated_workspace(workspace_id)
+    statement = (
+        select(ProviderKeyRow)
+        .where(ProviderKeyRow.workspace_id == workspace)
+        .order_by(ProviderKeyRow.created_at.desc())
+    )
+    return list(session.scalars(statement).all())
+
+
+def resolve_secret(
+    session: Session,
+    *,
+    workspace_id: str,
+    provider: str,
+    cipher: SecretCipher,
+) -> str:
+    """Return the active key for a provider call. The caller must not log the result."""
+    workspace = _validated_workspace(workspace_id)
+    provider_id = _validated_provider(provider)
+    statement = (
+        select(ProviderKeyRow)
+        .where(
+            ProviderKeyRow.workspace_id == workspace,
+            ProviderKeyRow.provider == provider_id,
+            ProviderKeyRow.revoked_at.is_(None),
+            ProviderKeyRow.secret_ciphertext != "",
+        )
+        .order_by(ProviderKeyRow.created_at.desc())
+        .limit(1)
+    )
+    row = session.scalar(statement)
+    if row is None:
+        raise ProviderKeyNotFound(f"no active {provider_id} key in this workspace")
+    try:
+        secret = cipher.decrypt(row.secret_ciphertext)
+    except CipherUnavailable as exc:
+        raise ProviderKeyCipherUnavailable(exc.message) from exc
+    row.last_used_at = utcnow()
+    session.commit()
+    return secret
+
+
+def revoke_key(
+    session: Session,
+    *,
+    workspace_id: str,
+    key_id: str,
+    cipher: SecretCipher,
+) -> bool:
+    """Revoke one key inside the workspace and clear its stored material."""
+    workspace = _validated_workspace(workspace_id)
+    row = session.get(ProviderKeyRow, key_id)
+    if row is None or row.workspace_id != workspace or row.revoked_at is not None:
+        return False
+    if row.secret_ciphertext:
+        cipher.forget(row.secret_ciphertext)
+    row.secret_ciphertext = ""
+    row.revoked_at = utcnow()
+    session.commit()
+    return True
+
+
+def public_key(row: ProviderKeyRow) -> dict[str, Any]:
+    """Metadata safe to serialise. The ciphertext and plaintext never appear here."""
+    return {
+        "id": row.id,
+        "workspace_id": row.workspace_id,
+        "provider": row.provider,
+        "label": row.label,
+        "fingerprint": row.fingerprint,
+        "created_at": _iso(row.created_at),
+        "last_used_at": _iso(row.last_used_at),
+        "revoked_at": _iso(row.revoked_at),
+    }
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _iso(value: datetime | None) -> str | None:
+    moment = _aware(value)
+    return None if moment is None else moment.isoformat()
+
+
+__all__ = [
+    "FINGERPRINT_HEX_CHARS",
+    "ProviderKeyCipherUnavailable",
+    "ProviderKeyError",
+    "ProviderKeyInvalid",
+    "ProviderKeyNotFound",
+    "ProviderKeyProviderUnknown",
+    "SUPPORTED_PROVIDERS",
+    "create_key",
+    "fingerprint",
+    "list_keys",
+    "public_key",
+    "resolve_secret",
+    "revoke_key",
+]

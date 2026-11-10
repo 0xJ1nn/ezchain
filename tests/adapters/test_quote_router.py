@@ -13,6 +13,7 @@ import pytest
 from ezchain_adapters import (
     NoRoute,
     NotFound,
+    ProviderBudgetExhausted,
     QuoteRequest,
     QuoteRouter,
     RateLimited,
@@ -128,6 +129,18 @@ async def test_rate_limited_rung_falls_through() -> None:
         chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
     )
     assert quote.kind == "velora"
+
+
+async def test_provider_budget_exhaustion_is_not_swallowed() -> None:
+    jupiter = FakeProvider(
+        "jupiter",
+        error=ProviderBudgetExhausted("jupiter", detail="queue is full"),
+    )
+
+    with pytest.raises(ProviderBudgetExhausted):
+        await router(jupiter).quote(
+            chain="solana", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
 
 
 async def test_provider_that_cannot_sell_is_skipped() -> None:

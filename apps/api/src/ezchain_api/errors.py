@@ -15,12 +15,29 @@ from ezchain_adapters import (
     CandlesUnsupported,
     NoRoute,
     NotFound,
+    ProviderBudgetExhausted,
     RateLimited,
     UpstreamError,
 )
 
 
+def provider_budget_http_error(exc: ProviderBudgetExhausted) -> HTTPException:
+    """A bounded provider queue refused the call. Typed 429, retry later."""
+    return HTTPException(
+        status_code=429,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+            "retryable": True,
+            "provider": exc.provider,
+        },
+        headers={"Retry-After": "1"},
+    )
+
+
 def adapter_http_error(exc: AdapterError) -> HTTPException:
+    if isinstance(exc, ProviderBudgetExhausted):
+        return provider_budget_http_error(exc)
     status = 502
     if isinstance(exc, NotFound):
         status = 404

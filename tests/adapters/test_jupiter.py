@@ -14,7 +14,13 @@ import httpx
 import pytest
 import respx
 
-from ezchain_adapters import JupiterClient, NotFound, RateLimited, UpstreamError
+from ezchain_adapters import (
+    JupiterClient,
+    NotFound,
+    ProviderBudgetManager,
+    RateLimited,
+    UpstreamError,
+)
 from ezchain_adapters.jupiter import LITE_BASE, SOL_MINT, USDC_MINT
 
 BONK = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
@@ -93,6 +99,31 @@ async def test_sell_quote_sizes_quantity_and_rescales_usdc(
     assert params["inputMint"] == BONK
     assert params["outputMint"] == USDC_MINT
     assert params["amount"] == "10000000000"
+
+
+@respx.mock
+async def test_quote_calls_wait_for_the_provider_budget(
+    clock: Any, fast_limiter: Any, load_fixture: Callable[[str], Any]
+) -> None:
+    respx.get(TOKEN_SEARCH).mock(
+        return_value=httpx.Response(200, json=_token_search(BONK, 5))
+    )
+    respx.get(QUOTE).mock(
+        return_value=httpx.Response(200, json=load_fixture("jupiter_quote_buy.json"))
+    )
+    budget = ProviderBudgetManager(clock=clock, sleep=clock.sleep)
+    client = JupiterClient(
+        limiter=fast_limiter,
+        budget=budget,
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    async with client as scoped:
+        await scoped.quote_paper(token_address=BONK, side="buy", amount_usd=Decimal("1"))
+        await scoped.quote_paper(token_address=BONK, side="buy", amount_usd=Decimal("2"))
+
+    assert clock.sleeps == [1.0, 1.0]
 
 
 @respx.mock

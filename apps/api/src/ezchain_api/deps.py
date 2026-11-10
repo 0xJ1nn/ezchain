@@ -5,19 +5,26 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import cast
 
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import DexScreenerClient, GeckoTerminalClient, QuoteRouter
 from ezchain_engine import PluginHost, PluginRegistry
 
+from .config import Settings, get_settings
 from .db import session_factory
 from .services.market_monitor import MarketMonitor
+from .services.provider_secrets import SecretCipher, build_secret_cipher
 
 
 def get_session() -> Iterator[Session]:
     with session_factory()() as session:
         yield session
+
+
+def get_secret_cipher(settings: Settings = Depends(get_settings)) -> SecretCipher:
+    """The configured provider-key store. Availability is checked on creation."""
+    return build_secret_cipher(settings)
 
 
 def get_dexscreener(request: Request) -> DexScreenerClient:

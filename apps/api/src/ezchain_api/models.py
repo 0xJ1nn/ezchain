@@ -268,6 +268,28 @@ class ApiKeyRow(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ProviderKeyRow(Base):
+    """A user-supplied provider credential, encrypted before it reaches the database.
+
+    The plaintext exists only between the request and the configured secret store. The
+    row keeps the ciphertext, a non-reversible fingerprint for display, and the workspace
+    that owns it. A revoked key keeps its metadata for audit; its ciphertext is cleared so
+    the row cannot be used again.
+    """
+
+    __tablename__ = "provider_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    secret_ciphertext: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SystemFlagRow(Base):
     """Small persisted operator switches. Values are JSON so a flag can grow fields."""
 

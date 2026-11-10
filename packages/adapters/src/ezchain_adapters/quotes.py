@@ -36,6 +36,7 @@ from .decimals import DecimalsResolver
 from .dexscreener import DexScreenerClient
 from .errors import AdapterError, NoRoute, NotFound, UpstreamError
 from .http import DEFAULT_TIMEOUT_SECONDS, Clock, JsonApiClient, Sleeper
+from .provider_budget import ProviderBudgetExhausted, ProviderBudgetManager
 from .ratelimit import TokenBucket, default_sleep
 from .registry import BY_ID, PAPER_MARK, ChainMeta, QuoteAsset
 
@@ -166,9 +167,16 @@ class HttpQuoteProvider(JsonApiClient):
         sleep: Sleeper = default_sleep,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         breaker: CircuitBreaker | None = None,
+        budget: ProviderBudgetManager | None = None,
     ) -> None:
         super().__init__(
-            client, limiter=limiter, cache=cache, clock=clock, sleep=sleep, timeout=timeout
+            client,
+            limiter=limiter,
+            cache=cache,
+            clock=clock,
+            sleep=sleep,
+            timeout=timeout,
+            budget=budget,
         )
         # A provider that cannot resolve decimals fails closed on that token; Jupiter
         # resolves its own mints and never asks.
@@ -276,6 +284,10 @@ class QuoteRouter:
             except TimeoutError:
                 failures.append(f"{kind}:TIMEOUT")
                 continue
+            except ProviderBudgetExhausted:
+                # A full queue is not "this venue has no route". Surface the typed
+                # budget error so the edge can answer 429 instead of a misleading 409.
+                raise
             except AdapterError as exc:
                 failures.append(f"{kind}:{exc.code}")
                 continue

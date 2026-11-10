@@ -22,6 +22,7 @@ from ezchain_adapters import (
     KyberSwapClient,
     LifiClient,
     OsmosisSqsClient,
+    ProviderBudgetManager,
     QuoteRouter,
     StonfiClient,
     VeloraClient,
@@ -43,6 +44,7 @@ from .routers import (
     paper,
     plugins,
     protection,
+    provider_keys,
     signals,
     strategies,
     system,
@@ -67,7 +69,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     dexscreener = DexScreenerClient()
     gecko = GeckoTerminalClient()
     decimals = DecimalsResolver(gecko)
-    jupiter = JupiterClient()
+    # Jupiter's documented keyed limit is one request per second. The bounded budget
+    # wraps its client so concurrent quotes wait instead of bursting past it.
+    provider_budget = ProviderBudgetManager()
+    jupiter = JupiterClient(budget=provider_budget)
+    app.state.provider_budget = provider_budget
     # One instance per provider: each owns its own bucket, cache and circuit breaker, so a
     # provider that starts failing cannot slow the ones that still answer.
     providers: list[HttpQuoteProvider] = [
@@ -197,6 +203,7 @@ def create_app() -> FastAPI:
     app.include_router(plugins.router)
     app.include_router(agent.router)
     app.include_router(protection.router)
+    app.include_router(provider_keys.router)
     return app
 
 

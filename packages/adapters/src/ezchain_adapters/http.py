@@ -16,6 +16,7 @@ import httpx
 
 from .cache import MISSING, BoundedTTLCache
 from .errors import NotFound, RateLimited, UpstreamError
+from .provider_budget import ProviderBudgetManager
 from .ratelimit import TokenBucket, default_sleep, parse_retry_after
 
 DEFAULT_TIMEOUT_SECONDS = 15.0
@@ -54,11 +55,13 @@ class JsonApiClient:
         clock: Clock = time.monotonic,
         sleep: Sleeper = default_sleep,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        budget: ProviderBudgetManager | None = None,
     ) -> None:
         self._client = client
         self._owns_client = client is None
         self._timeout = timeout
         self._clock = clock
+        self._budget = budget
         self._limiter = limiter or TokenBucket(
             rate_per_second=self.rate_per_second,
             burst=self.burst,
@@ -128,6 +131,10 @@ class JsonApiClient:
             raise UpstreamError(f"{self.label} client is not open")
         if self._clock() < self._cooldown_until:
             raise RateLimited(f"{self.label} rate limit", detail="cooldown active")
+        # The bounded provider budget sits in front of the per-client token bucket. A
+        # full queue or an over-long wait is typed before any request leaves the process.
+        if self._budget is not None:
+            await self._budget.acquire(self.label.lower())
         await self._limiter.acquire()
         try:
             response = await self._client.request(method, path, params=params)
