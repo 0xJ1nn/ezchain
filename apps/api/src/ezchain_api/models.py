@@ -150,6 +150,7 @@ class PaperOrderRow(Base):
     amount_usd: Mapped[Decimal] = mapped_column(MONEY)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reasons: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONType, nullable=True)
     quote_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     quote_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC
 from decimal import Decimal
 
-from .types import OrderRequest, Quote, Side, SourceRef, TokenSnapshot
+from .types import OrderRequest, Quote, RiskReason, Side, SourceRef, TokenSnapshot
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ def evaluate_order(
     daily_realized_pnl_usd: Decimal,
     limits: RiskLimits | None = None,
     now_source: SourceRef | None = None,
-) -> tuple[bool, tuple[str, ...]]:
+) -> tuple[bool, tuple[RiskReason, ...]]:
     """Return (allowed, reasons). Unknown or missing data always denies new risk.
 
     ``request.reduce_only`` marks a sell the order service has already bounded to the
@@ -53,13 +53,13 @@ def evaluate_order(
     does not verify the position bound; the caller owns that check.
     """
     limits = limits or RiskLimits()
-    reasons: list[str] = []
+    reasons: list[RiskReason] = []
 
     exit_only = request.side == "sell" and request.reduce_only
     if request.side not in ("buy", "sell"):
-        reasons.append("INVALID_SIDE")
+        reasons.append(RiskReason("INVALID_SIDE"))
     if request.amount_usd <= 0:
-        reasons.append("INVALID_AMOUNT")
+        reasons.append(RiskReason("INVALID_AMOUNT"))
     # Size, paper-mark and daily-loss limits cap new risk. They must never block a sell:
     # a position larger than max_order_usd still has to be exitable, and a daily-loss
     # breach is exactly when reducing exposure matters most. Exit gates (quote freshness,
@@ -67,13 +67,23 @@ def evaluate_order(
     # held position by the order service; this pure policy does not carry a position
     # quantity and must not invent a second cap.
     if request.side == "buy" and request.amount_usd > limits.max_order_usd:
-        reasons.append("ORDER_LIMIT")
+        reasons.append(
+            RiskReason(
+                "ORDER_LIMIT",
+                detail={"limit": limits.max_order_usd, "value": request.amount_usd},
+            )
+        )
     if (
         request.side == "buy"
         and quote.kind == "paper_mark"
         and request.amount_usd > limits.paper_mark_max_order_usd
     ):
-        reasons.append("PAPER_MARK_LIMIT")
+        reasons.append(
+            RiskReason(
+                "PAPER_MARK_LIMIT",
+                detail={"limit": limits.paper_mark_max_order_usd, "value": request.amount_usd},
+            )
+        )
     # Impact gates new risk only. Refusing an exit because the exit is expensive is how a
     # paper position gets trapped, so a sell records the impact but is never blocked by it.
     # An unknown impact (``paper_mark``) is not a breach: the mark is not an executable route.
@@ -82,34 +92,44 @@ def evaluate_order(
         and quote.price_impact_pct is not None
         and abs(quote.price_impact_pct) > limits.max_price_impact_pct
     ):
-        reasons.append("PRICE_IMPACT_TOO_HIGH")
+        reasons.append(
+            RiskReason(
+                "PRICE_IMPACT_TOO_HIGH",
+                detail={"limit": limits.max_price_impact_pct, "value": quote.price_impact_pct},
+            )
+        )
 
     # Quote freshness protects both sides: an exit priced from an old quote is not an
     # exit the trader can trust. It is never waived for a reduce-only sell.
     source = now_source or quote.source
     if source.is_stale(limits.max_quote_age_seconds):
-        reasons.append("QUOTE_STALE")
+        reasons.append(RiskReason("QUOTE_STALE"))
 
     # The market feed qualifies new risk. A reduce-only exit is priced by its executable
     # sell quote, so an unknown or stale mark, unknown or thin liquidity and a missing
     # pair are entry facts, not vetoes on closing a position.
     if not exit_only:
         if snapshot.price_usd is None:
-            reasons.append("PRICE_UNKNOWN")
+            reasons.append(RiskReason("PRICE_UNKNOWN"))
         if snapshot.liquidity_usd is None:
-            reasons.append("LIQUIDITY_UNKNOWN")
+            reasons.append(RiskReason("LIQUIDITY_UNKNOWN"))
         elif snapshot.liquidity_usd < limits.min_liquidity_usd:
-            reasons.append("LIQUIDITY_TOO_LOW")
+            reasons.append(
+                RiskReason(
+                    "LIQUIDITY_TOO_LOW",
+                    detail={"limit": limits.min_liquidity_usd, "value": snapshot.liquidity_usd},
+                )
+            )
         if not snapshot.pairs:
-            reasons.append("NO_PAIR")
+            reasons.append(RiskReason("NO_PAIR"))
         if snapshot.stale:
-            reasons.append("SNAPSHOT_STALE")
+            reasons.append(RiskReason("SNAPSHOT_STALE"))
 
     # Pair age sizes new risk. A missing creation time is unknown, never "old"; sells
     # stay exempt because reducing exposure must remain possible.
     if request.side == "buy":
         if snapshot.pair_created_at is None:
-            reasons.append("PAIR_AGE_UNKNOWN")
+            reasons.append(RiskReason("PAIR_AGE_UNKNOWN"))
         else:
             created = (
                 snapshot.pair_created_at.astimezone(UTC)
@@ -123,24 +143,42 @@ def evaluate_order(
             )
             age_minutes = (observed - created).total_seconds() / 60
             if age_minutes < limits.min_pair_age_minutes:
-                reasons.append("PAIR_TOO_YOUNG")
+                reasons.append(
+                    RiskReason(
+                        "PAIR_TOO_YOUNG",
+                        detail={"limit": limits.min_pair_age_minutes, "value": age_minutes},
+                    )
+                )
 
     # An exit needs a route with a positive quantity and a positive price. A quote that
     # says zero of either is not a route; the reason names the exit path explicitly.
     if request.side == "sell" and (
         quote.amount_out <= 0 or quote.amount_in <= 0 or quote.price <= 0
     ):
-        reasons.append("EXIT_NO_ROUTE" if exit_only else "NO_SELL_ROUTE")
+        reasons.append(RiskReason("EXIT_NO_ROUTE" if exit_only else "NO_SELL_ROUTE"))
 
     # Position-size limits gate opening or adding risk, never reducing it: a sell must
     # always be allowed when the only "problem" is that the position is large.
     if request.side == "buy":
         if current_position_value_usd + request.amount_usd > limits.max_position_usd:
-            reasons.append("POSITION_LIMIT")
+            reasons.append(
+                RiskReason(
+                    "POSITION_LIMIT",
+                    detail={
+                        "limit": limits.max_position_usd,
+                        "value": current_position_value_usd + request.amount_usd,
+                    },
+                )
+            )
         if open_positions >= limits.max_open_positions and current_position_value_usd == 0:
-            reasons.append("MAX_OPEN_POSITIONS")
+            reasons.append(RiskReason("MAX_OPEN_POSITIONS"))
     if request.side == "buy" and daily_realized_pnl_usd <= -limits.max_daily_loss_usd:
-        reasons.append("DAILY_LOSS_LIMIT")
+        reasons.append(
+            RiskReason(
+                "DAILY_LOSS_LIMIT",
+                detail={"limit": limits.max_daily_loss_usd, "value": daily_realized_pnl_usd},
+            )
+        )
 
     return (not reasons, tuple(reasons))
 

@@ -266,10 +266,84 @@ class Quote:
         }
 
 
+# Human-readable text for each risk reason code. The code stays the stable identifier;
+# the message is for display and may change between releases.
+RISK_REASON_MESSAGES: dict[str, str] = {
+    "INVALID_SIDE": "Order side must be buy or sell.",
+    "INVALID_AMOUNT": "Order amount must be greater than zero.",
+    "ORDER_LIMIT": "Order size exceeds the configured limit.",
+    "PAPER_MARK_LIMIT": "Order size exceeds the paper-mark limit.",
+    "PRICE_IMPACT_TOO_HIGH": "Price impact exceeds the configured ceiling.",
+    "QUOTE_STALE": "Quote is too old to trust.",
+    "PRICE_UNKNOWN": "Token price is unknown.",
+    "LIQUIDITY_UNKNOWN": "Token liquidity is unknown.",
+    "LIQUIDITY_TOO_LOW": "Token liquidity is below the minimum.",
+    "NO_PAIR": "No market pair is available for the token.",
+    "SNAPSHOT_STALE": "Market snapshot is stale.",
+    "PAIR_AGE_UNKNOWN": "Pair creation time is unknown.",
+    "PAIR_TOO_YOUNG": "Pair is younger than the minimum age.",
+    "EXIT_NO_ROUTE": "No executable exit route is available.",
+    "NO_SELL_ROUTE": "No sell route is available.",
+    "NO_ROUTE": "No route is available.",
+    "POSITION_LIMIT": "Position size would exceed the configured limit.",
+    "MAX_OPEN_POSITIONS": "Maximum number of open positions reached.",
+    "DAILY_LOSS_LIMIT": "Daily loss limit reached.",
+    "INSUFFICIENT_CASH": "Insufficient cash to cover the order.",
+    "INSUFFICIENT_POSITION": "Insufficient position to sell.",
+    "POSITION_CHANGED": "Position changed while the order was being priced.",
+    "KILL_SWITCH_ACTIVE": "Kill switch is active.",
+}
+
+
+class RiskReason(str):
+    """One structured reason a risk decision (or order) was rejected.
+
+    Subclasses ``str`` so the code remains usable wherever a reason code string was
+    expected: tuple equality, membership tests and string joining all keep working.
+    """
+
+    def __new__(
+        cls,
+        code: str,
+        message: str | None = None,
+        detail: Any = None,
+    ) -> RiskReason:
+        return super().__new__(cls, code)
+
+    def __init__(
+        self,
+        code: str,
+        message: str | None = None,
+        detail: Any = None,
+    ) -> None:
+        self.code = code
+        self.message = message if message is not None else RISK_REASON_MESSAGES.get(code, code)
+        self.detail = detail
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "detail": _json_safe(self.detail),
+        }
+
+
+def _json_safe(value: Any) -> Any:
+    from decimal import Decimal
+
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True)
 class RiskDecision:
     allowed: bool
-    reasons: tuple[str, ...]
+    reasons: tuple[RiskReason, ...]
     max_order_usd: Decimal | None = None
 
     def to_dict(self) -> dict[str, Any]:

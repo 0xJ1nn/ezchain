@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 from ezchain_core import OrderRequest
+from ezchain_core.types import RISK_REASON_MESSAGES
 
 from ..config import Settings, get_settings
 from ..deps import get_dexscreener, get_quote_router, get_session
@@ -21,6 +22,7 @@ from ..schemas import (
     PaperOrderIn,
     PositionOut,
     ReconciliationOut,
+    RiskReasonOut,
 )
 from ..services import paper, reconciliation
 
@@ -44,6 +46,26 @@ def _order(row: PaperOrderRow) -> OrderOut:
         amount_usd=str(row.amount_usd),
         status=row.status,
         reason=row.reason,
+        reasons=[
+            RiskReasonOut(
+                code=item["code"],
+                message=item["message"],
+                detail=item.get("detail"),
+            )
+            for item in (row.reasons or [])
+        ]
+        if row.reasons is not None
+        else (
+            [
+                RiskReasonOut(
+                    code=row.reason,
+                    message=RISK_REASON_MESSAGES.get(row.reason, row.reason),
+                    detail=None,
+                )
+            ]
+            if row.reason is not None
+            else []
+        ),
         quote_kind=row.quote_kind,
         created_at=_dt(row.created_at),
         filled_at=None if row.filled_at is None else _dt(row.filled_at),
