@@ -14,10 +14,17 @@ import httpx
 import pytest
 import respx
 
-from ezchain_adapters import JupiterClient, NotFound, RateLimited, UpstreamError
-from ezchain_adapters.jupiter import LITE_BASE, SOL_MINT, USDC_MINT
+from ezchain_adapters import (
+    JupiterClient,
+    NotFound,
+    ProviderBudgetManager,
+    RateLimited,
+    UpstreamError,
+)
+from ezchain_adapters.jupiter import KEYED_BASE, LITE_BASE, SOL_MINT, USDC_MINT
 
 BONK = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+TEST_KEY = "TEST_KEY_DO_NOT_USE"
 TOKEN_SEARCH = f"{LITE_BASE}/tokens/v2/search"
 QUOTE = f"{LITE_BASE}/swap/v1/quote"
 
@@ -93,6 +100,81 @@ async def test_sell_quote_sizes_quantity_and_rescales_usdc(
     assert params["inputMint"] == BONK
     assert params["outputMint"] == USDC_MINT
     assert params["amount"] == "10000000000"
+
+
+@respx.mock
+async def test_keyed_quote_uses_the_resolved_key(
+    clock: Any, fast_limiter: Any, load_fixture: Callable[[str], Any]
+) -> None:
+    route = respx.get(f"{KEYED_BASE}/swap/v1/quote").mock(
+        return_value=httpx.Response(200, json=load_fixture("jupiter_quote_buy.json"))
+    )
+
+    async def api_key() -> str:
+        return TEST_KEY
+
+    client = JupiterClient(
+        limiter=fast_limiter,
+        clock=clock,
+        sleep=clock.sleep,
+        api_key_provider=api_key,
+    )
+    async with client as scoped:
+        await scoped.quote_paper(token_address=SOL_MINT, side="buy", amount_usd=Decimal("1"))
+
+    request = route.calls[0].request
+    assert request.headers["x-api-key"] == TEST_KEY
+    assert str(request.url).startswith(KEYED_BASE)
+
+
+@respx.mock
+async def test_a_missing_key_uses_lite_without_the_header(
+    clock: Any, fast_limiter: Any, load_fixture: Callable[[str], Any]
+) -> None:
+    route = respx.get(QUOTE).mock(
+        return_value=httpx.Response(200, json=load_fixture("jupiter_quote_buy.json"))
+    )
+
+    async def no_key() -> None:
+        return None
+
+    client = JupiterClient(
+        limiter=fast_limiter,
+        clock=clock,
+        sleep=clock.sleep,
+        api_key_provider=no_key,
+    )
+    async with client as scoped:
+        await scoped.quote_paper(token_address=SOL_MINT, side="buy", amount_usd=Decimal("1"))
+
+    request = route.calls[0].request
+    assert "x-api-key" not in request.headers
+    assert str(request.url).startswith(LITE_BASE)
+
+
+@respx.mock
+async def test_quote_calls_wait_for_the_provider_budget(
+    clock: Any, fast_limiter: Any, load_fixture: Callable[[str], Any]
+) -> None:
+    respx.get(TOKEN_SEARCH).mock(
+        return_value=httpx.Response(200, json=_token_search(BONK, 5))
+    )
+    respx.get(QUOTE).mock(
+        return_value=httpx.Response(200, json=load_fixture("jupiter_quote_buy.json"))
+    )
+    budget = ProviderBudgetManager(clock=clock, sleep=clock.sleep)
+    client = JupiterClient(
+        limiter=fast_limiter,
+        budget=budget,
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    async with client as scoped:
+        await scoped.quote_paper(token_address=BONK, side="buy", amount_usd=Decimal("1"))
+        await scoped.quote_paper(token_address=BONK, side="buy", amount_usd=Decimal("2"))
+
+    assert clock.sleeps == [1.0, 1.0]
 
 
 @respx.mock

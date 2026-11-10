@@ -34,8 +34,13 @@ from .breaker import CircuitBreaker
 from .cache import BoundedTTLCache
 from .decimals import DecimalsResolver
 from .dexscreener import DexScreenerClient
-from .errors import AdapterError, NoRoute, NotFound, UpstreamError
-from .http import DEFAULT_TIMEOUT_SECONDS, Clock, JsonApiClient, Sleeper
+from .errors import AdapterError, NoRoute, NotFound, ProviderKeyUnavailable, UpstreamError
+from .http import DEFAULT_TIMEOUT_SECONDS, ApiKeyProvider, Clock, JsonApiClient, Sleeper
+from .provider_budget import (
+    ProviderBudgetExhausted,
+    ProviderBudgetManager,
+    attempt_deadline_scope,
+)
 from .ratelimit import TokenBucket, default_sleep
 from .registry import BY_ID, PAPER_MARK, ChainMeta, QuoteAsset
 
@@ -166,9 +171,18 @@ class HttpQuoteProvider(JsonApiClient):
         sleep: Sleeper = default_sleep,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         breaker: CircuitBreaker | None = None,
+        budget: ProviderBudgetManager | None = None,
+        api_key_provider: ApiKeyProvider | None = None,
     ) -> None:
         super().__init__(
-            client, limiter=limiter, cache=cache, clock=clock, sleep=sleep, timeout=timeout
+            client,
+            limiter=limiter,
+            cache=cache,
+            clock=clock,
+            sleep=sleep,
+            timeout=timeout,
+            budget=budget,
+            api_key_provider=api_key_provider,
         )
         # A provider that cannot resolve decimals fails closed on that token; Jupiter
         # resolves its own mints and never asks.
@@ -269,13 +283,19 @@ class QuoteRouter:
             if remaining <= 0:
                 failures.append("deadline")
                 break
+            timeout = min(remaining, PROVIDER_ATTEMPT_SECONDS)
             try:
-                quote = await asyncio.wait_for(
-                    provider.quote(request), timeout=min(remaining, PROVIDER_ATTEMPT_SECONDS)
-                )
+                # The attempt owns this timeout, so publish its absolute end: a budget
+                # wait inside it must refuse before this fires, not be cancelled by it.
+                with attempt_deadline_scope(timeout):
+                    quote = await asyncio.wait_for(provider.quote(request), timeout=timeout)
             except TimeoutError:
                 failures.append(f"{kind}:TIMEOUT")
                 continue
+            except (ProviderBudgetExhausted, ProviderKeyUnavailable):
+                # A full queue or an unreadable key is not "this venue has no route".
+                # Surface the typed error so the edge answers 429/503, not a 409.
+                raise
             except AdapterError as exc:
                 failures.append(f"{kind}:{exc.code}")
                 continue
@@ -287,11 +307,12 @@ class QuoteRouter:
                 if remaining <= 0:
                     failures.append("deadline")
                     break
+                timeout = min(remaining, PROVIDER_ATTEMPT_SECONDS)
                 try:
-                    exit_ok = await asyncio.wait_for(
-                        self._has_exit(provider, request, quote),
-                        timeout=min(remaining, PROVIDER_ATTEMPT_SECONDS),
-                    )
+                    with attempt_deadline_scope(timeout):
+                        exit_ok = await asyncio.wait_for(
+                            self._has_exit(provider, request, quote), timeout=timeout
+                        )
                 except TimeoutError:
                     failures.append(f"{kind}:EXIT_TIMEOUT")
                     continue
@@ -334,6 +355,10 @@ class QuoteRouter:
         )
         try:
             exit_quote = await provider.quote(exit_request)
+        except (ProviderBudgetExhausted, ProviderKeyUnavailable):
+            # The exit leg is a provider call too. Do not turn its budget or credential
+            # failure into a NO_SELL_ROUTE when the real answer is "retry later".
+            raise
         except AdapterError:
             return False
         return exit_quote.amount_out > 0

@@ -15,12 +15,30 @@ from ezchain_adapters import (
     CandlesUnsupported,
     NoRoute,
     NotFound,
+    ProviderBudgetExhausted,
+    ProviderKeyUnavailable,
     RateLimited,
     UpstreamError,
 )
 
 
+def provider_budget_http_error(exc: ProviderBudgetExhausted) -> HTTPException:
+    """A bounded provider queue refused the call. Typed 429, retry later."""
+    return HTTPException(
+        status_code=429,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+            "retryable": True,
+            "provider": exc.provider,
+        },
+        headers={"Retry-After": "1"},
+    )
+
+
 def adapter_http_error(exc: AdapterError) -> HTTPException:
+    if isinstance(exc, ProviderBudgetExhausted):
+        return provider_budget_http_error(exc)
     status = 502
     if isinstance(exc, NotFound):
         status = 404
@@ -28,6 +46,8 @@ def adapter_http_error(exc: AdapterError) -> HTTPException:
         status = 429
     elif isinstance(exc, NoRoute):
         status = 409
+    elif isinstance(exc, ProviderKeyUnavailable):
+        status = 503
     elif isinstance(exc, UpstreamError):
         status = 502
     return HTTPException(
@@ -81,6 +101,23 @@ def json_safe(value: Any) -> Any:
     return str(value)
 
 
-async def request_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
-    """Never turn a rejected non-finite JSON number into a 500 while rendering it."""
-    return JSONResponse(status_code=422, content={"detail": json_safe(exc.errors())})
+_BODY_SECRET_PATHS = frozenset({"/api/v1/provider-keys"})
+
+
+def _body_may_contain_a_secret(request: Request) -> bool:
+    return request.url.path.rstrip("/") in _BODY_SECRET_PATHS
+
+
+async def request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Never turn a rejected non-finite JSON number into a 500 while rendering it.
+
+    Pydantic echoes the rejected body under ``input``. On a route that accepts a secret,
+    that echo is the plaintext key. Those fields are dropped before the response is built.
+    """
+    errors = exc.errors()
+    if _body_may_contain_a_secret(request):
+        errors = [
+            {key: value for key, value in error.items() if key not in {"input", "ctx"}}
+            for error in errors
+        ]
+    return JSONResponse(status_code=422, content={"detail": json_safe(errors)})

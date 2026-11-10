@@ -22,6 +22,8 @@ from ezchain_adapters import (
     KyberSwapClient,
     LifiClient,
     OsmosisSqsClient,
+    ProviderBudgetManager,
+    ProviderKeyUnavailable,
     QuoteRouter,
     StonfiClient,
     VeloraClient,
@@ -43,15 +45,18 @@ from .routers import (
     paper,
     plugins,
     protection,
+    provider_keys,
     signals,
     strategies,
     system,
 )
+from .services import provider_keys as provider_key_service
 from .services.executor import PaperOrderExecutor
 from .services.graph import PaperGraphRuntime
 from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis
 from .services.plugin_runtime import PaperPluginRuntime
+from .services.provider_secrets import build_secret_cipher
 from .services.system_flags import read_kill_switch, seed_kill_switch
 
 
@@ -67,7 +72,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     dexscreener = DexScreenerClient()
     gecko = GeckoTerminalClient()
     decimals = DecimalsResolver(gecko)
-    jupiter = JupiterClient()
+    # Jupiter's documented keyed limit is one request per second. The bounded budget
+    # wraps its client so concurrent quotes wait instead of bursting past it.
+    provider_budget = ProviderBudgetManager()
+    provider_cipher = build_secret_cipher(settings)
+
+    async def jupiter_api_key() -> str | None:
+        """Resolve the workspace key per request so create and revoke take effect now."""
+
+        def load() -> str | None:
+            try:
+                with session_factory()() as session:
+                    return provider_key_service.resolve_secret(
+                        session,
+                        workspace_id=settings.workspace_id,
+                        provider="jupiter",
+                        cipher=provider_cipher,
+                    )
+            except provider_key_service.ProviderKeyNotFound:
+                return None
+            except provider_key_service.ProviderKeyError as exc:
+                # A stored key that cannot be decrypted must fail the provider call, not
+                # silently downgrade to the keyless endpoint. Retryability follows the
+                # store's: a rotated identity or deleted entry never fixes itself.
+                raise ProviderKeyUnavailable(
+                    "the stored Jupiter key is unavailable", retryable=exc.retryable
+                ) from exc
+
+        return await asyncio.to_thread(load)
+
+    jupiter = JupiterClient(budget=provider_budget, api_key_provider=jupiter_api_key)
+    app.state.provider_budget = provider_budget
     # One instance per provider: each owns its own bucket, cache and circuit breaker, so a
     # provider that starts failing cannot slow the ones that still answer.
     providers: list[HttpQuoteProvider] = [
@@ -197,6 +232,7 @@ def create_app() -> FastAPI:
     app.include_router(plugins.router)
     app.include_router(agent.router)
     app.include_router(protection.router)
+    app.include_router(provider_keys.router)
     return app
 
 

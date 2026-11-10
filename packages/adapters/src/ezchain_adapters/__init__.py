@@ -15,6 +15,7 @@ from .errors import (
     CandlesUnsupported,
     NoRoute,
     NotFound,
+    ProviderKeyUnavailable,
     RateLimited,
     UpstreamError,
 )
@@ -26,6 +27,12 @@ from .jupiter import SOL_MINT, USDC_MINT, JupiterClient
 from .kyberswap import KyberSwapClient
 from .lifi import LifiClient
 from .osmosis_sqs import OsmosisSqsClient
+from .provider_budget import (
+    JUPITER_LIMIT,
+    ProviderBudgetExhausted,
+    ProviderBudgetManager,
+    ProviderLimit,
+)
 from .quotes import HttpQuoteProvider, QuoteProvider, QuoteRequest, QuoteRouter
 from .registry import (
     BY_ID,
@@ -57,6 +64,7 @@ __all__ = [
     "HttpQuoteProvider",
     "JsonApiClient",
     "JupiterClient",
+    "JUPITER_LIMIT",
     "KyberSwapClient",
     "LifiClient",
     "MarketEvent",
@@ -65,6 +73,10 @@ __all__ = [
     "OsmosisSqsClient",
     "PAPER_MARK",
     "PROVIDERS",
+    "ProviderBudgetExhausted",
+    "ProviderBudgetManager",
+    "ProviderKeyUnavailable",
+    "ProviderLimit",
     "QuoteAsset",
     "QuoteProvider",
     "QuoteRequest",

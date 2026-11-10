@@ -41,6 +41,7 @@ METRICS_CONTRACT = (
 
 EXPECTED_PROTECTED_ROUTES = (
     ("DELETE", "/api/v1/agent/keys/{key_id}"),
+    ("DELETE", "/api/v1/provider-keys/{key_id}"),
     ("DELETE", "/api/v1/strategies/{strategy_id}"),
     ("PATCH", "/api/v1/protection/arms/{arm_id}"),
     ("PATCH", "/api/v1/strategies/{strategy_id}"),
@@ -55,6 +56,7 @@ EXPECTED_PROTECTED_ROUTES = (
     ("POST", "/api/v1/protection/arms/{arm_id}/cancel"),
     ("POST", "/api/v1/protection/arms/{arm_id}/evaluate"),
     ("POST", "/api/v1/protection/profiles"),
+    ("POST", "/api/v1/provider-keys"),
     ("POST", "/api/v1/strategies"),
     ("POST", "/api/v1/strategies/{strategy_id}/run"),
     ("POST", "/api/v1/system/kill-switch"),

@@ -150,7 +150,7 @@ def is_protected_request(method: str, path: str) -> bool:
 
 def requires_auth(method: str, path: str, settings: Settings) -> bool:
     key = _path_key(path)
-    if key.startswith("/api/v1/agent/keys"):
+    if key.startswith("/api/v1/agent/keys") or key.startswith("/api/v1/provider-keys"):
         return True
     if key in AUTHENTICATED_READ_PATHS:
         return True
@@ -168,7 +168,7 @@ def requires_auth(method: str, path: str, settings: Settings) -> bool:
 def required_scope(method: str, path: str) -> str:
     """The least privilege a route requires. Admin routes win over the method."""
     key = _path_key(path)
-    if key.startswith("/api/v1/agent/keys"):
+    if key.startswith("/api/v1/agent/keys") or key.startswith("/api/v1/provider-keys"):
         return "admin"
     if key in OPERATIONAL_PATHS:
         return "admin"

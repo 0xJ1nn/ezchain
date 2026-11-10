@@ -50,7 +50,15 @@ class TokenBucket:
         self._sleep = sleep
         self._lock = asyncio.Lock()
 
-    async def acquire(self, tokens: float = 1.0) -> None:
+    async def acquire(self, tokens: float = 1.0, *, deadline: float | None = None) -> None:
+        """Take ``tokens``, sleeping for the deficit.
+
+        ``deadline`` is an absolute clock value for the whole call: no wait is started
+        that would finish after it. A caller competing for the same slot can lose the
+        race repeatedly, and a per-sleep cap alone would let those sleeps add up without
+        limit — the caller then overruns whatever timeout its request is under instead of
+        being told the budget is gone.
+        """
         if tokens <= 0 or tokens > self._capacity:
             raise ValueError("tokens must be positive and no greater than burst")
         while True:
@@ -65,6 +73,11 @@ class TokenBucket:
                 wait = (tokens - self._tokens) / self._rate
             if self._max_wait is not None and wait > self._max_wait:
                 raise RateLimited("request budget exhausted", detail=f"next slot in {wait:.0f}s")
+            if deadline is not None and now + wait > deadline:
+                raise RateLimited(
+                    "request budget exhausted",
+                    detail="the queue cannot clear inside the wait budget",
+                )
             await self._sleep(max(wait, 0.001))
 
 

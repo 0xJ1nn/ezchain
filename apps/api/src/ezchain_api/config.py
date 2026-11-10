@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     require_auth_for_reads: bool = False
     api_key_pepper: SecretStr | None = None
     agent_key_default_ttl_days: int = Field(default=90, ge=1, le=3650)
+
+    # User-supplied provider credentials. One deployment is one workspace; the id is
+    # stored with every key so a shared database cannot mix two workspaces.
+    workspace_id: str = Field(default="default", min_length=1, max_length=64)
+    # ``auto`` prefers age when a recipient is configured, then the OS keyring. There is
+    # no plaintext fallback: an unavailable store refuses creation.
+    provider_key_store: Literal["auto", "age", "keyring"] = "auto"
+    provider_key_age_recipient: str | None = None
+    provider_key_age_identity: str | None = None
+    provider_key_age_binary: str = "age"
+    provider_key_fingerprint_pepper: SecretStr | None = None
     # A peer in this list may supply X-Forwarded-For for the loopback test on
     # operational endpoints, in addition to a loopback peer. Empty by default. List the
     # reverse proxy's own address, never a client network.
@@ -108,7 +119,9 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
 
-    @field_validator("api_token", "api_key_pepper", mode="before")
+    @field_validator(
+        "api_token", "api_key_pepper", "provider_key_fingerprint_pepper", mode="before"
+    )
     @classmethod
     def _blank_secret_is_unset(cls, value: object) -> object:
         """An empty env var means "unset", matching the documented dev fallback."""
