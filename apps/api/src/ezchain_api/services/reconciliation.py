@@ -6,7 +6,9 @@ database proves so an operator can decide whether to pause (CONTRACT I1, I9).
 
 Each check has one source of truth:
 
-* journal groups must balance and map to exactly one filled order and fill;
+* journal groups must balance and map to exactly one filled order and fill; a no-risk
+  funding group counts only when it is ``funding:{order.id}`` for an existing order and
+  carries exactly the two legs paper writes for the shortfall;
 * the fill's quantity, notional and fee must equal its journal legs;
 * position quantities must equal the sum of the fills that created them;
 * cash and equity must agree with genesis plus the fill cash flows, at the current marks.
@@ -37,11 +39,32 @@ GENESIS_ACCOUNT = "equity:genesis"
 GENESIS_GROUP = "genesis"
 
 
-def _is_funding_group(group_id: str, rows: list[Any]) -> bool:
-    """A paper no-risk funding journal group: labelled and balanced on its own."""
-    if group_id == "funding" or group_id.startswith("funding:") or group_id.startswith("funding-"):
-        return True
-    return bool(rows) and all(getattr(row, "kind", None) == "funding" for row in rows)
+FUNDING_PREFIX = "funding:"
+FUNDING_ACCOUNT = "funding:USD"
+
+
+def _is_funding_group(group_id: str, rows: list[Any], orders_by_id: dict[str, Any]) -> bool:
+    """A no-risk funding journal for an existing paper order, with the exact legs.
+
+    The name alone proves nothing: a group called ``funding-2`` (or
+    ``funding:missing-order``) is not the journal paper writes. Only the exact
+    ``funding:{order.id}`` of a persisted order, carrying one positive cash leg and its
+    equal negative funding leg, may be skipped by the group-link check.
+    """
+    if not group_id.startswith(FUNDING_PREFIX):
+        return False
+    order_id = group_id[len(FUNDING_PREFIX) :]
+    if not order_id or order_id not in orders_by_id or len(rows) != 2:
+        return False
+    cash_rows = [row for row in rows if getattr(row, "account", None) == cash_account()]
+    funding_rows = [row for row in rows if getattr(row, "account", None) == FUNDING_ACCOUNT]
+    if len(cash_rows) != 1 or len(funding_rows) != 1:
+        return False
+    cash_row, funding_row = cash_rows[0], funding_rows[0]
+    if any(getattr(row, "kind", None) != "funding" for row in (cash_row, funding_row)):
+        return False
+    funded = Decimal(str(cash_row.usd_value))
+    return funded > 0 and abs(funded + Decimal(str(funding_row.usd_value))) <= TOLERANCE
 
 
 # The journal each order side must leave behind. A buy books two cash legs (trade and
@@ -163,10 +186,15 @@ def _check_groups_linked(
     groups_without_fill: list[str] = []
     kind_mismatches: list[str] = []
     order_mismatches: list[str] = []
+    funding_groups = [
+        group_id
+        for group_id, rows in by_group.items()
+        if _is_funding_group(group_id, rows, orders_by_id)
+    ]
     for group_id, rows in by_group.items():
         if group_id == GENESIS_GROUP:
             continue
-        if _is_funding_group(group_id, rows):
+        if _is_funding_group(group_id, rows, orders_by_id):
             continue
         order = orders_by_id.get(group_id)
         if order is None:
@@ -223,14 +251,13 @@ def _check_groups_linked(
         problems.append(
             f"{len(order_mismatches)} order/fill mismatches: {_sample(order_mismatches)}"
         )
-    linked = len(by_group) - (1 if GENESIS_GROUP in by_group else 0)
+    linked = len(by_group) - (1 if GENESIS_GROUP in by_group else 0) - len(funding_groups)
     if problems:
         return _check("ledger.groups_linked", False, "; ".join(problems))
-    return _check(
-        "ledger.groups_linked",
-        True,
-        f"{linked} order groups each link to one filled order, one fill and its journal legs",
-    )
+    detail = f"{linked} order groups each link to one filled order, one fill and its journal legs"
+    if funding_groups:
+        detail += f"; {len(funding_groups)} funding groups match a real order"
+    return _check("ledger.groups_linked", True, detail)
 
 
 def _check_fill_values(fills: list[Any], by_group: dict[str, list[Any]]) -> dict[str, Any]:
@@ -436,8 +463,8 @@ def reconciliation(session: Session) -> dict[str, Any]:
     by_group: dict[str, list[Any]] = defaultdict(list)
     cash_total = Decimal(0)
     genesis = Decimal(0)
-    funding_cash = Decimal(0)
     position_quantities: dict[str, Decimal] = defaultdict(Decimal)
+    orders_by_id = {order.id: order for order in orders}
 
     for row in ledger:
         value = Decimal(str(row.usd_value))
@@ -446,13 +473,24 @@ def reconciliation(session: Session) -> dict[str, Any]:
         by_group[row.group_id].append(row)
         if row.account == cash_account():
             cash_total += value
-            if _is_funding_group(row.group_id, by_group[row.group_id]):
-                funding_cash += value
         elif row.account == GENESIS_ACCOUNT:
             # The genesis equity leg is the negative of the starting cash.
             genesis -= value
         if row.account.startswith(POSITION_PREFIX):
             position_quantities[row.account] += amount
+
+    # Only a funding group tied to a real order adds to projected cash. A group that
+    # merely looks like funding is left to the orphan and cash checks to report.
+    funding_cash = sum(
+        (
+            Decimal(str(row.usd_value))
+            for group_id, rows in by_group.items()
+            if _is_funding_group(group_id, rows, orders_by_id)
+            for row in rows
+            if row.account == cash_account()
+        ),
+        Decimal(0),
+    )
 
     # Independently project cash from genesis plus the persisted fill cash flow:
     # sells add proceeds, buys subtract notional, every fill pays its fee.
@@ -472,7 +510,6 @@ def reconciliation(session: Session) -> dict[str, Any]:
     )
     open_positions = sum(1 for quantity in position_quantities.values() if quantity > 0)
 
-    orders_by_id = {order.id: order for order in orders}
     fills_per_order = Counter(fill.order_id for fill in fills)
     orphan_fills = sorted(fill.id for fill in fills if fill.order_id not in orders_by_id)
     filled_orders = [order for order in orders if order.status == "filled"]
