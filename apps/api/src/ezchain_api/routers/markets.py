@@ -776,12 +776,31 @@ async def quote(
     side: Literal["buy", "sell"],
     amount_usd: Decimal = Query(gt=0),
     quantity: Decimal | None = Query(default=None, gt=0),
+    slippage_bps: int | None = Query(default=None, ge=0, le=10000),
     quotes: QuoteRouter = Depends(get_quote_router),
     settings: Settings = Depends(get_settings),
 ) -> QuoteOut:
     if get_chain(chain) is None:
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
+        )
+    if amount_usd > settings.max_quote_notional_usd:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "QUOTE_NOTIONAL_TOO_LARGE",
+                "message": "quote notional exceeds the configured maximum",
+                "retryable": False,
+            },
+        )
+    if slippage_bps is not None and slippage_bps > settings.max_quote_slippage_bps:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "QUOTE_SLIPPAGE_TOO_HIGH",
+                "message": "requested slippage exceeds the configured maximum",
+                "retryable": False,
+            },
         )
     try:
         result = await quotes.quote(
@@ -793,6 +812,17 @@ async def quote(
         )
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
+    if result.price_impact_pct is not None:
+        impact_bps = result.price_impact_pct * Decimal(10000)
+        if impact_bps > settings.max_quote_slippage_bps:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "QUOTE_SLIPPAGE_TOO_HIGH",
+                    "message": "quoted price impact exceeds the configured maximum",
+                    "retryable": False,
+                },
+            )
     notional = result.amount_in if side == "buy" else result.amount_out
     payload = result.to_dict()
     payload["cost_preview"] = preview_cost(
