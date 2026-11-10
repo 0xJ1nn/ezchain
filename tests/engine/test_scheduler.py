@@ -570,3 +570,26 @@ def test_idempotency_key_is_stable_within_a_window() -> None:
     after = start + timedelta(hours=1)
     assert idempotency_key("s1", start, 60) == idempotency_key("s1", later, 60)
     assert idempotency_key("s1", start, 60) != idempotency_key("s1", after, 60)
+
+
+def test_idempotency_key_binds_the_action_and_resolved_amount() -> None:
+    start = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+    buy = idempotency_key("s1", start, 60, action="buy", amount_usd=Decimal("10"))
+    sell = idempotency_key("s1", start, 60, action="sell", amount_usd=Decimal("10"))
+    larger = idempotency_key("s1", start, 60, action="buy", amount_usd=Decimal("11"))
+
+    assert len({buy, sell, larger}) == 3
+    # Stable for the same decision inside one window, distinct in the next.
+    assert buy == idempotency_key(
+        "s1", start + timedelta(minutes=1), 60, action="buy", amount_usd=Decimal("10")
+    )
+    assert buy != idempotency_key(
+        "s1", start + timedelta(hours=1), 60, action="buy", amount_usd=Decimal("10")
+    )
+    # Canonical amounts: the same decision keeps one key however the decimal is spelled.
+    assert buy == idempotency_key("s1", start, 60, action="buy", amount_usd=Decimal("10.00"))
+    assert idempotency_key("s1", start, 60, amount_usd=Decimal("10")) == idempotency_key(
+        "s1", start, 60, amount_usd=Decimal("10.0")
+    )
+    # A missing action is not the literal string "None".
+    assert ":None:" not in idempotency_key("s1", start, 60, amount_usd=Decimal("10"))

@@ -226,6 +226,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **Paper order idempotency is bound to the request payload (PAPER).** A key is now
+  stored with a canonical SHA-256 of the chain, token, side, amount and strategy it
+  names. Reusing the key with the same payload returns the original order (`200`),
+  a first create returns `201`, and a changed payload returns
+  `409 IDEMPOTENCY_CONFLICT` instead of silently returning the first order. Amounts
+  are compared canonically, so `50`, `50.0` and `50.00` are one payload. Strategy
+  keys also carry the action and resolved amount, so two different decisions in one
+  window cannot collapse into one order. Migration `0011_idempotency_fingerprint`
+  adds the nullable column; rows written before it derive and store their hash on
+  first reuse, so an identical retry still replays and a changed payload conflicts.
 - **Paper equity fails closed on unknown marks** (#96, #108):
   `GET /api/v1/paper/account` now returns `equity_usd: null` and `unrealized_usd: null`
   when any open position has no mark, and exposes `complete`, `marks_unknown`,

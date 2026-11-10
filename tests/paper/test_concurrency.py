@@ -6,10 +6,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from ezchain_api.models import Base, PaperFillRow
+from ezchain_api.models import Base, PaperFillRow, PaperOrderRow
 from ezchain_api.services import paper
 
 from .conftest import (
@@ -174,4 +174,90 @@ def test_stale_oversized_sell_is_position_changed(tmp_path, monkeypatch) -> None
         )
         assert order.status == "rejected"
         assert order.reason == "POSITION_CHANGED"
+    engine.dispose()
+
+
+def test_concurrent_identical_replays_create_one_order_and_one_fill(tmp_path) -> None:
+    engine = create_engine(
+        f"sqlite+pysqlite:///{tmp_path / 'paper-replay-race.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = make_settings()
+    dex = FakeDexScreener(make_snapshot(price=Decimal("2000"), liquidity=Decimal("500000")))
+    jupiter = FakeJupiter(price=Decimal("2000"))
+    with maker() as session:
+        paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def replay(_: int) -> str:
+        try:
+            with maker() as session:
+                barrier.wait(timeout=10)
+                order = place(
+                    session,
+                    settings,
+                    dex,
+                    jupiter,
+                    make_request(amount_usd="100", key="replay-race"),
+                )
+                return order.id
+        except BaseException as exc:  # noqa: BLE001 - a thread failure is the test failing
+            errors.append(exc)
+            return "error"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ids = list(pool.map(replay, range(2)))
+
+    assert not errors, errors
+    assert len(set(ids)) == 1 and ids[0] != "error", ids
+    with maker() as session:
+        assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+        assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
+    engine.dispose()
+
+
+def test_concurrent_conflicting_replays_fill_once_and_conflict_once(tmp_path) -> None:
+    engine = create_engine(
+        f"sqlite+pysqlite:///{tmp_path / 'paper-conflict-race.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = make_settings()
+    dex = FakeDexScreener(make_snapshot(price=Decimal("2000"), liquidity=Decimal("500000")))
+    jupiter = FakeJupiter(price=Decimal("2000"))
+    with maker() as session:
+        paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+
+    barrier = threading.Barrier(2)
+
+    def attempt(amount_usd: str) -> str:
+        try:
+            with maker() as session:
+                barrier.wait(timeout=10)
+                place(
+                    session,
+                    settings,
+                    dex,
+                    jupiter,
+                    make_request(amount_usd=amount_usd, key="conflict-race"),
+                )
+                return "created"
+        except paper.IdempotencyConflict:
+            return "conflict"
+        except BaseException as exc:  # noqa: BLE001 - a thread failure is the test failing
+            return f"error:{exc!r}"
+
+    # Both sizes are inside the paper-mark cap, so whichever wins produces a fill.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = sorted(pool.map(attempt, ["100", "200"]))
+
+    assert outcomes == ["conflict", "created"], outcomes
+    with maker() as session:
+        assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+        assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
     engine.dispose()

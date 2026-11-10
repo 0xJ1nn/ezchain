@@ -187,11 +187,35 @@ def position_state(
     )
 
 
-def idempotency_key(strategy_id: str, now: datetime, interval: int) -> str:
-    """Stable within one decision window, distinct across windows."""
+def idempotency_key(
+    strategy_id: str,
+    now: datetime,
+    interval: int,
+    action: str | None = None,
+    amount_usd: Any = None,
+) -> str:
+    """Stable within one decision window, distinct across windows.
+
+    Bound to the action and resolved amount when supplied.
+    """
     window = max(1, interval) * 60
     bucket = int(now.timestamp()) // window
+    if action is not None or amount_usd is not None:
+        return f"strategy:{strategy_id}:{action or ''}:{_canonical_amount(amount_usd)}:{bucket}"
     return f"strategy:{strategy_id}:{bucket}"
+
+
+def _canonical_amount(value: Any) -> str:
+    """One spelling per amount, so 10, 10.0 and 10.00 name the same decision."""
+    if value is None:
+        return ""
+    try:
+        text = format(Decimal(str(value)), "f")
+    except Exception:
+        return str(value)
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
 
 
 def _record(
@@ -414,7 +438,9 @@ async def evaluate_strategy(
             token_address=strategy.token_address,
             side=decision.action,
             amount_usd=decision.amount_usd,
-            idempotency_key=idempotency_key(strategy.id, now, interval),
+            idempotency_key=idempotency_key(
+                strategy.id, now, interval, action=decision.action, amount_usd=decision.amount_usd
+            ),
             strategy_id=strategy.id,
         )
         try:

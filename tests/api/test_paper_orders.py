@@ -6,12 +6,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import QuoteRouter
 from ezchain_api.deps import get_dexscreener, get_quote_router
-from ezchain_api.models import PaperOrderRow
+from ezchain_api.models import PaperFillRow, PaperOrderRow
 from ezchain_api.routers import paper as paper_router
 from ezchain_core.types import PairInfo, SourceRef, TokenSnapshot
 
@@ -76,6 +76,65 @@ def test_manual_order_with_strategy_id_is_ignored(client_for, session: Session) 
     row = session.scalar(select(PaperOrderRow))
     assert row is not None
     assert row.strategy_id is None
+
+
+def _paper_client(client_for, dex: FakeDex) -> TestClient:
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    return client_for(
+        paper_router.router,
+        {get_dexscreener: lambda: dex, get_quote_router: lambda: router},
+    )
+
+
+def _payload(key: str) -> dict[str, str]:
+    return {
+        "chain": CHAIN,
+        "token_address": TOKEN,
+        "side": "buy",
+        "amount_usd": "25",
+        "idempotency_key": key,
+    }
+
+
+def test_http_idempotency_is_201_then_200_then_409(client_for, session: Session) -> None:
+    client = _paper_client(client_for, FakeDex())
+    payload = _payload("http-idem-replay")
+
+    first = client.post("/api/v1/paper/orders", json=payload)
+    assert first.status_code == 201
+    assert first.json()["status"] == "filled"
+
+    replay = client.post("/api/v1/paper/orders", json={**payload, "amount_usd": "25.00"})
+    assert replay.status_code == 200
+    assert replay.json()["id"] == first.json()["id"]
+
+    conflict = client.post("/api/v1/paper/orders", json={**payload, "amount_usd": "26"})
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
+
+
+def test_http_idempotency_conflicts_on_a_changed_side_or_token(
+    client_for, session: Session
+) -> None:
+    client = _paper_client(client_for, FakeDex())
+    first = client.post("/api/v1/paper/orders", json=_payload("http-idem-dimensions"))
+    assert first.status_code == 201
+
+    for change in (
+        {"side": "sell"},
+        {"token_address": "0x0000000000000000000000000000000000000def"},
+    ):
+        response = client.post(
+            "/api/v1/paper/orders", json={**_payload("http-idem-dimensions"), **change}
+        )
+        assert response.status_code == 409, change
+        assert response.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 1
 
 
 def _valid_payload() -> dict[str, str]:
