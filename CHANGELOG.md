@@ -22,6 +22,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **The topbar describes only the market search it performs.** The field is
+  labelled for a market symbol, name or address and submits to the Markets
+  screener; a wallet, strategy or position term is treated as a market query
+  and returns the screener's own empty result instead of implying a global
+  search. The display-only "All chains" chip is removed from the topbar and the
+  More page, which now points to Markets, Launches and Positions, the surfaces
+  that own their chain filters.
+
 - **Protection writes are compare-and-swap and the event sequence is
   serialized (PAPER).** Engine ticks and API edits increment the arm version in
   the database and reload from the winner's row when they lose, so a concurrent

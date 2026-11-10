@@ -94,14 +94,10 @@ export default function MorePage() {
 				))}
 			</div>
 
-			<Panel title="Chain filter & sync" sub="open the market browser" className="mt-16">
+			<Panel title="Chain scope & data source" sub="set on the page that owns it" className="mt-16">
 				<div className="row">
-					<Link
-						className="chain chip"
-						href="/markets"
-						title="Open the multi-chain market browser"
-					>
-						<span aria-hidden="true">⬡</span> All chains
+					<Link className="btn" href="/markets">
+						Browse markets by chain
 					</Link>
 					<span className="source chip" title="Market data source">
 						{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}
@@ -109,9 +105,9 @@ export default function MorePage() {
 					<span className="badge">PAPER</span>
 				</div>
 				<p className="note mt-12">
-					{fixture
-						? "This is the labelled fixture shell. The chain registry is real; open Markets to filter it by chain."
-						: "The chain registry and market source are live. Chain filtering lives on the Markets page; open it to change the visible chains."}
+					Chain scope is a page filter, not a shell setting. Markets, Launches and
+					Positions each expose their own chain control, carried in that page&apos;s URL.
+					This page does not filter any of them.
 				</p>
 			</Panel>
 		</AppShell>

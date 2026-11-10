@@ -179,7 +179,7 @@ test("a persisted rail hydrates without a body class mismatch", async ({ page })
 	expect(problems).toEqual([]);
 });
 
-test("topbar search names markets and All chains opens the browser", async ({ page }) => {
+test("topbar search searches markets only and says so", async ({ page }) => {
 	await page.goto("/");
 
 	const search = page.getByRole("searchbox", {
@@ -190,6 +190,12 @@ test("topbar search names markets and All chains opens the browser", async ({ pa
 		"placeholder",
 		"Search markets (symbol, name or address)",
 	);
+	await expect(search).toHaveAttribute("maxlength", "80");
+
+	// The promise is explicit: markets by symbol, name or address. No wallet, strategy
+	// or position search is offered, so the form may not imply one.
+	const form = page.locator("header.topbar form.search");
+	await expect(form).not.toContainText(/wallet|strateg|position/i);
 
 	await search.fill("bonk");
 	await search.press("Enter");
@@ -199,22 +205,98 @@ test("topbar search names markets and All chains opens the browser", async ({ pa
 	await expect(rows).toHaveCount(1);
 	await expect(rows.first()).toContainText("BONK");
 
-	// A miss must be a real empty result, not a silently ignored query. The searchbox
-	// survives the in-app navigation; press on the field itself so the key event cannot
-	// land on the page body and leave the query at q=bonk.
-	await search.fill("zzzz-not-a-token");
-	await expect(search).toHaveValue("zzzz-not-a-token");
-	await search.press("Enter");
-	await expect(page).toHaveURL(/\/markets\?q=zzzz-not-a-token$/);
-	await expect(page.locator("main table tbody tr")).toHaveCount(0);
-	await expect(page.getByText(/Nothing matched .*zzzz-not-a-token/)).toBeVisible();
+	// A result opens the canonical token route: the hit is navigation, not decoration.
+	await rows.first().getByRole("link").click();
+	await expect(page).toHaveURL(
+		/\/tokens\/solana\/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263$/,
+	);
+	await expect(page.getByRole("heading", { name: /Bonk/i, level: 1 })).toBeVisible();
 
-	await page.goto("/");
-	const chains = page.locator("header.topbar").getByRole("link", { name: "All chains" });
-	await expect(chains).toHaveAttribute("href", "/markets");
-	await expect(chains).toHaveAttribute("title", "Open the multi-chain market browser");
-	await chains.click();
-	await expect(page).toHaveURL(/\/markets$/);
+	// Clearing the result query is a real control on the results page, and an empty
+	// submit is the unfiltered list rather than a search failure.
+	await page.goto("/markets?q=bonk");
+	await page.getByRole("link", { name: /Remove filter Search/ }).click();
+	await expect(page).not.toHaveURL(/q=bonk/);
+	await expect(page.locator("main table tbody tr")).toHaveCount(14);
+
+	await page.goto("/markets");
+	await page
+		.getByRole("searchbox", { name: "Search markets (symbol, name or address)" })
+		.press("Enter");
+	await expect(page).toHaveURL(/\/markets(\?q=)?$/);
+	await expect(page.locator("main table tbody tr")).toHaveCount(14);
+});
+
+test("a wallet-shaped or strategy-shaped term is a markets miss, not a global search", async ({
+	page,
+}) => {
+	for (const term of [
+		"0x1111111111111111111111111111111111111111",
+		"momentum-breakout",
+		"<img src=x onerror=alert(1)>",
+	]) {
+		await page.goto("/");
+		const search = page.getByRole("searchbox", {
+			name: "Search markets (symbol, name or address)",
+		});
+		await search.fill(term);
+		await search.press("Enter");
+		await expect
+			.poll(() => {
+				const url = new URL(page.url());
+				return url.pathname === "/markets" ? url.searchParams.get("q") : null;
+			})
+			.toBe(term);
+		await expect(page.getByText("EMPTY_RESULT")).toBeVisible();
+		await expect(page.getByText(`Nothing matched “${term}”`)).toBeVisible();
+		// The miss names the only feed it searched and why that feed can miss a token.
+		await expect(page.getByText(/DexScreener may not index this token yet/)).toBeVisible();
+
+		// The page never claims it looked in wallets, strategies or positions.
+		const main = page.getByRole("main");
+		await expect(main).not.toContainText(/searched .*(wallet|strateg|position)/i);
+		await expect(main).not.toContainText(/(wallet|strateg|position) results?/i);
+	}
+});
+
+test("the topbar carries no chain control that cannot change scope", async ({ page }) => {
+	for (const route of ["/", "/markets", "/launches", "/positions"]) {
+		await page.goto(route);
+		const header = page.locator("header.topbar");
+		await expect(header.getByText("All chains")).toHaveCount(0);
+		await expect(header.locator(".chain")).toHaveCount(0);
+		await expect(header.locator('[title="Active chain filter"]')).toHaveCount(0);
+		await expect(header.getByRole("combobox")).toHaveCount(0);
+	}
+});
+
+test("the chain filter that does exist is URL-addressable and survives navigation", async ({
+	page,
+}) => {
+	await page.goto("/markets?chain=base");
+	const chainTabs = page.getByRole("group", { name: "Market chains" });
+	const baseTab = chainTabs.getByRole("link", { name: "Base" });
+	await expect(baseTab).toHaveAttribute("aria-current", "page");
+	await expect(page.locator("main table tbody tr td:nth-child(2)")).toContainText([
+		"Base",
+		"Base",
+		"Base",
+		"Base",
+	]);
+
+	// Changing another filter keeps the chain in the URL instead of resetting it.
+	await page.getByLabel("Sort markets").selectOption("liquidity");
+	await page.getByRole("button", { name: "Apply" }).click();
+	await expect(page).toHaveURL(/chain=base/);
+	await expect(page).toHaveURL(/sort=liquidity/);
+	await expect(baseTab).toHaveAttribute("aria-current", "page");
+
+	// A token keeps the chain in its route, and its breadcrumb returns to the scoped list.
+	await page.locator("main table tbody tr").first().getByRole("link").click();
+	await expect(page).toHaveURL(/\/tokens\/base\//);
+	await page.locator(".crumbs").getByRole("link", { name: "Base" }).click();
+	await expect(page).toHaveURL(/chain=base/);
+	await expect(baseTab).toHaveAttribute("aria-current", "page");
 });
 
 test("mobile navigation puts Browse and Signals one tap away", async ({ page }) => {
@@ -303,11 +385,17 @@ test("More keeps the reference galleries and reaches discovery first", async ({ 
 	await expect(page.getByRole("link", { name: "Components" })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Mobile" })).toBeVisible();
 
-	const chainLink = page
-		.locator("main")
-		.getByRole("link", { name: "All chains" });
-	await expect(chainLink).toHaveAttribute("href", "/markets");
-	await expect(chainLink).toHaveAttribute("title", "Open the multi-chain market browser");
+	// The panel points at the surfaces that own chain scope; it is not a chain chip
+	// pretending the shell can filter them.
+	const main = page.locator("main");
+	await expect(main.getByRole("link", { name: "Browse markets by chain" })).toHaveAttribute(
+		"href",
+		"/markets",
+	);
+	await expect(main.getByText("All chains")).toHaveCount(0);
+	await expect(main.locator(".chain.chip")).toHaveCount(0);
+	await expect(main.locator('[title="Active chain filter"]')).toHaveCount(0);
+	await expect(main).toContainText("Chain scope is a page filter, not a shell setting.");
 });
 
 test("desktop reaches /more and every reference gallery from the sidebar footer", async ({
@@ -440,7 +528,7 @@ test("narrow topbar search takes a full row and hides the chips", async ({ page 
 		expect(box.width, `search width at ${width}px`).toBeGreaterThanOrEqual(width - 40);
 
 		await expect(page.locator("header.topbar .source.chip")).toBeHidden();
-		await expect(page.locator("header.topbar .chain.chip")).toBeHidden();
+		await expect(page.locator("header.topbar .chain.chip")).toHaveCount(0);
 	}
 });
 
