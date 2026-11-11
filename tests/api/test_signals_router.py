@@ -24,6 +24,16 @@ from ezchain_core import MarketRow, SourceRef
 NOW = datetime.now(UTC)
 
 
+@pytest.fixture(autouse=True)
+def _fresh_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Measure every row's age from the start of its own test.
+
+    A clock read once at import goes stale while a long suite runs, and rows that a
+    test means to be seconds old start failing the freshness filter.
+    """
+    monkeypatch.setitem(globals(), "NOW", datetime.now(UTC))
+
+
 def make_row(
     symbol: str,
     *,
