@@ -29,7 +29,11 @@ Errors use one of two shapes. Auth, adapter and domain errors carry a code objec
 }
 ```
 
-A request that fails schema validation returns FastAPI's `422` list under `detail`.
+A request that fails schema validation returns FastAPI's `422` list under `detail`. The
+order body, the kill-switch body and the `/quotes` query refuse fields the route does not
+declare (`type: "extra_forbidden"`), and each entry's `loc` names the offending field, so
+a misspelt limit is an error rather than a silent drop. Response models stay permissive:
+a new field never breaks an existing client.
 Status codes:
 
 | Status | Meaning |

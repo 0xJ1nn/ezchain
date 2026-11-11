@@ -103,6 +103,23 @@ def test_release_requires_a_reason(client_for) -> None:
     )
 
 
+def test_an_unknown_field_is_refused_and_leaves_the_switch_untouched(client_for) -> None:
+    """A misspelt switch field is an error, not a silent drop that arms nothing."""
+    client: TestClient = client_for(system.router)
+
+    response = client.post(
+        "/api/v1/system/kill-switch",
+        json={"active": True, "reason": "drill", "scope": "global"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert [error["loc"] for error in detail] == [["body", "scope"]]
+    assert detail[0]["type"] == "extra_forbidden"
+    # The refused request is not an operator action: the persisted state is unchanged.
+    assert client.get("/api/v1/system/kill-switch").json()["active"] is False
+
+
 def test_seed_recovers_when_another_process_wins_the_insert(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

@@ -291,9 +291,13 @@ class PaperOrderIn(BaseModel):
     """A manual paper order.
 
     Deliberately has no ``strategy_id``: strategy attribution is internal to the engine,
-    which reaches the order service through ``KillSwitchExecutor``. An unknown field is
-    ignored by Pydantic, so a hand-written request cannot claim strategy attribution.
+    which reaches the order service through ``KillSwitchExecutor``. Unknown fields are
+    refused (``422``, with the field named in ``loc``), so a hand-written request can
+    neither claim strategy attribution nor have a misspelt limit silently dropped. The
+    refusal happens before the quote or any journal write.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
@@ -576,6 +580,8 @@ class KillSwitchOut(BaseModel):
 
 
 class KillSwitchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     active: bool
     reason: str | None = Field(default=None, max_length=200)
 

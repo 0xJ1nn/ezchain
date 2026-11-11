@@ -24,6 +24,16 @@ STRATEGY_CASES = strategy_fuzz_cases(
 )
 ALL_CASES = [*ORDER_CASES, *STRATEGY_CASES]
 
+# The harness still supports a case the API accepts on purpose; no shipped scenario uses
+# one today, so the two tolerate-verdict tests carry their own probe.
+TOLERATED_PROBE = FuzzCase(
+    case_id="tolerated_probe",
+    description="a shape the API accepts on purpose",
+    path="/api/v1/paper/orders",
+    expect="tolerate",
+    tolerate_reason="test probe",
+)
+
 
 def case(case_id: str) -> FuzzCase:
     for item in ALL_CASES:
@@ -95,10 +105,10 @@ def test_the_float_overflow_case_sends_a_real_json_overflow() -> None:
     assert parsed["idempotency_key"].startswith("stress-test-1")
 
 
-def test_the_extra_field_case_is_documented_as_tolerated() -> None:
+def test_the_extra_field_case_expects_a_rejection() -> None:
     extra = case("unknown_fields")
-    assert extra.expect == "tolerate"
-    assert "schemas.py" in extra.tolerate_reason
+    assert extra.expects_rejection
+    assert extra.tolerate_reason == ""
     assert extra.body is not None
     assert extra.body["strategy_id"] == "stress-injected-attribution"
 
@@ -181,7 +191,7 @@ def test_a_rejection_that_still_creates_an_order_fails() -> None:
 
 def test_a_tolerated_case_may_be_accepted() -> None:
     outcome, findings = check_fuzz_response(
-        case("unknown_fields"),
+        TOLERATED_PROBE,
         status=201,
         payload={"id": "o1", "status": "rejected"},
         raw_text='{"id": "o1"}',
@@ -195,7 +205,7 @@ def test_a_tolerated_case_may_be_accepted() -> None:
 
 def test_a_tolerated_case_may_not_break_the_server() -> None:
     _, findings = check_fuzz_response(
-        case("unknown_fields"),
+        TOLERATED_PROBE,
         status=502,
         payload=None,
         raw_text="upstream",

@@ -101,6 +101,30 @@ def json_safe(value: Any) -> Any:
     return str(value)
 
 
+def refuse_unknown_query(request: Request, allowed: frozenset[str]) -> None:
+    """Refuse query parameters a route does not declare, naming each in ``loc``.
+
+    FastAPI silently ignores a query parameter it has no argument for, so a misspelt
+    field would otherwise be accepted with the default in force. This closes a query
+    surface the same way ``extra="forbid"`` closes a request body, and reuses the shared
+    validation handler so the body shape stays the standard ``422`` list.
+    """
+    unknown = [name for name in dict.fromkeys(request.query_params) if name not in allowed]
+    if not unknown:
+        return
+    raise RequestValidationError(
+        [
+            {
+                "type": "extra_forbidden",
+                "loc": ("query", name),
+                "msg": "Extra inputs are not permitted",
+                "input": request.query_params.get(name),
+            }
+            for name in unknown
+        ]
+    )
+
+
 _BODY_SECRET_PATHS = frozenset({"/api/v1/provider-keys"})
 
 
