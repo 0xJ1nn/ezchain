@@ -321,6 +321,7 @@ RISK_REASON_MESSAGES: dict[str, str] = {
     "INSUFFICIENT_POSITION": "Insufficient position to sell.",
     "POSITION_CHANGED": "Position changed while the order was being priced.",
     "KILL_SWITCH_ACTIVE": "Kill switch is active.",
+    "KILL_SWITCH_ARMED": "Kill switch is armed; new risk-increasing orders are refused.",
     "WALLET_UNKNOWN": "No paper wallet settles this chain.",
     "SETTLEMENT_ASSET_UNKNOWN": "The paper wallet does not settle in the ledger asset.",
 }

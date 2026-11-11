@@ -126,7 +126,8 @@ export default async function SecurityPage() {
 							<span className="grow">
 								<span className="title">Persisted kill switch</span>
 								<span className="sub">
-									Strategy-scoped. Requires a bearer-authenticated mutation and a reason.
+									Global and strategy levels. Requires a bearer-authenticated mutation
+									and a reason.
 								</span>
 							</span>
 							<ButtonLink href="/risk" size="sm">

@@ -110,7 +110,7 @@ detail}`.
 | DELETE | `/strategies/{id}` | delete strategy and its run log (orders keep attribution) |
 | POST | `/strategies/{id}/run` | evaluate now, return decision |
 | GET | `/strategies/{id}/runs` | decision log |
-| GET | `/system/kill-switch` | persisted strategy-scoped operator switch |
+| GET | `/system/kill-switch` | persisted operator switch, global and strategy levels |
 | POST | `/system/kill-switch` | `{active, reason}`: arm/release and return state |
 
 Discovery responses carry per-chain `coverage` and `ordered_by`
@@ -159,18 +159,20 @@ values and token quantities use `NUMERIC(38,18)`. No floats cross a money path.
   and negative position quantities, and fill counts by `quote_kind`. Genesis comes from
   the `equity:genesis` ledger account, never from the cash sum. It never writes or
   repairs. `ok: false` means pause and investigate, not "retry until clean".
-- **Strategy-scoped kill switch.** The flag is persisted in `system_flags`
-  (`engine_kill_switch`) so it survives a restart and is visible to every process. This is
-  the only new table in this slice; ops generates the Alembic baseline after merge. The
-  engine wraps the order executor; a request with `strategy_id` is refused with
-  `ExecutionBlocked` (`KILL_SWITCH_ACTIVE`) and the run log records a `hold` with the
-  attempted action and amount. The strategy window is not consumed, so releasing the
-  switch takes effect on the next run. The scheduler skips its pass entirely while armed,
-  so an idle outage writes no hold row per strategy per tick; a manual run still records
-  one `KILL_SWITCH_ACTIVE` hold. Manual paper orders stay allowed but the HTTP request
-  schema has no `strategy_id`, and the service rejects any internal order that still
-  claims strategy attribution before a quote. There is no authentication yet; the
-  endpoint is for a trusted network until ops adds auth.
+- **Operator kill switch, global and strategy levels.** The flag is persisted in
+  `system_flags` (`engine_kill_switch`) so it survives a restart and is visible to every
+  process. This is the only new table in this slice; ops generates the Alembic baseline
+  after merge. The global level lives in the order service every caller shares: while
+  armed, any buy is refused with `KILL_SWITCH_ARMED` before a market read or quote,
+  including the REST route, the MCP server and the web ticket, which carry no strategy.
+  The strategy level is the narrower one: the engine wraps the order executor, a request
+  with `strategy_id` is refused with `ExecutionBlocked` (`KILL_SWITCH_ACTIVE`) and the run
+  log records a `hold` with the attempted action and amount. The strategy window is not
+  consumed, so releasing the switch takes effect on the next run. The scheduler skips its
+  pass entirely while armed, so an idle outage writes no hold row per strategy per tick; a
+  manual run still records one `KILL_SWITCH_ACTIVE` hold. Sells are never refused by the
+  switch: an exit can only reduce risk, so reduce-only sells still settle. There is no
+  authentication yet; the endpoint is for a trusted network until ops adds auth.
 - **A rejected order is not a trade.** If the paper order service persists `rejected`,
   the engine records `hold` / `ORDER_REJECTED` with the attempted action, attempted
   amount, order id and order reason. It never logs a `buy`/`sell` action for a fill that

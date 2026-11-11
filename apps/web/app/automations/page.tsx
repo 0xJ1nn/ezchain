@@ -314,9 +314,10 @@ export default async function AutomationsPage() {
 							<div className="list-row">
 								<Badge tone="ghost">SWITCH</Badge>
 								<span className="grow">
-									<span className="title">Strategy-scoped kill switch</span>
+									<span className="title">Operator kill switch</span>
 									<span className="sub">
-										Armed, strategy-attributed orders are rejected before a quote.
+										Armed, new risk-increasing orders are rejected before a quote;
+										reduce-only exits still settle.
 									</span>
 								</span>
 								<ButtonLink href="/risk" size="sm">

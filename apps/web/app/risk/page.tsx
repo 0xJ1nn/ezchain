@@ -104,7 +104,7 @@ export default async function RiskPage() {
 
 			<Panel
 				title="Kill switch"
-				sub="persisted · strategy scope"
+				sub="persisted · global and strategy scope"
 				action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">/api/v1/system/kill-switch</Badge>}
 				className="mb-12"
 			>
@@ -112,14 +112,16 @@ export default async function RiskPage() {
 				<div className="hr" />
 				<div className="grid cols-2">
 					<div className="note">
-						<strong>What arming does:</strong> new strategy-attributed orders are rejected
-						before a quote, with reason <span className="mono">KILL_SWITCH_ACTIVE</span>. The
+						<strong>What arming does:</strong> every new risk-increasing order is rejected
+						before a quote, whoever places it, with reason{" "}
+						<span className="mono">KILL_SWITCH_ARMED</span>. Strategy-attributed intents are
+						also held by the engine with <span className="mono">KILL_SWITCH_ACTIVE</span>. The
 						state is persisted in the API database and survives a restart.
 					</div>
 					<div className="note warn">
 						<strong>What it does not do:</strong> it does not sell, close or mark a position.
-						It does not block manual paper orders placed from Markets or a token page, because
-						those carry no strategy attribution. Scope is{" "}
+						Exits, stops and reduce-only sells still settle, because blocking them would trap
+						funds. Scope is <span className="mono">global</span> and{" "}
 						<span className="mono">strategy</span>.
 					</div>
 				</div>

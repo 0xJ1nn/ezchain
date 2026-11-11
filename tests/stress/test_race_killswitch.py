@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from tools.stress.checks import (
-    check_killswitch_allows_manual_order,
+    check_killswitch_refuses_manual_buy,
     check_killswitch_run,
     check_killswitch_state,
     check_oversell,
@@ -126,16 +126,17 @@ def test_a_hold_for_another_reason_does_not_prove_the_switch() -> None:
     assert [finding.code for finding in findings] == ["KILLSWITCH_NOT_LOGGED"]
 
 
-def test_manual_orders_must_stay_allowed() -> None:
-    filled = {"id": "o1", "status": "filled", "reason": None}
-    assert check_killswitch_allows_manual_order(filled, status_code=201, scenario="t") == []
-    risk_rejected = {"id": "o2", "status": "rejected", "reason": "PAIR_AGE_UNKNOWN"}
-    assert check_killswitch_allows_manual_order(risk_rejected, status_code=201, scenario="t") == []
-    blocked = {"id": "o3", "status": "rejected", "reason": "KILL_SWITCH_ACTIVE"}
-    findings = check_killswitch_allows_manual_order(blocked, status_code=201, scenario="t")
-    assert [finding.code for finding in findings] == ["KILLSWITCH_MANUAL_ORDER_BLOCKED"]
-    refused = check_killswitch_allows_manual_order(None, status_code=409, scenario="t")
-    assert [finding.code for finding in refused] == ["KILLSWITCH_MANUAL_ORDER_REFUSED"]
+def test_a_manual_buy_must_be_refused_while_armed() -> None:
+    blocked = {"id": "o1", "status": "rejected", "reason": "KILL_SWITCH_ARMED"}
+    assert check_killswitch_refuses_manual_buy(blocked, status_code=201, scenario="t") == []
+    other_refusal = {"id": "o2", "status": "rejected", "reason": "PAIR_AGE_UNKNOWN"}
+    findings = check_killswitch_refuses_manual_buy(other_refusal, status_code=201, scenario="t")
+    assert [finding.code for finding in findings] == ["KILLSWITCH_MANUAL_BUY_NOT_BLOCKED"]
+    filled = {"id": "o3", "status": "filled", "reason": None}
+    findings = check_killswitch_refuses_manual_buy(filled, status_code=201, scenario="t")
+    assert [finding.code for finding in findings] == ["KILLSWITCH_MANUAL_BUY_NOT_BLOCKED"]
+    unreadable = check_killswitch_refuses_manual_buy(None, status_code=409, scenario="t")
+    assert [finding.code for finding in unreadable] == ["KILLSWITCH_MANUAL_BUY_UNREADABLE"]
 
 
 def test_the_switch_state_is_checked_both_ways() -> None:

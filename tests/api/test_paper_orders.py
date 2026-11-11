@@ -13,6 +13,7 @@ from ezchain_adapters import QuoteRouter
 from ezchain_api.deps import get_dexscreener, get_quote_router
 from ezchain_api.models import PaperFillRow, PaperOrderRow
 from ezchain_api.routers import paper as paper_router
+from ezchain_api.services.system_flags import set_kill_switch
 from ezchain_core.types import PairInfo, SourceRef, TokenSnapshot
 
 # A chain with no keyless executable quote: this test is about attribution, not venue.
@@ -106,6 +107,20 @@ def _payload(key: str) -> dict[str, str]:
         "amount_usd": "25",
         "idempotency_key": key,
     }
+
+
+def test_an_armed_kill_switch_refuses_a_route_buy(client_for, session: Session) -> None:
+    """The manual route carries no strategy, so the global level is its guard."""
+    set_kill_switch(session, active=True, reason="incident drill")
+    client = _paper_client(client_for, FakeDex())
+
+    response = client.post("/api/v1/paper/orders", json=_payload("armed-route-buy"))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "rejected"
+    assert body["reason"] == "KILL_SWITCH_ARMED"
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
 
 
 def test_http_idempotency_is_201_then_200_then_409(client_for, session: Session) -> None:

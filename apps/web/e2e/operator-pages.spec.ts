@@ -55,7 +55,8 @@ test("the kill switch arms with a reason and shows the persisted response", asyn
 				active: true,
 				reason: posted.reason,
 				updated_at: "2026-10-23T12:00:00Z",
-				scope: "strategy",
+				scope: "global",
+				scopes: ["global", "strategy"],
 			}),
 		});
 	});

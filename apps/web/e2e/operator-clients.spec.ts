@@ -60,7 +60,8 @@ test.beforeAll(async () => {
 					active: request.method === "POST" ? Boolean(body.active) : true,
 					reason: request.method === "POST" ? (body.reason ?? null) : "live reason",
 					updated_at: "2026-10-23T10:00:00Z",
-					scope: "strategy",
+					scope: "global",
+					scopes: ["global", "strategy"],
 				}),
 			);
 			return;

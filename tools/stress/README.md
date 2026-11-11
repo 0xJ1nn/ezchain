@@ -113,8 +113,9 @@ non-loopback host; use HTTPS or a loopback address. There is deliberately no
   thresholds are derived from the live mark so it *wants* to trade (sell while holding,
   buy while flat), and asserts the run logs `hold` / `KILL_SWITCH_ACTIVE` (or the API's
   defence-in-depth `hold` / `ORDER_REJECTED` with `order_reason: KILL_SWITCH_ACTIVE`) and
-  places no order. A manual paper order must still be allowed. The exact previous state is
-  restored in `finally`, then read back to prove it.
+  places no order. A manual buy placed through the route must be refused with
+  `KILL_SWITCH_ARMED`, because it carries no strategy for the old check to scope by. The
+  exact previous state is restored in `finally`, then read back to prove it.
 - **matrix** — reads `GET /api/v1/chains`, and for every chain with
   `capabilities.paper_execute: true` discovers the most liquid token from
   `GET /api/v1/markets?chain=X&limit=5`, reads token + buy quote, places one paper buy of
@@ -166,8 +167,9 @@ Pure functions in `tools/stress/checks.py`, covered by `tests/stress/test_checks
   token these invariants are skipped with an explicit reason.
 - fuzz: `4xx` + JSON error body, no `5xx`, no fill, and `DELETE` twice ends in `204` then `404`.
 - oversell race: `race.no_oversell`, `race.quantity_non_negative`, `race.cash_non_negative`.
-- kill switch: `killswitch.blocks_strategy`, `killswitch.allows_manual_order`,
-  `killswitch.restored`.
+- kill switch: `killswitch.blocks_strategy`, `killswitch.blocks_manual_buy`,
+  `killswitch.restored`. `killswitch.blocks_manual_buy` replaces the retired
+  `killswitch.allows_manual_order`, which asserted the opposite and described the defect.
 - chain matrix: `matrix.chain_flow` (buy filled, sell filled, position closed, or a
   documented risk rejection / `no_data`).
 - no unexpected 5xx and no connection errors outside chaos.

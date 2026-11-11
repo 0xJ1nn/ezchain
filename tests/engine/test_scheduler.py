@@ -385,9 +385,11 @@ async def test_releasing_the_kill_switch_restores_execution(
     )
 
 
-async def test_kill_switch_allows_manual_orders(
+async def test_the_strategy_level_leaves_a_manual_order_to_the_order_service(
     session_factory: sessionmaker[Session],
 ) -> None:
+    # The engine guard is the strategy level: it only inspects strategy attribution. The
+    # global level lives in the order service, which refuses every buy while armed.
     inner = FakeExecutor(order_id="manual-order")
     guard = KillSwitchExecutor(inner, lambda: True)
     manual = OrderRequest(

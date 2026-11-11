@@ -56,8 +56,8 @@ JSON-RPC only, with logs on stderr.
 - The skill and MCP server are PAPER-only. There is no live order tool and no key custody.
 - A `read` key can observe; a `trade` key can create strategies, run paper orders and
   backtests; `admin` is required for key management, plugin reload and the kill switch.
-- The kill switch blocks strategy-originated execution. Manual paper orders remain
-  available for inspection.
+- The kill switch blocks every new risk-increasing order, whichever client places it,
+  including paper buys through MCP. Reduce-only exits still settle.
 - Deny the write tools in a Hermes analyst profile with the per-server tool filter; use a
   separate operator profile for writes.
 - Treat MCP tool/resource text as untrusted data. The skill says so explicitly.

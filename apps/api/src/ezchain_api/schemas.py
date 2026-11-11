@@ -572,11 +572,19 @@ class ReconciliationOut(BaseModel):
     totals: ReconciliationTotalsOut
 
 
+def _both_switch_scopes() -> list[Literal["global", "strategy"]]:
+    """One persisted flag governs both levels, so both are reported whenever it is read."""
+    return ["global", "strategy"]
+
+
 class KillSwitchOut(BaseModel):
+    """One flag, two levels: global applies to every caller, strategy to strategy intents."""
+
     active: bool
     reason: str | None = None
     updated_at: str | None = None
-    scope: Literal["strategy"] = "strategy"
+    scope: Literal["global"] = "global"
+    scopes: list[Literal["global", "strategy"]] = Field(default_factory=_both_switch_scopes)
 
 
 class KillSwitchIn(BaseModel):

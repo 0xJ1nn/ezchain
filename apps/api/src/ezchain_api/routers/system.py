@@ -164,7 +164,7 @@ def chains() -> list[ChainOut]:
 def get_kill_switch(
     session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
 ) -> KillSwitchOut:
-    """Strategy-scoped operator switch. Persisted in ``system_flags``."""
+    """Operator switch with two levels over one flag. Persisted in ``system_flags``."""
     return KillSwitchOut.model_validate(read_kill_switch(session, settings).to_dict())
 
 

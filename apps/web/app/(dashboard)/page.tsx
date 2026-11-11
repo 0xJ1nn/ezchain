@@ -341,7 +341,7 @@ export default async function DashboardPage({
 					label="Risk"
 					value={killSwitch ? "HALTED" : limitRows ? "OPEN" : "—"}
 					tone={killSwitch ? "err" : "ok"}
-					meta={limitRows ? "kill switch · strategy scope" : "limits unavailable"}
+					meta={limitRows ? "kill switch · global and strategy scope" : "limits unavailable"}
 				/>
 				<Stat
 					label="Mode"

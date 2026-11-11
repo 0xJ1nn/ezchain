@@ -849,3 +849,37 @@ a revoked key cannot be resurrected by creating another. The deployment now depe
 store being reachable at creation time, and on the operator revoking a key before adding its
 replacement. Losing the encryption secret loses the stored keys — they are re-entered, not
 recovered, which is the intended failure direction for credentials.
+
+## ADR-0034 — The kill switch's global level refuses every new entry
+
+**Status:** accepted 2026-11-11.
+
+**Context:** the persisted operator switch was enforced only on orders that claimed
+strategy attribution. The REST order route, the MCP server and the web ticket carry no
+strategy id, so an armed switch left them free to open new risk; a drill filled two paper
+buys while it was armed. The wireframe for the risk page already promised "rejects every
+new entry · exits, stops and reduce-only sells still work", and the runbook's scope table
+puts global above strategy.
+
+**Options:** (a) make the strategy check unconditional in the order service, (b) add a
+second flag for the global level, (c) treat the existing `active` flag as the global level
+and keep the engine's strategy wrapper as the narrower second level.
+
+**Decision:** (c). One persisted flag, two levels. The order service — the single path
+every caller shares — refuses any **buy** while the flag is armed, before the market read
+and the quote, with the new reason code `KILL_SWITCH_ARMED`. Risk-increasing means a buy:
+a sell is bounded by the held quantity and cannot open a short, so ordinary exits,
+reduce-only exits and stops still settle while the switch is armed. The engine's
+`KillSwitchExecutor` stays as the strategy level and keeps its own `KILL_SWITCH_ACTIVE`
+hold in the run log. `GET` and `POST /system/kill-switch` report `scope: "global"` (the
+widest level in force) and `scopes: ["global", "strategy"]` (both levels the flag governs).
+
+**Consequences:** a switch armed by an operator from now on stops entries from every
+client, which is the behaviour the UI already described; clients that read the old
+`scope: "strategy"` value must treat the widest level as armed. Two reason codes reach
+observability: `KILL_SWITCH_ARMED` on the rejected order row and `KILL_SWITCH_ACTIVE` on a
+strategy hold. A refused order still persists its rejected order row, so the attempt stays
+replayable, but it writes no fill and no journal entry and never reaches a venue. The
+stored `value.scope` of an existing row is ignored on read, so no migration is needed and
+the next write records the new scope. The switch still never sells, closes or marks a
+position.

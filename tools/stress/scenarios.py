@@ -50,7 +50,7 @@ from .checks import (
     check_account,
     check_chains,
     check_idempotency,
-    check_killswitch_allows_manual_order,
+    check_killswitch_refuses_manual_buy,
     check_killswitch_run,
     check_killswitch_state,
     check_markets,
@@ -1950,7 +1950,7 @@ def _killswitch(harness: Harness, token: ResolvedToken, *, scenario: str = "kill
             harness.note_order_summary(manual_order)
             harness.add_findings(check_order(manual_order, scenario=scenario))
         harness.add_findings(
-            check_killswitch_allows_manual_order(
+            check_killswitch_refuses_manual_buy(
                 manual_order, status_code=manual_status, scenario=scenario
             )
         )
@@ -1961,7 +1961,7 @@ def _killswitch(harness: Harness, token: ResolvedToken, *, scenario: str = "kill
                 "status": None if manual_order is None else manual_order.get("status"),
                 "reason": None if manual_order is None else manual_order.get("reason"),
                 "status_code": manual_status,
-                "detail": "manual orders are outside the strategy-scoped switch",
+                "detail": "a manual buy is refused by the global level of the switch",
             },
         )
         harness.check_paper_snapshot(scenario=scenario)

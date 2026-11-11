@@ -26,10 +26,10 @@ ALLOWED_ORDER_SIDES = frozenset({"buy", "sell"})
 # stale or future, while ``unknown`` means the mark itself is missing.
 PRICED_MARK_STATUSES = frozenset({"fresh", "stale", "future"})
 
-# The engine logs this reason when the operator kill switch stops a strategy decision
-# (``services/engine/src/ezchain_engine/scheduler.py``). ``ORDER_EXECUTOR_UNAVAILABLE`` is
-# the documented fallback when no order service is wired at all.
-KILL_SWITCH_REASONS = frozenset({"KILL_SWITCH_ACTIVE"})
+# The engine logs ``KILL_SWITCH_ACTIVE`` when the strategy level stops a decision
+# (``services/engine/src/ezchain_engine/scheduler.py``). The order service logs
+# ``KILL_SWITCH_ARMED`` for any buy whichever caller placed it, which is the global level.
+KILL_SWITCH_REASONS = frozenset({"KILL_SWITCH_ACTIVE", "KILL_SWITCH_ARMED"})
 
 # Invariant ids are stable API for reports and issue dedupe. Never rename one silently.
 ORDER_INVARIANTS = (
@@ -69,7 +69,9 @@ RACE_INVARIANTS = (
 )
 KILLSWITCH_INVARIANTS = (
     "killswitch.blocks_strategy",
-    "killswitch.allows_manual_order",
+    # Replaces ``killswitch.allows_manual_order``: a manual buy is refused too. Reports
+    # before this change read the old id, which described the defect the switch had.
+    "killswitch.blocks_manual_buy",
     "killswitch.restored",
 )
 MATRIX_INVARIANTS = ("matrix.chain_flow",)
@@ -1849,34 +1851,40 @@ def check_killswitch_run(
     return findings
 
 
-def check_killswitch_allows_manual_order(
+def check_killswitch_refuses_manual_buy(
     order: Mapping[str, object] | None,
     *,
     status_code: int | None,
     scenario: str,
 ) -> list[Finding]:
-    """A manual paper order stays allowed while the switch is armed (documented scope)."""
+    """A manual buy is refused while the switch is armed, even with no strategy.
+
+    The REST route, the MCP server and the web ticket carry no ``strategy_id``; an armed
+    switch that only inspected strategy orders let them open risk. The order row is still
+    persisted, so the refusal is readable and replayable.
+    """
     if order is None:
         return [
             Finding(
-                code="KILLSWITCH_MANUAL_ORDER_REFUSED",
+                code="KILLSWITCH_MANUAL_BUY_UNREADABLE",
                 scenario=scenario,
-                invariant="killswitch.allows_manual_order",
-                summary="a manual paper order did not return a readable order",
+                invariant="killswitch.blocks_manual_buy",
+                summary="a manual buy while armed did not return a readable order",
                 expected="HTTP 201 with an order body",
                 actual=f"HTTP {status_code}",
             )
         ]
+    status = _text(order.get("status"))
     reason = _text(order.get("reason")) or ""
-    if any(code in reason for code in KILL_SWITCH_REASONS):
+    if status != "rejected" or not any(code in reason for code in KILL_SWITCH_REASONS):
         return [
             Finding(
-                code="KILLSWITCH_MANUAL_ORDER_BLOCKED",
+                code="KILLSWITCH_MANUAL_BUY_NOT_BLOCKED",
                 scenario=scenario,
-                invariant="killswitch.allows_manual_order",
-                summary="the kill switch blocked a manual paper order",
-                expected="manual orders are outside the strategy-scoped switch",
-                actual=f"reason={reason!r}",
+                invariant="killswitch.blocks_manual_buy",
+                summary="an armed kill switch did not refuse a manual buy",
+                expected="status=rejected with a kill-switch reason",
+                actual=f"status={status!r} reason={reason!r}",
             )
         ]
     return []

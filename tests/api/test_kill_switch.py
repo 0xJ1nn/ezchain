@@ -33,7 +33,8 @@ def test_get_reports_the_configured_default_without_writing(client_for, settings
         "active": False,
         "reason": None,
         "updated_at": None,
-        "scope": "strategy",
+        "scope": "global",
+        "scopes": ["global", "strategy"],
     }
 
 
@@ -49,7 +50,8 @@ def test_post_persists_the_switch_and_survives_a_new_session(
     body = armed.json()
     assert body["active"] is True
     assert body["reason"] == "incident drill"
-    assert body["scope"] == "strategy"
+    assert body["scope"] == "global"
+    assert body["scopes"] == ["global", "strategy"]
     assert body["updated_at"] is not None
 
     # A brand-new session (as a restarted process would open) reads the persisted row.
