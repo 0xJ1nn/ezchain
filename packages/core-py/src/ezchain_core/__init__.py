@@ -47,6 +47,7 @@ from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
     Candle,
     MarketRow,
+    MarkStatus,
     OrderRequest,
     PairInfo,
     PositionState,
@@ -63,6 +64,7 @@ from .types import (
 
 __all__ = [
     "ArmEvaluation",
+    "MarkStatus",
     "ArmParams",
     "Candle",
     "DEFAULT_SLIPPAGE_BPS",

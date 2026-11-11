@@ -419,6 +419,12 @@ class FillOut(BaseModel):
 
 
 class PositionOut(BaseModel):
+    """One open position, with the server's own verdict on its mark's freshness.
+
+    ``mark_age_seconds`` is null when there is no usable observation, and ``mark_status``
+    says why, so no client has to re-derive staleness from a timestamp.
+    """
+
     chain: str
     token_address: str
     symbol: str
@@ -429,6 +435,8 @@ class PositionOut(BaseModel):
     unrealized_usd: str | None = None
     realized_usd: str
     source: SourceOut | None = None
+    mark_status: Literal["fresh", "stale", "unknown", "future"] = "unknown"
+    mark_age_seconds: int | None = None
     mode: str = "paper"
 
 

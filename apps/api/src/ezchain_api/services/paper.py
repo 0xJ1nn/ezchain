@@ -38,6 +38,7 @@ from ezchain_core import (
     TRADE_RISK_PROFILES,
     CostPreview,
     LedgerEntry,
+    MarkStatus,
     OrderRequest,
     PositionView,
     Quote,
@@ -435,9 +436,32 @@ def _source_ref(row: MarketSnapshotRow) -> SourceRef:
     return SourceRef(name=row.source, url=None, observed_at=observed)
 
 
+def _mark_freshness(
+    mark_usd: Any, source: Any, max_age_seconds: float, now: datetime | None = None
+) -> tuple[MarkStatus, int | None]:
+    """Typed freshness of one mark and its age in whole seconds.
+
+    The age is null whenever the status is ``unknown``: there is no observation to age, and
+    reporting a number there would let a client print a fresh-looking mark that is not one.
+    """
+    status = _mark_status(mark_usd, source, max_age_seconds, now)
+    if status == "unknown" or not isinstance(source, dict):
+        return status, None
+    observed_raw = source.get("observed_at")
+    if not isinstance(observed_raw, str):
+        return status, None
+    try:
+        stamp = _aware(datetime.fromisoformat(observed_raw))
+    except ValueError:
+        return status, None
+    if stamp is None:
+        return status, None
+    return status, max(int(((now or utcnow()) - stamp).total_seconds()), 0)
+
+
 def _mark_status(
     mark_usd: Any, source: Any, max_age_seconds: float, now: datetime | None = None
-) -> str:
+) -> MarkStatus:
     """Typed freshness of one mark, separate from any quote's freshness."""
     if mark_usd is None:
         return "unknown"
@@ -499,14 +523,14 @@ def _position_views(
             source=None if snapshot is None or mark is None else _source_ref(snapshot),
             mode="paper",
         )
-        row = view.to_dict()
-        row["mark_status"] = _mark_status(
+        source = view.source
+        status, age_seconds = _mark_freshness(
             view.mark_usd,
-            row.get("source"),
+            None if source is None else source.to_dict(),
             max_age_seconds,
             now,
         )
-        views.append(row)
+        views.append(replace(view, mark_status=status, mark_age_seconds=age_seconds).to_dict())
     views.sort(key=lambda item: (item["chain"], item["token_address"]))
     return views
 

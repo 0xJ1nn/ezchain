@@ -14,7 +14,6 @@ import {
 } from "@/lib/candle-view";
 import { getPaperFills, getPaperPositions, type PaperFillRecord } from "@/lib/paper-api";
 import {
-	STALE_AFTER_SECONDS,
 	money,
 	markAge,
 	parsePositionSort,
@@ -249,7 +248,7 @@ export default async function PositionDetailPage({
 					<strong>This mark is not fresh.</strong>{" "}
 					{position.mark_usd === null
 						? "The account has no mark for this token; value and unrealized stay —."
-						: `The last observation is ${age.label} old, past the ${STALE_AFTER_SECONDS}s threshold. It is not executable.`}
+						: `The server reports this mark as ${position.mark_status}, observed ${age.label} ago. It is not executable.`}
 				</div>
 			)}
 
