@@ -530,9 +530,7 @@ def _position_views(
             max_age_seconds,
             now,
         )
-        views.append(
-            replace(view, mark_status=status, mark_age_seconds=age_seconds).to_dict()
-        )
+        views.append(replace(view, mark_status=status, mark_age_seconds=age_seconds).to_dict())
     views.sort(key=lambda item: (item["chain"], item["token_address"]))
     return views
 
