@@ -916,3 +916,16 @@ rotating it invalidates every outstanding record — the intended fail-closed di
 now safe to show on a public probe because a refused live start reports paper, not the requested
 value, and the public reason omits the record's path (the boot refusal and the log keep it). A
 signed record must be regenerated for each deployed build hash.
+
+## Mark freshness skew bound (GH-116)
+
+**Context:** A market observation dated in the future used to report `future` for any
+negative age, so a far-future (skewed or malicious) observation kept a position's mark
+looking usable indefinitely and could freeze the price against later updates.
+
+**Decision:** The read-side mark freshness rule keeps `future` only inside a small
+tolerated clock skew (`FUTURE_SKEW_SECONDS`, 5s, shared with the write-side bound in
+`market_snapshots`). An observation further ahead than that reports `unknown` with no
+age, so no surface prints a frozen price as usable. The four-value vocabulary
+(`fresh`/`stale`/`unknown`/`future`) is unchanged and the rule is computed once on the
+server in `_mark_status`.

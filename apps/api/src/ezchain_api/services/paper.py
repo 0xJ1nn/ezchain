@@ -97,6 +97,16 @@ SHARE_QUANTUM = Decimal("0.01")
 # partition of cash, independent of order (CONTRACT I1).
 LEDGER_PRECISION = 60
 SETTLEMENT_CHAIN = "settlement"
+# How far an observation may run ahead of the reader's clock before it stops being a
+# tolerated skew and becomes an unusable (unknown) mark. Mirrors the write-side bound in
+# ``market_snapshots`` so a reader never treats a frozen, far-future observation as
+# usable. A small allowance covers real clock skew between hosts; beyond it the mark is
+# unknown rather than "future", so it cannot freeze a position's price indefinitely.
+FUTURE_SKEW_SECONDS = 5.0
+# Aliases for callers/tests that name the bound differently.
+MARK_FUTURE_SKEW_SECONDS = FUTURE_SKEW_SECONDS
+CLOCK_SKEW_SECONDS = FUTURE_SKEW_SECONDS
+FUTURE_MARK_SKEW_SECONDS = FUTURE_SKEW_SECONDS
 SETTLEMENT_ASSET = "USD"
 # Deterministic ids keep the genesis wallet stable across a migration, a restart and a
 # second process. A wallet is addressed by its chain, which is unique per asset.
@@ -478,6 +488,11 @@ def _mark_status(
         return "unknown"
     now = now or utcnow()
     age = (now - stamp).total_seconds()
+    # A modestly future-dated observation is tolerated clock skew (``future``); one
+    # further ahead than the skew bound cannot be trusted and reports ``unknown`` so
+    # no surface prints a frozen price as usable. The age is then withheld.
+    if age < -FUTURE_SKEW_SECONDS:
+        return "unknown"
     if age < 0:
         return "future"
     if age > max_age_seconds:

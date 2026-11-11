@@ -187,6 +187,12 @@ new key for a new intent. What could not be computed is `null`: `equity_usd` and
 `unrealized_usd` are withheld when any open mark is unknown, and the account payload
 lists the unpriced positions instead of reporting a partial total as complete.
 
+A position's `mark_status` is the server's verdict (`fresh`, `stale`, `unknown` or
+`future`). An observation only modestly ahead of the clock is tolerated as `future`; one
+further ahead than the skew bound reports `unknown` with no age, so a skewed or
+malicious future observation cannot freeze a mark indefinitely. The age is `null`
+whenever the status is `unknown`.
+
 `GET /paper/account` and `GET /paper/wallets` are read-only. They never create genesis or
 re-declare a missing wallet: bootstrap happens at boot and on `POST /paper/orders` only, so
 a GET reports a missing wallet row as missing. A sell is an exit, not an entry: on a chain with no declared wallet, or a wallet that

@@ -75,21 +75,27 @@ def test_no_observation_reports_unknown_with_no_age(session: Session) -> None:
     assert row["mark_age_seconds"] is None
 
 
-def test_an_observation_ahead_of_the_clock_is_future_not_fresh(session: Session) -> None:
-    """A row written before the write-side guard existed must still read as future-dated.
-
-    ``record_snapshot`` stamps a future-dated observation with the write clock, so today's
-    writes cannot produce this shape; a legacy row can, and the read model must not present
-    it as fresh.
-    """
+def test_an_observation_ahead_within_the_skew_is_future_not_fresh(session: Session) -> None:
+    """A modestly future-dated observation is tolerated clock skew (``future``)."""
     _seed_position(session)
     record_snapshot(session, make_snapshot())
     # Rewrite the stored timestamp into the shape a row written before the guard can have.
-    session.execute(
-        update(MarketSnapshotRow).values(observed_at=utcnow() + timedelta(seconds=30))
-    )
+    session.execute(update(MarketSnapshotRow).values(observed_at=utcnow() + timedelta(seconds=2)))
     session.commit()
     row = paper.positions(session)[0]
 
     assert row["mark_status"] == "future"
     assert row["mark_age_seconds"] == 0
+
+
+def test_an_observation_far_in_the_future_reports_unknown(session: Session) -> None:
+    """A far-future observation cannot freeze a mark: it reports ``unknown``."""
+    _seed_position(session)
+    record_snapshot(session, make_snapshot())
+    # Rewrite the stored timestamp into the shape a row written before the guard can have.
+    session.execute(update(MarketSnapshotRow).values(observed_at=utcnow() + timedelta(seconds=30)))
+    session.commit()
+    row = paper.positions(session)[0]
+
+    assert row["mark_status"] == "unknown"
+    assert row["mark_age_seconds"] is None
