@@ -236,6 +236,52 @@ def test_executable_quote_carries_the_cost_preview(client_for: Any, session: Ses
     assert preview["source"]["name"] == "jupiter"
 
 
+def test_an_unknown_query_field_is_refused_before_any_provider_call(
+    client_for: Any, session: Session
+) -> None:
+    """A misspelt query parameter is an error, not a silently ignored filter.
+
+    The valid fields are present too, so the old behaviour would have quoted happily and
+    charged the caller for the wrong size. The 422 names the field in ``loc``.
+    """
+    jupiter = FakeJupiter()
+    router = QuoteRouter(providers=[jupiter], dexscreener=FakeDex())  # type: ignore[arg-type]
+    response = _client(client_for, router).get(
+        "/api/v1/quotes",
+        params={
+            "chain": "solana",
+            "token": "mint",
+            "side": "buy",
+            "amount_usd": "10",
+            "amout_usd": "100",
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert [error["loc"] for error in detail] == [["query", "amout_usd"]]
+    assert detail[0]["type"] == "extra_forbidden"
+    assert jupiter.calls == []
+
+
+def test_a_sell_with_quantity_and_slippage_is_accepted(client_for: Any, session: Session) -> None:
+    """The strict query set admits every field the route documents, not only the required four."""
+    jupiter = FakeJupiter()
+    router = QuoteRouter(providers=[jupiter], dexscreener=FakeDex())  # type: ignore[arg-type]
+    response = _client(client_for, router).get(
+        "/api/v1/quotes",
+        params={
+            "chain": "solana",
+            "token": "mint",
+            "side": "sell",
+            "amount_usd": "10",
+            "quantity": "5",
+            "slippage_bps": "100",
+        },
+    )
+    assert response.status_code == 200
+    assert jupiter.calls[0]["quantity"] == Decimal("5")
+
+
 def test_unknown_chain_is_404(client_for: Any, session: Session) -> None:
     router = QuoteRouter(providers=[], dexscreener=FakeDex())  # type: ignore[arg-type]
     response = _client(client_for, router).get(

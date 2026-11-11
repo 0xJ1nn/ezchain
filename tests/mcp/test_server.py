@@ -143,6 +143,30 @@ def test_paper_order_tool_uses_the_paper_endpoint(
     assert "mode" not in body
 
 
+def test_order_and_kill_switch_tools_advertise_closed_schemas(client: EzchainClient) -> None:
+    """The MCP twins of the strict API routes admit only the fields they forward.
+
+    An order tool that advertised extra properties would invite a caller to send a field
+    the API now refuses, so the closed-object flag and the property set are both pinned.
+    """
+    server = McpServer(client, allow_writes=True)
+    response: Any = server.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/list"})
+    tools = {tool["name"]: tool["inputSchema"] for tool in response["result"]["tools"]}
+
+    order = tools["ezchain_place_paper_order"]
+    assert order["additionalProperties"] is False
+    assert set(order["properties"]) == {
+        "chain",
+        "token_address",
+        "side",
+        "amount_usd",
+        "idempotency_key",
+    }
+    for name in ("ezchain_arm_kill_switch", "ezchain_disarm_kill_switch"):
+        assert tools[name]["additionalProperties"] is False
+        assert set(tools[name]["properties"]) == {"reason"}
+
+
 def test_api_error_becomes_a_tool_error(client: EzchainClient) -> None:
     server = McpServer(client)
     response = server.handle(

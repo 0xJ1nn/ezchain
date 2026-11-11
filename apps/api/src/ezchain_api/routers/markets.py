@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal, NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import (
@@ -28,7 +28,7 @@ from ..deps import (
     get_quote_router,
     get_session,
 )
-from ..errors import adapter_http_error, candles_http_error
+from ..errors import adapter_http_error, candles_http_error, refuse_unknown_query
 from ..models import MarketSnapshotRow
 from ..schemas import (
     CandlesOut,
@@ -788,8 +788,14 @@ async def token_candles(
     return CandlesOut.model_validate(series.to_dict())
 
 
+_QUOTE_QUERY_FIELDS = frozenset(
+    {"chain", "token", "side", "amount_usd", "quantity", "slippage_bps"}
+)
+
+
 @router.get("/api/v1/quotes", response_model=QuoteOut)
 async def quote(
+    request: Request,
     chain: str,
     token: str,
     side: Literal["buy", "sell"],
@@ -799,6 +805,7 @@ async def quote(
     quotes: QuoteRouter = Depends(get_quote_router),
     settings: Settings = Depends(get_settings),
 ) -> QuoteOut:
+    refuse_unknown_query(request, _QUOTE_QUERY_FIELDS)
     if get_chain(chain) is None:
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}

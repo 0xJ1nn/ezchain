@@ -216,8 +216,6 @@ def order_fuzz_cases(*, chain: str, token: str, key_prefix: str) -> list[FuzzCas
                 "strategy_id": "stress-injected-attribution",
                 "evil": True,
             },
-            expect="tolerate",
-            tolerate_reason="Pydantic ignores unknown fields by design (see schemas.py)",
         ),
         FuzzCase(
             "wrong_content_type",

@@ -54,7 +54,15 @@ class FakeDex:
         )
 
 
-def test_manual_order_with_strategy_id_is_ignored(client_for, session: Session) -> None:
+def test_manual_order_with_strategy_id_is_refused_and_names_it(
+    client_for, session: Session
+) -> None:
+    """A hand-written request cannot claim strategy attribution.
+
+    The field is refused rather than dropped, so the caller learns it was ignored: the
+    422 loc carries ``strategy_id``. A refusal happens before the quote or any journal
+    write, so no order and no fill row appears.
+    """
     dex = FakeDex()
     router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
     client: TestClient = client_for(
@@ -74,11 +82,12 @@ def test_manual_order_with_strategy_id_is_ignored(client_for, session: Session) 
         },
     )
 
-    assert response.status_code == 201
-    assert "strategy_id" not in response.json()
-    row = session.scalar(select(PaperOrderRow))
-    assert row is not None
-    assert row.strategy_id is None
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert [error["loc"] for error in detail] == [["body", "strategy_id"]]
+    assert detail[0]["type"] == "extra_forbidden"
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 0
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
 
 
 def _paper_client(client_for, dex: FakeDex) -> TestClient:
