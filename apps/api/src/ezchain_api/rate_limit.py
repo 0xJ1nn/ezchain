@@ -11,6 +11,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from .config import Settings, get_settings
+from .observability import READ_RATE_LIMITED
 
 READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _MAX_KEYS = 10_000
@@ -90,6 +91,7 @@ class ReadRateLimitMiddleware(BaseHTTPMiddleware):
 
         allowed, retry_after = self._limiter.allow(key)
         if not allowed:
+            READ_RATE_LIMITED.increment()
             return JSONResponse(
                 status_code=429,
                 content={

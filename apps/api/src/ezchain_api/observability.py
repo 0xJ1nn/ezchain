@@ -89,6 +89,30 @@ class _Duration:
     count: int = 0
 
 
+class ReadRateLimited:
+    """How many read requests the limiter has refused.
+
+    The limiter runs as middleware, before routing, so it cannot use ``HttpMetrics``: a
+    refused request never reaches the handler that observes a route. A process-lifetime
+    counter on its own series is enough to answer "is this deployment being throttled".
+    """
+
+    def __init__(self) -> None:
+        self.value = 0
+        self._lock = threading.Lock()
+
+    def increment(self) -> None:
+        with self._lock:
+            self.value += 1
+
+    def reset(self) -> None:
+        with self._lock:
+            self.value = 0
+
+
+READ_RATE_LIMITED = ReadRateLimited()
+
+
 class HttpMetrics:
     """A bounded Prometheus registry for HTTP counters and a latency histogram."""
 
@@ -210,6 +234,9 @@ def render_prometheus(
             "# HELP ezchain_paper_fills_total Persisted paper fills.",
             "# TYPE ezchain_paper_fills_total counter",
             f"ezchain_paper_fills_total {paper_fills}",
+            "# HELP ezchain_read_rate_limited_total Read requests refused by the read limiter.",
+            "# TYPE ezchain_read_rate_limited_total counter",
+            f"ezchain_read_rate_limited_total {READ_RATE_LIMITED.value}",
         ]
     )
     return "\n".join(lines) + "\n"
