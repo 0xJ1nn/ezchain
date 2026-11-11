@@ -419,8 +419,19 @@ class PositionState:
         return Decimal(0) if self.quantity == 0 else self.cost_usd / self.quantity
 
 
+MarkStatus = Literal["fresh", "stale", "unknown", "future"]
+
+
 @dataclass(frozen=True)
 class PositionView:
+    """One open position as the server computed it.
+
+    ``mark_status`` and ``mark_age_seconds`` are the server's own freshness verdict for the
+    mark, so a client never re-derives staleness from a timestamp and a threshold of its own:
+    the age is null when there is no usable observation, and the status names why
+    (``unknown`` with no mark, ``future`` for an observation dated ahead of the clock).
+    """
+
     chain: str
     token_address: str
     symbol: str
@@ -431,6 +442,8 @@ class PositionView:
     unrealized_usd: Decimal | None
     realized_usd: Decimal
     source: SourceRef | None
+    mark_status: MarkStatus = "unknown"
+    mark_age_seconds: int | None = None
     mode: Mode = "paper"
 
     def to_dict(self) -> dict[str, Any]:
@@ -447,5 +460,7 @@ class PositionView:
             "unrealized_usd": None if self.unrealized_usd is None else str(self.unrealized_usd),
             "realized_usd": str(self.realized_usd),
             "source": None if self.source is None else self.source.to_dict(),
+            "mark_status": self.mark_status,
+            "mark_age_seconds": self.mark_age_seconds,
             "mode": self.mode,
         }

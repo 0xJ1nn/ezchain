@@ -17,7 +17,6 @@ import {
 } from "@/lib/paper-api";
 import {
 	POSITION_SORTS,
-	STALE_AFTER_SECONDS,
 	chainOptions,
 	money,
 	markAge,
@@ -118,6 +117,12 @@ export default async function PositionsPage({
 							data: snapshot.positions.ok
 								? snapshot.positions.data.map((position) => ({
 										...position,
+										// The demo synthesises the server's verdict too: freshness is a
+										// server field now, so shifting the timestamp alone proves nothing.
+										// A position with no source stays unknown, as the API would report it.
+										...(position.source
+											? { mark_status: "stale" as const, mark_age_seconds: 300 }
+											: {}),
 										source: position.source
 											? {
 													...position.source,
@@ -357,9 +362,9 @@ export default async function PositionsPage({
 
 			{!failed && staleCount > 0 && (
 				<div className="note warn mb-12">
-					<strong>{staleCount} stale mark{staleCount === 1 ? "" : "s"}.</strong> A mark older
-					than {STALE_AFTER_SECONDS}s is labelled stale and is not executable. Unrealized
-					values stay marked to that last known price.
+					<strong>{staleCount} stale mark{staleCount === 1 ? "" : "s"}.</strong> A mark the
+					server labels stale is not executable. Unrealized values stay marked to that last
+					known price.
 				</div>
 			)}
 
@@ -375,9 +380,9 @@ export default async function PositionsPage({
 				footer={
 					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
 						<span>
-							Server view model · {view} view · mark age from{" "}
-							<span className="mono">source.observed_at</span> · {STALE_AFTER_SECONDS}s
-							stale threshold
+							Server view model · {view} view · freshness from{" "}
+							<span className="mono">mark_status</span> · age from{" "}
+							<span className="mono">mark_age_seconds</span>
 						</span>
 						<span>
 							{mode === "fixture"

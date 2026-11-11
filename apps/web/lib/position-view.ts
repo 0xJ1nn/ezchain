@@ -6,7 +6,6 @@
 import { MINUS, signedUsd, usd } from "./format";
 import type { PaperPosition } from "./paper-api";
 
-export const STALE_AFTER_SECONDS = 60;
 
 export type PositionView = "list" | "grid" | "detailed";
 
@@ -181,20 +180,28 @@ export interface MarkAge {
 	unknown: boolean;
 }
 
-export function markAge(position: PaperPosition, now = Date.now()): MarkAge {
-	if (!position.source?.observed_at) {
-		return { label: "unknown mark", stale: false, unknown: true };
+/**
+ * The mark's age as the server reported it.
+ *
+ * Nothing here re-derives freshness: the API sends `mark_status` and `mark_age_seconds`, so
+ * a threshold change is a server change and a client can never disagree with it.
+ */
+export function markAge(position: PaperPosition): MarkAge {
+	if (position.mark_status === "unknown" || position.mark_age_seconds === null) {
+		return {
+			label: position.mark_usd === null ? "unknown mark" : "unknown age",
+			stale: false,
+			unknown: true,
+		};
 	}
-	const observed = Date.parse(position.source.observed_at);
-	if (Number.isNaN(observed)) {
-		return { label: "unknown age", stale: false, unknown: true };
+	const seconds = Math.max(0, position.mark_age_seconds);
+	if (position.mark_status === "future") {
+		return { label: "future-dated", stale: true, unknown: false };
 	}
-	const seconds = Math.max(0, Math.round((now - observed) / 1000));
-	if (seconds <= STALE_AFTER_SECONDS) {
+	if (position.mark_status === "fresh") {
 		return { label: `${seconds}s`, stale: false, unknown: false };
 	}
-	const minutes = Math.round(seconds / 60);
-	return { label: `${minutes}m`, stale: true, unknown: false };
+	return { label: `${Math.round(seconds / 60)}m`, stale: true, unknown: false };
 }
 
 export function markTone(position: PaperPosition): "warn" | "ghost" {
