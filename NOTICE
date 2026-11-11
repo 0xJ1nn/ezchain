@@ -1,0 +1,43 @@
+ezCHAIN
+Copyright 2026 0xJ1nn and the ezCHAIN contributors.
+
+LICENCES
+
+The trading platform (apps/, services/, packages/core-py, packages/adapters,
+packages/ui, infra/, tools/ and tests/) is free software: you can redistribute it
+and/or modify it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version. See LICENSE.
+
+The strategy SDK (packages/sdk-py) is licensed under the Apache License,
+Version 2.0, so that strategies built on it can be distributed under any
+licence. See packages/sdk-py/LICENSE. The documentation (docs/) and the design
+system (design/) are also licensed under the Apache License, Version 2.0.
+
+ADDITIONAL TERMS UNDER SECTION 7 OF THE GNU AGPL
+
+1. Trademarks (section 7(e)). This licence grants no right to use the name
+   "ezCHAIN", the ezCHAIN logo, or any other trademark, service mark or trade
+   name of the project, except as TRADEMARKS.md allows. A modified version that
+   you distribute or offer over a network must not use them in a way that
+   suggests it is the official ezCHAIN or is endorsed by the project.
+
+2. Notices (section 7(b)). Every copy and every modified version must keep this
+   NOTICE file, or an equivalent notice that names ezCHAIN as the origin of the
+   code and links to the original source repository.
+
+COMMERCIAL LICENCE
+
+The copyright holder also offers the platform under separate commercial terms,
+for organisations that want to modify, embed or host it without the AGPL's
+obligation to publish their source code. Ask through the contact address on the
+maintainer's GitHub profile. A commercial licence never covers the trademarks
+unless it says so in writing.
+
+NO WARRANTY, NO ADVICE
+
+The software is provided "as is", without warranty of any kind, as the licences
+state. ezCHAIN is software, not a broker, exchange, custodian or adviser. It
+does not give investment advice, hold user funds or keys, or execute trades on
+anyone's behalf. Users run it, choose their own venues and strategies, and are
+responsible for their own decisions.

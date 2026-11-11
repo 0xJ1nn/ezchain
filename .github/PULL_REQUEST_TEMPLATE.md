@@ -39,5 +39,6 @@ bash tools/ci.sh
 - [ ] `CHANGELOG.md` updated for user-visible changes
 - [ ] No secrets, keys, dumps, `_tmp_*` or generated files committed
 - [ ] Conventional Commit + `git commit -s` (DCO)
+- [ ] I have read and agree to the ezCHAIN Contributor License Agreement, version 1.0 ([CLA.md](../CLA.md))
 - [ ] I did not edit a test to green without a stated reason
 - [ ] Claims in this PR are measured, not inferred (label PAPER/BACKTEST where relevant)

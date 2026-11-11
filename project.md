@@ -499,7 +499,10 @@ The secret scan in `tools/ci.sh` is a floor, not a guarantee.
 ## 27. License and distribution boundaries
 
 ezCHAIN is AGPL-3.0-or-later; `packages/sdk-py`, docs and design are Apache-2.0;
-trademarks are separate. See `LICENSE`, `TRADEMARKS.md` and `CONTRIBUTING.md`.
+trademarks are separate. The AGPL carries two section 7 additional terms (trademarks and notice
+preservation) in `NOTICE`, and the copyright holder also offers a commercial licence. Every external
+contribution is made under `CLA.md`, which is what keeps that dual licensing possible. See `LICENSE`,
+`NOTICE`, `TRADEMARKS.md`, `CLA.md` and `CONTRIBUTING.md`.
 
 Before incorporating external code, assets, libraries, algorithms or documentation:
 

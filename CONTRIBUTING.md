@@ -51,11 +51,19 @@ Money-path PRs (ledger, risk, executor, venue adapters) need two approvals.
 
 ## Licensing
 
-Inbound = outbound. App code and adapters: AGPL-3.0-or-later. `packages/sdk-py`, docs and
-design: Apache-2.0. By submitting a contribution you grant the project a perpetual,
-worldwide, non-exclusive, royalty-free license to use, reproduce, modify, distribute and
-relicense your contribution under the project's current or future license. This is a
-license grant, not a copyright assignment.
+App code and adapters: AGPL-3.0-or-later, with the additional terms in [`NOTICE`](NOTICE).
+`packages/sdk-py`, docs and design: Apache-2.0.
+
+Every contribution is made under the [Contributor License Agreement](CLA.md). You keep your
+copyright; the agreement lets the maintainer distribute your work under the open-source licence
+and also under the commercial licence described in `NOTICE`. It also promises that accepted work
+always stays available under an open-source licence. Agree by putting this line in each pull
+request description:
+
+> I have read and agree to the ezCHAIN Contributor License Agreement, version 1.0.
+
+The name and logo are covered by [`TRADEMARKS.md`](TRADEMARKS.md), not by the code licences. A fork
+that you distribute or host needs its own name.
 
 Do not paste code from a project whose license is incompatible. If you are unsure, ask in
 the issue first.

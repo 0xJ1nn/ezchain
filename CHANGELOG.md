@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **Licensing is spelled out.** `NOTICE` names the licence of each part of the repository,
+  adds two AGPL section 7 terms (no trademark rights, keep the notice), and states that a
+  commercial licence is available. `CLA.md` is the contributor licence agreement every pull
+  request now agrees to; it promises that accepted work stays open source. `TRADEMARKS.md`
+  names the official source and says what forks and services may and may not call themselves.
+
 ### Changed
 
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
