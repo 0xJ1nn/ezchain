@@ -86,15 +86,12 @@ __all__ = [
     "ArmParams",
     "Candle",
     "CostPreview",
-<<<<<<< HEAD
     "DEFAULT_SLIPPAGE_BPS",
     "ExecutionResult",
     "ExecutionStatus",
     "Fill",
-=======
     "DEFAULT_STALENESS_SECONDS",
     "Direction",
->>>>>>> dea073e (feat(market): add one normalized MarketEvent contract with replay)
     "GateCheck",
     "GateEvidence",
     "GateResult",

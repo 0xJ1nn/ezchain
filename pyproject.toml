@@ -1,7 +1,6 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-<<<<<<< HEAD
 src = [
     "packages/core-py/src",
     "packages/adapters/src",
@@ -10,10 +9,8 @@ src = [
     "apps/mcp/src",
     "services/engine/src",
     "services/executor/src",
+    "services/ingest/src",
 ]
-=======
-src = ["packages/core-py/src", "packages/adapters/src", "packages/sdk-py/src", "apps/api/src", "apps/mcp/src", "services/engine/src", "services/ingest/src"]
->>>>>>> dea073e (feat(market): add one normalized MarketEvent contract with replay)
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
