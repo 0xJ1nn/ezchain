@@ -1,7 +1,21 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { TopbarKillSwitch } from "@/app/risk/kill-switch";
+import { getKillSwitch } from "@/lib/paper-api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
+
+// The switch state is read from the API on each render. It streams inside its own
+// boundary so a slow or unreachable API never holds the rest of the shell hostage.
+async function TopbarKillSwitchState() {
+	const result = await getKillSwitch();
+	return (
+		<TopbarKillSwitch
+			initial={result.ok ? result.data : null}
+			initialError={result.ok ? null : result.error.message}
+		/>
+	);
+}
 
 export function Topbar() {
 	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
@@ -40,9 +54,18 @@ export function Topbar() {
 				◉
 			</Link>
 			<ThemeToggle />
-			<Link className="kill" href="/risk" title="Kill switch: halt new risk (k)">
-				KILL SWITCH
-			</Link>
+			<Suspense
+				fallback={
+					<span className="kill pending" aria-hidden="true">
+						<span className="kill-label">
+							<span className="kill-name">Kill switch</span>
+							<span className="kill-state">…</span>
+						</span>
+					</span>
+				}
+			>
+				<TopbarKillSwitchState />
+			</Suspense>
 			<Link className="avatar" href="/workspace" title="Workspace">
 				OP
 			</Link>

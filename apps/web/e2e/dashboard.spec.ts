@@ -15,7 +15,9 @@ test("dashboard renders from fixtures with no external requests", async ({ page 
 	await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
 	await expect(page.locator(".hero-stat .value")).toHaveText("—");
 	await expect(page.getByText(/equity unavailable — 1 open mark unknown/i).first()).toBeVisible();
-	await expect(page.getByRole("link", { name: "KILL SWITCH", exact: true })).toBeVisible();
+	await expect(
+		page.locator(".topbar").getByRole("button", { name: /Kill switch: RELEASED/ }),
+	).toBeVisible();
 	await expect(page.getByText("One screen to answer")).toBeVisible();
 
 	// Equity is a composition, not a single understated number: the unknown asset is
