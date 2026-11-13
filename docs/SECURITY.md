@@ -18,7 +18,7 @@ a passphrase could be stored, and the ledger records the fingerprint, never a ke
 
 | Tier | Where the key lives | Signing | Use |
 |---|---|---|---|
-| `local_vault` | encrypted file (XChaCha20-Poly1305, Argon2id-derived KEK, per-key DEK) | executor process, in memory per request | default hot wallet |
+| `local_vault` | encrypted file; the cipher and KDF are **not yet decided** — XChaCha20-Poly1305 with an Argon2id-derived KEK and a per-key DEK is the planned target (ADR-0039 leaves both open) | executor process, in memory per request | default hot wallet |
 | `hardware` | Ledger/Trezor or another device | device; executor builds unsigned tx, the owning user approves | one option, not the only one |
 | `watch` | none | — | portfolio, signals; never signs |
 | `cex_key` | vault, encrypted | exchange API | read-only by default; trade scope opt-in |
@@ -44,6 +44,17 @@ automation opt-in, then does what they asked.
 - Key material never enters a strategy process. The SDK has no signing API by design.
 - A non-paper pipeline requires a boundary whose signer carries a signable per-user
   handle; a bare in-memory signer refuses with `VAULT_BOUNDARY_REQUIRED` before the venue.
+  A signer whose `handle` exists but is not a `KeyHandle` is refused the same way rather
+  than dereferenced.
+- The order's principal and the handle's owner are compared in the pipeline before any
+  signer runs, and again in the signer before the vault is called. The principal comes
+  from the order's attribution (the authenticated caller, the agent key or the strategy),
+  never from a value the executor asserts about itself, so one executor instance cannot
+  sign user B's order with user A's key (`CUSTODY_OWNER_MISMATCH`).
+- An unattended (automation) intent needs the opt-in consent record for that same user and
+  rule. With no matching `AutomationSetting` the run refuses with
+  `AUTOMATION_CONSENT_REQUIRED` before an order exists, so an automation path cannot skip
+  the opt-in by leaving the setting unconfigured.
 
 ## 2. Authentication and authorization
 

@@ -49,6 +49,13 @@ class Intent:
     one could be submitted twice. A buy is sized in USD; a sell is sized by its token
     quantity or, for a reduce-only exit, by the position it closes. A sell may carry a
     zero USD hint when the caller knows the quantity and no mark exists.
+
+    ``actor`` is the principal the order belongs to, resolved server-side (the
+    authenticated caller, the agent key or the strategy attribution) and never a request
+    field. It is what a custody path compares with the key handle's owner: the signer is
+    handed an approval, so an order whose principal is only asserted by a caller could be
+    signed with somebody else's key. ``automation`` names the rule that fired when nobody
+    is in the loop; an unattended intent needs the consent record for that user.
     """
 
     side: Side
@@ -60,6 +67,8 @@ class Intent:
     reduce_only: bool = False
     strategy_id: str | None = None
     risk_profile: str | None = None
+    actor: str | None = None
+    automation: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -71,6 +80,10 @@ class Intent:
             raise ValueError("intent token address is required")
         if not self.idempotency_key:
             raise ValueError("intent idempotency key is required")
+        if self.actor is not None and not self.actor:
+            raise ValueError("an attributed intent names its principal")
+        if self.automation is not None and not self.automation:
+            raise ValueError("an unattended intent names the automation that fired")
         if self.amount_usd < 0:
             raise ValueError("intent amount cannot be negative")
         if self.quantity is not None and self.quantity <= 0:
@@ -106,7 +119,11 @@ class Intent:
 
 @dataclass(frozen=True)
 class Order:
-    """A priced order: the quote's amounts, never the intent's request."""
+    """A priced order: the quote's amounts, never the intent's request.
+
+    ``actor`` is carried through from the intent so the approval built from this order
+    names the principal whose key may sign it, not one a caller supplied at the seam.
+    """
 
     id: str
     idempotency_key: str
@@ -118,6 +135,7 @@ class Order:
     quote: Quote
     risk_decision: RiskDecision
     reduce_only: bool = False
+    actor: str | None = None
     created_at: datetime = field(default_factory=utcnow)
 
     def __post_init__(self) -> None:

@@ -22,10 +22,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   broken transport each produce no signature and one typed `VAULT_*` code; another user's
   handle refuses exactly like an unknown one. Automation is a per-user `AutomationSetting`:
   `manual` is the approval queue and `full_auto` cannot be constructed without the opt-in
-  risk disclosure for that same user, with the key-add disclosure recorded beside it. Live
-  now also requires custody, not just a signing boundary: a pipeline whose mode is not paper
-  refuses a signer with no signable per-user handle (`VAULT_BOUNDARY_REQUIRED`) before the
-  venue. Paper runs unchanged with the fake venue. Recorded as ADR-0040.
+  risk disclosure for that same user, with the key-add disclosure recorded beside it. An
+  intent that names an automation runs unattended, so the pipeline resolves that user's
+  setting and refuses with `AUTOMATION_CONSENT_REQUIRED` when there is none, when it belongs
+  to another user or when the tier still waits for per-order approval — before any order
+  exists. Live also requires custody, not just a signing boundary: a pipeline whose mode is
+  not paper refuses a signer with no signable per-user handle (`VAULT_BOUNDARY_REQUIRED`)
+  before the venue, and a `handle` that is present but not a `KeyHandle` is refused on the
+  same code instead of raising. The order's principal travels on the intent and into the
+  approval, so the pipeline compares it with the handle's owner before any signer runs: one
+  executor instance cannot sign user B's order with user A's key (`CUSTODY_OWNER_MISMATCH`),
+  and `VaultTransactionSigner` no longer takes a caller-asserted `owner`. Paper runs
+  unchanged with the fake venue. Recorded as ADR-0040.
 - **The executor signs only the intent that was approved (PAPER).** A venue adapter now
   receives an immutable `ApprovedIntent` (chain, cluster, mint, side, amount, minimum
   output, recipient, program id, idempotency key) and returns bytes; it is not handed the

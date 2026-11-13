@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from ezchain_core import (
+    CUSTODY_OWNER_MISMATCH,
     VAULT_APPROVAL_DENIED,
     VAULT_LOCKED,
     VAULT_SIGN_FAILED,
@@ -111,6 +112,9 @@ class HardwareSignerVault:
     belongs to someone else refuses with the same code as an unknown handle, so a caller
     cannot probe which handles exist. The signature that returns must name this handle's
     fingerprint; one for another key is refused rather than trusted.
+
+    The executor never supplies ``owner`` itself: the pipeline passes the principal it took
+    from the priced order, so this check is the last one behind the pipeline's own.
     """
 
     transport: SignerTransport
@@ -149,18 +153,24 @@ class VaultTransactionSigner:
     depth behind the pipeline's own check), so a caller that skips the pipeline still
     cannot sign what was not approved. The handle it carries is what marks a pipeline as
     custody-backed: a non-paper pipeline refuses a signer without one.
+
+    The owner is never constructor state. It is taken from the approval the pipeline built
+    from the priced order, and a handle belonging to another principal refuses before the
+    vault is called: an executor that trusted an owner field on itself could sign one
+    user's order with another user's key.
     """
 
     vault: Vault
     handle: KeyHandle
-    owner: str
 
     def sign(self, prepared: PreparedTransaction, approved: ApprovedIntent) -> SignedTransaction:
         code = verify_prepared_transaction(prepared, approved)
         if code is not None:
             raise SigningRefused(code)
+        if not approved.actor or approved.actor != self.handle.owner:
+            raise SigningRefused(CUSTODY_OWNER_MISMATCH)
         try:
-            signed = self.vault.sign(prepared, self.handle, owner=self.owner)
+            signed = self.vault.sign(prepared, self.handle, owner=approved.actor)
         except VaultRefused as exc:
             raise SigningRefused(exc.code) from None
         try:

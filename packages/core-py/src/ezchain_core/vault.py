@@ -71,6 +71,17 @@ VAULT_REASONS: tuple[str, ...] = (
     VAULT_BOUNDARY_REQUIRED,
 )
 
+# The order's principal and the handle's owner are two different facts, and only the
+# pipeline can compare them: the signer is handed an approval, not the caller's assertion.
+# A mismatch is its own code so an execution layer cannot sign one user's order with
+# another user's key and call it an unknown handle afterwards.
+CUSTODY_OWNER_MISMATCH = "CUSTODY_OWNER_MISMATCH"
+
+# An unattended run needs the consent record for the same user and automation. The setting
+# refuses at construction without its disclosure; the execution path refuses an automation
+# run it has no setting for, so no order leaves without that consent.
+AUTOMATION_CONSENT_REQUIRED = "AUTOMATION_CONSENT_REQUIRED"
+
 # Ed25519 is 64 bytes and a DER-encoded secp256k1 signature is at most 72; anything beyond
 # this is not a signature for a transaction this project builds.
 MAX_SIGNATURE_BYTES = 512
@@ -228,6 +239,11 @@ class VaultBackedSigner(Protocol):
 
     The handle is the authenticated user's own key, so the pipeline can tell a real
     custody path from a bare in-memory signer: a non-paper pipeline requires this shape.
+
+    ``handle`` is checked for its type, not merely for the attribute's existence: a
+    ``runtime_checkable`` protocol only proves that some ``handle`` is present, and a
+    signer carrying something that is not a :class:`KeyHandle` has no owner to compare,
+    so the pipeline refuses it rather than dereferencing it.
     """
 
     handle: KeyHandle
@@ -238,11 +254,13 @@ class VaultBackedSigner(Protocol):
 
 
 __all__ = [
+    "AUTOMATION_CONSENT_REQUIRED",
     "AUTOMATION_FULL",
     "AUTOMATION_MANUAL",
     "AUTOMATION_TIERS",
     "CUSTODY_HARDWARE",
     "CUSTODY_LOCAL_VAULT",
+    "CUSTODY_OWNER_MISMATCH",
     "CUSTODY_TIERS",
     "CUSTODY_WATCH",
     "DISCLOSURE_AUTOMATION_OPT_IN",

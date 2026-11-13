@@ -19,14 +19,17 @@ from decimal import Decimal
 import pytest
 
 from ezchain_core import (
+    AUTOMATION_CONSENT_REQUIRED,
     AUTOMATION_FULL,
     AUTOMATION_MANUAL,
     CUSTODY_HARDWARE,
     CUSTODY_LOCAL_VAULT,
+    CUSTODY_OWNER_MISMATCH,
     CUSTODY_TIERS,
     CUSTODY_WATCH,
     DISCLOSURE_AUTOMATION_OPT_IN,
     DISCLOSURE_KEY_ADD,
+    MAX_SIGNATURE_BYTES,
     SIGNABLE_CUSTODY,
     SIGNING_BOUNDARY_REQUIRED,
     VAULT_APPROVAL_DENIED,
@@ -45,6 +48,7 @@ from ezchain_core import (
     PreparedTransaction,
     RiskDisclosure,
     RiskLimits,
+    SignedTransaction,
     SourceRef,
     TokenSnapshot,
     TransactionPayload,
@@ -70,6 +74,7 @@ from ezchain_executor import (
     VaultTransactionSigner,
 )
 from ezchain_executor.kill_switch import KillSwitch
+from ezchain_executor.pipeline import _custody_backed, _custody_handle
 
 CHAIN = "solana"
 TOKEN = "Mint1111111111111111111111111111111111111111"
@@ -148,7 +153,7 @@ def handle(
     )
 
 
-def approved() -> ApprovedIntent:
+def approved(*, actor: str | None = ALICE) -> ApprovedIntent:
     return ApprovedIntent(
         chain=CHAIN,
         cluster=CLUSTER,
@@ -159,6 +164,7 @@ def approved() -> ApprovedIntent:
         recipient=WALLET,
         program_id=PROGRAM,
         idempotency_key="intent-1",
+        actor=actor,
     )
 
 
@@ -185,6 +191,7 @@ def buy(**overrides: object) -> Intent:
         "chain": CHAIN,
         "token_address": TOKEN,
         "idempotency_key": "intent-1",
+        "actor": ALICE,
     }
     values.update(overrides)
     return Intent(**values)  # type: ignore[arg-type]
@@ -240,13 +247,12 @@ def custody_pipeline(
     transport: FakeSignerTransport,
     key_handle: KeyHandle | None = None,
     *,
-    owner: str = ALICE,
     mode: str = "paper",
+    automation_settings=None,  # type: ignore[no-untyped-def]
 ) -> tuple[ExecutionPipeline, MemoryJournal, VaultTransactionSigner]:
     signer = VaultTransactionSigner(
         vault=HardwareSignerVault(transport),
         handle=key_handle or handle(),
-        owner=owner,
     )
     journal = MemoryJournal()
     pipe = ExecutionPipeline(
@@ -263,6 +269,7 @@ def custody_pipeline(
             signer=signer,
         ),
         mode=mode,  # type: ignore[arg-type]
+        automation_settings=automation_settings,
     )
     return pipe, journal, signer
 
@@ -282,6 +289,22 @@ def test_a_key_handle_carries_only_public_facts_and_a_hash() -> None:
 
 def test_a_signature_carries_no_key_material() -> None:
     assert set(VaultSignature.__dataclass_fields__) == {"handle_id", "fingerprint", "signature"}
+
+
+def test_a_signature_larger_than_a_transaction_signature_is_refused() -> None:
+    oversized = b"\x01" * (MAX_SIGNATURE_BYTES + 1)
+    with pytest.raises(ValueError):
+        VaultSignature(
+            handle_id="h-alice-1",
+            fingerprint=TEST_ONLY_FINGERPRINT,
+            signature=oversized,
+        )
+    at_the_bound = VaultSignature(
+        handle_id="h-alice-1",
+        fingerprint=TEST_ONLY_FINGERPRINT,
+        signature=b"\x01" * MAX_SIGNATURE_BYTES,
+    )
+    assert len(at_the_bound.signature) == MAX_SIGNATURE_BYTES
 
 
 def test_the_vault_protocol_has_one_operation_and_it_returns_a_signature() -> None:
@@ -437,9 +460,7 @@ def test_the_vault_only_ever_receives_the_unsigned_payload() -> None:
 
 def test_the_vault_signer_binds_before_the_vault_is_touched() -> None:
     transport = FakeSignerTransport()
-    signer = VaultTransactionSigner(
-        vault=HardwareSignerVault(transport), handle=handle(), owner=ALICE
-    )
+    signer = VaultTransactionSigner(vault=HardwareSignerVault(transport), handle=handle())
     foreign = replace(approved(), mint="Mint9999999999999999999999999999999999999999")
     with pytest.raises(Exception) as exc:
         signer.sign(prepared(), foreign)
@@ -449,7 +470,7 @@ def test_the_vault_signer_binds_before_the_vault_is_touched() -> None:
 
 def test_the_vault_signer_carries_the_handle_so_live_can_tell_custody_apart() -> None:
     signer = VaultTransactionSigner(
-        vault=HardwareSignerVault(FakeSignerTransport()), handle=handle(), owner=ALICE
+        vault=HardwareSignerVault(FakeSignerTransport()), handle=handle()
     )
     assert isinstance(signer, VaultBackedSigner)
     assert signer.fingerprint == TEST_ONLY_FINGERPRINT
@@ -457,9 +478,7 @@ def test_the_vault_signer_carries_the_handle_so_live_can_tell_custody_apart() ->
 
 def test_a_vault_refusal_becomes_a_signing_refusal_with_the_same_code() -> None:
     transport = FakeSignerTransport(mode="denied")
-    signer = VaultTransactionSigner(
-        vault=HardwareSignerVault(transport), handle=handle(), owner=ALICE
-    )
+    signer = VaultTransactionSigner(vault=HardwareSignerVault(transport), handle=handle())
     with pytest.raises(Exception) as exc:
         signer.sign(prepared(), approved())
     assert getattr(exc.value, "code", None) == VAULT_APPROVAL_DENIED
@@ -640,6 +659,294 @@ def test_a_local_vault_handle_signs_too_hardware_is_one_option() -> None:
     vault = HardwareSignerVault(transport)
     signed = vault.sign(prepared(), handle(custody=CUSTODY_LOCAL_VAULT), owner=ALICE)
     assert signed.signature
+
+
+# --- Ownership binding: the order's principal, end to end -------------------
+
+
+def test_the_signers_owner_comes_from_the_approval_not_its_constructor() -> None:
+    """The signer carries no owner field a caller could assert."""
+    public = set(VaultTransactionSigner.__dataclass_fields__)
+    assert "owner" not in public
+    assert public == {"vault", "handle"}
+
+
+def test_the_signer_refuses_an_approval_for_another_principal() -> None:
+    transport = FakeSignerTransport()
+    signer = VaultTransactionSigner(vault=HardwareSignerVault(transport), handle=handle())
+    with pytest.raises(Exception) as exc:
+        signer.sign(prepared(approved(actor=BOB)), approved(actor=BOB))
+    assert getattr(exc.value, "code", None) == CUSTODY_OWNER_MISMATCH
+    assert transport.calls == 0, "another principal's order must not reach the signer"
+
+
+def test_the_signer_refuses_an_approval_with_no_principal() -> None:
+    transport = FakeSignerTransport()
+    signer = VaultTransactionSigner(vault=HardwareSignerVault(transport), handle=handle())
+    with pytest.raises(Exception) as exc:
+        signer.sign(prepared(approved(actor=None)), approved(actor=None))
+    assert getattr(exc.value, "code", None) == CUSTODY_OWNER_MISMATCH
+    assert transport.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_the_pipeline_refuses_bobs_order_signed_with_alices_key() -> None:
+    """The isolation the executor must keep: one instance, two principals.
+
+    The signer's handle belongs to Alice. Bob's intent carries Bob as its principal, so
+    the pipeline refuses it before the signer runs — the vault is never asked to sign, and
+    nothing reaches the venue.
+    """
+    venue = FakeVenue()
+    transport = FakeSignerTransport()
+    pipe, journal, _ = custody_pipeline(venue, transport, mode="live")
+
+    bob = await pipe.run(buy(actor=BOB, idempotency_key="bob-1"), snapshot=make_snapshot())
+
+    assert bob.status == "rejected"
+    assert bob.reason == CUSTODY_OWNER_MISMATCH
+    assert transport.calls == 0, "the cross-user attempt must not reach the signer"
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+    # The same pipeline still serves its own principal.
+    alice = await pipe.run(buy(actor=ALICE, idempotency_key="alice-1"), snapshot=make_snapshot())
+    assert alice.status == "filled"
+    assert transport.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_the_pipeline_refuses_an_order_with_no_principal_in_a_custody_path() -> None:
+    venue = FakeVenue()
+    transport = FakeSignerTransport()
+    pipe, _, _ = custody_pipeline(venue, transport, mode="live")
+    result = await pipe.run(buy(actor=None), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == CUSTODY_OWNER_MISMATCH
+    assert transport.calls == 0
+    assert venue.submit_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_paper_with_custody_still_refuses_a_cross_user_signature() -> None:
+    venue = FakeVenue()
+    transport = FakeSignerTransport()
+    pipe, _, _ = custody_pipeline(venue, transport)
+    result = await pipe.run(buy(actor=BOB), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == CUSTODY_OWNER_MISMATCH
+    assert transport.calls == 0
+    assert venue.submit_calls == 0
+
+
+# --- The boundary's handle is validated, not dereferenced -------------------
+
+
+@dataclass
+class SignerWithANonHandle:
+    """A signer whose ``.handle`` exists but is not a ``KeyHandle``.
+
+    ``VaultBackedSigner`` is a ``runtime_checkable`` protocol, so it matches on the
+    attribute alone. A pipeline that read ``.signable`` off this would raise
+    ``AttributeError`` out of ``run``; it must refuse instead.
+    """
+
+    handle: str = "not-a-handle"
+
+    def sign(self, prepared: PreparedTransaction, approved: ApprovedIntent) -> SignedTransaction:
+        raise AssertionError("a signer with no key handle must never be called")
+
+
+@pytest.mark.asyncio
+async def test_a_signers_handle_of_the_wrong_type_refuses_instead_of_crashing() -> None:
+    venue = FakeVenue()
+    pipe = ExecutionPipeline(
+        venue=venue,
+        sink=MemoryJournal(),
+        limits=limits(),
+        kill_switch=KillSwitch(),
+        timeout_seconds=0.2,
+        signing=SigningBoundary(
+            cluster=CLUSTER,
+            recipient=WALLET,
+            program_id=PROGRAM,
+            adapter=venue,
+            signer=SignerWithANonHandle(),
+        ),
+        mode="live",
+    )
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == VAULT_BOUNDARY_REQUIRED
+    assert venue.submit_calls == 0
+
+
+def test_a_signer_whose_handle_is_not_a_key_handle_is_not_custody() -> None:
+    boundary = SigningBoundary(
+        cluster=CLUSTER,
+        recipient=WALLET,
+        program_id=PROGRAM,
+        adapter=FakeVenue(),
+        signer=SignerWithANonHandle(),
+    )
+    assert not _custody_backed(boundary)
+    assert _custody_handle(boundary) is None
+
+
+@dataclass
+class PermissiveCustodySigner:
+    """A custody-shaped signer that signs any approval it is handed.
+
+    It carries Alice's handle and is a ``VaultBackedSigner``, but it performs no ownership
+    check of its own — like a signer that trusts its caller, or a future implementation
+    with a bug. Only the pipeline's own principal comparison can refuse Bob's order here,
+    so this is the test that proves the check lives at the pipeline and not merely in the
+    signer that happens to be configured.
+    """
+
+    handle: KeyHandle = field(default_factory=handle)
+    calls: int = 0
+
+    def sign(self, prepared: PreparedTransaction, approved: ApprovedIntent) -> SignedTransaction:
+        self.calls += 1
+        return SignedTransaction(
+            raw=prepared.raw,
+            signature=hmac.new(TEST_ONLY_KEY, prepared.raw, hashlib.sha256).digest(),
+            approved=approved,
+            payload_digest=prepared.payload_digest,
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_pipeline_itself_refuses_a_cross_user_order_whatever_the_signer_does() -> None:
+    venue = FakeVenue()
+    signer = PermissiveCustodySigner()
+    pipe = ExecutionPipeline(
+        venue=venue,
+        sink=MemoryJournal(),
+        limits=limits(),
+        kill_switch=KillSwitch(),
+        timeout_seconds=0.2,
+        signing=SigningBoundary(
+            cluster=CLUSTER,
+            recipient=WALLET,
+            program_id=PROGRAM,
+            adapter=venue,
+            signer=signer,
+        ),
+        mode="live",
+    )
+
+    bob = await pipe.run(buy(actor=BOB), snapshot=make_snapshot())
+
+    assert bob.status == "rejected"
+    assert bob.reason == CUSTODY_OWNER_MISMATCH
+    assert signer.calls == 0, "the pipeline must refuse before any signer runs"
+    assert venue.submit_calls == 0
+
+    alice = await pipe.run(buy(actor=ALICE, idempotency_key="alice-1"), snapshot=make_snapshot())
+    assert alice.status == "filled"
+    assert signer.calls == 1
+
+
+# --- Automation consent, enforced before an order exists --------------------
+
+
+def alice_full_auto() -> AutomationSetting:
+    return AutomationSetting(
+        user=ALICE,
+        tier=AUTOMATION_FULL,
+        disclosure=RiskDisclosure(
+            point=DISCLOSURE_AUTOMATION_OPT_IN,
+            user=ALICE,
+            acknowledged_at=utcnow(),
+            version="2026-11-13",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_unattended_intent_with_no_consent_record_refuses() -> None:
+    venue = FakeVenue()
+    pipe, journal, _ = custody_pipeline(venue, FakeSignerTransport())
+
+    # No resolver configured at all: no consent was recorded, so nothing may run.
+    result = await pipe.run(buy(automation="dca-hourly"), snapshot=make_snapshot())
+
+    assert result.status in ("denied", "rejected")
+    assert result.reason == AUTOMATION_CONSENT_REQUIRED
+    assert result.order is None
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_an_unattended_intent_whose_user_has_only_manual_consent_refuses() -> None:
+    venue = FakeVenue()
+    pipe, journal, _ = custody_pipeline(
+        venue,
+        FakeSignerTransport(),
+        automation_settings=lambda user: AutomationSetting(user=user, tier=AUTOMATION_MANUAL),
+    )
+    result = await pipe.run(buy(automation="dca-hourly"), snapshot=make_snapshot())
+
+    assert result.reason == AUTOMATION_CONSENT_REQUIRED
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_an_unattended_intent_with_consent_for_another_user_refuses() -> None:
+    venue = FakeVenue()
+    pipe, _, _ = custody_pipeline(
+        venue,
+        FakeSignerTransport(),
+        automation_settings=lambda user: alice_full_auto(),
+    )
+    result = await pipe.run(buy(actor=BOB, automation="dca-hourly"), snapshot=make_snapshot())
+
+    assert result.reason == AUTOMATION_CONSENT_REQUIRED
+    assert venue.submit_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_an_unattended_intent_with_the_consent_record_runs() -> None:
+    venue = FakeVenue()
+    pipe, journal, _ = custody_pipeline(
+        venue,
+        FakeSignerTransport(),
+        automation_settings=lambda user: alice_full_auto(),
+    )
+    result = await pipe.run(buy(automation="dca-hourly"), snapshot=make_snapshot())
+
+    assert result.status == "filled"
+    assert venue.submit_calls == 1
+    assert len(journal.groups) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_person_placed_intent_needs_no_automation_consent() -> None:
+    venue = FakeVenue()
+    pipe, _, _ = custody_pipeline(venue, FakeSignerTransport())
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+    assert result.status == "filled"
+
+
+# --- Two principals never dedupe against each other -------------------------
+
+
+@pytest.mark.asyncio
+async def test_one_idempotency_key_from_two_principals_is_a_conflict() -> None:
+    venue = FakeVenue()
+    pipe, _, _ = custody_pipeline(venue, FakeSignerTransport())
+    first = await pipe.run(buy(actor=ALICE, idempotency_key="shared"), snapshot=make_snapshot())
+    second = await pipe.run(buy(actor=BOB, idempotency_key="shared"), snapshot=make_snapshot())
+
+    assert first.status == "filled"
+    assert second.reason == "IDEMPOTENCY_CONFLICT"
 
 
 @dataclass

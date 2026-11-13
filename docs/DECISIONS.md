@@ -1068,10 +1068,22 @@ is one stable code (`VAULT_UNREACHABLE`, `VAULT_APPROVAL_DENIED`, `VAULT_UNKNOWN
 `VAULT_LOCKED`, `VAULT_WATCH_ONLY`, `VAULT_SIGN_FAILED`); another user's handle refuses
 exactly like an unknown one, so a caller cannot probe existence, and a signer that answers
 for a different fingerprint is refused rather than trusted. Automation is a per-user
-`AutomationSetting`: `manual` is EZ-257's approval queue, and `full_auto` cannot be
+`AutomationSetting`: `manual` is the approval queue, and `full_auto` cannot be
 constructed without a `RiskDisclosure` at the automation opt-in for that same user. The
-second disclosure point, `key_add`, records what custody of the added key means. The
-product tells the user what they are doing, once, and then does what they asked.
+execution path enforces it: an intent that names an automation runs unattended, so the
+pipeline resolves that user's setting and refuses with `AUTOMATION_CONSENT_REQUIRED` when
+there is none, when it belongs to another user, or when the tier still waits for per-order
+approval — before any order exists. The second disclosure point, `key_add`, records what
+custody of the added key means. The product tells the user what they are doing, once, and
+then does what they asked.
+
+The principal that a signature is authorised for is not a signer setting. It travels on the
+order: `Intent.actor` (the actor attribution resolved server-side, never a request field) is
+copied into `Order` and into the `ApprovedIntent`, and it is covered by the approval digest.
+The pipeline compares the handle's owner with that principal before any signer runs, and the
+signer refuses an approval naming another principal with `CUSTODY_OWNER_MISMATCH` before the
+vault is called. `VaultTransactionSigner` therefore has no `owner` constructor field: an
+executor cannot assert which user it is signing for.
 
 **Consequences:** the key belongs to its user, so the platform's guarantee is against
 outsiders — encryption at rest, the handle boundary, no key in any log, metric, error or
@@ -1080,7 +1092,10 @@ The ledger keeps a fingerprint per fill, never a key, so a fill names the key th
 it without exposing it. The pipeline's live gate tightens rather than loosens: a non-paper
 pipeline needs not only a signing boundary but a boundary whose signer carries a signable
 per-user handle, and a bare in-memory signer refuses with `VAULT_BOUNDARY_REQUIRED` before
-the venue. The existing `SIGNING_BOUNDARY_REQUIRED` refusal still stands for a pipeline
+the venue. A `handle` that is present but not a `KeyHandle` is refused on the same code
+instead of being dereferenced. The principal comparison is the isolation guarantee: a cross
+user signature attempt refuses inside the pipeline with `CUSTODY_OWNER_MISMATCH`, not only at
+the vault. The existing `SIGNING_BOUNDARY_REQUIRED` refusal still stands for a pipeline
 with no boundary at all. Everything the executor already enforced is unchanged: one
 ledger, one execution path, unknown data refuses, the kill switch gates entry only, and
 the signed live gate record still gates a live start.
@@ -1088,6 +1103,6 @@ the signed live gate record still gates a live start.
 **Open, for the next vault tasks:** the cipher and KDF for the encrypted store and its
 backup/restore path; the allow-list and per-key policy shape; the master-key source (the
 operator's KMS or sealed file, and how a user's credential wraps their own key); key
-rotation and revocation (EZ-224) and the rotation's fingerprint history; the offline
-known-answer vector and cluster guard (EZ-223); the signing process's socket and per-start
-secret (EZ-222). Each is a design against this decision and needs owner review before live.
+rotation and revocation (a tracked follow-up) and the rotation's fingerprint history; the offline
+known-answer vector and cluster guard (a tracked follow-up); the signing process's socket and per-start
+secret (a tracked follow-up). Each is a design against this decision and needs owner review before live.
