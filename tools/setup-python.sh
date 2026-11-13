@@ -18,6 +18,7 @@ fi
   -e packages/sdk-py \
   -e apps/api \
   -e apps/mcp \
-  -e services/engine
+  -e services/engine \
+  -e services/executor
 
 echo "python: ok — run .venv/bin/pytest"

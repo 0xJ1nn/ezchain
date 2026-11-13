@@ -2,8 +2,26 @@
 
 Status: **contract for live trading.** Normative together with [SECURITY.md](SECURITY.md)
 §1–§3 and [ARCHITECTURE.md](ARCHITECTURE.md). ADR-0026 records the decision. Paper and
-live share one pipeline: `Intent → RiskDecision → Quote → Order → Fill → Journal`; only
-the custodian (executor) and the venue transaction differ.
+live are designed to share one pipeline — `Intent → RiskDecision → Quote → Order → Fill →
+Journal` — with only the custodian (executor) and the venue transaction differing.
+
+The reference pipeline is implemented once, in
+`services/executor/src/ezchain_executor/pipeline.py`. Its stages are the typed objects in
+`ezchain_core.execution` (`Intent`, `RiskDecision`, `Quote`, `Order`, `Fill`, `Journal`);
+the venue sits behind the core `Venue` protocol, so paper, testnet and live differ only by
+the adapter and the custodian injected. **It is not yet the paper execution path:** paper
+orders are still placed by the API paper order service
+(`apps/api/src/ezchain_api/services/paper.py`), which validates risk, writes the order and
+fill, and appends ledger rows directly. That service is the current caller of record; its
+delegation to this pipeline is tracked separately. The executor runner fails closed: a buy
+with no market snapshot is denied before any venue call, a missing or non-executable quote
+produces no order, a stale quote or missing snapshot is denied after the quote stage for
+both sides, and an unreadable kill switch refuses. Duplicate intents are deduped on the
+idempotency key bound to the payload before the venue is quoted, so a retry yields one
+order and one fill, while the same key with a different payload is a conflict. A
+reduce-only exit is sized to the held position, re-bounded against it before submit, and is
+never capped below it. The runner never writes the ledger: it appends a balanced `Journal`
+through a sink, and only from the venue receipt.
 
 ## 1. Deployables and trust
 

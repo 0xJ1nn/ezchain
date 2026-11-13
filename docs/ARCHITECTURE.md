@@ -7,8 +7,14 @@ with Alembic migrations, bearer auth, `/healthz`/`/readyz`/`/metrics`, structure
 stress harness. Market observation is a bounded inline loop in the API. Graph strategies
 are live on the PAPER path (`/api/v1/graph/*`, `/api/v1/backtests`). External strategy
 plugins run as `kind=plugin` in a supervised worker, and `apps/mcp` exposes the read
-surface plus paper-only mutations to MCP agents. The **executor**, key custody and a
-separate ingest worker are not built; live execution is disabled on every chain, and
+surface plus paper-only mutations to MCP agents. The **executor** implements the reference
+`Intent → RiskDecision → Quote → Order → Fill → Journal` pipeline
+(`services/executor/src/ezchain_executor/pipeline.py`) against a venue behind the core
+`Venue` protocol. It is not yet the paper executor: the paper order service
+(`apps/api/src/ezchain_api/services/paper.py`) still validates risk, writes the order/fill
+and appends ledger rows directly, and remains the caller of record for paper orders; its
+delegation to the executor pipeline is tracked separately. Key custody, signing and live
+broadcast are still not built, and live execution is disabled on every chain.
 Timescale/tick retention is deferred. This document is the contract every later PR
 implements; deviations require an ADR.
 
@@ -92,7 +98,7 @@ apps/
 integrations/              # Hermes/OpenClaw packs (skill + MCP registration)
 services/
   engine/                  # strategy host, automation scheduler, signal router
-  executor/                # vault, signer, broadcaster, confirmer
+  executor/                # pipeline (intent -> journal), vault, signer, broadcaster, confirmer
   ingest/                  # sources/{chain,venue,cex,social}, normalizers, candles
 packages/
   core_py/                 # domain: money, ledger, orders, positions, risk policy

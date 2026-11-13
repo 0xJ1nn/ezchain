@@ -11,7 +11,6 @@ unknown mark or a missing route still fails closed with a typed reason.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from dataclasses import dataclass as _dc
 from datetime import UTC
 from decimal import Decimal
 
@@ -27,7 +26,7 @@ from .types import (
 )
 
 
-@_dc(frozen=True)
+@dataclass(frozen=True)
 class TradeRiskProfile:
     name: str
     min_order_usd: Decimal = Decimal("1")
@@ -96,7 +95,7 @@ def evaluate_order(
     *,
     request: OrderRequest,
     snapshot: TokenSnapshot,
-    quote: Quote,
+    quote: Quote | None,
     current_position_value_usd: Decimal,
     open_positions: int,
     daily_realized_pnl_usd: Decimal,
@@ -112,6 +111,11 @@ def evaluate_order(
     cannot trap the position. The quote's own freshness, a positive executable price,
     a route and a positive amount are still required, and this pure policy cannot and
     does not verify the position bound; the caller owns that check.
+
+    ``quote`` is optional so the pipeline can gate size and entry facts before it asks a
+    venue for one. Every quote-dependent gate (freshness, impact, paper-mark size, a sell
+    route) is then skipped, not assumed safe; the pipeline re-evaluates with the quote
+    before any order exists.
     """
     limits = limits or RiskLimits()
     reasons: list[RiskReason] = []
@@ -119,7 +123,9 @@ def evaluate_order(
     exit_only = request.side == "sell" and request.reduce_only
     if request.side not in ("buy", "sell"):
         reasons.append(RiskReason("INVALID_SIDE"))
-    if request.amount_usd <= 0:
+    # A buy is sized in USD. A sell may be sized by its token quantity instead, in which
+    # case its USD figure is a metadata hint and a zero hint is not an invalid amount.
+    if request.amount_usd <= 0 and (request.side == "buy" or request.quantity is None):
         reasons.append(RiskReason("INVALID_AMOUNT"))
     # Size, paper-mark and daily-loss limits cap new risk. They must never block a sell:
     # a position larger than max_order_usd still has to be exitable, and a daily-loss
@@ -185,7 +191,8 @@ def evaluate_order(
                 )
         # Slippage ceiling.
         if (
-            limits.max_slippage_bps is not None
+            quote is not None
+            and limits.max_slippage_bps is not None
             and limits.max_slippage_bps > 0
             and quote.price_impact_pct is not None
             and abs(quote.price_impact_pct) * 10000 > limits.max_slippage_bps
@@ -197,7 +204,8 @@ def evaluate_order(
                 )
             )
     if (
-        request.side == "buy"
+        quote is not None
+        and request.side == "buy"
         and quote.kind == "paper_mark"
         and request.amount_usd > limits.paper_mark_max_order_usd
     ):
@@ -211,7 +219,8 @@ def evaluate_order(
     # paper position gets trapped, so a sell records the impact but is never blocked by it.
     # An unknown impact (``paper_mark``) is not a breach: the mark is not an executable route.
     if (
-        request.side == "buy"
+        quote is not None
+        and request.side == "buy"
         and quote.price_impact_pct is not None
         and abs(quote.price_impact_pct) > limits.max_price_impact_pct
     ):
@@ -223,25 +232,31 @@ def evaluate_order(
         )
 
     # Quote freshness protects both sides: an exit priced from an old quote is not an
-    # exit the trader can trust. It is never waived for a reduce-only sell.
+    # exit the trader can trust. It is never waived for a reduce-only sell. Before a
+    # quote exists there is nothing to age, so the pre-quote stage skips this gate.
     now = utcnow()
-    source = now_source or quote.source
-    if source.is_stale(limits.max_quote_age_seconds):
-        reasons.append(RiskReason("QUOTE_STALE"))
-    # A timestamp beyond the tolerated skew is a clock fault, not fresh evidence. It is
-    # rejected on its own code so a far-future mark cannot pass the age gate (a negative
-    # age always looks fresh) and cannot price an entry.
-    quote_is_future = source.is_future(limits.max_future_skew_seconds, now)
-    if quote_is_future:
-        reasons.append(
-            RiskReason(
-                "MARK_TIMESTAMP_FUTURE",
-                detail={
-                    "skew_seconds": round(source.future_skew_seconds(now), 3),
-                    "limit_seconds": limits.max_future_skew_seconds,
-                },
+    source: SourceRef | None
+    quote_is_future = False
+    if quote is not None:
+        source = now_source or quote.source
+        if source.is_stale(limits.max_quote_age_seconds):
+            reasons.append(RiskReason("QUOTE_STALE"))
+        # A timestamp beyond the tolerated skew is a clock fault, not fresh evidence. It
+        # is rejected on its own code so a far-future mark cannot pass the age gate (a
+        # negative age always looks fresh) and cannot price an entry.
+        quote_is_future = source.is_future(limits.max_future_skew_seconds, now)
+        if quote_is_future:
+            reasons.append(
+                RiskReason(
+                    "MARK_TIMESTAMP_FUTURE",
+                    detail={
+                        "skew_seconds": round(source.future_skew_seconds(now), 3),
+                        "limit_seconds": limits.max_future_skew_seconds,
+                    },
+                )
             )
-        )
+    else:
+        source = now_source or snapshot.source
 
     # The market feed qualifies new risk. A reduce-only exit is priced by its executable
     # sell quote, so an unknown or stale mark, unknown or thin liquidity and a missing
@@ -284,6 +299,8 @@ def evaluate_order(
     if request.side == "buy":
         if snapshot.pair_created_at is None:
             reasons.append(RiskReason("PAIR_AGE_UNKNOWN"))
+        elif source is None:
+            reasons.append(RiskReason("PAIR_AGE_UNKNOWN"))
         else:
             created = (
                 snapshot.pair_created_at.astimezone(UTC)
@@ -306,8 +323,10 @@ def evaluate_order(
 
     # An exit needs a route with a positive quantity and a positive price. A quote that
     # says zero of either is not a route; the reason names the exit path explicitly.
-    if request.side == "sell" and (
-        quote.amount_out <= 0 or quote.amount_in <= 0 or quote.price <= 0
+    if (
+        quote is not None
+        and request.side == "sell"
+        and (quote.amount_out <= 0 or quote.amount_in <= 0 or quote.price <= 0)
     ):
         reasons.append(RiskReason("EXIT_NO_ROUTE" if exit_only else "NO_SELL_ROUTE"))
 
