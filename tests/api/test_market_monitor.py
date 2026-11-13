@@ -674,8 +674,8 @@ def test_token_endpoint_carries_pair_age() -> None:
 
     class FakeAdapter:
         async def get_token(
-        self, chain: str, address: str, *, max_age_seconds: float | None = None
-    ) -> TokenSnapshot:
+            self, chain: str, address: str, *, max_age_seconds: float | None = None
+        ) -> TokenSnapshot:
             return TokenSnapshot(
                 chain=chain,
                 address=address,

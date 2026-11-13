@@ -250,7 +250,7 @@ def evaluate_order(
         # fact the router applied, not a venue quote re-checked here. A clock fault still
         # fails closed below, and any quote with a route is always checked.
         paper_mark_exit = exit_only and quote.kind == "paper_mark" and quote.route is None
-        if not paper_mark_exit and source.is_stale(limits.max_quote_age_seconds):
+        if not paper_mark_exit and source.is_stale(limits.max_quote_age_seconds, now):
             reasons.append(RiskReason("QUOTE_STALE"))
         # A timestamp beyond the tolerated skew is a clock fault, not fresh evidence. It
         # is rejected on its own code so a far-future mark cannot pass the age gate (a

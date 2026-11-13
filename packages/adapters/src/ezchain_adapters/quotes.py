@@ -395,18 +395,19 @@ class QuoteRouter:
         snapshot = await self._dexscreener.get_token(
             meta.id, token_address, max_age_seconds=self._freshness.budget("mark")
         )
+        # Every mark read is observed, not only the refusals: a recovery has to close the
+        # outage, or the tracker stays stale forever and the source's next outage raises
+        # no alert. One call covers both edges.
+        entity = _mark_entity(meta.id, token_address)
+        verdict = self._freshness.classify(snapshot.source)
+        self._sources.observe(entity, snapshot.source)
         # Sizing a sell from the mark is still pricing from it, so a stale mark cannot
         # pick the quantity. A future-dated mark is a clock fault the risk gate names
         # (MARK_TIMESTAMP_FUTURE); this path only refuses a mark that is genuinely old.
         price = snapshot.price_usd
         if price is None or price <= 0:
-            self._sources.observe(_mark_entity(meta.id, token_address), snapshot.source)
             raise NoRoute("sell requires a positive price")
-        verdict = self._freshness.classify(snapshot.source)
         if verdict.status == "stale":
-            # A refusal is an outage fact too: record it so the operator sees the
-            # transition even though the caller only sees the typed 409.
-            self._sources.observe(_mark_entity(meta.id, token_address), snapshot.source)
             raise NoRoute(
                 "sell requires a fresh price",
                 detail=f"mark freshness: {verdict.status}",
@@ -431,8 +432,8 @@ class QuoteRouter:
         )
         entity = _mark_entity(request.chain.id, request.token_address)
         verdict = self._freshness.classify(snapshot.source)
-        # Record the read so an outage raises one alert on the transition edge, even
-        # though the refusal below is what the caller actually sees.
+        # Record every read, fresh or stale, so a transition raises once and a recovery
+        # closes the outage; a refusal-only observation would miss the recovery.
         self._sources.observe(entity, snapshot.source)
         price = snapshot.price_usd
         if price is None or price <= 0:

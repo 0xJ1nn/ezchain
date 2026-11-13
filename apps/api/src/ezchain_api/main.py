@@ -165,6 +165,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             plugin_host=plugin_host,
             plugin_registry=plugin_registry,
             interval_seconds=settings.engine_interval_seconds,
+            max_mark_age_seconds=settings.max_mark_age_seconds,
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
 

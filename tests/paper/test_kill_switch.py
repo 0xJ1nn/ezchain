@@ -185,8 +185,10 @@ def test_a_buy_already_in_flight_is_refused_when_the_switch_is_armed(
     journal_before = _ledger_entries(session)
 
     class ArmingDex(FakeDexScreener):
-        async def get_token(self, chain, address):  # type: ignore[no-untyped-def]
-            snapshot = await super().get_token(chain, address)
+        async def get_token(  # type: ignore[no-untyped-def]
+            self, chain, address, *, max_age_seconds=None
+        ):
+            snapshot = await super().get_token(chain, address, max_age_seconds=max_age_seconds)
             set_kill_switch(session, active=True, reason="armed mid-flight")
             return snapshot
 
@@ -222,8 +224,10 @@ def test_an_exit_already_in_flight_still_settles_when_the_switch_is_armed(
     assert opened.status == "filled"
 
     class ArmingDex(FakeDexScreener):
-        async def get_token(self, chain, address):  # type: ignore[no-untyped-def]
-            snapshot = await super().get_token(chain, address)
+        async def get_token(  # type: ignore[no-untyped-def]
+            self, chain, address, *, max_age_seconds=None
+        ):
+            snapshot = await super().get_token(chain, address, max_age_seconds=max_age_seconds)
             set_kill_switch(session, active=True, reason="armed mid-flight")
             return snapshot
 

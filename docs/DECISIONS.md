@@ -1006,7 +1006,7 @@ the venue is called.
 
 **Status:** accepted 2026-11-13.
 
-**Context:** EZ-210 made a stale source fail closed, but a mark-only chain (a `paper_mark`
+**Context:** The stale-source change made a mark-only chain (a `paper_mark`
 rung with no executable provider) has no other price. Refusing the mark outright would trap
 an open position: the position could not be sold, sized, or valued. At the same time, an
 old mark must not price new risk or appear as equity.

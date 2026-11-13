@@ -507,3 +507,38 @@ async def test_a_future_dated_mark_is_left_to_the_risk_gate() -> None:
         chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
     )
     assert quote.kind == "paper_mark"
+
+
+async def test_two_outages_with_a_recovery_between_raise_two_alerts() -> None:
+    """A successful sizing must be observed, or a recovery never closes the outage.
+
+    The router only recorded a mark read when it refused one, so after a first outage a
+    later *successful* sizing left the tracker believing the source was still stale and
+    the second outage raised nothing. Each transition now raises exactly once.
+    """
+    stale = utcnow() - timedelta(seconds=120)
+    dex = FakeDex(price=Decimal("2"), observed_at=stale)
+    router_ = router(FakeProvider("kyberswap"), dex=dex)
+
+    # Outage one: sizing refuses and records the transition.
+    with pytest.raises(NoRoute):
+        await router_.quote(
+            chain="base", token_address="0xtoken", side="sell", amount_usd=Decimal("10")
+        )
+    assert len(router_.stale_alerts()) == 1
+
+    # Recovery: sizing succeeds, and that success is what closes the outage.
+    dex.observed_at = utcnow()
+    quote = await router_.quote(
+        chain="base", token_address="0xtoken", side="sell", amount_usd=Decimal("10")
+    )
+    assert quote.kind == "kyberswap"
+    assert router_.stale_alerts() == ()
+
+    # Outage two: a fresh->stale edge again, so it raises again.
+    dex.observed_at = stale
+    with pytest.raises(NoRoute):
+        await router_.quote(
+            chain="base", token_address="0xtoken", side="sell", amount_usd=Decimal("10")
+        )
+    assert len(router_.stale_alerts()) == 1

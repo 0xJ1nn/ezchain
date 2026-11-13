@@ -43,7 +43,9 @@ logger = logging.getLogger(__name__)
 class TokenSource(Protocol):
     """The only market-data call the protection runner needs."""
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot: ...
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot: ...
 
 
 @runtime_checkable
@@ -193,6 +195,7 @@ async def evaluate_arm_row(
     order_executor: OrderExecutor,
     *,
     now: datetime | None = None,
+    max_mark_age_seconds: float | None = None,
 ) -> ProtectionResult:
     """Evaluate one arm once. One failing arm never raises to the scheduler pass."""
     now = now or utcnow()
@@ -234,7 +237,9 @@ async def evaluate_arm_row(
         return _hold(row, "INVALID_ARM", row.peak_usd)
 
     try:
-        snapshot = await token_source.get_token(row.chain, row.token_address)
+        snapshot = await token_source.get_token(
+            row.chain, row.token_address, max_age_seconds=max_mark_age_seconds
+        )
     except Exception:  # fail closed: no mark, no order, arm stays armed
         logger.warning("protection arm %s market data unavailable", row.id)
         protection_service.record_event(
@@ -444,6 +449,7 @@ async def evaluate_all_arms(
     order_executor: OrderExecutor,
     *,
     now: datetime | None = None,
+    max_mark_age_seconds: float | None = None,
 ) -> list[ProtectionResult]:
     """One pass over armed arms. One buckled arm never stops the rest."""
     if getattr(order_executor, "active", False):
@@ -466,7 +472,14 @@ async def evaluate_all_arms(
                 continue
             try:
                 results.append(
-                    await evaluate_arm_row(session, row, token_source, order_executor, now=moment)
+                    await evaluate_arm_row(
+                        session,
+                        row,
+                        token_source,
+                        order_executor,
+                        now=moment,
+                        max_mark_age_seconds=max_mark_age_seconds,
+                    )
                 )
             except Exception:
                 logger.exception("protection arm %s evaluation crashed", arm_id)

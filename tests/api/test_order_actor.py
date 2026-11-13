@@ -44,7 +44,9 @@ class FakeDex:
     def __init__(self, price: Decimal | None = Decimal("2")) -> None:
         self.price = price
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         observed = datetime.now(UTC)
         return TokenSnapshot(
             chain=chain,

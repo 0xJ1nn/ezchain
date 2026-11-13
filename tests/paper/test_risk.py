@@ -453,3 +453,27 @@ def test_a_reduce_only_exit_is_not_blocked_by_a_stale_mark() -> None:
     )
     assert allowed is True
     assert reasons == ()
+
+
+def test_a_reduce_only_exit_priced_off_an_old_venue_quote_is_refused_with_injected_now() -> None:
+    """The quote-age gate must age against the caller's clock, not the wall clock.
+
+    ``evaluate_order`` takes ``now`` and the mark gate already honours it. The quote gate
+    did not, so a quote aged by the caller's clock looked fresh whenever the process clock
+    was real — the one clock a replay or backtest can move is the one the probe passes.
+    """
+    wall = utcnow()
+    now = wall + timedelta(hours=2)
+    allowed, reasons = evaluate_order(
+        request=request(side="sell", amount="100", reduce_only=True),
+        snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
+        quote=make_quote(
+            side="sell", amount_out="100", amount_in="50", kind="jupiter", observed_at=wall
+        ),
+        current_position_value_usd=Decimal("0"),
+        open_positions=0,
+        daily_realized_pnl_usd=Decimal("0"),
+        now=now,
+    )
+    assert allowed is False
+    assert reasons == ("QUOTE_STALE",)

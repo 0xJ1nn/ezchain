@@ -251,9 +251,13 @@ A position's `mark_status` is the server's verdict (`fresh`, `stale`, `unknown` 
 further ahead than the skew bound reports `unknown` with no age, so a skewed or
 malicious future observation cannot freeze a mark indefinitely. The age is `null`
 whenever the status is `unknown`. Both `unknown` and `stale` fail closed: `mark_usd`,
-`market_value_usd`, `unrealized_usd` and `source` are `null` too, so no money number is
-ever derived from a mark the server will not vouch for, and the account reports the
-position as unpriced rather than pricing it from an old or frozen number.
+`market_value_usd` and `unrealized_usd` are `null`, and `age_seconds` is withheld for
+`unknown`, so no money number is ever derived from a mark the server will not vouch for,
+and the account reports the position as unpriced rather than pricing it from an old or
+frozen number. `source` is *not* withheld: it is the observation's provenance, not a money
+number, and `GET /paper/alerts` needs it to name the source an alert is about. A position
+whose row never had an observation reports `source: null`; a stale or unknown mark that
+does have one keeps it.
 
 `GET /paper/alerts` carries one code per derived condition, including
 `POSITION_MARK_UNKNOWN`, `POSITION_MARK_STALE`, `POSITION_MARK_FUTURE` (a source clock

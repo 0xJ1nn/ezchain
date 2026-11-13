@@ -1,4 +1,4 @@
-"""A stale source fails closed and raises one alert per transition (EZ-210).
+"""A stale source fails closed and raises one alert per transition (this change).
 
 Unknown is never zero and an old price is never current: a read past its source class's
 budget returns no price and names the stable reason code that refused it. These tests pin
