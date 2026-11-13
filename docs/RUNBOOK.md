@@ -194,7 +194,9 @@ Symptom: `/api/v1/markets/overview` reports a chain as `no_data`, `stale` or `er
 
 The commands below target `infra/compose.yaml`. They assume `infra/.env` exists and that
 you are in the repository root. Nothing here needs a published API port: the edge on
-`localhost:8080` is the only host entry point.
+`localhost:8080` is the only host entry point. For a server you own, start from
+[docs/SELF-HOSTING.md](SELF-HOSTING.md); the installed layout lives under
+`$HOME/ezchain` and uses `-p ezchain -f $HOME/ezchain/current/infra/compose.yaml`.
 
 ### 12.1 Health and readiness
 

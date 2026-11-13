@@ -12,8 +12,9 @@
 #
 # It never creates, reads or writes trading key material. No wallet, mnemonic,
 # signing key or vault file is touched; those stay with the operator or the vault.
-# The script has no telemetry and phones home to nobody. Its only outbound calls are
-# the Docker package repository (when Docker is missing) and the release URL.
+# The script has no telemetry and phones home to nobody. Its outbound calls are the
+# distribution mirrors for Docker and its helper packages (when Docker is missing),
+# the GitHub API when no version is named, and the release download.
 #
 # Re-running it is an in-place upgrade: the environment file and its secrets are kept,
 # the compose project name is fixed, and Postgres data lives in a named volume.
