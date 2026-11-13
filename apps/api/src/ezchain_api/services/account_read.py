@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
 
+from ..actor import ACTOR_UNKNOWN
 from ..config import Settings
 from ..models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 from . import paper, pnl, reconciliation
@@ -83,6 +84,8 @@ def ledger(
             "usd_value": _num(Decimal(str(row.usd_value))),
             "kind": row.kind,
             "wallet_id": row.wallet_id,
+            "actor_kind": row.actor_kind or ACTOR_UNKNOWN,
+            "actor_id": row.actor_id,
             "created_at": _dt(row.created_at),
         }
         for row in rows
@@ -514,6 +517,8 @@ def export_orders(session: Session) -> list[dict[str, Any]]:
             "status": row.status,
             "reason": row.reason,
             "quote_kind": row.quote_kind,
+            "actor_kind": row.actor_kind or ACTOR_UNKNOWN,
+            "actor_id": row.actor_id,
             "created_at": _dt(row.created_at),
             "filled_at": _dt(row.filled_at),
         }

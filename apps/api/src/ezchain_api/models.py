@@ -112,6 +112,11 @@ class LedgerEntryRow(Base):
     # belongs to the genesis journal, which settles to the paper settlement wallet. The
     # ledger account is unchanged; this only attributes an existing cash row to a wallet.
     wallet_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # The actor that placed the order this journal group belongs to, copied onto every
+    # leg so the journal itself says who. The genesis journal and any rows written before
+    # the columns existed carry no kind; they read as unknown.
+    actor_kind: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    actor_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
@@ -177,6 +182,13 @@ class PaperOrderRow(Base):
     quote_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     quote_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # Who placed the order, decided on the server: ``human`` for the deployment token,
+    # ``agent`` for a scoped key (addressed by its key id), ``strategy`` for an engine
+    # order (addressed by its strategy id). A row written before these columns existed
+    # has no kind, and ``unknown`` is how the read model reports it; it is never filled in
+    # from a neighbouring field after the fact.
+    actor_kind: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    actor_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

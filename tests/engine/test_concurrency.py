@@ -189,6 +189,9 @@ async def test_concurrent_evaluation_places_one_order_for_the_window(tmp_path: P
         order = session.scalar(select(PaperOrderRow))
         assert order is not None
         assert order.strategy_id == "strategy-race"
+        # The engine is the placing principal, recorded on the order through the one
+        # execution path; a concurrent evaluator cannot re-attribute the winner.
+        assert (order.actor_kind, order.actor_id) == ("strategy", "strategy-race")
         order_id = order.id
 
     assert first.action == second.action == "buy"  # type: ignore[attr-defined]

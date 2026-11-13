@@ -35,6 +35,8 @@ ORDER_COLUMNS = (
     "status",
     "reason",
     "quote_kind",
+    "actor_kind",
+    "actor_id",
     "created_at",
     "filled_at",
 )
@@ -60,6 +62,8 @@ LEDGER_COLUMNS = (
     "amount",
     "usd_value",
     "kind",
+    "actor_kind",
+    "actor_id",
     "created_at",
 )
 FORMULA_PREFIXES = ("=", "+", "-", "@")

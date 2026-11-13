@@ -24,6 +24,10 @@ class LedgerEntryOut(BaseModel):
     because it is booked as settlement capital; its ``funding:USD`` contra leg carries
     none. A null is never given a wallet at read time: on a legacy cash row it means the
     row predates wallet attribution, not that it settled nowhere.
+
+    ``actor_kind`` and ``actor_id`` name the principal that placed the order this group
+    belongs to, copied onto each leg when it was written. A row written before the actor
+    was recorded reports ``unknown`` with a null id; that is never derived afterwards.
     """
 
     id: str
@@ -35,6 +39,8 @@ class LedgerEntryOut(BaseModel):
     usd_value: str
     kind: str
     wallet_id: str | None = None
+    actor_kind: str = "unknown"
+    actor_id: str | None = None
     created_at: str
 
 

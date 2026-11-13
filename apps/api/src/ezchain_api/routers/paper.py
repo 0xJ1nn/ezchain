@@ -4,18 +4,20 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 from ezchain_core import OrderRequest
 from ezchain_core.types import RISK_REASON_MESSAGES
 
+from ..actor import ACTOR_UNKNOWN, from_principal
 from ..config import Settings, get_settings
 from ..deps import get_dexscreener, get_quote_router, get_session
 from ..errors import adapter_http_error
 from ..models import PaperFillRow, PaperOrderRow
 from ..schemas import (
+    ActorOut,
     FillOut,
     OrderOut,
     PaperAccountOut,
@@ -36,6 +38,11 @@ def _dt(value: object) -> str:
             value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
         ).isoformat()
     return str(value)
+
+
+def _actor(row: PaperOrderRow) -> ActorOut:
+    """The persisted actor, read as unknown when the row predates the columns."""
+    return ActorOut(kind=row.actor_kind or ACTOR_UNKNOWN, id=row.actor_id)
 
 
 def _order(row: PaperOrderRow) -> OrderOut:
@@ -68,6 +75,7 @@ def _order(row: PaperOrderRow) -> OrderOut:
             else []
         ),
         quote_kind=row.quote_kind,
+        actor=_actor(row),
         created_at=_dt(row.created_at),
         filled_at=None if row.filled_at is None else _dt(row.filled_at),
     )
@@ -142,6 +150,7 @@ def reconciliation_report(session: Session = Depends(get_session)) -> Reconcilia
 @router.post("/orders", response_model=OrderOut, status_code=201)
 async def create_order(
     payload: PaperOrderIn,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -153,7 +162,12 @@ async def create_order(
             status_code=404,
             detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {payload.chain}"},
         )
-    request = OrderRequest(
+    # The actor is the authenticated caller, resolved here and never taken from the body.
+    # ``PaperOrderIn`` refuses the field outright, so a client cannot supply one; a request
+    # with no principal (the development fallback, or a loopback read-only process) is
+    # attributed to ``unknown`` rather than to a guess.
+    actor = from_principal(getattr(request.state, "principal", None))
+    order_request = OrderRequest(
         chain=payload.chain,
         token_address=payload.token_address,
         side=payload.side,
@@ -164,7 +178,9 @@ async def create_order(
         risk_profile=payload.risk_profile or payload.trade_risk_profile or payload.profile,
     )
     try:
-        row = await paper.place_order(session, request, settings, dexscreener, quotes)
+        row = await paper.place_order(
+            session, order_request, settings, dexscreener, quotes, actor=actor
+        )
     except paper.IdempotencyConflict as exc:
         raise HTTPException(
             status_code=409,
