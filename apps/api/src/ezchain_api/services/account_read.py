@@ -458,7 +458,8 @@ def alerts(session: Session, settings: Settings) -> dict[str, Any]:
                 "KILL_SWITCH_ACTIVE",
                 "warning",
                 "Kill switch is armed",
-                f"Strategy-scoped orders are blocked. Reason: {kill.reason or 'none given'}.",
+                "New risk-increasing orders are blocked for every caller; exits still settle. "
+                f"Reason: {kill.reason or 'none given'}.",
                 str(state["updated_at"] or as_of),
                 "kill_switch",
             )

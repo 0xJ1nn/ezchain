@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,7 +23,13 @@ from ..models import SystemFlagRow
 logger = logging.getLogger(__name__)
 
 KILL_SWITCH_KEY = "engine_kill_switch"
-KILL_SWITCH_SCOPE = "strategy"
+# One persisted flag governs two levels. The global level is the widest and applies to
+# every caller; the strategy level is the narrower level the engine already enforces on
+# strategy-attributed intents. ``scope`` reports the widest level in force so a client
+# that only understands one value never under-reports the block.
+KillSwitchScope = Literal["global", "strategy"]
+KILL_SWITCH_SCOPE: KillSwitchScope = "global"
+KILL_SWITCH_SCOPES: tuple[KillSwitchScope, ...] = ("global", "strategy")
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,7 @@ class KillSwitch:
             "reason": self.reason,
             "updated_at": stamp,
             "scope": KILL_SWITCH_SCOPE,
+            "scopes": list(KILL_SWITCH_SCOPES),
         }
 
 
@@ -111,6 +118,7 @@ def set_kill_switch(session: Session, *, active: bool, reason: str | None) -> Ki
 __all__ = [
     "KILL_SWITCH_KEY",
     "KILL_SWITCH_SCOPE",
+    "KILL_SWITCH_SCOPES",
     "KillSwitch",
     "read_kill_switch",
     "seed_kill_switch",

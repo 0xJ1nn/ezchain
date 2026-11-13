@@ -99,10 +99,12 @@ class OrderExecutor(Protocol):
 class KillSwitchExecutor:
     """Decorate an order executor with the persisted operator kill switch.
 
-    The check runs per order, so arming takes effect immediately and survives a
-    restart without restarting the process. Manual paper orders (``strategy_id``
-    is ``None``) stay allowed: the switch scope is strategy-originated execution.
-    The guard holds no locks, so it is safe across processes.
+    This is the strategy level of the switch: it only inspects orders that claim
+    strategy attribution. The order service enforces the global level, which refuses
+    every buy whoever placed it (ADR-0034), so a manual order that passes here is still
+    refused there. The check runs per order, so arming takes effect immediately and
+    survives a restart without restarting the process. The guard holds no locks, so it is
+    safe across processes.
     """
 
     def __init__(self, inner: OrderExecutor, is_active: Callable[[], bool]) -> None:

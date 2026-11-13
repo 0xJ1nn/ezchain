@@ -154,7 +154,10 @@ export interface KillSwitchState {
 	active: boolean;
 	reason: string | null;
 	updated_at: string | null;
-	scope: "strategy";
+	/** The widest level the one persisted flag governs. */
+	scope: "global";
+	/** Both levels the flag applies at: global (every caller) and strategy (engine). */
+	scopes: Array<"global" | "strategy">;
 }
 
 export interface StrategyInput {
@@ -876,7 +879,8 @@ export async function getKillSwitch(): Promise<PaperResult<KillSwitchState>> {
 				active: false,
 				reason: null,
 				updated_at: null,
-				scope: "strategy",
+				scope: "global",
+				scopes: ["global", "strategy"],
 			};
 		}
 		return request<KillSwitchState>("/system/kill-switch");

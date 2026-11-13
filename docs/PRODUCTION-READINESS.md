@@ -22,7 +22,7 @@ no copy-trading. `live_execute` is `false` for every chain.
 | Strategy lifecycle | create → run → pause → resume → delete with runs | 204 delete; run log retained until delete (ADR-0022) |
 | Strategy scheduler | inline engine, interval gate, run log | runs; timestamps UTC |
 | Rejected orders | strategy order above risk cap | `hold` / `ORDER_REJECTED`, never a fake fill |
-| Kill switch | `POST /api/v1/system/kill-switch` | persists across restart; scheduler skips while armed; manual paper orders stay available |
+| Kill switch | `POST /api/v1/system/kill-switch` | persists across restart; scheduler skips while armed; every manual buy refused with `KILL_SWITCH_ARMED`; reduce-only exits still settle |
 | Auth | direct API vs Next proxy | direct mutation without token 401; proxy mutation 200; cross-site 403 `CROSS_ORIGIN_DENIED` |
 | Migrations | SQLite tail tests through 0014; Postgres fresh-DB path when `EZCHAIN_TEST_DATABASE_URL` is set | forward-only revisions present; Postgres `alembic check` is the remaining drill |
 | Strategy plugins | `pytest tests/sdk tests/engine/test_plugin_host.py tests/engine/test_plugin_runtime.py tests/api/test_plugins.py` | manifest/param refusal, worker timeout+quarantine, intent mapping, pinned version, readiness |

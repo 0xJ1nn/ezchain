@@ -166,7 +166,7 @@ export default async function MobileWorkspacePage() {
 									{kill.data.active ? "armed" : "clear"}
 								</Badge>
 								<div className="micro mt-8">
-									mode paper · scope {kill.data.scope} · source system flag
+									mode paper · scope {kill.data.scopes.join(" + ")} · source system flag
 								</div>
 								<div className="micro">
 									age {ageLabel(kill.data.updated_at)} · reason{" "}

@@ -23,6 +23,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **An armed kill switch refuses every new entry, whoever places it (PAPER).** The order
+  service checked the switch only for strategy-attributed orders, so a buy placed through
+  the REST route, the MCP server or the web ticket — none of which carries a strategy —
+  still filled while the switch was armed. The order service now refuses any buy with the
+  new `KILL_SWITCH_ARMED` reason before the market read and the quote, and persists no fill
+  or journal entry. Sells are never refused: an exit can only reduce risk, so reduce-only
+  sells and stops still settle instead of trapping funds. The strategy level remains the
+  narrower second layer in the engine (`KILL_SWITCH_ACTIVE`), and the switch endpoint now
+  reports both levels (`scope: "global"`, `scopes: ["global", "strategy"]`). Decision
+  recorded in ADR-0034.
+
 - **The topbar describes only the market search it performs.** The field is
   labelled for a market symbol, name or address and submits to the Markets
   screener; a wallet, strategy or position term is treated as a market query

@@ -93,7 +93,7 @@ operator action.
 | GET | `/health` | public | Database, data mode and scheduler flags |
 | GET | `/metrics` | public | Prometheus text; keep it on loopback |
 | GET | `/api/v1/chains` | read | Registry, capabilities and paper/live flags |
-| GET | `/api/v1/system/kill-switch` | read | Persisted strategy-scoped operator switch |
+| GET | `/api/v1/system/kill-switch` | read | Persisted operator switch, global and strategy levels |
 | POST | `/api/v1/system/kill-switch` | admin | `{active, reason}`: arm or release the switch |
 
 ### Markets, tokens and quotes
@@ -173,7 +173,11 @@ is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`
 `POSITION_LIMIT`, `MAX_OPEN_POSITIONS`, `DAILY_LOSS_LIMIT`, `INSUFFICIENT_CASH`,
 `INSUFFICIENT_POSITION`, `PRICE_UNKNOWN`, `QUOTE_STALE`, `LIQUIDITY_UNKNOWN`,
 `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
-`NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ACTIVE`.
+`NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ARMED`.
+
+An armed operator switch refuses every buy here, whoever places it, before the market read
+and the quote; the rejected order row is the record of the attempt. Sells are not refused
+by the switch: an exit can only reduce risk, so reduce-only sells still settle.
 
 A fill journals a simulated fee: 30 bps of the notional by default on a `paper_mark`, or
 the quote's own venue cost when that is larger. No money reaches a venue or network.

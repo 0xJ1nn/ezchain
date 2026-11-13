@@ -1281,10 +1281,14 @@ async def place_order(
     if payload.amount_usd <= 0:
         return _reject_new(session, payload, "INVALID_AMOUNT")
 
-    # Defence in depth for callers that bypass KillSwitchExecutor: an order that claims
-    # strategy attribution is refused before any quote while the operator switch is armed.
-    if payload.strategy_id is not None and read_kill_switch(session, settings).active:
-        return _reject_new(session, payload, "KILL_SWITCH_ACTIVE")
+    # The operator switch is the broadest gate and it is not scoped by attribution: a REST
+    # order, an MCP tool and the web ticket carry no strategy id, so an armed switch must
+    # be checked here for every caller. Only a buy can add risk; a sell is bounded by the
+    # held quantity and can never open a short, so exits -- including reduce-only
+    # protection arms -- still settle while the switch is armed. The refusal happens
+    # before the market read and the quote, so it touches no venue and journals nothing.
+    if payload.side == "buy" and read_kill_switch(session, settings).active:
+        return _reject_new(session, payload, "KILL_SWITCH_ARMED")
 
     # Settlement routing is an entry gate. A buy must settle to a wallet that exists for
     # its chain and declares the ledger asset, so a refusal names the chain and the asset

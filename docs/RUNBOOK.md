@@ -113,11 +113,15 @@ A restore that cannot reproduce the ledger to the last entry is a failed drill.
 
 Arming is immediate and audited. Disarming requires a reason and, in live mode, 2FA.
 
-### 10.1 Paper strategy switch (implemented, P0)
+### 10.1 Paper operator switch (implemented, P0)
 
-The paper slice implements only the **strategy** scope. The state is a row in
-`system_flags` keyed `engine_kill_switch`, seeded from `EZCHAIN_ENGINE_KILL_SWITCH` on
-first boot, so it survives a restart and is read by every process.
+The paper slice implements the **global** and **strategy** levels over one flag. Global is
+the widest: an armed switch refuses every new risk-increasing order, whoever places it
+(the REST route, the MCP server, the web ticket or a strategy). Strategy is the narrower
+second level: the engine still refuses strategy-attributed intents with its own
+`KILL_SWITCH_ACTIVE` hold. The state is a row in `system_flags` keyed
+`engine_kill_switch`, seeded from `EZCHAIN_ENGINE_KILL_SWITCH` on first boot, so it
+survives a restart and is read by every process.
 
 ```bash
 # Through the edge: Caddy routes /api/* to the Next route handler, which adds the
@@ -129,7 +133,8 @@ curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   -d '{"active": true, "reason": "venue incident"}'
 ```
 
-- `POST` returns `{active, reason, updated_at, scope: "strategy"}`. `updated_at` is the
+- `POST` returns `{active, reason, updated_at, scope: "global", scopes: ["global", "strategy"]}`.
+  `scope` is the widest level in force; `scopes` lists both levels the one flag governs. `updated_at` is the
   audit timestamp. Mutating routes require `Authorization: Bearer $EZCHAIN_API_TOKEN`
   (or reach the API through the web server's proxy, which injects it); the token
   identifies the deployment, not an individual operator, so record the human in the
@@ -142,11 +147,13 @@ curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   run log records `hold` / `KILL_SWITCH_ACTIVE` with the attempted action and amount, and
   the strategy's interval window is **not** consumed — releasing the switch retries on the
   next tick.
-- Manual paper orders stay allowed. The HTTP route does not accept `strategy_id`;
-  strategy attribution is internal to the engine. As defence in depth, the order service
-  also rejects any strategy-attributed order while the switch is armed
-  (`KILL_SWITCH_ACTIVE`) before it requests a quote. Existing positions are not sold by
-  the switch; close them deliberately.
+- The order service is the last gate and it is not scoped by attribution: a manual paper
+  order carries no `strategy_id`, so while the switch is armed any **buy** is refused
+  before the market read and the quote, with reason `KILL_SWITCH_ARMED`. Refusals persist
+  the rejected order row (so the attempt stays replayable) but write no fill and no
+  journal entry. A sell can only reduce risk — it is bounded by the held quantity and
+  cannot open a short -- so exits, stops and reduce-only sells still settle; blocking them
+  would trap funds. Existing positions are not sold by the switch; close them deliberately.
 - Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.
 
 ## 11. Market monitor (market eyes)

@@ -33,7 +33,7 @@ const ENDPOINTS: Endpoint[] = [
 	{ method: "GET", path: "/api/v1/strategies/{id}/runs", auth: "read", purpose: "Engine decision log for a strategy.", used: "/strategies/[id]" },
 	{ method: "POST", path: "/api/v1/paper/orders", auth: "bearer", purpose: "Submit a paper order through quote, risk, fill and journal.", used: "token order ticket" },
 	{ method: "POST", path: "/api/v1/strategies", auth: "bearer", purpose: "Create a declarative or graph strategy.", used: "/strategies, builder" },
-	{ method: "POST", path: "/api/v1/system/kill-switch", auth: "bearer", purpose: "Arm or release the persisted strategy switch.", used: "/risk" },
+	{ method: "POST", path: "/api/v1/system/kill-switch", auth: "bearer", purpose: "Arm or release the persisted operator switch (global and strategy levels).", used: "/risk" },
 	{ method: "GET", path: "/api/v1/system/kill-switch", auth: "read", purpose: "Persisted switch state and reason.", used: "/risk, /alerts" },
 	{ method: "GET", path: "/healthz", auth: "read", purpose: "Process liveness; does not touch the database.", used: "/operations" },
 	{ method: "GET", path: "/health", auth: "read", purpose: "Database, data mode and scheduler flags.", used: "/automations" },

@@ -14,6 +14,7 @@ from ezchain_api.config import Settings
 from ezchain_api.db import Base
 from ezchain_api.models import SystemFlagRow
 from ezchain_api.routers import system
+from ezchain_api.schemas import KillSwitchOut
 from ezchain_api.services import system_flags
 from ezchain_api.services.system_flags import (
     KILL_SWITCH_KEY,
@@ -33,7 +34,8 @@ def test_get_reports_the_configured_default_without_writing(client_for, settings
         "active": False,
         "reason": None,
         "updated_at": None,
-        "scope": "strategy",
+        "scope": "global",
+        "scopes": ["global", "strategy"],
     }
 
 
@@ -49,7 +51,8 @@ def test_post_persists_the_switch_and_survives_a_new_session(
     body = armed.json()
     assert body["active"] is True
     assert body["reason"] == "incident drill"
-    assert body["scope"] == "strategy"
+    assert body["scope"] == "global"
+    assert body["scopes"] == ["global", "strategy"]
     assert body["updated_at"] is not None
 
     # A brand-new session (as a restarted process would open) reads the persisted row.
@@ -168,3 +171,10 @@ def test_seed_recovers_when_another_process_wins_the_insert(
             assert read_kill_switch(fresh, settings).reason == "winner"
     finally:
         eng.dispose()
+
+
+def test_schema_scopes_track_the_system_flags_source() -> None:
+    """The schema must not keep a second copy of the scopes list."""
+    schema = KillSwitchOut(active=True)
+
+    assert list(schema.scopes) == list(system_flags.KILL_SWITCH_SCOPES)

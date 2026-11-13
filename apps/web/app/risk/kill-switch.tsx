@@ -82,7 +82,7 @@ export function KillSwitchControl({
 						) : (
 							<Badge tone="warn">STATE UNKNOWN</Badge>
 						)}
-						<span className="strong">Strategy-scoped kill switch</span>
+						<span className="strong">Kill switch · global and strategy</span>
 					</div>
 					<div className="small muted mt-8">
 						{state
@@ -112,12 +112,12 @@ export function KillSwitchControl({
 				<div className="panel mt-12" style={{ boxShadow: "none" }}>
 					<div className="panel-body">
 						<div className="strong">
-							{next ? "Confirm: halt new strategy risk" : "Confirm: release the switch"}
+							{next ? "Confirm: halt new risk" : "Confirm: release the switch"}
 						</div>
 						<p className="small muted mt-8">
 							{next
-								? "Armed, new strategy-attributed orders are refused before a quote. Manual paper orders and existing positions are not blocked; the switch does not sell or close anything."
-								: "Releasing allows new strategy-attributed orders again. The API requires a reason for every release."}
+								? "Armed, every new risk-increasing order is refused before a quote, whoever places it, with reason KILL_SWITCH_ARMED. Reduce-only exits and existing positions still settle; the switch does not sell or close anything."
+								: "Releasing allows new entries again. The API requires a reason for every release."}
 						</p>
 						<div className="field mt-12">
 							<label htmlFor="kill-switch-reason">Reason for the operator log</label>
