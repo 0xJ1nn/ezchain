@@ -259,7 +259,9 @@ def test_token_read_serves_the_contract_verdict_not_the_adapter_flag() -> None:
     class StaleAdapter:
         """An adapter that calls its old observation fresh — the bug this wiring removes."""
 
-        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+        async def get_token(
+            self, chain: str, address: str, *, max_age_seconds: float | None = None
+        ) -> TokenSnapshot:
             return TokenSnapshot(
                 chain=chain,
                 address=address,
@@ -285,7 +287,9 @@ def test_token_read_serves_the_contract_verdict_not_the_adapter_flag() -> None:
 
 def test_token_read_without_a_source_keeps_age_unknown() -> None:
     class SourcelessAdapter:
-        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+        async def get_token(
+            self, chain: str, address: str, *, max_age_seconds: float | None = None
+        ) -> TokenSnapshot:
             return TokenSnapshot(
                 chain=chain,
                 address=address,
@@ -333,7 +337,9 @@ def test_a_stored_row_beyond_the_future_skew_has_no_age_and_no_verdict(session: 
 
 def test_a_token_beyond_the_future_skew_is_not_presented_as_fresh() -> None:
     class FutureAdapter:
-        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+        async def get_token(
+            self, chain: str, address: str, *, max_age_seconds: float | None = None
+        ) -> TokenSnapshot:
             return TokenSnapshot(
                 chain=chain,
                 address=address,

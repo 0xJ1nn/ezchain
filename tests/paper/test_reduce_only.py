@@ -14,13 +14,13 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from ezchain_api.models import PaperFillRow
+from ezchain_api.models import MarketSnapshotRow, PaperFillRow
+from ezchain_api.services import paper
 from ezchain_core import utcnow
 
 from .conftest import (
     CHAIN,
     TOKEN,
-    FakeJupiter,
     make_request,
     make_snapshot,
     place,
@@ -419,3 +419,104 @@ def test_quote_evidence_records_the_explicit_flag(session, settings, dex, jupite
     assert sell.status == "filled"
     assert sell.quote_json is not None
     assert sell.quote_json["reduce_only"] is True
+
+
+def test_a_stale_mark_on_a_paper_mark_chain_exits_but_never_entries_or_values(
+    session, settings, dex, jupiter
+) -> None:
+    """A mark-only chain has no venue quote; a stale mark must not trap its position.
+
+    The exit sizes from the held quantity and settles at the last observed mark, while
+    an entry is refused and the account reports the still-open position as unpriced
+    ``stale``. No equity number is ever derived from the stale mark.
+    """
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000"), stale=False))
+    opened = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(side="buy", amount_usd="25", key="stale-paper-open"),
+    )
+    assert opened.status == "filled"
+
+    stale = utcnow() - timedelta(seconds=120)
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000"), observed_at=stale))
+    # Age the persisted mark itself: a newer write never moves a mark backwards.
+    stored = session.scalar(select(MarketSnapshotRow))
+    assert stored is not None
+    stored.observed_at = stale
+    session.commit()
+
+    entry = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(side="buy", amount_usd="5", key="stale-paper-entry"),
+    )
+    assert entry.status == "rejected"
+    assert entry.reason == "SNAPSHOT_STALE"
+
+    account = paper.account_snapshot(session)
+    assert account["complete"] is False
+    assert account["equity_usd"] is None
+    assert account["unrealized_usd"] is None
+    assert [row["token_address"] for row in account["unpriced_positions"]] == [TOKEN]
+    position = account["positions"][0]
+    assert position["mark_status"] == "stale"
+    assert position["mark_usd"] is None
+    assert position["market_value_usd"] is None
+
+    exit_ = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(side="sell", amount_usd="25", key="stale-paper-exit", reduce_only=True),
+    )
+    assert exit_.status == "filled"
+    fill = session.scalar(select(PaperFillRow).where(PaperFillRow.order_id == exit_.id))
+    assert fill is not None
+    # Sized from the held quantity, never from the mark: 25 USD at 2 -> 12.5 tokens.
+    assert fill.quantity == Decimal("12.5")
+    assert fill.price_usd == Decimal("2")
+
+
+def test_a_stale_mark_on_a_venue_chain_exits_on_the_venue_quote(
+    session, settings, dex, jupiter
+) -> None:
+    """The venue route prices the exit; the stale DexScreener mark never sizes it."""
+    jupiter.price = Decimal("2")
+    _open_solana_position(session, settings, dex, jupiter)
+    dex.set(
+        make_snapshot(
+            price=Decimal("2"),
+            liquidity=None,
+            observed_at=utcnow() - timedelta(seconds=120),
+            chain=SOLANA,
+            address=MINT,
+        )
+    )
+
+    sell = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(
+            side="sell",
+            amount_usd="100",
+            key="stale-venue-exit",
+            chain=SOLANA,
+            token=MINT,
+            reduce_only=True,
+        ),
+    )
+
+    assert sell.status == "filled"
+    fill = session.scalar(select(PaperFillRow).where(PaperFillRow.order_id == sell.id))
+    assert fill is not None
+    assert fill.quantity == Decimal("50")
+    assert fill.price_usd == Decimal("2")
+    assert fill.quote_kind == "jupiter"

@@ -389,7 +389,9 @@ def test_reduce_only_exit_still_requires_a_fresh_quote() -> None:
     stale = utcnow() - timedelta(seconds=61)
     allowed, reasons = evaluate(
         req=request(side="sell", amount="100", reduce_only=True),
-        quote=make_quote(side="sell", amount_out="100", amount_in="50", observed_at=stale),
+        quote=make_quote(
+            side="sell", amount_out="100", amount_in="50", kind="jupiter", observed_at=stale
+        ),
         snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
     )
     assert allowed is False
@@ -413,3 +415,65 @@ def test_reduce_only_still_rejects_a_zero_amount() -> None:
     )
     assert allowed is False
     assert reasons == ("INVALID_AMOUNT",)
+
+
+def test_a_mark_older_than_its_own_budget_denies_even_when_the_flag_is_unset() -> None:
+    """``snapshot.stale`` can be forgotten; the mark's own age cannot."""
+    stale_mark = utcnow() - timedelta(seconds=120)
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(observed_at=stale_mark),
+    )
+    assert allowed is False
+    assert "SNAPSHOT_STALE" in reasons
+
+
+def test_a_fresh_mark_passes_the_mark_age_gate() -> None:
+    allowed, reasons = evaluate(snapshot=make_snapshot(observed_at=utcnow()))
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_the_mark_budget_is_its_own_limit_not_the_quote_budget() -> None:
+    aged = utcnow() - timedelta(seconds=45)
+    limits = RiskLimits(max_quote_age_seconds=30.0, max_mark_age_seconds=60.0)
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(observed_at=aged),
+        limits=limits,
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_a_reduce_only_exit_is_not_blocked_by_a_stale_mark() -> None:
+    """An exit is priced by its executable sell quote; the feed cannot trap it."""
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="100", reduce_only=True),
+        quote=make_quote(side="sell", amount_out="100", amount_in="50", kind="jupiter"),
+        snapshot=make_snapshot(observed_at=utcnow() - timedelta(seconds=120), stale=True),
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_a_reduce_only_exit_priced_off_an_old_venue_quote_is_refused_with_injected_now() -> None:
+    """The quote-age gate must age against the caller's clock, not the wall clock.
+
+    ``evaluate_order`` takes ``now`` and the mark gate already honours it. The quote gate
+    did not, so a quote aged by the caller's clock looked fresh whenever the process clock
+    was real — the one clock a replay or backtest can move is the one the probe passes.
+    """
+    wall = utcnow()
+    now = wall + timedelta(hours=2)
+    allowed, reasons = evaluate_order(
+        request=request(side="sell", amount="100", reduce_only=True),
+        snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
+        quote=make_quote(
+            side="sell", amount_out="100", amount_in="50", kind="jupiter", observed_at=wall
+        ),
+        current_position_value_usd=Decimal("0"),
+        open_positions=0,
+        daily_realized_pnl_usd=Decimal("0"),
+        now=now,
+    )
+    assert allowed is False
+    assert reasons == ("QUOTE_STALE",)

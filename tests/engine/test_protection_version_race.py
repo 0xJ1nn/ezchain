@@ -76,7 +76,9 @@ class PatchingSource:
         self.maker = maker
         self.arm_id = arm_id
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         with self.maker() as session:
             protection_service.patch_arm(
                 session, self.arm_id, {"price_usd": "0.89"}, expected_version=1

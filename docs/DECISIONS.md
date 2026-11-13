@@ -999,3 +999,40 @@ adapter must deliver a decode of its chain-native message to the same payload, w
 remaining work for live. Paper may run without a boundary and submits unsigned; a pipeline
 whose mode is not paper refuses an unsigned submit with `SIGNING_BOUNDARY_REQUIRED` before
 the venue is called.
+
+---
+
+## ADR-0039 — A stale mark never prices an entry or a valuation, but never traps an exit
+
+**Status:** accepted 2026-11-13.
+
+**Context:** The stale-source change made a mark-only chain (a `paper_mark`
+rung with no executable provider) has no other price. Refusing the mark outright would trap
+an open position: the position could not be sold, sized, or valued. At the same time, an
+old mark must not price new risk or appear as equity.
+
+**Decision:** Freshness is one per-class policy (`ezchain_core.freshness`) shared by the
+order gate, the quote router and the alert tracker, and it speaks one vocabulary per
+`MarkStatus`: past the budget is `stale` with `SNAPSHOT_STALE`/`QUOTE_STALE`; beyond the
+clock skew is `unknown` with `MARK_TIMESTAMP_FUTURE`; a modest future is `future`. Every
+snapshot producer passes the mark budget, so `TokenSnapshot.stale` is an age, not a
+constant.
+
+- An *entry* from a stale mark is refused with a persisted `SNAPSHOT_STALE` rejection row;
+  a transient route/timeout failure still raises before the key is claimed, so a retry is a
+  first order, not a replay of the refusal.
+- A *reduce-only exit* sizes from the held quantity (`min(requested, held)`), never from the
+  mark. On a chain with an executable venue the venue's fresh sell quote is the exit's
+  price. On a `paper_mark`-only chain the exit settles at the last observed mark, because
+  that is the chain's venue and the alternative is an unsellable position.
+- `stale` and `unknown` never price: `mark_usd`, `market_value_usd`, `unrealized_usd` and
+  `source` are `null`, and the account is incomplete. A sale settling at the last mark is a
+  settlement fact, never a valuation.
+- The transition alert is keyed `(chain, token, kind)`, drained into `GET /paper/alerts`
+  through a bounded queue. The transition state is process-local: a restart re-raises once
+  for a source that is still stale. A durable sink is a separate feature.
+
+**Consequences:** a mark-only paper position can always be closed, entries and valuations
+never use an old number, and the operator sees one alert per outage per process rather than
+one per request. The stale settlement price is visible on the fill and in the order's quote
+evidence, so nothing is hidden.

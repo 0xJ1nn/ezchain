@@ -123,8 +123,13 @@ def wallets(session: Session = Depends(get_session)) -> list[PaperWalletOut]:
 
 
 @router.get("/positions", response_model=list[PositionOut])
-def positions(session: Session = Depends(get_session)) -> list[PositionOut]:
-    return [PositionOut.model_validate(row) for row in paper.positions(session)]
+def positions(
+    session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
+) -> list[PositionOut]:
+    return [
+        PositionOut.model_validate(row)
+        for row in paper.positions(session, max_age_seconds=settings.max_mark_age_seconds)
+    ]
 
 
 @router.get("/orders", response_model=list[OrderOut])

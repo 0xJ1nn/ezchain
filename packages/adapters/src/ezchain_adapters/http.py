@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 
 import httpx
@@ -99,22 +100,52 @@ class JsonApiClient:
             self._client = None
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        return await self._fetch("GET", path, params)
+        payload, _answered_at = await self._fetch_observed("GET", path, params)
+        return payload
+
+    async def _get_observed(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> tuple[Any, datetime | None]:
+        """GET a payload plus the time the provider actually answered it.
+
+        A cached payload is handed back with the time of the request that produced it,
+        not the time it was read again. That is what lets a caller tell a fresh answer
+        from a 15-second-old one instead of stamping every read as current.
+        """
+        return await self._fetch_observed("GET", path, params)
+
+    def _cache_key(self, method: str, path: str, params: dict[str, Any] | None) -> str:
+        return f"{method} {path}?{sorted((params or {}).items())}"
 
     async def _post(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """POST with every argument in the query string (STON.fi rejects a JSON body)."""
-        return await self._fetch("POST", path, params)
+        payload, _answered_at = await self._fetch_observed("POST", path, params)
+        return payload
 
     async def _fetch(self, method: str, path: str, params: dict[str, Any] | None = None) -> Any:
-        key = f"{method} {path}?{sorted((params or {}).items())}"
+        payload, _answered_at = await self._fetch_observed(method, path, params)
+        return payload
+
+    async def _fetch_observed(
+        self, method: str, path: str, params: dict[str, Any] | None = None
+    ) -> tuple[Any, datetime | None]:
+        """Fetch a payload and the time it was answered, cache entry included.
+
+        The answer time rides in the cache entry, so an LRU eviction drops it with the
+        payload and a cached read can never report a fresh timestamp it did not observe.
+        """
+        key = self._cache_key(method, path, params)
         cached = self._cache.get(key)
         if cached is not MISSING:
-            return cached
+            payload, answered_at = cached
+            return payload, answered_at
         inflight = self._inflight.get(key)
         if inflight is not None:
             return await asyncio.shield(inflight)
 
-        future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[tuple[Any, datetime | None]] = (
+            asyncio.get_running_loop().create_future()
+        )
         future.add_done_callback(_retrieve_exception)
         self._inflight[key] = future
         try:
@@ -126,9 +157,12 @@ class JsonApiClient:
             future.set_exception(exc)
             raise
         else:
-            future.set_result(payload)
-            self._cache.set(key, payload)
-            return payload
+            # Stamp, cache and only then release the shared future, so a concurrent
+            # reader that joins this request also sees the real answer time.
+            entry = (payload, datetime.now(UTC))
+            self._cache.set(key, entry)
+            future.set_result(entry)
+            return entry
         finally:
             self._inflight.pop(key, None)
 

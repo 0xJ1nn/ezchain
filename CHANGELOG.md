@@ -71,6 +71,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `size_sol`; consumers must read `direction`, `price` and `size` instead.** A firehose
   observation now records and replays through `services/ingest` unchanged, with age derived
   from the reader's clock.
+- **A stale source fails closed and raises one alert per transition (DATA).** Freshness is
+  now a per-source-class policy (`ezchain_core.freshness`: `mark`, `quote`, `candle`,
+  `feed`) that classifies a read as `fresh`, `stale`, `unknown` or `future`, and only a
+  fresh read prices. The mark path had a hole: `TokenSnapshot.stale` was hardcoded `False`
+  in every production constructor, so `SNAPSHOT_STALE` could only fire from a test. The
+  budgets from `EZCHAIN_MAX_*_AGE_SECONDS` now reach every snapshot producer (order path,
+  markets, graph, candles, market monitor) and the order gate, so `stale` is a real age.
+  The vocabulary is one per `MarkStatus`: an old observation is `stale` with
+  `SNAPSHOT_STALE`; a timestamp beyond the tolerated skew is the contract's `unknown` clock
+  fault with `MARK_TIMESTAMP_FUTURE`, never mapped onto a stale reason. An entry from a
+  stale mark is a persisted `SNAPSHOT_STALE` rejection row; a transient route failure still
+  raises without claiming the idempotency key. A reduce-only exit is never trapped: it sizes
+  from the held quantity, prices from a fresh venue quote on a venue chain, and settles at
+  the last observed mark on a `paper_mark`-only chain — while every stale mark stays out of
+  equity, market value and unrealized PnL (the account is incomplete, never stale-priced).
+  Adapter caches no longer re-stamp a cached payload with the read time, so a
+  15-second-old answer keeps its real age. A source that goes stale raises `provider_stale`
+  once per transition, keyed `(chain, token, kind)` and drained into `GET /paper/alerts`
+  through a bounded queue; the transition state is in memory, so a restart re-raises once
+  per process. Tests cover the exact budget edge, stale-on-read, stale-mark exits on both
+  chain kinds, a persisted entry refusal, and recovery.
 
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
   cash now comes from the same Python `Decimal` replay that computes the account's cash,

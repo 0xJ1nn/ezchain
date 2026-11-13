@@ -20,6 +20,7 @@ def make_snapshot(
     change_h6: str | None = "0",
     change_h24: str | None = "0",
     stale: bool = False,
+    observed_at: datetime | None = None,
 ) -> TokenSnapshot:
     def dec(value: str | None) -> Decimal | None:
         return None if value is None else Decimal(value)
@@ -36,7 +37,9 @@ def make_snapshot(
         price_change_h1=dec(change_h1),
         price_change_h6=dec(change_h6),
         price_change_h24=dec(change_h24),
-        source=SourceRef("dexscreener", "https://dexscreener.com", datetime.now(UTC)),
+        source=SourceRef(
+            "dexscreener", "https://dexscreener.com", observed_at or datetime.now(UTC)
+        ),
         stale=stale,
         pair_created_at=datetime(2020, 1, 1, tzinfo=UTC),
     )

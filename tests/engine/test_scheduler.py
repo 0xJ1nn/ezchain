@@ -38,7 +38,9 @@ class FakeSource:
         self.error = error
         self.calls: list[tuple[str, str]] = []
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         self.calls.append((chain, address))
         if self.error is not None:
             raise self.error
@@ -448,8 +450,10 @@ async def test_an_arm_inside_a_tick_is_obeyed_by_that_same_tick(
     state = {"armed": False}
 
     class ArmingSource(FakeSource):
-        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
-            snapshot = await super().get_token(chain, address)
+        async def get_token(
+            self, chain: str, address: str, *, max_age_seconds: float | None = None
+        ) -> TokenSnapshot:
+            snapshot = await super().get_token(chain, address, max_age_seconds=max_age_seconds)
             # The operator arms after the scheduler's pass-start read, while the strategy
             # is evaluating: the order this tick wants to place must still be refused.
             state["armed"] = True

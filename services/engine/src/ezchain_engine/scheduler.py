@@ -82,7 +82,9 @@ class OrderRejected(RuntimeError):
 class TokenSource(Protocol):
     """The only market-data call the engine needs."""
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot: ...
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot: ...
 
 
 @runtime_checkable
@@ -277,6 +279,7 @@ async def evaluate_strategy(
     plugin_host: PluginHost | None = None,
     plugin_registry: PluginRegistry | None = None,
     now: datetime | None = None,
+    max_mark_age_seconds: float | None = None,
 ) -> RunResult:
     """Run one strategy once.
 
@@ -284,6 +287,11 @@ async def evaluate_strategy(
     executor → run log. Paused strategies are skipped without a run row and without
     touching ``last_run_at``; an interval that has not elapsed is logged as a hold so a
     manual run is still auditable.
+
+    ``max_mark_age_seconds`` is the mark budget every engine read carries, so an old
+    observation is flagged ``stale`` instead of arriving as a constant ``False``. The
+    composition root wires it from the same setting the API uses; ``None`` keeps the
+    adapter's unbudgeted behaviour and is only for a caller that does not price risk.
     """
     now = now or utcnow()
     if strategy.status != "active":
@@ -332,7 +340,9 @@ async def evaluate_strategy(
         return _result(strategy, decision, row)
 
     try:
-        snapshot = await dexscreener.get_token(strategy.chain, strategy.token_address)
+        snapshot = await dexscreener.get_token(
+            strategy.chain, strategy.token_address, max_age_seconds=max_mark_age_seconds
+        )
     except Exception as exc:  # fail closed: no snapshot, no order
         logger.warning("strategy %s market data unavailable: %s", strategy.id, type(exc).__name__)
         inputs = {
@@ -554,6 +564,7 @@ class StrategyScheduler:
         plugin_registry: PluginRegistry | None = None,
         interval_seconds: float = 30.0,
         now: Callable[[], datetime] = utcnow,
+        max_mark_age_seconds: float | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._dexscreener = dexscreener
@@ -564,6 +575,7 @@ class StrategyScheduler:
         self._plugin_registry = plugin_registry
         self._interval_seconds = max(1.0, interval_seconds)
         self._now = now
+        self._max_mark_age_seconds = max_mark_age_seconds
         self._stop = asyncio.Event()
 
     async def run_once(self) -> list[RunResult]:
@@ -606,6 +618,7 @@ class StrategyScheduler:
                             plugin_host=self._plugin_host,
                             plugin_registry=self._plugin_registry,
                             now=now,
+                            max_mark_age_seconds=self._max_mark_age_seconds,
                         )
                     )
                 except Exception:
@@ -617,7 +630,11 @@ class StrategyScheduler:
             from ezchain_engine.protection import evaluate_all_arms
 
             await evaluate_all_arms(
-                self._session_factory, self._dexscreener, self._order_executor, now=now
+                self._session_factory,
+                self._dexscreener,
+                self._order_executor,
+                now=now,
+                max_mark_age_seconds=self._max_mark_age_seconds,
             )
         except Exception:
             logger.exception("protection pass failed")

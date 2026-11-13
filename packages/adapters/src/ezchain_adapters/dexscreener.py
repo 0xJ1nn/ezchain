@@ -195,9 +195,20 @@ def _resolve_side(
 
 
 def snapshot_from_pairs(
-    chain: ChainMeta, address: str, pairs: list[dict[str, Any]]
+    chain: ChainMeta,
+    address: str,
+    pairs: list[dict[str, Any]],
+    *,
+    observed_at: datetime | None = None,
+    max_age_seconds: float | None = None,
+    now: datetime | None = None,
 ) -> TokenSnapshot:
-    """Build a token snapshot for the requested side of its deepest pair."""
+    """Build a token snapshot for the requested side of its deepest pair.
+
+    ``observed_at`` is when the provider answered; a cached payload keeps that time so
+    its age cannot reset on a re-read. ``max_age_seconds`` bounds the mark: a caller that
+    passes a budget gets a truthful ``stale`` flag instead of a constant ``False``.
+    """
     candidates: list[
         tuple[
             MarketRow,
@@ -227,7 +238,7 @@ def snapshot_from_pairs(
         ]
     ] = []
     for pair in pairs:
-        row = normalize_pair(pair)
+        row = normalize_pair(pair, observed_at)
         if row is None or row.chain != chain.id:
             continue
         resolved = _resolve_side(row, address)
@@ -273,7 +284,9 @@ def snapshot_from_pairs(
         pairs=pair_infos,
         safety=dict(SAFETY_UNKNOWN),
         source=best_row.source,
-        stale=False,
+        stale=(
+            False if max_age_seconds is None else best_row.source.is_stale(max_age_seconds, now)
+        ),
         pair_created_at=best_row.pair_created_at,
         pair_address=best_row.pair_address or None,
         dex=None if best_row.dex in ("", "unknown") else best_row.dex,
@@ -477,6 +490,14 @@ class DexScreenerClient(JsonApiClient):
         path = f"/token-pairs/v1/{_path_segment(chain)}/{_path_segment(address)}"
         return _pair_list_payload(await self._get(path))
 
+    async def token_pairs_observed(
+        self, chain: str, address: str
+    ) -> tuple[list[dict[str, Any]], datetime | None]:
+        """Pairs plus when the provider answered them, so a cached payload keeps its age."""
+        path = f"/token-pairs/v1/{_path_segment(chain)}/{_path_segment(address)}"
+        payload, answered_at = await self._get_observed(path)
+        return _pair_list_payload(payload), answered_at
+
     async def tokens(self, addresses: list[str]) -> list[dict[str, Any]]:
         """Fetch pairs for addresses, ``MAX_BATCH`` per request path.
 
@@ -667,9 +688,18 @@ class DexScreenerClient(JsonApiClient):
         )
         return rows, source
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
+        """One token's mark. ``max_age_seconds`` makes ``stale`` a truth, not a constant.
+
+        The observation time is the moment the provider answered, so a cached payload
+        carries its real age instead of being re-stamped as current on every read.
+        """
         meta = chain_for_dexscreener(chain)
         if meta is None:
             raise NotFound(f"unknown chain: {chain}")
-        pairs = await self.token_pairs(chain, address)
-        return snapshot_from_pairs(meta, address, pairs)
+        pairs, answered_at = await self.token_pairs_observed(chain, address)
+        return snapshot_from_pairs(
+            meta, address, pairs, observed_at=answered_at, max_age_seconds=max_age_seconds
+        )

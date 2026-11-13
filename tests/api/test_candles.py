@@ -95,7 +95,9 @@ class FakeSnapshot:
         self.error = error
         self.calls: list[tuple[str, str]] = []
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         self.calls.append((chain, address))
         if self.error is not None:
             raise self.error

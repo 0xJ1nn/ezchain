@@ -104,12 +104,13 @@ def stale_after_seconds(settings: Settings, last_scan_duration_seconds: float = 
     )
 
 
-def _snapshot(row: MarketRow) -> TokenSnapshot:
+def _snapshot(row: MarketRow, max_age_seconds: float | None = None) -> TokenSnapshot:
     """Project a pair row onto the token-level snapshot the table stores.
 
     Pair identity is carried over at the snapshot boundary, with empty or ``unknown``
     sentinels normalised to ``None`` so a missing value stays unknown. A row without
-    a base token cannot be keyed and is skipped by the caller.
+    a base token cannot be keyed and is skipped by the caller. ``max_age_seconds`` makes
+    the ``stale`` flag reflect the row's own observation age instead of a constant.
     """
     return TokenSnapshot(
         chain=row.chain,
@@ -125,7 +126,11 @@ def _snapshot(row: MarketRow) -> TokenSnapshot:
         price_change_h24=row.price_change_h24,
         pairs=(),
         source=row.source,
-        stale=False,
+        stale=(
+            False
+            if max_age_seconds is None or row.source is None
+            else row.source.is_stale(max_age_seconds)
+        ),
         pair_created_at=row.pair_created_at,
         pair_address=row.pair_address or None,
         dex=None if row.dex in ("", "unknown") else row.dex,
@@ -181,6 +186,7 @@ class MarketMonitor:
         )
         self._limit = settings.market_scan_limit
         self._max_positions = settings.max_open_positions
+        self._max_mark_age_seconds = float(settings.max_mark_age_seconds)
         self._now = now
         # Guard against monotonic clocks that are finite iterables in tests: once exhausted,
         # reuse the last observed value instead of raising StopIteration mid-scan.
@@ -368,9 +374,18 @@ class MarketMonitor:
                     remaining = max(0.0, self._current_deadline_end - self._monotonic())
                     if remaining <= 0:
                         break
-                    snapshot = await asyncio.wait_for(getter(chain, token), timeout=remaining)
+                    snapshot = await asyncio.wait_for(
+                        getter(
+                            chain,
+                            token,
+                            max_age_seconds=self._max_mark_age_seconds,
+                        ),
+                        timeout=remaining,
+                    )
                 else:
-                    snapshot = await getter(chain, token)
+                    snapshot = await getter(
+                        chain, token, max_age_seconds=self._max_mark_age_seconds
+                    )
             except Exception as exc:
                 logger.warning("mark refresh %s:%s failed: %s", chain, token, _error_text(exc))
                 continue
@@ -536,7 +551,7 @@ class MarketMonitor:
         try:
             with self._session_factory() as session:
                 for row in best:
-                    snapshot = _snapshot(row)
+                    snapshot = _snapshot(row, self._max_mark_age_seconds)
                     try:
                         # One savepoint per row: a row the database refuses costs only
                         # that row, and the rest of the batch still commits.

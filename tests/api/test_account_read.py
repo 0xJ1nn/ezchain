@@ -1099,3 +1099,86 @@ def test_csv_exports_are_bounded(client_for: Callable[..., TestClient], session:
     client = _client(client_for)
     assert account_read.EXPORT_LIMIT == 5000
     assert client.get("/api/v1/paper/export/orders.csv").status_code == 200
+
+
+def test_provider_stale_transitions_reach_the_operator_feed(
+    session: Session, settings: Settings
+) -> None:
+    """The router's fresh->stale edge is drained into one PROVIDER_STALE alert."""
+    from ezchain_core import ProviderStaleAlert
+
+    class _Router:
+        def __init__(self) -> None:
+            self._pending = (
+                ProviderStaleAlert(
+                    entity="mark:blast:0xtoken",
+                    source_class="mark",
+                    severity="warning",
+                    dedupe_key="mark:blast:0xtoken:provider_stale",
+                    age_seconds=120.0,
+                    observed_at="2026-01-01T12:00:00+00:00",
+                    message="0xtoken is stale: age 120s exceeds the mark budget 60s.",
+                ),
+            )
+
+        def stale_alerts(self) -> tuple[ProviderStaleAlert, ...]:
+            alerts, self._pending = self._pending, ()
+            return alerts
+
+    router = _Router()
+    body = account_read.alerts(session, settings, router)
+    provider = [item for item in body["alerts"] if item["code"] == "PROVIDER_STALE"]
+    assert len(provider) == 1
+    assert provider[0]["resource"] == "source:mark:blast:0xtoken"
+    # The transition is drained: a second read does not repeat the same outage.
+    assert not [
+        item
+        for item in account_read.alerts(session, settings, router)["alerts"]
+        if item["code"] == "PROVIDER_STALE"
+    ]
+
+
+def test_positions_route_honours_the_configured_mark_budget(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """``GET /paper/positions`` must age the mark with the configured budget.
+
+    The route called ``paper.positions`` without a budget, so it silently used the 60s
+    default while every other read used ``settings.max_mark_age_seconds``. A 45s-old mark
+    is stale under a 30s budget and fresh under the default; the route has to report the
+    configured verdict, not the default one.
+    """
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="100",
+        price="2",
+        fee="0",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        price="2",
+        observed_at=utcnow() - timedelta(seconds=45),
+    )
+    strict = Settings(
+        environment="test",
+        data_mode="fixture",
+        database_url="sqlite+pysqlite://",
+        auto_create_schema=False,
+        max_mark_age_seconds=30,
+    )
+
+    body = (
+        client_for(paper_router.router, {get_settings: lambda: strict})
+        .get("/api/v1/paper/positions")
+        .json()
+    )
+
+    assert body[0]["mark_status"] == "stale"
+    assert body[0]["mark_usd"] is None

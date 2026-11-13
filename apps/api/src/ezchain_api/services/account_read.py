@@ -320,7 +320,7 @@ def _mark_alerts(
     session: Session, settings: Settings, now: datetime, as_of: str
 ) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
-    for view in paper.positions(session):
+    for view in paper.positions(session, max_age_seconds=settings.max_mark_age_seconds):
         chain = str(view["chain"])
         token = str(view["token_address"])
         source = view.get("source")
@@ -354,18 +354,37 @@ def _mark_alerts(
             )
             continue
         if view["mark_usd"] is None:
-            alerts.append(
-                _alert(
-                    f"mark.unknown.{chain}.{token}",
-                    "POSITION_MARK_UNKNOWN",
-                    "warning",
-                    "Position has no known mark",
-                    f"{view['symbol']} on {chain} is open but no price is known; "
-                    "equity and unrealized PnL stay null.",
-                    created or as_of,
-                    resource,
+            # A stale mark is withheld from every money number, so ``mark_usd`` is null
+            # for it just as for a truly unknown mark. The status tells the operator
+            # which one it is: an old observation is a stale mark, not a missing one.
+            if str(view.get("mark_status")) == "stale":
+                age_seconds = view.get("mark_age_seconds")
+                alerts.append(
+                    _alert(
+                        f"mark.stale.{chain}.{token}",
+                        "POSITION_MARK_STALE",
+                        "warning",
+                        "Position mark is stale",
+                        f"{view['symbol']} on {chain} was last observed "
+                        f"{age_seconds if age_seconds is not None else '?'}s ago; the "
+                        f"order gate accepts at most {settings.max_mark_age_seconds}s.",
+                        created or as_of,
+                        resource,
+                    )
                 )
-            )
+            else:
+                alerts.append(
+                    _alert(
+                        f"mark.unknown.{chain}.{token}",
+                        "POSITION_MARK_UNKNOWN",
+                        "warning",
+                        "Position has no known mark",
+                        f"{view['symbol']} on {chain} is open but no price is known; "
+                        "equity and unrealized PnL stay null.",
+                        created or as_of,
+                        resource,
+                    )
+                )
             continue
         if stamp is None:
             alerts.append(
@@ -381,7 +400,7 @@ def _mark_alerts(
             )
             continue
         age = (now - stamp).total_seconds()
-        if age > settings.max_quote_age_seconds:
+        if age > settings.max_mark_age_seconds:
             alerts.append(
                 _alert(
                     f"mark.stale.{chain}.{token}",
@@ -389,7 +408,7 @@ def _mark_alerts(
                     "warning",
                     "Position mark is stale",
                     f"{view['symbol']} on {chain} was last observed {int(age)}s ago; "
-                    f"the order gate accepts at most {settings.max_quote_age_seconds}s.",
+                    f"the order gate accepts at most {settings.max_mark_age_seconds}s.",
                     created or as_of,
                     resource,
                 )
@@ -430,7 +449,33 @@ def _rejection_alerts(session: Session, now: datetime, as_of: str) -> list[dict[
     return alerts
 
 
-def alerts(session: Session, settings: Settings) -> dict[str, Any]:
+def _provider_alerts(quote_router: Any, as_of: str) -> list[dict[str, Any]]:
+    """Drain the quote router's fresh->stale transitions into the operator feed.
+
+    The router owns the transition state, so it raises one alert per (chain, token,
+    kind) outage rather than one per request. The state is process-local: a restart
+    loses the "already stale" memory and the first read after it raises once more. That
+    is deliberate and documented; a durable alert sink would be a different feature.
+    """
+    if quote_router is None:
+        return []
+    alerts: list[dict[str, Any]] = []
+    for alert in quote_router.stale_alerts():
+        alerts.append(
+            _alert(
+                f"provider.stale.{alert.dedupe_key}",
+                "PROVIDER_STALE",
+                str(alert.severity),
+                "A price source went stale",
+                alert.message,
+                alert.observed_at or as_of,
+                f"source:{alert.entity}",
+            )
+        )
+    return alerts
+
+
+def alerts(session: Session, settings: Settings, quote_router: Any = None) -> dict[str, Any]:
     """Derived alert feed. There is no alerts table and nothing is repaired here."""
     now = utcnow()
     as_of = now.astimezone(UTC).isoformat()
@@ -494,6 +539,7 @@ def alerts(session: Session, settings: Settings) -> dict[str, Any]:
         )
 
     items.extend(_mark_alerts(session, settings, now, as_of))
+    items.extend(_provider_alerts(quote_router, as_of))
     items.extend(_rejection_alerts(session, now, as_of))
 
     items.sort(key=lambda item: (SEVERITY_ORDER[str(item["severity"])], str(item["id"])))

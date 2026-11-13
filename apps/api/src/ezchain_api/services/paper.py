@@ -38,6 +38,7 @@ from ezchain_core import (
     MARK_FUTURE_SKEW_SECONDS,
     TRADE_RISK_PROFILES,
     CostPreview,
+    FreshnessPolicy,
     LedgerEntry,
     MarkStatus,
     OrderRequest,
@@ -516,6 +517,20 @@ def _mark_status(
     return "fresh"
 
 
+def _mark_can_price(
+    snapshot: TokenSnapshot, max_age_seconds: float, now: datetime | None = None
+) -> bool:
+    """Whether a mark may price at all: positive, sourced and fresh or tolerated future.
+
+    ``stale`` and ``unknown`` are not usable. An exit never asks this to choose its size;
+    it only decides whether a *normal* sell can convert its USD notional at the mark.
+    """
+    if snapshot.price_usd is None or snapshot.price_usd <= 0 or snapshot.source is None:
+        return False
+    status = _mark_status(snapshot.price_usd, snapshot.source.to_dict(), max_age_seconds, now)
+    return status in ("fresh", "future")
+
+
 # ---------------------------------------------------------------------------
 # Read models
 # ---------------------------------------------------------------------------
@@ -544,11 +559,12 @@ def _position_views(
             mark, None if source is None else source.to_dict(), max_age_seconds, now
         )
         # ``unknown`` fails closed: a mark whose freshness cannot be trusted (a legacy
-        # far-future observation, an unparsable time) prices nothing. Keeping the price
-        # would let equity, composition and unrealized PnL be computed from a frozen
+        # far-future observation, an unparsable time) prices nothing. The same holds for
+        # ``stale``: an old mark is a label, not a live number. Keeping the price would
+        # let equity, composition and unrealized PnL be computed from an old or frozen
         # number while the status said the mark is unusable (CONTRACT I3). The source is
-        # not a money number and stays, so the alert feed can still name the clock fault.
-        priced = mark is not None and status != "unknown"
+        # not a money number and stays, so the alert feed can still name the source.
+        priced = mark is not None and status not in ("stale", "unknown")
         mark_usd = mark if priced else None
         market_value = None if mark_usd is None else quantity * mark_usd
         unrealized = None if market_value is None else market_value - cost
@@ -572,8 +588,12 @@ def _position_views(
     return views
 
 
-def positions(session: Session) -> list[dict[str, Any]]:
-    return _position_views(_replay(_ledger_rows(session)), _snapshot_index(session))
+def positions(session: Session, *, max_age_seconds: float | None = None) -> list[dict[str, Any]]:
+    replay = _replay(_ledger_rows(session))
+    snapshots = _snapshot_index(session)
+    if max_age_seconds is None:
+        return _position_views(replay, snapshots)
+    return _position_views(replay, snapshots, max_age_seconds=max_age_seconds)
 
 
 def _share_pct(value: Decimal, equity: Decimal) -> str | None:
@@ -830,7 +850,7 @@ def account_snapshot(session: Session) -> dict[str, Any]:
     ledger, never stored balances.
     """
     now = utcnow()
-    max_age = get_settings().max_quote_age_seconds
+    max_age = get_settings().max_mark_age_seconds
     replay = _replay(_ledger_rows(session))
     views = _position_views(replay, _snapshot_index(session), max_age_seconds=max_age, now=now)
     known_market_value = Decimal(0)
@@ -852,7 +872,7 @@ def account_snapshot(session: Session) -> dict[str, Any]:
         unrealized += Decimal(str(view["unrealized_usd"]))
     complete = not unpriced
     equity = replay.cash + known_market_value
-    max_age = get_settings().max_quote_age_seconds
+    max_age = get_settings().max_mark_age_seconds
     now = utcnow()
     by_chain, by_asset = _composition(
         views,
@@ -922,6 +942,22 @@ def trade_profile_from_settings(
     return TRADE_RISK_PROFILES[name]
 
 
+def freshness_from_settings(settings: Settings) -> FreshnessPolicy:
+    """One freshness policy per process, built from the per-class settings budgets.
+
+    The mark gate, the quote gate and the alert tracker all read the same instance, so a
+    mark the order gate calls stale is exactly the mark the router refuses to price.
+    """
+    return FreshnessPolicy(
+        max_age_by_class={
+            "mark": float(settings.max_mark_age_seconds),
+            "quote": float(settings.max_quote_age_seconds),
+            "candle": float(settings.max_candle_age_seconds),
+            "feed": float(settings.max_feed_age_seconds),
+        }
+    )
+
+
 def limits_from_settings(settings: Settings) -> RiskLimits:
     profile = None
     if settings.trade_risk_profile is not None:
@@ -937,6 +973,7 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
             max_open_positions=settings.max_open_positions,
             max_daily_loss_usd=settings.max_daily_loss_usd,
             max_quote_age_seconds=float(settings.max_quote_age_seconds),
+            max_mark_age_seconds=float(settings.max_mark_age_seconds),
             min_pair_age_minutes=settings.min_pair_age_minutes,
             min_liquidity_usd=settings.min_liquidity_usd,
             paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
@@ -952,6 +989,7 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
         max_open_positions=settings.max_open_positions,
         max_daily_loss_usd=settings.max_daily_loss_usd,
         max_quote_age_seconds=float(settings.max_quote_age_seconds),
+        max_mark_age_seconds=float(settings.max_mark_age_seconds),
         min_pair_age_minutes=settings.min_pair_age_minutes,
         min_liquidity_usd=settings.min_liquidity_usd,
         paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
@@ -1258,24 +1296,23 @@ def _attach_quote_price(snapshot: TokenSnapshot, quote: Quote) -> TokenSnapshot:
 
 
 def _sell_quantity(
-    payload: OrderRequest, snapshot: TokenSnapshot, held_qty: Decimal
+    payload: OrderRequest, snapshot: TokenSnapshot, held_qty: Decimal, *, mark_usable: bool
 ) -> Decimal | None:
     """The token quantity to quote for a sell, never more than is held.
 
     Quantity comes first: a caller that knows the position (a protection arm, a
     position screen) sends the token amount, so the exit is exact even when no mark is
     available. Without one, a normal sell converts its USD notional at the market mark
-    and fails closed (``None``) without it. A reduce-only exit with no quantity and no
-    usable mark asks for the whole position: the router's executable quote is the
-    exit's price, and a mark the platform cannot verify must not decide how much of
-    the position to leave behind.
+    and fails closed (``None``) without a usable mark. A reduce-only exit with no
+    quantity asks for the whole position: the exit sizes from the *held quantity*, never
+    from the mark, and its executable route is the price. A stale mark therefore cannot
+    trap a position by deciding how much of it to leave behind.
     """
     if payload.quantity is not None:
         return min(payload.quantity, held_qty)
-    mark = snapshot.price_usd
-    usable_mark = mark is not None and mark > 0 and not (payload.reduce_only and snapshot.stale)
-    if not usable_mark:
+    if not mark_usable:
         return held_qty if payload.reduce_only else None
+    mark = snapshot.price_usd
     assert mark is not None
     return min(payload.amount_usd / mark, held_qty)
 
@@ -1446,14 +1483,21 @@ async def place_order(
 
     # Do not hold a transaction open across the quote network call.
     session.rollback()
-    snapshot = await dexscreener.get_token(payload.chain, payload.token_address)
+    snapshot = await dexscreener.get_token(
+        payload.chain, payload.token_address, max_age_seconds=settings.max_mark_age_seconds
+    )
 
     if payload.side == "sell":
         if held_qty <= 0:
             return _reject_new(
                 session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot, actor=placed_by
             )
-        quantity = _sell_quantity(payload, snapshot, held_qty)
+        quantity = _sell_quantity(
+            payload,
+            snapshot,
+            held_qty,
+            mark_usable=_mark_can_price(snapshot, settings.max_mark_age_seconds),
+        )
         if quantity is None:
             return _reject_new(
                 session, payload, "PRICE_UNKNOWN", snapshot=snapshot, actor=placed_by
@@ -1494,13 +1538,35 @@ async def place_order(
                 actor=placed_by,
             )
     else:
-        quote = await quotes.quote(
-            chain=payload.chain,
-            token_address=payload.token_address,
-            side="buy",
-            amount_usd=payload.amount_usd,
-            quantity=None,
-        )
+        try:
+            quote = await quotes.quote(
+                chain=payload.chain,
+                token_address=payload.token_address,
+                side="buy",
+                amount_usd=payload.amount_usd,
+                quantity=None,
+            )
+        except NoRoute as exc:
+            # A stale-mark refusal is a data-quality fact worth recording: the order row
+            # persists the router's typed reason (``SNAPSHOT_STALE``), exactly as a
+            # kill-switch refusal does. A transient route/timeout failure is not claimed
+            # here, so the same idempotency key can retry instead of replaying a refusal.
+            if exc.code != "SNAPSHOT_STALE":
+                raise
+            return _reject_new(
+                session,
+                payload,
+                exc.code,
+                snapshot=snapshot,
+                quote_json={
+                    "side": "buy",
+                    "error": {
+                        "code": exc.code,
+                        "message": exc.message,
+                        "detail": exc.detail,
+                    },
+                },
+            )
 
     snapshot = _attach_quote_price(snapshot, quote)
 

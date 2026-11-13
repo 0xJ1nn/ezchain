@@ -81,7 +81,9 @@ class FakeSource:
     def __init__(self, snapshot: TokenSnapshot) -> None:
         self.snapshot = snapshot
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         return self.snapshot
 
 
@@ -322,7 +324,9 @@ class PaperDexSource:
             ),
         )
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         return self.snapshot()
 
 

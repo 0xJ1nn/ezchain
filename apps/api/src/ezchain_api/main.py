@@ -54,7 +54,7 @@ from .services import provider_keys as provider_key_service
 from .services.executor import PaperOrderExecutor
 from .services.graph import PaperGraphRuntime
 from .services.market_monitor import MarketMonitor
-from .services.paper import ensure_genesis
+from .services.paper import ensure_genesis, freshness_from_settings
 from .services.plugin_runtime import PaperPluginRuntime
 from .services.provider_secrets import build_secret_cipher
 from .services.system_flags import read_kill_switch, seed_kill_switch
@@ -120,7 +120,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.dexscreener = dexscreener
     # Candle history uses the same GeckoTerminal client as decimals resolution.
     app.state.geckoterminal = gecko
-    app.state.quote_router = QuoteRouter(providers=providers, dexscreener=dexscreener)
+    app.state.quote_router = QuoteRouter(
+        providers=providers,
+        dexscreener=dexscreener,
+        freshness=freshness_from_settings(settings),
+    )
 
     def kill_switch_active() -> bool:
         """Read the persisted flag per order so arming applies across processes."""
@@ -161,6 +165,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             plugin_host=plugin_host,
             plugin_registry=plugin_registry,
             interval_seconds=settings.engine_interval_seconds,
+            max_mark_age_seconds=settings.max_mark_age_seconds,
         )
         scheduler_task = asyncio.create_task(scheduler.run_forever())
 
