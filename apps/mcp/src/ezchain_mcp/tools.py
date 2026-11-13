@@ -111,6 +111,15 @@ def _get_reconciliation(client: EzchainClient, _: dict[str, Any]) -> Any:
     return client.get("/api/v1/paper/reconciliation")
 
 
+def _list_approvals(client: EzchainClient, args: dict[str, Any]) -> Any:
+    params: dict[str, Any] = {key: args[key] for key in ("status", "limit") if key in args}
+    return client.get("/api/v1/paper/approvals", params=params)
+
+
+def _get_automation(client: EzchainClient, _: dict[str, Any]) -> Any:
+    return client.get("/api/v1/paper/automation")
+
+
 def _list_strategies(client: EzchainClient, _: dict[str, Any]) -> Any:
     return client.get("/api/v1/strategies")
 
@@ -208,7 +217,31 @@ def _run_strategy(client: EzchainClient, args: dict[str, Any]) -> Any:
 
 
 def _place_paper_order(client: EzchainClient, args: dict[str, Any]) -> Any:
-    return client.post("/api/v1/paper/orders", json=args)
+    """Place a paper order and return the approval it produced, when it waits for one.
+
+    Under the ``manual`` automation tier an agent's order is not filled: the API stores it
+    and returns ``status: "pending_approval"`` with the approval's id and status. The
+    answer always names both, so an agent cannot mistake "accepted" for "filled"; under
+    ``full_auto`` the two fields are null and the order fills like any other.
+    """
+    order = client.post("/api/v1/paper/orders", json=args)
+    if isinstance(order, dict):
+        approval_id = order.get("approval_id")
+        approval_status = order.get("approval_status")
+        return {
+            **order,
+            "approval_id": approval_id,
+            "approval_status": approval_status,
+            "executed": order.get("status") == "filled",
+            "next_action": (
+                "wait_for_a_person"
+                if approval_status == "pending"
+                else None
+                if approval_id is None
+                else "none"
+            ),
+        }
+    return order
 
 
 def _run_backtest(client: EzchainClient, args: dict[str, Any]) -> Any:
@@ -337,6 +370,36 @@ READ_TOOLS: tuple[Tool, ...] = (
         "Proof that ledger groups, cash, fills and positions agree.",
         _object({}),
         _get_reconciliation,
+    ),
+    Tool(
+        "ezchain_list_approvals",
+        "List approvals",
+        "Agent orders waiting for a person. A pending row is not a fill.",
+        _object(
+            {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "approved",
+                        "rejected",
+                        "expired",
+                        "superseded",
+                        "executed",
+                        "failed",
+                    ],
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+            }
+        ),
+        _list_approvals,
+    ),
+    Tool(
+        "ezchain_get_automation",
+        "Get automation tier",
+        "Whether this user's agent orders wait for a person or execute automatically.",
+        _object({}),
+        _get_automation,
     ),
     Tool(
         "ezchain_list_strategies",

@@ -143,6 +143,17 @@ OpenClaw applies its normal tool profile and approval policy to every MCP tool. 
 are marked destructive/write in the tool annotations. The server refuses to expose any
 write tool unless `EZCHAIN_API_TOKEN` is a scoped read/trade key.
 
+The API gates agent orders too. Under the default `manual` automation tier an order from
+an agent key is not filled: `ezchain_place_paper_order` returns the stored order with
+`status: "pending_approval"`, `approval_id`, `approval_status: "pending"` and
+`next_action: "wait_for_a_person"`, and a person approves or rejects it at
+`POST /api/v1/paper/approvals/{id}/approve|reject`. A harness's own approval prompt is
+therefore not the last gate; it is the first of two. `ezchain_list_approvals` reads the
+queue and `ezchain_get_automation` reports the tier. An agent cannot approve its own order
+(that is `403 APPROVAL_REQUIRES_PERSON`) or turn the tier up; only a person can. A user who
+has opted into `full_auto` with the recorded risk acknowledgement gets the old behaviour:
+the order fills and the two approval fields are null.
+
 ## 4. Scoped agent keys
 
 Mint one key per agent or user with the deployment admin token:

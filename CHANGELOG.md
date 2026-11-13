@@ -7,6 +7,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Agent orders wait for a person, per user (PAPER).** Automation is now a per-user
+  setting: `manual` (the default) holds every agent order in a durable approval queue,
+  and `full_auto` executes it with no approval. `full_auto` requires acknowledging a
+  plain-language risk disclosure, persisted with the user, the disclosure version and the
+  timestamp. An approval has one lifecycle — `pending`, `approved`, `rejected`,
+  `expired`, `superseded`, `executed`, `failed` — and every state names its next action.
+  Only a person may approve or reject (an agent key is refused with
+  `APPROVAL_REQUIRES_PERSON`), and the approver reads the server's own risk evidence, not
+  agent text. Approving re-enters the one execution path with the stored intent, so the
+  order keeps its original id and idempotency key and runs
+  `Intent → RiskDecision → Quote → Order → Fill → Journal` like any other; a rejection
+  refuses it with the person's reason. A pending approval expires after five minutes
+  (`EZCHAIN_APPROVAL_TTL_SECONDS`), the queue survives a restart, and an unreadable queue
+  or unreadable intent refuses closed with a reason code. New routes:
+  `GET /api/v1/paper/approvals` and its approve/reject POSTs, `GET/PUT /api/v1/paper/automation`; the MCP order
+  tool returns `approval_id` and `approval_status`, and `ezchain_list_approvals` /
+  `ezchain_get_automation` expose the queue read-only. Migration `0021_approvals` is additive, sitting on `0020_market_events`.
 - **Custody is the user's, and the vault keeps keys from everyone else (PAPER).** Keys are
   added at runtime by the person who owns them, encrypted at rest under that user's
   credential, and used only for that user's orders. `ezchain_core.vault` owns the contract:

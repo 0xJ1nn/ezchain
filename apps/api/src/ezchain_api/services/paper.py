@@ -63,17 +63,18 @@ from ezchain_core.ledger import (
 )
 from ezchain_core.types import RISK_REASON_MESSAGES
 
-from ..actor import ACTOR_STRATEGY, ACTOR_UNKNOWN, UNKNOWN_ACTOR, OrderActor
+from ..actor import ACTOR_AGENT, ACTOR_STRATEGY, ACTOR_UNKNOWN, UNKNOWN_ACTOR, OrderActor
 from ..config import Settings, get_settings
 from ..models import (
     LedgerEntryRow,
     MarketSnapshotRow,
+    OrderApprovalRow,
     PaperFillRow,
     PaperOrderRow,
     PaperWalletRow,
     new_id,
 )
-from . import market_snapshots, pnl
+from . import approvals, market_snapshots, pnl
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -82,6 +83,12 @@ GENESIS_GROUP = "genesis"
 # it correct under concurrent async requests.
 _ORDER_CREATED: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "paper_order_created", default=False
+)
+# The stored order an approved execution is continuing. When set, the order row already
+# exists (it was claimed when the agent proposed it) and must be reused, not re-claimed:
+# the idempotency key names one order, and that order is what a person approved.
+_RESUMING: contextvars.ContextVar[PaperOrderRow | None] = contextvars.ContextVar(
+    "paper_resuming_order", default=None
 )
 
 
@@ -1238,10 +1245,29 @@ def _claim_order(
     return order
 
 
+def _resume_claimed(session: Session, payload: OrderRequest, order: PaperOrderRow) -> PaperOrderRow:
+    """Continue the order an approval stored, instead of claiming a second one.
+
+    The row was claimed when the agent proposed the order and is what the person approved,
+    so its id and idempotency key stay. It returns to ``pending`` for the fill window, and
+    its placeholder refusal is cleared because the attempt is now executing.
+    """
+    order.status = "pending"
+    order.reason = None
+    order.reasons = None
+    session.flush()
+    _RESUMING.set(None)
+    _ORDER_CREATED.set(False)
+    return order
+
+
 def _claim_or_existing(
     session: Session, payload: OrderRequest, actor: OrderActor
 ) -> tuple[PaperOrderRow, bool]:
     """Return (order, created). ``created`` is False when the key already existed."""
+    resuming = _RESUMING.get()
+    if resuming is not None and resuming.idempotency_key == payload.idempotency_key:
+        return _resume_claimed(session, payload, resuming), True
     order = _claim_order(session, payload, actor)
     if order is not None:
         _ORDER_CREATED.set(True)
@@ -1395,6 +1421,8 @@ async def place_order(
     quotes: QuoteRouter,
     *,
     actor: OrderActor | None = None,
+    approved: bool = False,
+    resume_order: PaperOrderRow | None = None,
 ) -> PaperOrderRow:
     """Place a paper order: quote, risk, fill and journal in one transaction.
 
@@ -1410,13 +1438,23 @@ async def place_order(
     field: the service decides the recorded actor from ``strategy_id`` and this parameter
     alone, so a caller that omits it writes ``unknown`` instead of a guessed name. The
     actor is stamped on the order row and on every leg of its journal group.
+
+    An order attributed to an **agent** does not execute on its own while the workspace's
+    automation tier is ``manual`` (the default). It is claimed by its idempotency key,
+    stored as ``pending_approval`` and queued for a person; the returned row carries the
+    refusal reason ``AWAITING_APPROVAL``. Approval is a gate *on* this path, not a second
+    one: :func:`approve_order` re-enters this function with ``approved=True`` and the
+    stored intent, so the approved order runs Intent → RiskDecision → Quote → Order →
+    Fill → Journal like any other.
     """
     placed_by = resolve_actor(payload, actor)
     _ORDER_CREATED.set(True)
+    _RESUMING.set(resume_order)
     ensure_genesis(session, settings.paper_starting_cash_usd)
-    existing = _find_order(session, payload.idempotency_key)
-    if existing is not None:
-        return _replay_existing(session, payload, existing)
+    if resume_order is None:
+        existing = _find_order(session, payload.idempotency_key)
+        if existing is not None:
+            return _replay_existing(session, payload, existing)
 
     # Integrity before any network call. The API schema already refuses these; an
     # internal caller that skips the edge still gets a typed rejection, not a quote.
@@ -1747,6 +1785,42 @@ async def place_order(
                 session, order, ",".join(str(r) for r in reasons), reasons=reasons
             )
 
+        # An agent order under the manual tier stops here: risk has run, the quote and its
+        # cost sheet are on the order, and the server's verdict is recorded as evidence for
+        # the person. Nothing is journaled. This is a gate *on* the path — an approved
+        # order re-enters this same window with its stored intent — never a second path.
+        # An unreadable queue refuses the order here rather than letting it fill.
+        if not approved and placed_by.kind == ACTOR_AGENT:
+            probe = approvals.health(session, settings)
+            if not probe.readable:
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                return _mark_rejected(session, order, "APPROVAL_STATE_UNREADABLE")
+            if probe.tier == approvals.MANUAL:
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                decision = {
+                    "stage": "post_quote",
+                    "allowed": bool(allowed),
+                    "reasons": [reason.to_dict() for reason in reasons],
+                    "quote": quote.to_dict(),
+                    "cost_preview": _preview_cost(notional, quote, settings).to_dict(),
+                    "rerun_at_execution": True,
+                }
+                try:
+                    approvals.expire_due(session, settings)
+                    approvals.record_proposal(session, order, payload, decision, settings)
+                except Exception:  # noqa: BLE001 - a queue write failure must fail closed
+                    session.rollback()
+                    stored = _find_order(session, payload.idempotency_key)
+                    if stored is not None:
+                        return _mark_rejected(session, stored, "APPROVAL_STATE_UNREADABLE")
+                    return _reject_new(
+                        session, payload, "APPROVAL_STATE_UNREADABLE", actor=placed_by
+                    )
+                session.refresh(order)
+                return order
+
         stamp = utcnow()
         if funded_shortfall > 0:
             funding_group = f"funding:{order.id}"
@@ -1830,6 +1904,106 @@ async def place_order(
             order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
         session.commit()
         return order
+
+
+async def approve_order(
+    session: Session,
+    approval_id: str,
+    settings: Settings,
+    dexscreener: DexScreenerClient,
+    quotes: QuoteRouter,
+    *,
+    person: OrderActor,
+    note: str | None = None,
+) -> tuple[OrderApprovalRow, PaperOrderRow]:
+    """Execute the stored order behind one approval, as the person who decided it.
+
+    Only a person may approve. The stored intent is what executes — never a body sent with
+    the decision — through :func:`place_order` itself, so the approved order runs the same
+    Intent → RiskDecision → Quote → Order → Fill → Journal path. The decision claim is
+    committed before execution, so a concurrent second approval is refused rather than
+    filling twice.
+    """
+    approvals.require_person(person)
+    row = approvals.lock(session, approval_id)
+    if row is None:
+        raise approvals.ApprovalNotFound()
+    now = utcnow()
+    status = approvals.effective_status(row, now)
+    if status == approvals.EXPIRED:
+        approvals.expire(session, row, now=now)
+        raise approvals.ApprovalError("APPROVAL_EXPIRED", "the approval window closed")
+    if status != approvals.PENDING:
+        raise approvals.ApprovalError(
+            "APPROVAL_NOT_PENDING", f"this approval is {status}, not pending"
+        )
+    payload = approvals.intent_from_dict(row.intent)
+    order = session.get(PaperOrderRow, row.order_id)
+    if order is None:
+        raise approvals.ApprovalIntentInvalid("the stored order row is gone")
+    approvals.claim_decision(session, row, person=person, note=note, now=now)
+    try:
+        placed = await place_order(
+            session,
+            payload,
+            settings,
+            dexscreener,
+            quotes,
+            actor=_order_actor(order),
+            approved=True,
+            resume_order=order,
+        )
+    except Exception as exc:  # noqa: BLE001 - the claim is spent; record why it failed
+        session.rollback()
+        current = approvals.get(session, approval_id)
+        if current is not None and current.status == approvals.APPROVED:
+            code = getattr(exc, "code", None) or exc.__class__.__name__
+            approvals.fail_unexecuted(session, current, str(code))
+        raise
+    approvals.finish(session, row, placed)
+    return row, placed
+
+
+def _order_actor(order: PaperOrderRow) -> OrderActor:
+    """The actor already recorded on a stored order, for its approved execution.
+
+    An approval only exists for an agent order, but the row is the authority: it carries
+    the kind and id written when the agent proposed the order, so the fill is attributed
+    to that same agent rather than to the person who approved it.
+    """
+    if order.actor_kind is None or order.actor_id is None:
+        return UNKNOWN_ACTOR
+    return OrderActor(order.actor_kind, order.actor_id)
+
+
+def reject_order(
+    session: Session,
+    approval_id: str,
+    *,
+    person: OrderActor,
+    note: str,
+) -> OrderApprovalRow:
+    """Refuse the stored order behind one approval, recording the person's reason."""
+    approvals.require_person(person)
+    reason = (note or "").strip()
+    if not reason:
+        raise approvals.ApprovalError(
+            "APPROVAL_DECISION_NOTE_INVALID", "a rejection needs a reason"
+        )
+    row = approvals.lock(session, approval_id)
+    if row is None:
+        raise approvals.ApprovalNotFound()
+    now = utcnow()
+    status = approvals.effective_status(row, now)
+    if status == approvals.EXPIRED:
+        approvals.expire(session, row, now=now)
+        raise approvals.ApprovalError("APPROVAL_EXPIRED", "the approval window closed")
+    if status != approvals.PENDING:
+        raise approvals.ApprovalError(
+            "APPROVAL_NOT_PENDING", f"this approval is {status}, not pending"
+        )
+    approvals.refuse_decision(session, row, person=person, note=reason, now=now)
+    return row
 
 
 # One paper account means one fill window. Serializing every fill is deliberately
