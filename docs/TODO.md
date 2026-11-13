@@ -70,23 +70,23 @@ every item is measured.
       checklist.
 - [ ] Remove the alpha label only after the above are measured.
 
-## Now — P0 live paper slice
+## Now — live paper slice
 
-- [x] P0.0 FastAPI, Postgres, package skeleton, Next proxy, Python gate.
-- [x] P0.1 DexScreener multi-chain browsing + Jupiter quotes.
-- [x] P0.2 Paper ledger/orders/fills/positions/PnL/risk.
-- [x] P0.3 Momentum/dip/DCA/threshold evaluator + scheduler + run log.
-- [x] P0.4 Live markets/token pages + paper ticket.
-- [x] P0.5 Paper positions + strategy builder screens.
-- [x] P0.6 integration: full gate, live Jupiter/paper smoke, restart persistence,
+- [x] FastAPI, Postgres, package skeleton, Next proxy, Python gate.
+- [x] DexScreener multi-chain browsing + Jupiter quotes.
+- [x] Paper ledger/orders/fills/positions/PnL/risk.
+- [x] Momentum/dip/DCA/threshold evaluator + scheduler + run log.
+- [x] Live markets/token pages + paper ticket.
+- [x] Paper positions + strategy builder screens.
+- [x] Integration: full gate, live Jupiter/paper smoke, restart persistence,
   API-down `UPSTREAM_UNREACHABLE`; the evidence pack is recorded in #59 and
   `docs/evidence/p0-production/`.
-- [x] P0.7 dashboard KPI band reads the live paper account.
-- [ ] P0.7b dashboard equity history and live open-position tiles (#57).
+- [x] Dashboard KPI band reads the live paper account.
+- [ ] Dashboard equity history and live open-position tiles (#57).
 - [ ] EVM venue adapter to replace `paper_mark` (#58).
 - [ ] Standalone engine process; no issue tracks it yet.
 
-Known P0 limits: chains without a keyless quote provider use capped `paper_mark`; the
+Known limits: chains without a keyless quote provider use capped `paper_mark`; the
 strategy *list* has no per-row PnL (per-strategy performance is available); no live
 execution. See `docs/PLAN-LIVE-PAPER.md`.
 
@@ -170,7 +170,7 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 ## Commands
 
 ```bash
-pnpm install
+bash tools/setup-web.sh
 pnpm dev
 bash tools/ci.sh
 pnpm --filter @ezchain/web shots

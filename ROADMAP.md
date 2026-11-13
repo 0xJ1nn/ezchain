@@ -16,21 +16,21 @@ surface and a full-code stress harness. Live execution, keys, wallet custody and
 UI are not built; the unmerged live-executor foundation has a blocked review and is not a
 claim.
 
-## Done — P0: Live paper slice
+## Done — Live paper slice
 
 Goal: live multi-chain browsing, a real paper ledger, and user-defined strategies that
 run in paper mode. No keys, no live money. Full contract:
 [`docs/PLAN-LIVE-PAPER.md`](docs/PLAN-LIVE-PAPER.md).
 
-- [x] P0.0 foundation: FastAPI, Postgres, adapter/core/engine packages, proxy, CI.
-- [x] P0.1 live data: DexScreener multi-chain + Jupiter quotes.
-- [x] P0.2 paper ledger: idempotent orders, fills, positions, PnL, risk.
-- [x] P0.3 strategy engine: declarative momentum/dip/DCA/threshold rules.
-- [x] P0.4 web live markets and token pages.
-- [x] P0.5 web paper ticket and strategy builder.
-- [x] P0.6 integration: full gate, live smoke, restart/API-down drills, docs.
+- [x] Foundation: FastAPI, Postgres, adapter/core/engine packages, proxy, CI.
+- [x] Live data: DexScreener multi-chain + Jupiter quotes.
+- [x] Paper ledger: idempotent orders, fills, positions, PnL, risk.
+- [x] Strategy engine: declarative momentum/dip/DCA/threshold rules.
+- [x] Web live markets and token pages.
+- [x] Web paper ticket and strategy builder.
+- [x] Integration: full gate, live smoke, restart/API-down drills, docs.
 - [ ] Paper follow-ups: dashboard equity history and live position tiles (#57), an EVM
-  venue adapter (#58) and a standalone engine process (no tracked issue). The P0
+  venue adapter (#58) and a standalone engine process (no tracked issue). The paper
   evidence pack is recorded and closed (#59).
 
 Exit: a user can browse live markets, place a paper buy/sell, see the ledger and position,

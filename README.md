@@ -196,6 +196,7 @@ Requires Node 22 + pnpm 9, Python 3.11 and Postgres 16.
 ```bash
 createdb ezchain                 # once
 cp .env.example .env             # DB URL, API URL, paper limits
+bash tools/setup-web.sh
 PYTHON=python3.11 bash tools/setup-python.sh
 .venv/bin/alembic -c apps/api/alembic.ini upgrade head   # once, forward-only
 bash tools/dev.sh                # API on :8000, web on :3000
