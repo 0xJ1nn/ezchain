@@ -784,13 +784,16 @@ async def token(
     chain: str,
     address: str,
     adapter: DexScreenerClient = Depends(get_dexscreener),
+    settings: Settings = Depends(get_settings),
 ) -> TokenOut:
     if get_chain(chain) is None:
         raise HTTPException(
             status_code=404, detail={"code": "CHAIN_NOT_FOUND", "message": f"unknown chain {chain}"}
         )
     try:
-        snapshot = await adapter.get_token(chain, address)
+        snapshot = await adapter.get_token(
+            chain, address, max_age_seconds=settings.max_mark_age_seconds
+        )
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
     return _token_out(snapshot, datetime.now(UTC))
@@ -826,6 +829,7 @@ async def token_candles(
             limit,
             datetime.now(UTC),
             data_mode=settings.data_mode,
+            max_mark_age_seconds=settings.max_mark_age_seconds,
         )
     except AdapterError as exc:
         raise candles_http_error(exc) from exc

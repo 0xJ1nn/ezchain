@@ -389,7 +389,9 @@ def test_reduce_only_exit_still_requires_a_fresh_quote() -> None:
     stale = utcnow() - timedelta(seconds=61)
     allowed, reasons = evaluate(
         req=request(side="sell", amount="100", reduce_only=True),
-        quote=make_quote(side="sell", amount_out="100", amount_in="50", observed_at=stale),
+        quote=make_quote(
+            side="sell", amount_out="100", amount_in="50", kind="jupiter", observed_at=stale
+        ),
         snapshot=make_snapshot(price=None, liquidity=None, pairs=0, stale=True),
     )
     assert allowed is False

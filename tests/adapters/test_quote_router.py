@@ -103,7 +103,9 @@ class FakeDex:
         self.observed_at = observed_at
         self.calls: list[tuple[str, str]] = []
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         self.calls.append((chain, address))
         return TokenSnapshot(
             chain=chain,
@@ -466,7 +468,7 @@ async def test_a_stale_mark_alerts_once_per_transition() -> None:
     alerts = router_.stale_alerts()
     assert len(alerts) == 1
     assert alerts[0].type == "provider_stale"
-    assert alerts[0].entity == "mark:blast"
+    assert alerts[0].entity == "mark:blast:0xtoken"
     # Drained once; a repeat read of the same outage raises nothing new.
     assert router_.stale_alerts() == ()
     with pytest.raises(NoRoute):

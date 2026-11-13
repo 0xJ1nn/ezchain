@@ -166,10 +166,22 @@ with no rows is `no_data`, and an old row is `stale` after
 **Freshness is per source class.** `ezchain_core.freshness.FreshnessPolicy` bounds a read's
 age by the kind of read (`mark`, `quote`, `candle`, `feed`), and each read is classified as
 `fresh`, `stale`, `unknown` (no observation) or `future` (dated ahead of the clock). Only
-`fresh` prices. A stale mark refuses to price an order instead of handing back its last
-value, and a source that goes stale raises one `provider_stale` alert per transition, not
-one per request. A cached provider payload keeps the time the provider answered it, so a
-re-read cannot re-stamp an old price as current.
+`fresh` prices. A stale mark refuses to price an *entry* and never values the account
+(every money number stays `null` and the account is incomplete); a reduce-only exit still
+settles because it sizes from the held quantity, never the mark, and on a `paper_mark`-only
+chain it settles at the last observed mark rather than being trapped. `EZCHAIN_MAX_MARK_AGE_SECONDS`,
+`EZCHAIN_MAX_QUOTE_AGE_SECONDS`, `EZCHAIN_MAX_CANDLE_AGE_SECONDS` and
+`EZCHAIN_MAX_FEED_AGE_SECONDS` feed one policy, which the order gate, the quote router and
+the alert tracker all share. The budgets reach every snapshot producer, not just the order
+path, so `TokenSnapshot.stale` is a real age and not a constant.
+
+A source that goes stale raises one `provider_stale` alert per transition, keyed
+`(chain, token, kind)`, not one per request; `GET /paper/alerts` drains the router's queue,
+which is bounded so a surface nobody reads cannot grow without bound. The transition state
+is in memory: a restart forgets it and re-raises once per process for a source that is
+still stale. That is documented, not hidden — a durable alert sink is a different feature.
+A cached provider payload keeps the time the provider answered it, so a re-read cannot
+re-stamp an old price as current.
 
 ### 4.2 Candle history
 

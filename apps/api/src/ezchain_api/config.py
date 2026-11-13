@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     max_open_positions: int = 10
     max_daily_loss_usd: Decimal = Field(default=Decimal("500"))
     max_quote_age_seconds: int = 60
+    # A mark is a different read from an executable quote, so it has its own budget. A
+    # mark older than this never prices an order or sizes a sell, whatever the adapter's
+    # ``stale`` flag says; the per-class budgets are one policy in ezchain_core.freshness.
+    max_mark_age_seconds: int = Field(default=60, gt=0)
+    max_candle_age_seconds: int = Field(default=300, gt=0)
+    max_feed_age_seconds: int = Field(default=60, gt=0)
     min_pair_age_minutes: int = 10
     min_liquidity_usd: Decimal = Field(default=Decimal("10000"))
     paper_mark_max_order_usd: Decimal = Field(default=Decimal("250"))

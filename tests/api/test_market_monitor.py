@@ -114,7 +114,9 @@ class FakeSource:
         self.token_snapshots: dict[tuple[str, str], TokenSnapshot] = {}
         self.token_calls: list[tuple[str, str]] = []
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         self.token_calls.append((chain, address))
         snapshot = self.token_snapshots.get((chain, address))
         if snapshot is None:
@@ -671,7 +673,9 @@ def test_token_endpoint_carries_pair_age() -> None:
     observed = datetime.now(UTC)
 
     class FakeAdapter:
-        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+        async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
             return TokenSnapshot(
                 chain=chain,
                 address=address,

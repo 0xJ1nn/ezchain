@@ -9,7 +9,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select
 
-from ezchain_adapters import NoRoute
 from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 from ezchain_api.services import paper
 from ezchain_api.services.paper import IdempotencyConflict
@@ -134,16 +133,19 @@ def test_legacy_order_without_a_fingerprint_replays_only_the_same_payload(
 def test_a_stale_mark_refuses_to_price_a_buy_before_a_fill(session, settings, dex, jupiter) -> None:
     """A mark past its budget is not current, so no quote is built from it at all.
 
-    QUOTE_STALE covers an old *venue* quote and is exercised end-to-end in
-    ``test_reduce_only``; this pins the mark itself, which the adapter refuses to price.
+    The refusal is a persisted rejection row with the router's reason code, exactly as a
+    kill-switch refusal is, so the operator can read why no fill happened. QUOTE_STALE
+    covers an old *venue* quote and is exercised end-to-end in ``test_reduce_only``.
     """
     dex.set(make_snapshot(price=Decimal("2000"), observed_at=utcnow() - timedelta(seconds=120)))
 
-    with pytest.raises(NoRoute) as caught:
-        place(session, settings, dex, jupiter, make_request(amount_usd="100", key="stale-mark"))
-    assert caught.value.code == "SNAPSHOT_STALE"
+    order = place(session, settings, dex, jupiter, make_request(amount_usd="100", key="stale-mark"))
+    assert order.status == "rejected"
+    assert order.reason == "SNAPSHOT_STALE"
+    assert order.quote_json is not None
+    assert order.quote_json["error"]["code"] == "SNAPSHOT_STALE"
     assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
-    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 0
+    assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
 
 
 def test_unknown_liquidity_is_rejected(session, settings, dex, jupiter) -> None:

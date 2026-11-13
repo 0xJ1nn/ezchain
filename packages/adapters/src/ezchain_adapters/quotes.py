@@ -392,15 +392,21 @@ class QuoteRouter:
     async def _quantity_from_usd(
         self, meta: ChainMeta, token_address: str, amount_usd: Decimal
     ) -> Decimal:
-        snapshot = await self._dexscreener.get_token(meta.id, token_address)
+        snapshot = await self._dexscreener.get_token(
+            meta.id, token_address, max_age_seconds=self._freshness.budget("mark")
+        )
         # Sizing a sell from the mark is still pricing from it, so a stale mark cannot
         # pick the quantity. A future-dated mark is a clock fault the risk gate names
         # (MARK_TIMESTAMP_FUTURE); this path only refuses a mark that is genuinely old.
         price = snapshot.price_usd
         if price is None or price <= 0:
+            self._sources.observe(_mark_entity(meta.id, token_address), snapshot.source)
             raise NoRoute("sell requires a positive price")
         verdict = self._freshness.classify(snapshot.source)
         if verdict.status == "stale":
+            # A refusal is an outage fact too: record it so the operator sees the
+            # transition even though the caller only sees the typed 409.
+            self._sources.observe(_mark_entity(meta.id, token_address), snapshot.source)
             raise NoRoute(
                 "sell requires a fresh price",
                 detail=f"mark freshness: {verdict.status}",
@@ -412,11 +418,18 @@ class QuoteRouter:
         """The capped DexScreener mark for chains with no keyless executable source.
 
         A mark prices an order, so it obeys the same fail-closed rule as an executable
-        quote: past its freshness budget the mark is not current, and the router refuses
-        to price from it instead of handing back the last value as a live price.
+        quote for an *entry*: past its freshness budget the mark is not current, and the
+        router refuses to price from it instead of handing back the last value as a live
+        price. A *reduce-only exit* is different: it sizes from the held quantity, never
+        from the mark, and a paper-mark-only chain has no other price to settle against,
+        so the exit settles at the last observed mark rather than being trapped. That
+        stale price never values the account: the read models report the position
+        unpriced while the mark is stale.
         """
-        snapshot = await self._dexscreener.get_token(request.chain.id, request.token_address)
-        entity = _mark_entity(request.chain.id)
+        snapshot = await self._dexscreener.get_token(
+            request.chain.id, request.token_address, max_age_seconds=self._freshness.budget("mark")
+        )
+        entity = _mark_entity(request.chain.id, request.token_address)
         verdict = self._freshness.classify(snapshot.source)
         # Record the read so an outage raises one alert on the transition edge, even
         # though the refusal below is what the caller actually sees.
@@ -424,7 +437,7 @@ class QuoteRouter:
         price = snapshot.price_usd
         if price is None or price <= 0:
             raise NoRoute("no executable paper mark")
-        if verdict.status == "stale":
+        if verdict.status == "stale" and request.side == "buy":
             raise NoRoute(
                 "no executable paper mark",
                 detail=f"mark freshness: {verdict.status}",
@@ -469,6 +482,11 @@ def _stable_symbol(chain: ChainMeta) -> str:
     return asset.symbol if asset is not None else "USDC"
 
 
-def _mark_entity(chain: str) -> str:
-    """One dedupe entity per chain mark source, so an outage is not one alert per token."""
-    return f"mark:{chain}"
+def _mark_entity(chain: str, token: str, kind: str = "mark") -> str:
+    """One dedupe entity per (chain, token, kind).
+
+    Keying by chain alone would collapse a token's outage into one alert for the whole
+    chain; keying by token alone could collide across chains. The transition tracker
+    raises once per entity, so one outage of one mark source raises exactly one alert.
+    """
+    return f"{kind}:{chain}:{token}"

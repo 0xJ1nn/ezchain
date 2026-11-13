@@ -15,6 +15,7 @@ to every reader, so the mark gate, the quote gate and the alert all agree.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -36,7 +37,13 @@ DEFAULT_MAX_AGE_BY_CLASS: Final[dict[str, float]] = {
 
 _QUOTE_REASON: Final = "QUOTE_STALE"
 _SNAPSHOT_REASON: Final = "SNAPSHOT_STALE"
+_FUTURE_REASON: Final = "MARK_TIMESTAMP_FUTURE"
 _PROVIDER_STALE: Final = "provider_stale"
+
+# An alert queue that nobody drains must not grow without bound. The oldest alert is the
+# one an operator can most afford to lose: the transition already re-raises after a
+# recovery, and the newest outage is the one still open.
+MAX_PENDING_ALERTS: Final = 256
 
 
 def stale_reason(source_class: str) -> str:
@@ -91,13 +98,21 @@ class FreshnessPolicy:
         source_class: str = "mark",
         now: datetime | None = None,
     ) -> FreshnessVerdict:
-        """Classify one observation. Missing, stale and future-dated are never fresh."""
+        """Classify one observation. Missing, stale and far-future are never fresh.
+
+        One vocabulary per :data:`MarkStatus`: an age past the budget is ``stale`` and
+        names the class's stale reason (``SNAPSHOT_STALE``/``QUOTE_STALE``); a timestamp
+        beyond the tolerated skew is the contract's clock fault and takes the contract's
+        ``unknown`` treatment with ``MARK_TIMESTAMP_FUTURE`` — never a stale reason. A
+        modest future is labelled ``future``, which is also not fresh.
+        """
         if source is None:
             return FreshnessVerdict("unknown", None, None, source_class)
-        # A clamped age always looks fresh, so the skew is read unclamped. The tolerated
-        # skew is the one constant the writer and the risk gate already share.
-        if source.is_future(self.max_future_skew_seconds, now):
-            return FreshnessVerdict("future", None, stale_reason(source_class), source_class)
+        skew = source.future_skew_seconds(now)
+        if skew > self.max_future_skew_seconds:
+            return FreshnessVerdict("unknown", None, _FUTURE_REASON, source_class)
+        if skew > 0:
+            return FreshnessVerdict("future", None, None, source_class)
         age = source.age_seconds(now)
         if age > self.budget(source_class):
             return FreshnessVerdict("stale", age, stale_reason(source_class), source_class)
@@ -154,10 +169,12 @@ class SourceFreshness:
     stale: a source we cannot date is a source we cannot trust.
     """
 
-    def __init__(self, policy: FreshnessPolicy | None = None) -> None:
+    def __init__(
+        self, policy: FreshnessPolicy | None = None, *, max_pending: int = MAX_PENDING_ALERTS
+    ) -> None:
         self._policy = policy or FreshnessPolicy()
         self._stale: dict[str, bool] = {}
-        self._alerts: list[ProviderStaleAlert] = []
+        self._alerts: deque[ProviderStaleAlert] = deque(maxlen=max(1, max_pending))
 
     def observe(
         self,
@@ -175,13 +192,13 @@ class SourceFreshness:
         if not stale or was_stale:
             return None
         budget = self._policy.budget(source_class)
-        if verdict.status == "unknown":
-            message = f"{entity} has no observation; {source_class} budget {budget:g}s."
-        elif verdict.status == "future":
+        if verdict.reason == _FUTURE_REASON or verdict.status == "future":
             message = (
                 f"{entity} is dated ahead of the clock; {source_class} read refused "
                 f"(budget {budget:g}s)."
             )
+        elif verdict.status == "unknown":
+            message = f"{entity} has no observation; {source_class} budget {budget:g}s."
         else:
             message = (
                 f"{entity} is stale: age {verdict.age_seconds:g}s exceeds the "

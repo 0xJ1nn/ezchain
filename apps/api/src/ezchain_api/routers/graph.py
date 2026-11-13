@@ -80,7 +80,11 @@ async def dry_run(
     document = parse_document(graph)
     now = utcnow()
     try:
-        snapshot = await dexscreener.get_token(payload.chain, payload.token_address)
+        snapshot = await dexscreener.get_token(
+            payload.chain,
+            payload.token_address,
+            max_age_seconds=settings.max_mark_age_seconds,
+        )
         tick = await graph_service.build_tick(
             session=session,
             candle_source=geckoterminal,

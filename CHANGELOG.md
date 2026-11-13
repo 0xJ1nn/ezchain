@@ -76,14 +76,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `feed`) that classifies a read as `fresh`, `stale`, `unknown` or `future`, and only a
   fresh read prices. The mark path had a hole: `TokenSnapshot.stale` was hardcoded `False`
   in every production constructor, so `SNAPSHOT_STALE` could only fire from a test. The
-  order gate now derives staleness from the mark's own observation age at
-  `RiskLimits.max_mark_age_seconds`, and the quote router refuses to build a quote — or to
-  size a sell — from a mark past its budget, answering `SNAPSHOT_STALE` instead of pricing
-  from the last value. Adapter caches no longer re-stamp a cached payload with the read
-  time, so a 15-second-old answer keeps its real age instead of being presented as current.
-  A source that goes stale raises `provider_stale` once per transition, not once per
-  request, and a recovery re-arms the alert. Tests cover stale-on-read, a stale mark during
-  order placement, and recovery.
+  budgets from `EZCHAIN_MAX_*_AGE_SECONDS` now reach every snapshot producer (order path,
+  markets, graph, candles, market monitor) and the order gate, so `stale` is a real age.
+  The vocabulary is one per `MarkStatus`: an old observation is `stale` with
+  `SNAPSHOT_STALE`; a timestamp beyond the tolerated skew is the contract's `unknown` clock
+  fault with `MARK_TIMESTAMP_FUTURE`, never mapped onto a stale reason. An entry from a
+  stale mark is a persisted `SNAPSHOT_STALE` rejection row; a transient route failure still
+  raises without claiming the idempotency key. A reduce-only exit is never trapped: it sizes
+  from the held quantity, prices from a fresh venue quote on a venue chain, and settles at
+  the last observed mark on a `paper_mark`-only chain — while every stale mark stays out of
+  equity, market value and unrealized PnL (the account is incomplete, never stale-priced).
+  Adapter caches no longer re-stamp a cached payload with the read time, so a
+  15-second-old answer keeps its real age. A source that goes stale raises `provider_stale`
+  once per transition, keyed `(chain, token, kind)` and drained into `GET /paper/alerts`
+  through a bounded queue; the transition state is in memory, so a restart re-raises once
+  per process. Tests cover the exact budget edge, stale-on-read, stale-mark exits on both
+  chain kinds, a persisted entry refusal, and recovery.
 
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
   cash now comes from the same Python `Decimal` replay that computes the account's cash,

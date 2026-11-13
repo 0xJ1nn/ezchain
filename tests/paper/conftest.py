@@ -105,7 +105,9 @@ class FakeDexScreener:
         self.snapshot = snapshot
         self.calls = 0
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot:
         self.calls += 1
         return self.snapshot
 

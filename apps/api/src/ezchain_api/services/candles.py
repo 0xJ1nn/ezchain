@@ -67,7 +67,9 @@ class CandleSource(Protocol):
 class TokenSource(Protocol):
     """The token lookup this service uses to find the deepest pool."""
 
-    async def get_token(self, chain: str, address: str) -> TokenSnapshot: ...
+    async def get_token(
+        self, chain: str, address: str, *, max_age_seconds: float | None = None
+    ) -> TokenSnapshot: ...
 
 
 @dataclass(frozen=True)
@@ -335,6 +337,7 @@ async def get_candles(
     now: datetime,
     *,
     data_mode: str = "live",
+    max_mark_age_seconds: float = 60.0,
 ) -> CandleSeries:
     """Closed candle history for one token, from the table when it is current.
 
@@ -366,7 +369,9 @@ async def get_candles(
         )
 
     try:
-        snapshot = await snapshot_source.get_token(chain, token_address)
+        snapshot = await snapshot_source.get_token(
+            chain, token_address, max_age_seconds=max_mark_age_seconds
+        )
     except NotFound:
         pool: str | None = None
     else:

@@ -202,7 +202,16 @@ is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`
 the market mark respectively. `MARK_TIMESTAMP_FUTURE` means a timestamp ran further ahead
 of the clock than the tolerated skew, which is a clock fault rather than fresh evidence.
 None is ever zero-filled or carried forward — a stale source refuses to price, and the
-order row is the record of the refusal.
+order row is the record of the refusal. A stale mark refuses an *entry* with a persisted
+`SNAPSHOT_STALE` rejection row (a deterministic data-quality refusal, so a retry does not
+replay it); a transient `NO_ROUTE`/timeout still raises without claiming the key, so the
+same idempotency key can retry.
+
+A reduce-only exit is never trapped by a mark. It sizes from the held quantity, never from
+a stale mark. On a chain with an executable venue the venue's fresh sell quote is the
+exit's price. On a `paper_mark`-only chain there is no other price, so the exit settles at
+the last observed mark rather than remain unsellable; that mark never values the account
+(see `mark_status` below).
 
 Every order, including a rejected one, carries an `actor` object recording who placed it.
 The server sets it from the authenticated caller and never from the request body: `actor`
@@ -241,15 +250,17 @@ A position's `mark_status` is the server's verdict (`fresh`, `stale`, `unknown` 
 `future`). An observation only modestly ahead of the clock is tolerated as `future`; one
 further ahead than the skew bound reports `unknown` with no age, so a skewed or
 malicious future observation cannot freeze a mark indefinitely. The age is `null`
-whenever the status is `unknown`. An `unknown` status fails closed: `mark_usd`,
+whenever the status is `unknown`. Both `unknown` and `stale` fail closed: `mark_usd`,
 `market_value_usd`, `unrealized_usd` and `source` are `null` too, so no money number is
 ever derived from a mark the server will not vouch for, and the account reports the
-position as unpriced rather than pricing it from a frozen number.
+position as unpriced rather than pricing it from an old or frozen number.
 
 `GET /paper/alerts` carries one code per derived condition, including
 `POSITION_MARK_UNKNOWN`, `POSITION_MARK_STALE`, `POSITION_MARK_FUTURE` (a source clock
 ahead of ours; `warning` beyond the tolerated skew, `info` within it),
-`RECONCILIATION_FAILED`, `ORDERS_REJECTED` and `KILL_SWITCH_ACTIVE`.
+`RECONCILIATION_FAILED`, `ORDERS_REJECTED`, `KILL_SWITCH_ACTIVE` and `PROVIDER_STALE` (one
+per fresh→stale transition, keyed `(chain, token, kind)`). The transition state is
+process-local: a restart re-raises once for a source that is still stale.
 
 `GET /paper/account` and `GET /paper/wallets` are read-only. They never create genesis or
 re-declare a missing wallet: bootstrap happens at boot and on `POST /paper/orders` only, so

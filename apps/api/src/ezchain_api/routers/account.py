@@ -13,8 +13,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
+from ezchain_adapters import QuoteRouter
+
 from ..config import Settings, get_settings
-from ..deps import get_session
+from ..deps import get_quote_router, get_session
 from ..schemas_account import (
     AttributionRowOut,
     LedgerEntryOut,
@@ -130,10 +132,12 @@ def limits(
 
 @router.get("/alerts", response_model=PaperAlertsOut)
 def alerts(
-    session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    quotes: QuoteRouter | None = Depends(get_quote_router),
 ) -> PaperAlertsOut:
     """Derived operator alerts. Empty list means the account is clean."""
-    return PaperAlertsOut.model_validate(account_read.alerts(session, settings))
+    return PaperAlertsOut.model_validate(account_read.alerts(session, settings, quotes))
 
 
 @router.get("/export/orders.csv")

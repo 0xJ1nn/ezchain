@@ -50,12 +50,21 @@ def test_a_fresh_observation_prices() -> None:
     assert FreshnessPolicy().price(PRICE, source(1), now=NOW) == PRICE
 
 
-def test_a_future_dated_observation_is_not_fresh() -> None:
-    """A clamped age cannot separate fresh from future, so the policy reads the skew."""
+def test_a_far_future_observation_is_unknown_with_the_clock_fault_reason() -> None:
+    """Beyond the tolerated skew is the contract's clock fault, never a stale reason."""
     verdict = FreshnessPolicy().classify(source(-30), now=NOW)
-    assert verdict.status == "future"
+    assert verdict.status == "unknown"
     assert verdict.usable is False
     assert verdict.age_seconds is None
+    assert verdict.reason == "MARK_TIMESTAMP_FUTURE"
+
+
+def test_a_modest_future_observation_is_labelled_future_not_stale() -> None:
+    """Within the tolerated skew it is labelled ``future``; it still never prices."""
+    verdict = FreshnessPolicy().classify(source(-1), now=NOW)
+    assert verdict.status == "future"
+    assert verdict.reason is None
+    assert verdict.usable is False
 
 
 def test_no_observation_is_unknown_not_fresh() -> None:
@@ -131,6 +140,22 @@ def test_recovery_closes_the_outage_so_a_later_one_raises_again() -> None:
     assert len(tracker.alerts()) == 2
 
 
+@pytest.mark.parametrize(
+    ("seconds_ago", "status"),
+    [
+        (60.0, "fresh"),
+        (59.999, "fresh"),
+        (60.001, "stale"),
+        (61.0, "stale"),
+    ],
+)
+def test_the_budget_boundary_is_exact(seconds_ago: float, status: str) -> None:
+    """60.0 is still inside the budget; only *past* it is stale (the pinned edge)."""
+    verdict = FreshnessPolicy().classify(source(seconds_ago), now=NOW)
+    assert verdict.status == status
+    assert verdict.usable is (status == "fresh")
+
+
 def test_a_source_never_observed_alerts_as_stale() -> None:
     tracker = SourceFreshness()
     alert = tracker.observe("feed:pumpfun", None, source_class="feed", now=NOW)
@@ -161,3 +186,22 @@ def test_two_sources_track_independently() -> None:
     assert tracker.observe("mark:base", source(0), now=NOW) is None
     assert tracker.is_stale("mark:blast") is True
     assert tracker.is_stale("mark:base") is False
+
+
+def test_entities_are_keyed_by_chain_token_and_kind() -> None:
+    """One token's outage is not another's, and the same token on two chains is two."""
+    tracker = SourceFreshness()
+    assert tracker.observe("mark:blast:0xa", source(61), now=NOW) is not None
+    assert tracker.observe("mark:blast:0xb", source(61), now=NOW) is not None
+    assert tracker.observe("mark:base:0xa", source(61), now=NOW) is not None
+    assert len(tracker.alerts()) == 3
+
+
+def test_the_pending_alert_queue_is_bounded() -> None:
+    """A queue nobody drains cannot grow without bound; the newest outage is kept."""
+    tracker = SourceFreshness(max_pending=2)
+    for token in ("0xa", "0xb", "0xc"):
+        assert tracker.observe(f"mark:blast:{token}", source(61), now=NOW) is not None
+    drained = tracker.drain()
+    assert len(drained) == 2
+    assert [alert.entity for alert in drained] == ["mark:blast:0xb", "mark:blast:0xc"]

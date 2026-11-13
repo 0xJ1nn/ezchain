@@ -50,9 +50,13 @@ def get_geckoterminal(request: Request) -> GeckoTerminalClient:
     return request.app.state.geckoterminal  # type: ignore[no-any-return]
 
 
-def get_quote_router(request: Request) -> QuoteRouter:
-    """The per-chain quote ladder, built once at startup with every provider open."""
-    return request.app.state.quote_router  # type: ignore[no-any-return]
+def get_quote_router(request: Request) -> QuoteRouter | None:
+    """The per-chain quote ladder, built once at startup with every provider open.
+
+    ``None`` when an embedder (an API-edge test, a scope that never started the
+    lifespan) has no router; a caller must treat its alerts as absent, never invent one.
+    """
+    return getattr(request.app.state, "quote_router", None)
 
 
 def get_market_monitor(request: Request) -> MarketMonitor | None:
