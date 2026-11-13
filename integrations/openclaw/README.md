@@ -58,11 +58,13 @@ Gateway user, and the API `/healthz` is reachable from the Gateway.
 - The plugin ships no credentials. The env file is read at runtime and is not in the
   manifest or the OpenClaw config.
 - Writes are still gated by `EZCHAIN_MCP_ALLOW_WRITES=1` in the MCP server and by the
-  key's `trade` scope at the API.
-- The kill-switch and key-management tools require the `admin` scope; a trade key gets
-  `403 FORBIDDEN`.
+  key's `trade` scope at the API. The server probes the key at startup and refuses writes
+  for anything it cannot verify as scoped — including the deployment token, whose `admin`
+  scope would otherwise let an agent operate as the operator.
+- Key management, plugin reload and the kill switch are admin-only REST routes with no
+  MCP tool. An agent key gets `403 FORBIDDEN` on them, and the server never exposes them.
 - Keep `toolFilter`/approval policy in place for `ezchain_place_paper_order`,
-  `ezchain_delete_strategy` and `ezchain_arm_kill_switch`.
+  `ezchain_delete_strategy` and `ezchain_pause_strategy`.
 
 ## Layout
 

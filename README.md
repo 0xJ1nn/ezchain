@@ -251,9 +251,14 @@ Agents connect through MCP:
 
 ```bash
 pip install -e apps/mcp
-EZCHAIN_API_URL=http://127.0.0.1:8000 ezchain-mcp          # read-only
-EZCHAIN_MCP_ALLOW_WRITES=1 EZCHAIN_API_TOKEN=… ezchain-mcp # paper mutations
+EZCHAIN_API_URL=http://127.0.0.1:8000 ezchain-mcp              # read-only
+EZCHAIN_MCP_ALLOW_WRITES=1 EZCHAIN_API_TOKEN=ezk_… ezchain-mcp # scoped key, paper mutations
 ```
+
+`EZCHAIN_API_TOKEN` in that second line is the scoped agent key below, never the
+deployment token. The server probes the admin-only key route at startup: a credential
+that answers there keeps the server read-only, and the agent is told how to mint a
+scoped key. Kill-switch release and plugin reload are not on the agent surface at all.
 
 One-command harness packs:
 

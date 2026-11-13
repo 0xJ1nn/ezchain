@@ -43,9 +43,14 @@ Observed:
 ✓ Tools discovered: 36
 ```
 
-The list included `ezchain_get_mode`, `ezchain_get_agent_state`, the read surface,
-`ezchain_place_paper_order`, `ezchain_run_backtest`, `ezchain_arm_kill_switch` and
-`ezchain_reload_plugins`. There is no live order tool.
+Both observations above predate the deployment-token fix and are kept as the measurement
+they were. Arming and releasing the kill switch and reloading plugins were admin routes
+exposed as MCP tools; they are gone from the surface now, so the current server advertises
+33 tools (24 reads, 9 writes). The list is `ezchain_get_mode`, `ezchain_get_agent_state`,
+the rest of the read surface, `ezchain_place_paper_order`, `ezchain_run_backtest` and the
+strategy writes. There is no live order tool and no kill-switch or plugin-reload tool. The
+33 is read from the tool registry (`ezchain_mcp.tools`), not from a fresh Hermes run: re-run
+`hermes mcp test` to confirm it on the installed build.
 
 ## Skill
 

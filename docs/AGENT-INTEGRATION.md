@@ -8,7 +8,7 @@ flowchart LR
   H[Hermes Agent] -->|stdio MCP| M[ezchain-mcp]
   O[OpenClaw] -->|stdio MCP| M
   C[Any MCP client] -->|stdio MCP| M
-  M -->|Bearer on writes| A[ezCHAIN API]
+  M -->|scoped key on writes| A[ezCHAIN API]
   A --> L[(ledger)]
   A --> P[(paper orders)]
   A --> S[(strategies)]
@@ -35,7 +35,14 @@ skill and prints the MCP registration command. Both read the same `apps/mcp` ser
 ```bash
 pip install -e apps/mcp
 export EZCHAIN_API_URL=http://127.0.0.1:8000
-export EZCHAIN_API_TOKEN="ezk_…"   # a scoped read/trade key from §4, not the admin token
+
+# Mint a scoped key with the deployment token (shown once), then hand only that to the agent.
+curl -sS -X POST "$EZCHAIN_API_URL/api/v1/agent/keys" \
+  -H "Authorization: Bearer $EZCHAIN_API_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"subject":"hermes","scopes":["read","trade"]}'
+
+export EZCHAIN_API_TOKEN="ezk_…"   # the scoped key from §4, never the deployment token
 export EZCHAIN_MCP_ALLOW_WRITES=1   # omit for read-only
 ezchain-mcp
 ```
@@ -43,10 +50,18 @@ ezchain-mcp
 - Transport: stdio. stdout is protocol-only; logs go to stderr.
 - Read-only is the default. Without `EZCHAIN_MCP_ALLOW_WRITES=1`, every mutation tool is
   absent from `tools/list` and cannot be called.
-- The token is a **scoped agent key** (`read`/`trade`/`admin`), not the deployment admin
-  token. Reads are open on a self-hosted workspace; set
+- Writes open only for a **scoped** key. At startup the server reads the admin-only
+  `GET /api/v1/agent/keys` route: a credential that answers there (the deployment token or
+  any `admin` key) keeps the server read-only, prints the mint command above, and repeats
+  it in the `initialize` instructions. A revoked key or an unreachable API also fails
+  closed. There is no flag that overrides this.
+- The token is a **scoped agent key**, not the deployment admin token. `read` and `trade`
+  are the scopes an agent uses; an `admin` key is refused for writes exactly like the
+  deployment token. Reads are open on a self-hosted workspace; set
   `EZCHAIN_REQUIRE_AUTH_FOR_READS=true` on a hosted deployment and the token is required
   for both reads and writes.
+- Kill-switch control and plugin reload are admin operations with no MCP tool. An agent's
+  halt is `ezchain_pause_strategy`; a person operates the switch over REST.
 - There is **no** `mode` argument on any tool. The API derives `paper` server-side and
   refuses `EZCHAIN_EXECUTION_MODE=live` until the executor exists.
 
@@ -124,8 +139,9 @@ The equivalent hand-wired MCP definition (also valid):
 ```
 
 OpenClaw applies its normal tool profile and approval policy to every MCP tool. Keep
-`ezchain_arm_kill_switch` and `ezchain_place_paper_order` behind an approval prompt; they
-are marked `destructiveHint`/write in the tool annotations.
+`ezchain_delete_strategy` and `ezchain_place_paper_order` behind an approval prompt; they
+are marked destructive/write in the tool annotations. The server refuses to expose any
+write tool unless `EZCHAIN_API_TOKEN` is a scoped read/trade key.
 
 ## 4. Scoped agent keys
 
@@ -151,6 +167,11 @@ revokes.
 Set `EZCHAIN_API_KEY_PEPPER` (>= 32 random bytes) before minting keys in production.
 Rotating it invalidates every key. A `trade` key that calls an admin route gets
 `403 FORBIDDEN`; an absent/revoked/expired key gets `401 UNAUTHORIZED`.
+
+An agent gets a scoped key or it gets read-only. The MCP server never enables writes for
+the deployment token or any `admin` key — those can release the kill switch and reload
+plugins, so the server probes `GET /api/v1/agent/keys` at startup and refuses when the
+credential can read it (§1).
 
 One ezCHAIN instance is one paper workspace. A key names the actor inside that workspace;
 it does not partition the ledger. For a hosted multi-user product, run one workspace (or
@@ -182,16 +203,19 @@ Read tools (always available):
 | `ezchain_get_system_status` | health, readiness, kill switch |
 | `ezchain_get_graph_catalogue` / `ezchain_validate_graph` / `ezchain_dry_run_graph` | visual graph tooling |
 
-Write tools (only with `EZCHAIN_MCP_ALLOW_WRITES=1`):
+Write tools (only with `EZCHAIN_MCP_ALLOW_WRITES=1`, and only for a scoped key):
 
 `ezchain_create_strategy`, `ezchain_update_strategy`, `ezchain_pause_strategy`,
 `ezchain_resume_strategy`, `ezchain_delete_strategy`, `ezchain_run_strategy`,
-`ezchain_place_paper_order`, `ezchain_run_backtest`, `ezchain_arm_kill_switch`,
-`ezchain_disarm_kill_switch`, `ezchain_reload_plugins`,
-`ezchain_validate_plugin_config`.
+`ezchain_place_paper_order`, `ezchain_run_backtest`, `ezchain_validate_plugin_config`.
 
-Every write still requires `Authorization: Bearer <EZCHAIN_API_TOKEN>` at the API. The
+Every write still requires `Authorization: Bearer <scoped agent key>` at the API. The
 MCP server is not an auth bypass.
+
+Three admin routes are deliberately absent from the surface: `POST /api/v1/system/kill-switch`
+(arm and release) and `POST /api/v1/plugins/reload`. They need the `admin` scope, which an
+agent key must not carry and which the MCP server refuses for writes, so an MCP tool would
+only ever return `403 FORBIDDEN`. The operator performs them over REST.
 
 ## 6. Resources
 
@@ -230,10 +254,14 @@ agent must hold it in its own secret store, never in a prompt or a model context
 - **Server-derived mode.** A tool call cannot request `live`; the mode is a boot setting
   and `live` is refused until the executor ships.
 - **Kill switch.** Strategy-originated execution is blocked when armed; manual paper
-  orders remain available for inspection.
+  orders remain available for inspection. Arming and releasing it are admin actions on
+  REST, not agent tools.
 - **Risk clamps.** A plugin's notional is clamped by the existing paper risk policy; a
   rejected order is logged with its reason.
 - **Read-only default.** An agent that only needs to observe never sees a write tool.
+- **No deployment token.** Writes open only for a scoped key. The server probes an
+  admin-only route at startup and stays read-only for the deployment token, an `admin`
+  key, a revoked key or an unreachable API.
 - **Workspace snapshot.** `/api/v1/agent/state` always needs a `read` principal; it
   aggregates the account, positions and reconciliation in one document.
 - **Scoped keys.** `read` cannot trade, `trade` cannot administer, and revocation is

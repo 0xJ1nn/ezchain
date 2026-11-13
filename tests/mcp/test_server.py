@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from ezchain_mcp.client import EzchainClient
+from ezchain_mcp.credentials import Credential
 from ezchain_mcp.server import PROTOCOL_VERSION, McpServer
 
 
@@ -73,13 +74,14 @@ def test_read_only_hides_every_write_tool(client: EzchainClient) -> None:
     assert "ezchain_get_account" in names
     assert "ezchain_place_paper_order" not in names
 
-    allowed = McpServer(client, allow_writes=True).handle(
+    allowed = McpServer(client, allow_writes=True, credential=Credential("scoped")).handle(
         {"jsonrpc": "2.0", "id": 3, "method": "tools/list"}
     )
     assert allowed is not None
     names = {tool["name"] for tool in allowed["result"]["tools"]}
     assert "ezchain_place_paper_order" in names
-    assert "ezchain_arm_kill_switch" in names
+    # Admin-scope routes stay off the agent surface even with writes enabled.
+    assert "ezchain_disarm_kill_switch" not in names
 
 
 def test_read_tool_returns_structured_content(
@@ -101,7 +103,10 @@ def test_read_tool_returns_structured_content(
     assert calls[-1].url.params["limit"] == "5"
 
 
-def test_write_tool_is_unknown_in_read_only_mode(client: EzchainClient) -> None:
+def test_write_tool_is_refused_in_read_only_mode(
+    client: EzchainClient, calls: list[httpx.Request]
+) -> None:
+    """A write the client names is refused with a reason, never executed."""
     server = McpServer(client)
     response = server.handle(
         {
@@ -112,13 +117,16 @@ def test_write_tool_is_unknown_in_read_only_mode(client: EzchainClient) -> None:
         }
     )
     assert response is not None
-    assert response["error"]["code"] == -32602
+    assert response["result"]["isError"] is True
+    body = json.loads(response["result"]["content"][0]["text"])
+    assert body["code"] == "WRITES_DISABLED"
+    assert calls == []
 
 
 def test_paper_order_tool_uses_the_paper_endpoint(
     client: EzchainClient, calls: list[httpx.Request]
 ) -> None:
-    server = McpServer(client, allow_writes=True)
+    server = McpServer(client, allow_writes=True, credential=Credential("scoped"))
     response = server.handle(
         {
             "jsonrpc": "2.0",
@@ -144,12 +152,12 @@ def test_paper_order_tool_uses_the_paper_endpoint(
 
 
 def test_order_and_kill_switch_tools_advertise_closed_schemas(client: EzchainClient) -> None:
-    """The MCP twins of the strict API routes admit only the fields they forward.
+    """The MCP twin of the strict order route admits only the fields it forwards.
 
     An order tool that advertised extra properties would invite a caller to send a field
     the API now refuses, so the closed-object flag and the property set are both pinned.
     """
-    server = McpServer(client, allow_writes=True)
+    server = McpServer(client, allow_writes=True, credential=Credential("scoped"))
     response: Any = server.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/list"})
     tools = {tool["name"]: tool["inputSchema"] for tool in response["result"]["tools"]}
 
@@ -162,9 +170,8 @@ def test_order_and_kill_switch_tools_advertise_closed_schemas(client: EzchainCli
         "amount_usd",
         "idempotency_key",
     }
-    for name in ("ezchain_arm_kill_switch", "ezchain_disarm_kill_switch"):
-        assert tools[name]["additionalProperties"] is False
-        assert set(tools[name]["properties"]) == {"reason"}
+    assert "ezchain_arm_kill_switch" not in tools
+    assert "ezchain_disarm_kill_switch" not in tools
 
 
 def test_api_error_becomes_a_tool_error(client: EzchainClient) -> None:
@@ -213,7 +220,7 @@ def test_unknown_method_and_notification(client: EzchainClient) -> None:
 
 
 def test_tool_schemas_are_closed_objects(client: EzchainClient) -> None:
-    server = McpServer(client, allow_writes=True)
+    server = McpServer(client, allow_writes=True, credential=Credential("scoped"))
     response: Any = server.handle({"jsonrpc": "2.0", "id": 11, "method": "tools/list"})
     for tool in response["result"]["tools"]:
         assert tool["inputSchema"]["type"] == "object"

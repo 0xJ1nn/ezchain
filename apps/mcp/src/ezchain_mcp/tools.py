@@ -2,7 +2,11 @@
 
 There is no live order tool and no client-supplied mode. A write tool is only registered
 when the server is started with ``EZCHAIN_MCP_ALLOW_WRITES=1``; the API still requires a
-bearer token for every mutation.
+scoped read/trade key for every mutation.
+
+The admin routes — arming and releasing the kill switch, reloading plugins — have no tool
+here. An agent never holds an admin credential, so exposing them would promise a call the
+API is guaranteed to refuse. The operator performs those over REST.
 """
 
 from __future__ import annotations
@@ -209,24 +213,6 @@ def _place_paper_order(client: EzchainClient, args: dict[str, Any]) -> Any:
 
 def _run_backtest(client: EzchainClient, args: dict[str, Any]) -> Any:
     return client.post("/api/v1/backtests", json=args)
-
-
-def _arm_kill_switch(client: EzchainClient, args: dict[str, Any]) -> Any:
-    return client.post(
-        "/api/v1/system/kill-switch",
-        json={"active": True, "reason": args["reason"]},
-    )
-
-
-def _disarm_kill_switch(client: EzchainClient, args: dict[str, Any]) -> Any:
-    return client.post(
-        "/api/v1/system/kill-switch",
-        json={"active": False, "reason": args["reason"]},
-    )
-
-
-def _reload_plugins(client: EzchainClient, _: dict[str, Any]) -> Any:
-    return client.post("/api/v1/plugins/reload")
 
 
 def _validate_plugin_config(client: EzchainClient, args: dict[str, Any]) -> Any:
@@ -564,31 +550,6 @@ WRITE_TOOLS: tuple[Tool, ...] = (
             ],
         ),
         _run_backtest,
-        read_only=False,
-    ),
-    Tool(
-        "ezchain_arm_kill_switch",
-        "Arm kill switch",
-        "Block all strategy-originated execution until disarmed. Reason is required.",
-        _object({"reason": {"type": "string"}}, ["reason"]),
-        _arm_kill_switch,
-        read_only=False,
-        destructive=True,
-    ),
-    Tool(
-        "ezchain_disarm_kill_switch",
-        "Disarm kill switch",
-        "Release the strategy execution block. Reason is required.",
-        _object({"reason": {"type": "string"}}, ["reason"]),
-        _disarm_kill_switch,
-        read_only=False,
-    ),
-    Tool(
-        "ezchain_reload_plugins",
-        "Reload plugins",
-        "Rescan installed plugin entry points and configured paths.",
-        _object({}),
-        _reload_plugins,
         read_only=False,
     ),
     Tool(
