@@ -25,10 +25,11 @@ if TYPE_CHECKING:
 # ships. Flipping this is the only change that enables live execution; the gate stays.
 LIVE_EXECUTOR_SHIPPED = False
 
-GATE_SCHEMA_VERSION = 1
+GATE_SCHEMA_VERSION = 2
 GATE_FIELDS = (
     "schema_version",
     "build_hash",
+    "build_fingerprint",
     "checklist_version",
     "approver",
     "approved_at",
@@ -41,6 +42,18 @@ _CHECKLIST_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 class LiveGateRefused(ValueError):
     """A live start was refused. The message names the record or the field at fault."""
+
+    def __init__(self, message: str, *, record: Path | None = None) -> None:
+        super().__init__(message)
+        self.record = record
+
+    def public_message(self) -> str:
+        """The refusal with the record's path removed, safe for an unauthenticated probe."""
+        text = str(self)
+        if self.record is not None:
+            text = text.replace(f" at {self.record}", "")
+            text = text.replace(str(self.record), "the live gate record")
+        return text
 
 
 @dataclass(frozen=True)
@@ -79,8 +92,13 @@ def _canonical(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
 
-def _refuse(message: str) -> LiveGateRefused:
-    return LiveGateRefused(f"EZCHAIN_EXECUTION_MODE=live refused: {message}")
+def _refuse(message: str, record: Path | None = None) -> LiveGateRefused:
+    return LiveGateRefused(f"EZCHAIN_EXECUTION_MODE=live refused: {message}", record=record)
+
+
+def _constant_time_equal(supplied: str, expected: str) -> bool:
+    """Compare as bytes so a non-ASCII value is a mismatch, not a TypeError."""
+    return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
 
 
 def _current_build_hash(settings: Settings) -> str:
@@ -116,24 +134,24 @@ def _read_record(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        raise _refuse(f"no live gate record at {path}") from None
+        raise _refuse(f"no live gate record at {path}", path) from None
     except OSError:
-        raise _refuse(f"the live gate record at {path} cannot be read") from None
+        raise _refuse(f"the live gate record at {path} cannot be read", path) from None
     except UnicodeDecodeError:
-        raise _refuse(f"the live gate record at {path} is not UTF-8 text") from None
+        raise _refuse(f"the live gate record at {path} is not UTF-8 text", path) from None
     try:
         record = json.loads(raw)
     except json.JSONDecodeError:
-        raise _refuse(f"the live gate record at {path} is not valid JSON") from None
+        raise _refuse(f"the live gate record at {path} is not valid JSON", path) from None
     if not isinstance(record, dict):
-        raise _refuse(f"the live gate record at {path} must be a JSON object")
+        raise _refuse(f"the live gate record at {path} must be a JSON object", path)
     return record
 
 
 def _require_text(record: dict[str, Any], field: str, path: Path) -> str:
     value = record.get(field)
     if not isinstance(value, str) or not value.strip():
-        raise _refuse(f"the live gate record at {path} is missing {field}")
+        raise _refuse(f"the live gate record at {path} is missing {field}", path)
     return value.strip()
 
 
@@ -146,10 +164,12 @@ def verify_live_gate(settings: Settings) -> LiveGate:
 
     unknown = sorted(set(record) - set(GATE_FIELDS))
     if unknown:
-        raise _refuse(f"the live gate record at {path} has unknown fields: {', '.join(unknown)}")
+        raise _refuse(
+            f"the live gate record at {path} has unknown fields: {', '.join(unknown)}", path
+        )
     missing = sorted(set(GATE_FIELDS) - set(record))
     if missing:
-        raise _refuse(f"the live gate record at {path} is missing {', '.join(missing)}")
+        raise _refuse(f"the live gate record at {path} is missing {', '.join(missing)}", path)
 
     schema_version = record["schema_version"]
     if (
@@ -159,44 +179,59 @@ def verify_live_gate(settings: Settings) -> LiveGate:
     ):
         raise _refuse(
             f"the live gate record at {path} has schema_version "
-            f"{schema_version!r}, expected {GATE_SCHEMA_VERSION}"
+            f"{schema_version!r}, expected {GATE_SCHEMA_VERSION}",
+            path,
         )
     recorded_build = _require_text(record, "build_hash", path)
     if recorded_build != build_hash:
         raise _refuse(
             f"the live gate record at {path} is for build {recorded_build!r}, "
-            f"this build is {build_hash!r}"
+            f"this build is {build_hash!r}",
+            path,
+        )
+
+    expected_fingerprint = build_fingerprint(build_hash)
+    recorded_fingerprint = _require_text(record, "build_fingerprint", path)
+    if not _constant_time_equal(recorded_fingerprint, expected_fingerprint):
+        raise _refuse(
+            f"the live gate record at {path} has a build_fingerprint for another build; "
+            f"this build's build_fingerprint is {expected_fingerprint!r}",
+            path,
         )
 
     checklist_version = _require_text(record, "checklist_version", path)
     if not _CHECKLIST_VERSION.match(checklist_version):
         raise _refuse(
             f"the live gate record at {path} names an invalid checklist_version "
-            f"{checklist_version!r}"
+            f"{checklist_version!r}",
+            path,
         )
     approver = _require_text(record, "approver", path)
     if len(approver) > 120:
-        raise _refuse(f"the live gate record at {path} names an approver over 120 characters")
+        raise _refuse(f"the live gate record at {path} names an approver over 120 characters", path)
     approved_at_text = _require_text(record, "approved_at", path)
     try:
         approved_at = datetime.fromisoformat(approved_at_text.replace("Z", "+00:00"))
     except ValueError:
         raise _refuse(
-            f"the live gate record at {path} has an invalid approved_at {approved_at_text!r}"
+            f"the live gate record at {path} has an invalid approved_at {approved_at_text!r}",
+            path,
         ) from None
 
     supplied = _require_text(record, "signature", path)
     payload = {field: record[field] for field in GATE_FIELDS if field != "signature"}
     expected = hmac.new(key, _canonical(payload), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(supplied, expected):
-        raise _refuse(f"the live gate record at {path} is not signed by EZCHAIN_LIVE_GATE_KEY")
+    if not _constant_time_equal(supplied, expected):
+        raise _refuse(
+            f"the live gate record at {path} is not signed by EZCHAIN_LIVE_GATE_KEY", path
+        )
 
     return LiveGate(
         build_hash=recorded_build,
         checklist_version=checklist_version,
         approver=approver,
         approved_at=approved_at,
-        fingerprint=build_fingerprint(build_hash),
+        fingerprint=expected_fingerprint,
     )
 
 
@@ -215,14 +250,18 @@ def derive_execution_mode(settings: Settings) -> ExecutionModeState:
 
 
 def mode_status(settings: Settings) -> dict[str, Any]:
-    """The derived mode for read surfaces. A refused live start reports paper."""
+    """The derived mode for read surfaces. A refused live start reports paper.
+
+    These surfaces can be unauthenticated, so the refusal never carries the record's
+    path. The boot refusal and the log keep the path, where an operator needs it.
+    """
     try:
         state = derive_execution_mode(settings)
     except LiveGateRefused as exc:
         return {
             "execution": "paper",
             "live_available": False,
-            "live_blocked_reason": str(exc),
+            "live_blocked_reason": exc.public_message(),
         }
     return state.to_dict()
 

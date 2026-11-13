@@ -46,8 +46,9 @@ def sign(payload: dict[str, Any], key: str = KEY) -> str:
 
 def write_record(path: Path, **overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "build_hash": BUILD,
+        "build_fingerprint": build_fingerprint(BUILD),
         "checklist_version": "2026-11-10",
         "approver": "owner",
         "approved_at": "2026-11-10T00:00:00+00:00",
@@ -117,6 +118,73 @@ def test_a_gate_record_for_another_build_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(LiveGateRefused, match="different-build"):
         verify_live_gate(live(paper_settings(record)))
+
+
+def test_a_gate_record_bound_to_another_build_fingerprint_is_refused(tmp_path: Path) -> None:
+    record = tmp_path / "live-gate.json"
+    write_record(record, build_fingerprint="0" * 64)
+
+    with pytest.raises(LiveGateRefused, match="build_fingerprint"):
+        verify_live_gate(live(paper_settings(record)))
+
+
+def test_a_non_ascii_signature_is_refused_not_a_crash(tmp_path: Path) -> None:
+    record = tmp_path / "live-gate.json"
+    signed = write_record(record)
+    signed["signature"] = "签名-not-hex"
+    record.write_text(json.dumps(signed, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(LiveGateRefused, match="not signed"):
+        verify_live_gate(live(paper_settings(record)))
+
+
+def test_an_unknown_record_field_is_refused(tmp_path: Path) -> None:
+    record = tmp_path / "live-gate.json"
+    write_record(record, not_a_gate_field="surprise")
+
+    with pytest.raises(LiveGateRefused, match="unknown fields: not_a_gate_field"):
+        verify_live_gate(live(paper_settings(record)))
+
+
+def test_an_unset_gate_key_fails_closed(tmp_path: Path) -> None:
+    record = tmp_path / "live-gate.json"
+    write_record(record)
+
+    with pytest.raises(LiveGateRefused, match="EZCHAIN_LIVE_GATE_KEY is not set"):
+        verify_live_gate(live(paper_settings(record, live_gate_key=None)))
+
+
+def test_a_short_gate_key_fails_closed(tmp_path: Path) -> None:
+    record = tmp_path / "live-gate.json"
+    write_record(record)
+
+    with pytest.raises(LiveGateRefused, match="at least 32 bytes"):
+        verify_live_gate(live(paper_settings(record, live_gate_key="short")))
+
+
+def test_mode_status_reports_paper_without_leaking_the_record_path(tmp_path: Path) -> None:
+    missing = tmp_path / "live-gate.json"
+
+    status = mode_status(live(paper_settings(missing)))
+
+    assert status["execution"] == "paper"
+    assert status["live_available"] is False
+    assert str(missing) not in str(status["live_blocked_reason"])
+    assert "live gate record" in str(status["live_blocked_reason"])
+
+
+def test_healthz_refusal_does_not_leak_the_record_path(tmp_path: Path) -> None:
+    missing = tmp_path / "live-gate.json"
+    refused = live(paper_settings(missing))
+    app = FastAPI()
+    app.include_router(system.router)
+    app.dependency_overrides[get_settings] = lambda: refused
+
+    response = TestClient(app).get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json()["mode"]["execution"] == "paper"
+    assert str(missing) not in response.text
 
 
 def test_a_tampered_gate_record_is_refused(tmp_path: Path) -> None:
