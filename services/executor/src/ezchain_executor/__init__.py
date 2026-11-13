@@ -8,6 +8,7 @@ only accountant.
 from .journal import JournalSink, MemoryJournal
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
 from .pipeline import DedupeStore, ExecutionPipeline, IntentRejected
+from .signing import KeyRing, LocalTransactionSigner, SigningBoundary, SigningRefused
 from .venue import FakeVenue, VenueError
 
 __all__ = [
@@ -16,9 +17,13 @@ __all__ = [
     "FakeVenue",
     "IntentRejected",
     "JournalSink",
+    "KeyRing",
     "KillSwitch",
     "KillSwitchActive",
     "KillSwitchUnavailable",
+    "LocalTransactionSigner",
     "MemoryJournal",
+    "SigningBoundary",
+    "SigningRefused",
     "VenueError",
 ]

@@ -7,6 +7,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **The executor signs only the intent that was approved (LIVE).** A venue adapter now
+  receives an immutable `ApprovedIntent` (chain, cluster, mint, side, amount, minimum
+  output, recipient, program id, idempotency key) and returns bytes; it is not handed the
+  order or the quote. The executor decodes those bytes and compares every field with the
+  approval before the key is touched, so a swapped mint, inflated amount, changed
+  recipient, foreign program, unexpected cluster, wrong side, lowered output floor or
+  replaced idempotency key refuses with its own `TRANSACTION_*` code and no signature. The
+  signed payload's SHA-256 digest travels through submission, and a receipt that does not
+  echo it is refused and never journaled. The signer and key ring stay in
+  `services/executor`; the fake venue is the signing boundary for tests.
+
 - **One execution pipeline from intent to journal (PAPER).** `services/executor` now owns
   the single `Intent → RiskDecision → Quote → Order → Fill → Journal` path against a venue
   behind the core `Venue` protocol, with the typed stages in `ezchain_core.execution`.

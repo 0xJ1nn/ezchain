@@ -222,10 +222,10 @@ async def test_a_missing_quote_produces_no_order() -> None:
 @pytest.mark.asyncio
 async def test_an_unbookable_receipt_is_refused() -> None:
     class ZeroFillVenue(FakeVenue):
-        async def submit(self, order):  # type: ignore[no-untyped-def]
+        async def submit(self, order, signed=None):  # type: ignore[no-untyped-def]
             from ezchain_core import Fill
 
-            await super().submit(order)
+            await super().submit(order, signed)
             return Fill(
                 order_id=order.id,
                 side=order.side,

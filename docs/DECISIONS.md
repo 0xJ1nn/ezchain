@@ -967,3 +967,27 @@ after the key is retired. The web ledger page does not render the actor yet — 
 it and the UI is a separate change (tracked follow-up). Because the value comes from
 `request.state.principal`, a route that places orders without the auth middleware resolving
 a principal records `unknown` rather than borrowing another field's value.
+
+## ADR-0038 — A signature is bound to the approved intent by a decode before signing
+
+**Status:** accepted 2026-11-13.
+
+**Context:** The executor built and signed whatever the venue returned. Nothing proved the
+bytes it signed were the order risk approved, so a compromised or buggy adapter could
+substitute a mint, inflate the amount, redirect the recipient, call another program or
+target another cluster, and the pipeline would broadcast it.
+
+**Decision:** `ezchain_core.signing` owns an immutable `ApprovedIntent` (chain, cluster,
+mint, side, amount, minimum output, recipient, program id, idempotency key) with a SHA-256
+digest over those fields. The transaction adapter receives only that object and returns
+bytes; it is never handed the order or the quote. `services/executor` decodes the bytes,
+compares every bound field with the approval and refuses with a typed `TRANSACTION_*` code
+before touching the key ring. The signer repeats the check immediately before signing. The
+signed payload's digest is carried on submission and the receipt must echo it; a missing or
+different digest is `TRANSACTION_DIGEST_MISMATCH` and is never journaled.
+
+**Consequences:** a mismatch costs a refused intent, never a broadcast, because the key is
+not reached until the decode agrees. The fake venue is the signing boundary the tests drive;
+a real chain adapter must deliver a decode of its chain-native message to the same payload,
+which is the remaining work for live. Paper may run without a boundary and submits unsigned,
+but live must configure one.

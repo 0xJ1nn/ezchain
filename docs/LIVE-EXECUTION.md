@@ -23,6 +23,17 @@ reduce-only exit is sized to the held position, re-bounded against it before sub
 never capped below it. The runner never writes the ledger: it appends a balanced `Journal`
 through a sink, and only from the venue receipt.
 
+With a signing boundary configured, what is signed is provably what was approved. The
+venue adapter receives an immutable `ezchain_core.signing.ApprovedIntent` (chain, cluster,
+mint, side, amount, minimum output, recipient, program id, idempotency key) and returns
+bytes; it is not handed the order or the quote, so it has no second source of truth. The
+executor decodes those bytes and compares every one of those fields with the approval
+before it touches a key: a swapped mint, an inflated amount, a changed recipient, a
+foreign program, another cluster, the wrong side, a lowered floor or a replaced key refuses
+with its own `TRANSACTION_*` code and no signature. The signed payload's SHA-256 digest is
+carried through submission, and a receipt that does not echo it is refused
+(`TRANSACTION_DIGEST_MISMATCH`) and never journaled.
+
 ## 1. Deployables and trust
 
 ```
@@ -66,18 +77,25 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
    `live_max_order_usd` (default 50), `live_max_daily_notional_usd` (default 250),
    `live_max_daily_loss_usd`, per-chain enable list, wallet policy, LIVE armed, kill
    switch off, strategy paper gate passed (strategies only). Any unknown → deny.
-3. **Quote/Build**: the venue adapter builds the unsigned transaction for the wallet
-   address: Solana via Jupiter `/swap/v1/swap` (versioned tx); EVM via KyberSwap
-   `/api/v1/route/build` (router calldata) with an exact ERC-20 `approve` for the amount
-   when allowance is short (never unlimited). `min_out` comes from the quote and
-   `max_slippage_bps`.
+3. **Quote/Build**: the venue adapter builds the unsigned transaction from the immutable
+   `ApprovedIntent` for the wallet address — it is handed nothing else. Solana via Jupiter
+   `/swap/v1/swap` (versioned tx); EVM via KyberSwap `/api/v1/route/build` (router
+   calldata) with an exact ERC-20 `approve` for the amount when allowance is short (never
+   unlimited). `min_out` comes from the quote and `max_slippage_bps`. The returned bytes
+   are decoded and checked against the approval before signing (program id, cluster, mint,
+   side, amount, minimum output, recipient, idempotency key); any difference is a
+   `TRANSACTION_*` refusal with no signature.
 4. **Simulate**: Solana `simulateTransaction`; EVM `eth_estimateGas` + `eth_call`. A
    failed simulation rejects (`SIMULATION_FAILED`) — nothing is signed.
 5. **Sign + broadcast** in the executor; nonce per (chain, address) serialized; one
-   in-flight tx per wallet per chain.
+   in-flight tx per wallet per chain. The signer verifies the decode again immediately
+   before signing, and the signed payload's digest is recorded as the transaction's
+   identity.
 6. **Confirm**: poll receipt/signature status to finality (`confirmed` Solana, 1–3 blocks
-   EVM per chain config) with a timeout (default 90 s). Timeout → `UNCONFIRMED`, the
-   reconciler resolves it later; never resend blindly.
+   EVM per chain config) with a timeout (default 90 s). The receipt must echo the signed
+   payload's digest; a different or missing digest is `TRANSACTION_DIGEST_MISMATCH` and
+   nothing is journaled. Timeout → `UNCONFIRMED`, the reconciler resolves it later; never
+   resend blindly.
 7. **Fill**: computed from the **receipt** (token balance deltas / Transfer logs), not
    from the quote. Gas/fees in USD from the receipt.
 8. **Journal**: ledger entries in the **live book** (`live:` account prefix) in the same

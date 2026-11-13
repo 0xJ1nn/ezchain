@@ -16,6 +16,10 @@ this file keeps:
   a retry after a pre-submit denial runs again.
 * A reduce-only exit is sized to the held position, re-bounded against it before submit,
   and cannot be capped below it.
+* With a signing boundary configured, the venue builds from an immutable approved intent
+  and the executor decodes the bytes and checks them against it before the key is touched;
+  a changed field refuses with a typed code. The signed payload's digest then travels
+  through submit and a receipt that does not echo it is never journaled.
 * Nothing here writes the ledger; the sink does, and only after a confirmed fill.
 """
 
@@ -30,6 +34,11 @@ from decimal import Decimal
 from typing import Any
 
 from ezchain_core import (
+    TRANSACTION_BUILD_FAILED,
+    TRANSACTION_DIGEST_MISMATCH,
+    TRANSACTION_NOT_APPROVABLE,
+    TRANSACTION_SIGN_FAILED,
+    ApprovedIntent,
     ExecutionResult,
     ExecutionStatus,
     Fill,
@@ -41,14 +50,18 @@ from ezchain_core import (
     RiskDecision,
     RiskLimits,
     RiskReason,
+    SignedTransaction,
     TokenSnapshot,
+    TransactionDecodeError,
     Venue,
+    decode_transaction,
     journal_from_fill,
     risk_decision_from_intent,
 )
 
 from .journal import JournalSink
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
+from .signing import SigningBoundary, SigningRefused
 from .venue import VenueError
 
 # A quote may differ from the approved size only by rounding. Anything larger than this
@@ -114,6 +127,9 @@ class ExecutionPipeline:
     position_source: Any = None
     timeout_seconds: float = 10.0
     idempotency_store: DedupeStore = field(default_factory=DedupeStore)
+    # When set, every order is built from an immutable approved intent, decoded and
+    # checked against it, then signed before the venue sees it. Paper may leave it unset.
+    signing: SigningBoundary | None = None
     _in_flight: dict[str, tuple[str, asyncio.Future[ExecutionResult]]] = field(default_factory=dict)
 
     async def run(
@@ -265,11 +281,23 @@ class ExecutionPipeline:
             if held is None or order.quantity > held.quantity:
                 return _refused_before_submit(intent, order, reason="POSITION_CHANGED")
 
-        # 7. Fill from the venue receipt.
-        submitted = await self._submit(order, timeout_seconds)
+        # 6.7 Sign. The adapter sees only the approved intent, the decode is checked
+        # against it, and a single changed field refuses before the key is touched.
+        signed: SignedTransaction | None = None
+        if self.signing is not None:
+            signed_result = await self._sign(order)
+            if isinstance(signed_result, ExecutionResult):
+                return signed_result
+            signed = signed_result
+
+        # 7. Fill from the venue receipt. A signature this process produced must come
+        # back with the same payload digest, or the receipt is not for our transaction.
+        submitted = await self._submit(order, signed, timeout_seconds)
         if isinstance(submitted, ExecutionResult):
             return submitted
         fill = submitted
+        if signed is not None and fill.transaction_digest != signed.payload_digest:
+            return _order_failed(order, "rejected", TRANSACTION_DIGEST_MISMATCH, fill=fill)
 
         # 8. Journal from the receipt, then append. The ledger is the only accountant.
         journal = _journal_from(intent, fill, position)
@@ -312,10 +340,49 @@ class ExecutionPipeline:
             return _denied(intent, decision, status="rejected", reason="NO_QUOTE")
         return quote
 
-    async def _submit(self, order: Order, timeout_seconds: float | None) -> Fill | ExecutionResult:
+    async def _sign(self, order: Order) -> SignedTransaction | ExecutionResult:
+        """Build, decode, bind and sign one order; refuse before the key on any doubt."""
+        boundary = self.signing
+        assert boundary is not None  # narrowed by the caller
+        try:
+            approved = ApprovedIntent.from_order(
+                order,
+                cluster=boundary.cluster,
+                recipient=boundary.recipient,
+                program_id=boundary.program_id,
+            )
+        except ValueError:
+            return _refused_before_submit(
+                _intent_from_order(order), order, reason=TRANSACTION_NOT_APPROVABLE
+            )
+        try:
+            raw = await boundary.adapter.prepare(approved)
+        except Exception:  # noqa: BLE001 - a builder failure is a refusal, not a crash
+            return _refused_before_submit(
+                _intent_from_order(order), order, reason=TRANSACTION_BUILD_FAILED
+            )
+        try:
+            prepared = decode_transaction(raw)
+        except TransactionDecodeError as exc:
+            return _refused_before_submit(_intent_from_order(order), order, reason=exc.code)
+        try:
+            return boundary.signer.sign(prepared, approved)
+        except SigningRefused as exc:
+            return _refused_before_submit(_intent_from_order(order), order, reason=exc.code)
+        except Exception:  # noqa: BLE001 - an unverified signature is no signature
+            return _refused_before_submit(
+                _intent_from_order(order), order, reason=TRANSACTION_SIGN_FAILED
+            )
+
+    async def _submit(
+        self,
+        order: Order,
+        signed: SignedTransaction | None,
+        timeout_seconds: float | None,
+    ) -> Fill | ExecutionResult:
         timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
         try:
-            fill = await asyncio.wait_for(self.venue.submit(order), timeout=timeout)
+            fill = await asyncio.wait_for(self.venue.submit(order, signed), timeout=timeout)
         except TimeoutError:
             return _order_failed(order, "timeout", "TIMEOUT")
         except VenueError as exc:
