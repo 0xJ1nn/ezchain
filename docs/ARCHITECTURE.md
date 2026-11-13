@@ -141,7 +141,12 @@ reordered; duplicate `(source, pair, observed_at)` is idempotent.
 `MarketEvent` is the only market-event type: adapters write their own wire parsing but
 normalise into it, and `services/ingest` records through its one serialiser. Age and
 staleness are derived from the reader's clock, never stored, so a recorded JSONL file
-replays to identical derived state (contract I9).
+replays to identical derived state (contract I9). The API's market read models
+(`/api/v1/markets` rows, `/api/v1/markets/stored` rows and the token header) apply the same
+rule through `services/market_reads.provenance`: `source` is the row's `SourceRef`,
+`age_seconds` is that timestamp against the read clock, and `stale` is the contract's
+verdict. A row with no usable source reports all three as unknown rather than a zero age,
+and an adapter's own freshness flag never decides what the API serves.
 
 **P0 inline observation.** `apps/api` also runs a bounded market monitor
 (`EZCHAIN_MARKET_SCAN_INLINE`, default on) so the platform knows what it can see even when

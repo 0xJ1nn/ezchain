@@ -18,7 +18,12 @@ from ezchain_adapters import (
     QuoteRouter,
     get_chain,
 )
-from ezchain_core import MarketRow, preview_cost
+from ezchain_core import (
+    DEFAULT_STALENESS_SECONDS,
+    MarketRow,
+    TokenSnapshot,
+    preview_cost,
+)
 
 from ..config import Settings, get_settings
 from ..deps import (
@@ -51,6 +56,7 @@ from ..services.market_monitor import (
     build_overview,
     stored_snapshots,
 )
+from ..services.market_reads import provenance, source_ref
 
 router = APIRouter(tags=["markets"])
 
@@ -244,6 +250,38 @@ def _population(
     )
 
 
+def _live_row(row: MarketRow, now: datetime) -> MarketRowOut:
+    """One discovery row plus the contract's own source, age and verdict at read time."""
+    freshness = provenance(row.source, now=now)
+    body = row.to_dict()
+    return MarketRowOut.model_validate(
+        {
+            **body,
+            "source": SourceOut.model_validate(row.source.to_dict()),
+            "age_seconds": freshness.age_seconds,
+            "stale": freshness.stale,
+        }
+    )
+
+
+def _token_out(snapshot: TokenSnapshot, now: datetime) -> TokenOut:
+    """The token header, with freshness derived here instead of trusting the adapter.
+
+    The snapshot's ``stale`` flag is what the adapter believed when it answered. The API
+    reports the contract's verdict at this read's clock, so an old observation cannot be
+    presented as fresh.
+    """
+    origin = snapshot.source
+    freshness = provenance(origin, now=now)
+    return TokenOut.model_validate(
+        {
+            **snapshot.to_dict(),
+            "stale": bool(freshness.stale),
+            "age_seconds": freshness.age_seconds,
+        }
+    )
+
+
 @router.get("/api/v1/markets/overview", response_model=MarketOverviewOut)
 def market_overview(
     session: Session = Depends(get_session),
@@ -260,6 +298,8 @@ def _stored(row: MarketSnapshotRow, now: datetime) -> StoredSnapshotOut:
         if row.observed_at.tzinfo is not None
         else row.observed_at.replace(tzinfo=UTC)
     )
+    origin = source_ref(row.source, observed)
+    freshness = provenance(origin, now=now)
     return StoredSnapshotOut(
         chain=row.chain,
         token_address=row.token_address,
@@ -272,9 +312,10 @@ def _stored(row: MarketSnapshotRow, now: datetime) -> StoredSnapshotOut:
         price_change_h1=None if row.price_change_h1 is None else str(row.price_change_h1),
         price_change_h6=None if row.price_change_h6 is None else str(row.price_change_h6),
         price_change_h24=None if row.price_change_h24 is None else str(row.price_change_h24),
-        source=row.source,
+        source=None if origin is None else SourceOut.model_validate(origin.to_dict()),
         observed_at=observed.isoformat(),
-        age_seconds=int(max(0.0, (now - observed).total_seconds())),
+        age_seconds=freshness.age_seconds,
+        stale=freshness.stale,
         pair_address=row.pair_address,
         dex=row.dex,
         base_token_address=row.base_token_address,
@@ -696,9 +737,9 @@ async def markets(
         )
 
     return MarketListOut(
-        rows=[MarketRowOut.model_validate(row.to_dict()) for row in page_rows],
+        rows=[_live_row(row, now) for row in page_rows],
         source=SourceOut.model_validate(source.to_dict()),
-        stale=source.is_stale(60),
+        stale=source.is_stale(DEFAULT_STALENESS_SECONDS),
         coverage=None
         if coverage is None
         else [MarketCoverageOut.model_validate(item.to_dict()) for item in coverage],
@@ -749,7 +790,7 @@ async def token(
         snapshot = await adapter.get_token(chain, address)
     except AdapterError as exc:
         raise adapter_http_error(exc) from exc
-    return TokenOut.model_validate(snapshot.to_dict())
+    return _token_out(snapshot, datetime.now(UTC))
 
 
 @router.get("/api/v1/tokens/{chain}/{address}/candles", response_model=CandlesOut)
