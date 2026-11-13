@@ -488,14 +488,18 @@ so a late report cannot keep an old observation alive. An unpublished outbox row
 deleted: dropping it would lose a delivery for a row that committed. Only `1m` candles are
 truncated by the candle window; coarser timeframes are left to their owner.
 
-On a Postgres with the `timescaledb` extension available, revision `0020_market_events`
-additionally converts `market_events` into a hypertable partitioned on
-`source_observed_at`. That is legal because the column is already part of the primary key.
-On plain `postgres:16-alpine` (what `infra/compose.yaml` ships) the tables are ordinary
-tables and the same guarantees hold. `market_candles` is **not** converted: its surrogate
-`id` primary key does not contain `open_time`, so Timescale would refuse it and rewriting
-that key is a destructive change this revision does not make. Retention for both databases
-comes from `ezchain_ingest.retention`, one validated configuration, not a database policy.
+On a Postgres where `timescaledb` is installed, revision `0020_market_events` additionally
+converts `market_events` into a hypertable partitioned on `source_observed_at`. That is
+legal because the column is already part of the primary key. An extension that is only
+*installable* is not enough: the revision checks `pg_extension` first, then tries
+`CREATE EXTENSION` in a savepoint. A role that lacks the privilege is not an error — the
+upgrade continues and leaves ordinary tables, exactly as on plain `postgres:16-alpine`
+(what `infra/compose.yaml` ships), where the same guarantees hold. The hypertable
+conversion itself has the same fall-back, so a server that refuses it still upgrades.
+`market_candles` is **not** converted: its surrogate `id` primary key does not contain
+`open_time`, so Timescale would refuse it and rewriting that key is a destructive change
+this revision does not make. Retention for both databases comes from
+`ezchain_ingest.retention`, one validated configuration, not a database policy.
 
 **Backup.** Market evidence is in the same database as everything else, so the existing
 dump covers it:

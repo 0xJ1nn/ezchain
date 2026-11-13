@@ -44,9 +44,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   never told about a write that rolled back; an unpublished row is never pruned.
   `ezchain_ingest.retention` holds the two windows in one validated place (raw 7–30 days,
   1-minute candles a year) and prunes them through `python -m ezchain_ingest`, a dry run by
-  default. The JSONL recording stays the replay input. When the server offers
-  `timescaledb`, `market_events` is additionally converted to a hypertable partitioned on
-  its source timestamp; on the shipped plain `postgres:16-alpine` the tables are ordinary
+  default. The JSONL recording stays the replay input. When the server has `timescaledb`
+  installed (or this role may install it), `market_events` is additionally converted to a
+  hypertable partitioned on its source timestamp; an installable-but-forbidden extension is
+  a clean fall-back, and on the shipped plain `postgres:16-alpine` the tables are ordinary
   and every guarantee above still holds. Retention, backup and restore are documented in
   `docs/RUNBOOK.md` §12.8.
 - **The executor signs only the intent that was approved (PAPER).** A venue adapter now

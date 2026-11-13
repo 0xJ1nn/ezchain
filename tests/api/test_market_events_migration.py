@@ -12,9 +12,15 @@ also how the gate treats a missing database.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import psycopg
@@ -28,8 +34,10 @@ from sqlalchemy.orm import Session
 
 from ezchain_api.db import alembic_config, database_revision, head_revision
 from ezchain_api.models import MarketEventRow
+from ezchain_core import MarketEvent, SourceRef
 from ezchain_ingest import RetentionPolicy
 from ezchain_ingest.retention import DEFAULT_CANDLE_1M_DAYS, DEFAULT_RAW_DAYS
+from ezchain_ingest.store import load_events, record_events
 
 VERSIONS = Path(__file__).resolve().parents[2] / "apps/api/alembic/versions"
 REVISION = "0020_market_events"
@@ -66,6 +74,59 @@ def _upgrade_source(path: Path) -> str:
         if isinstance(node, ast.FunctionDef) and node.name == "upgrade":
             return (ast.get_source_segment(source, node) or "").lower()
     raise AssertionError("revision has no upgrade() function")
+
+
+def _revision_module() -> Any:
+    """Load the revision as a module so its Timescale guard can be exercised alone."""
+    spec = importlib.util.spec_from_file_location(
+        "gh26_market_events_revision", VERSIONS / f"{REVISION}.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _Rows:
+    def __init__(self, present: bool) -> None:
+        self._present = present
+
+    def first(self) -> object | None:
+        return object() if self._present else None
+
+
+class _FakePostgres:
+    """The handful of calls the Timescale guard makes, with a privilege switch.
+
+    A role that cannot ``CREATE EXTENSION`` is the case a real ``pg_available_extensions``
+    check gets wrong: the extension is installable, but only an owner may install it.
+    """
+
+    def __init__(self, *, installed: bool, available: bool, can_create: bool = True) -> None:
+        self.dialect = SimpleNamespace(name="postgresql")
+        self._installed = installed
+        self._available = available
+        self._can_create = can_create
+        self.extension_created = False
+
+    @contextmanager
+    def begin_nested(self) -> Iterator[None]:
+        yield
+
+    def execute(self, statement: Any, parameters: Any = None) -> _Rows:
+        sql = str(statement)
+        if "pg_extension" in sql:
+            return _Rows(self._installed)
+        if "pg_available_extensions" in sql:
+            return _Rows(self._available)
+        if "CREATE EXTENSION" in sql:
+            if not self._can_create:
+                raise sa.exc.OperationalError(
+                    "CREATE EXTENSION", {}, Exception("permission denied")
+                )
+            self.extension_created = True
+            return _Rows(False)
+        raise AssertionError(f"unexpected statement: {sql}")
 
 
 def _assert_market_tables(engine: Engine) -> None:
@@ -180,6 +241,98 @@ def test_postgres_enforces_the_identity_as_the_primary_key(scratch_postgres: str
 
 def test_the_primary_key_matches_the_contract_identity_in_the_model() -> None:
     assert list(MarketEventRow.__table__.primary_key.columns.keys()) == IDENTITY
+
+
+def test_an_installed_timescale_extension_is_used_without_creating_it() -> None:
+    guard = _revision_module()._can_use_timescaledb
+    bind = _FakePostgres(installed=True, available=True, can_create=False)
+
+    assert guard(bind) is True
+    assert bind.extension_created is False
+
+
+def test_an_installable_extension_is_created_when_the_role_may() -> None:
+    guard = _revision_module()._can_use_timescaledb
+    bind = _FakePostgres(installed=False, available=True, can_create=True)
+
+    assert guard(bind) is True
+    assert bind.extension_created is True
+
+
+def test_a_refused_create_extension_falls_back_to_plain_postgres() -> None:
+    """Installable is not installed: a role without the privilege keeps the upgrade alive.
+
+    ``pg_available_extensions`` says a file exists on the server, not that this role may
+    install it. On such a server the tables are ordinary, which is exactly the deployment
+    the revision promises to support, so the guard refuses Timescale instead of aborting.
+    """
+    guard = _revision_module()._can_use_timescaledb
+    bind = _FakePostgres(installed=False, available=True, can_create=False)
+
+    assert guard(bind) is False
+    assert bind.extension_created is False
+
+
+def test_a_server_without_the_extension_is_plain_postgres() -> None:
+    guard = _revision_module()._can_use_timescaledb
+    bind = _FakePostgres(installed=False, available=False)
+
+    assert guard(bind) is False
+
+
+def test_a_non_postgres_bind_never_looks_for_timescale() -> None:
+    guard = _revision_module()._can_use_timescaledb
+
+    assert guard(SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))) is False
+
+
+def test_a_sqlite_migrated_database_round_trips_a_price_exactly(tmp_path: Path) -> None:
+    """The revision stores a decimal on SQLite the way the model does: as text.
+
+    A migrated SQLite database is the one the API tests run against, so a price written
+    through ``record_events`` must come back digit for digit, exactly as a ``create_all``
+    database does. A NUMERIC column here would pass the value through SQLite's REAL and
+    drop everything past the fifteenth significant digit.
+    """
+    url = f"sqlite+pysqlite:///{tmp_path / 'market.db'}"
+    config = _config(url)
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(sa.text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
+            connection.execute(
+                sa.text(
+                    "CREATE TABLE paper_orders "
+                    "(id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"
+                )
+            )
+        command.stamp(config, "0003_paper_fill_order")
+        command.upgrade(config, "head")
+
+        price = Decimal("1.234567890123456789")
+        confidence = Decimal("0.123456789012345678")
+        event = MarketEvent(
+            chain="solana",
+            venue="pumpfun",
+            pair="Mint1",
+            price=price,
+            size=price,
+            direction=None,
+            units="SOL",
+            source=SourceRef("pumpfun-firehose", None, datetime(2026, 2, 1, 12, tzinfo=UTC)),
+            observed_at=datetime(2026, 2, 1, 12, 1, tzinfo=UTC),
+            confidence=confidence,
+        )
+        with Session(engine) as session:
+            assert record_events(session.connection(), [event]) == 1
+            session.commit()
+        with Session(engine) as session:
+            loaded = load_events(session)
+        assert [item.price for item in loaded] == [price]
+        assert [item.size for item in loaded] == [price]
+        assert [item.confidence for item in loaded] == [confidence]
+    finally:
+        engine.dispose()
 
 
 def _postgres_url() -> str:

@@ -191,6 +191,26 @@ def test_applying_deletes_only_the_expired_observation(session: Session) -> None
     assert _count(session, MarketEventRow) == 1
 
 
+def test_the_cutoff_is_strict_so_the_exact_boundary_survives(session: Session) -> None:
+    """A row exactly at the cutoff is inside the window; one microsecond older is not.
+
+    The comparison is ``<``, not ``<=``: the oldest instant an operator was told is kept is
+    still kept. Pinning this stops a later change from shaving a second off the window.
+    """
+    cutoff = NOW - timedelta(days=7)
+    _add_event(session, _event(seconds_ago=timedelta(days=7).total_seconds()))
+    _add_event(session, _event(seconds_ago=timedelta(days=7).total_seconds() + 0.000001))
+    session.commit()
+
+    result = prune(session, RetentionPolicy(raw_days=7), now=NOW, apply=True)
+    session.commit()
+
+    assert result.raw_events == 1
+    remaining = session.execute(sa.select(MarketEventRow.source_observed_at)).scalars().all()
+    assert len(remaining) == 1
+    assert remaining[0].replace(tzinfo=UTC) == cutoff
+
+
 def test_an_event_is_aged_by_the_source_clock_not_the_ingest_clock(session: Session) -> None:
     """A late report of an old observation is old; a second's ingest lag does not save it."""
     _add_event(
@@ -331,6 +351,31 @@ def test_the_operator_command_plans_by_default_and_refuses_a_bad_window(
         assert main(["--raw-days", "3"]) == 2
     finally:
         get_settings.cache_clear()
+
+
+def test_the_operator_command_reports_an_unreachable_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A connection failure is the promised one-line reason, not a traceback.
+
+    Opening the connection happens inside the same handler as pruning, so a wrong URL or a
+    down server prints ``retention: <reason>`` and exits 1 instead of escaping as a raw
+    driver exception.
+    """
+    from ezchain_api.config import get_settings
+    from ezchain_ingest.__main__ import main
+
+    missing = tmp_path / "missing" / "cli.db"
+    monkeypatch.setenv("EZCHAIN_DATABASE_URL", f"sqlite+pysqlite:///{missing}")
+    get_settings.cache_clear()
+    try:
+        assert main([]) == 1
+    finally:
+        get_settings.cache_clear()
+
+    printed = capsys.readouterr()
+    assert printed.out.startswith("retention: ")
+    assert "unable to open database file" in printed.out
 
 
 # --------------------------------------------------------------------------------------

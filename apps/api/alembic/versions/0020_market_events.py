@@ -18,10 +18,11 @@ rolled back, and a committed observation always has its message.
 are ordinary tables and every guarantee above holds — which is the deployment
 ``infra/compose.yaml`` actually ships (``postgres:16-alpine``), so a migration that insisted
 on the extension would refuse to apply there (CONTRACT I8: a fresh database must be creatable
-from ``main``). When the ``timescaledb`` extension is available, ``market_events`` is
-additionally converted into a hypertable partitioned on ``source_observed_at``. That is
-legal because the partition column is already part of the primary key; a hypertable requires
-every unique index to contain it.
+from ``main``). When the ``timescaledb`` extension is *installed* — or can be installed by
+this role, which is tried in a savepoint and never fatal — ``market_events`` is additionally
+converted into a hypertable partitioned on ``source_observed_at``. That is legal because the
+partition column is already part of the primary key; a hypertable requires every unique
+index to contain it.
 
 ``market_candles`` is deliberately **not** converted. Its primary key is a surrogate ``id``
 that does not contain ``open_time``, so Timescale would refuse the conversion, and rewriting
@@ -44,17 +45,49 @@ down_revision: str | None = "0019_order_actor"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
+#: Same storage the model's ``PRICE`` chooses: NUMERIC on Postgres so a price keeps 18
+#: decimals; TEXT on SQLite, whose NUMERIC affinity would round-trip the value through a
+#: binary float and lose digits. A migrated SQLite database must be as exact as one built
+#: from the models, because both are written through ``ezchain_ingest.store``.
+EXACT_DECIMAL = sa.Numeric(precision=38, scale=18).with_variant(sa.Text(), "sqlite")
 
-def _has_timescaledb(bind: sa.engine.Connection) -> bool:
-    """True when the server offers a Timescale extension this migration may use."""
+
+def _extension_installed(bind: sa.engine.Connection, name: str) -> bool:
+    """Whether ``name`` is installed in *this* database, not merely installable."""
+    found = bind.execute(
+        sa.text("SELECT 1 FROM pg_extension WHERE extname = :name"), {"name": name}
+    ).first()
+    return found is not None
+
+
+def _extension_available(bind: sa.engine.Connection, name: str) -> bool:
+    """Whether the server has the extension's files, which is not the same as installed."""
+    found = bind.execute(
+        sa.text("SELECT 1 FROM pg_available_extensions WHERE name = :name"), {"name": name}
+    ).first()
+    return found is not None
+
+
+def _can_use_timescaledb(bind: sa.engine.Connection) -> bool:
+    """True when this database can convert ``market_events`` into a hypertable.
+
+    Installed is checked before installable: ``pg_available_extensions`` only says the
+    server has the files, while ``CREATE EXTENSION`` needs a privilege the role may not
+    hold. A refused create is the plain-Postgres deployment this revision supports, so the
+    attempt runs in a savepoint and failure is a fall-back, never a failed upgrade.
+    """
     if bind.dialect.name != "postgresql":
         return False
-    return (
-        bind.execute(
-            sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb'")
-        ).first()
-        is not None
-    )
+    if _extension_installed(bind, "timescaledb"):
+        return True
+    if not _extension_available(bind, "timescaledb"):
+        return False
+    try:
+        with bind.begin_nested():
+            bind.execute(sa.text("CREATE EXTENSION IF NOT EXISTS timescaledb"))
+    except sa.exc.SQLAlchemyError:
+        return False
+    return True
 
 
 def upgrade() -> None:
@@ -65,11 +98,11 @@ def upgrade() -> None:
         sa.Column("source_observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("chain", sa.String(length=40), nullable=False),
         sa.Column("venue", sa.String(length=40), nullable=False),
-        sa.Column("price", sa.Numeric(precision=38, scale=18), nullable=True),
-        sa.Column("size", sa.Numeric(precision=38, scale=18), nullable=True),
+        sa.Column("price", EXACT_DECIMAL, nullable=True),
+        sa.Column("size", EXACT_DECIMAL, nullable=True),
         sa.Column("direction", sa.String(length=4), nullable=True),
         sa.Column("units", sa.String(length=32), nullable=False),
-        sa.Column("confidence", sa.Numeric(precision=38, scale=18), nullable=True),
+        sa.Column("confidence", EXACT_DECIMAL, nullable=True),
         sa.Column("source_url", sa.Text(), nullable=True),
         sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("schema_version", sa.Integer(), nullable=False),
@@ -107,18 +140,22 @@ def upgrade() -> None:
     )
 
     bind = op.get_bind()
-    if not _has_timescaledb(bind):
+    if not _can_use_timescaledb(bind):
         return
-    # Optional additive use of an installed extension. ``if_not_exists`` keeps a re-run and
-    # a pre-provisioned database on the same path.
-    bind.execute(sa.text("CREATE EXTENSION IF NOT EXISTS timescaledb"))
-    bind.execute(
-        sa.text(
-            "SELECT create_hypertable("
-            "'market_events', 'source_observed_at', "
-            "if_not_exists => TRUE, migrate_data => TRUE)"
-        )
-    )
+    # Optional additive conversion. It runs in a savepoint so a server that refuses it
+    # (already-installed extension without hypertable rights, or an incompatible index)
+    # keeps the ordinary tables the guarantees above already hold for.
+    try:
+        with bind.begin_nested():
+            bind.execute(
+                sa.text(
+                    "SELECT create_hypertable("
+                    "'market_events', 'source_observed_at', "
+                    "if_not_exists => TRUE, migrate_data => TRUE)"
+                )
+            )
+    except sa.exc.SQLAlchemyError:
+        return
 
 
 def downgrade() -> None:

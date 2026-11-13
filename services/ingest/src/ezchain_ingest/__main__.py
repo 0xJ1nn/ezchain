@@ -35,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from sqlalchemy import create_engine
+    from sqlalchemy.exc import SQLAlchemyError
 
     from ezchain_api.config import get_settings
 
@@ -51,17 +52,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"retention: {exc}")
         return 2
 
-    engine = create_engine(get_settings().database_url)
+    engine = None
     try:
+        engine = create_engine(get_settings().database_url)
         with engine.begin() as connection:
             result = prune(connection, policy, apply=args.apply)
-    except RetentionError as exc:
+    except (RetentionError, SQLAlchemyError) as exc:
         # The reason is the driver's, verbatim: a missing table means the revision has not
-        # run, an unreachable server means the URL is wrong. Neither is a silent zero.
+        # run, an unreachable server means the URL is wrong. Neither is a silent zero, and
+        # opening the connection is inside this handler so a raw traceback never escapes.
         print(f"retention: {exc}")
         return 1
     finally:
-        engine.dispose()
+        if engine is not None:
+            engine.dispose()
     print(json.dumps(result.to_dict(), indent=2))
     return 0
 
