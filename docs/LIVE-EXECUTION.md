@@ -41,6 +41,16 @@ journaled. Paper may run without a boundary and submits unsigned; a pipeline in 
 mode refuses an unsigned submit with `SIGNING_BOUNDARY_REQUIRED` before the venue is
 called.
 
+Live also requires custody, not just a boundary (ADR-0040). Custody is the user's: a key is
+added by its owner, addressed by a `KeyHandle` that names that owner, and signed through
+the `Vault` seam. A signer that carries no signable per-user handle — a bare in-memory key
+ring — refuses in live with `VAULT_BOUNDARY_REQUIRED` before the venue, because a key
+nobody custodies must not spend real money. A watch-only handle cannot sign and refuses
+there too. The device is one custody option among `local_vault` and `hardware`, behind a
+vendor-agnostic `SignerTransport`, so an unreachable device, a declined approval, an
+unknown handle, a locked signer or a device that answers for another key each produce no
+signature and one typed reason.
+
 ## 1. Deployables and trust
 
 ```

@@ -28,6 +28,15 @@ this file keeps:
   signature it got back against the approved payload and approval it decoded. The signed
   payload's digest then travels through submit and a receipt that does not echo it is never
   journaled. Live refuses an unsigned submit before the venue; paper may run unsigned.
+* Live needs custody, not only a boundary: the signer must carry a signable key handle
+  owned by the user whose order it signs. A bare in-memory signer refuses with
+  ``VAULT_BOUNDARY_REQUIRED`` in live, where the key would be nobody's. The principal is
+  carried on the intent and copied into the approval, so the handle's owner is compared
+  with the order's own attribution at this level before any signer runs: one executor
+  instance cannot sign user B's order with user A's key (``CUSTODY_OWNER_MISMATCH``).
+* An unattended (automation) intent needs the consent record for that same user and rule.
+  A run with no matching ``AutomationSetting`` refuses with ``AUTOMATION_CONSENT_REQUIRED``
+  before an order exists, so no automation path can skip the opt-in by not configuring it.
 * Nothing here writes the ledger; the sink does, and only after a confirmed fill.
 """
 
@@ -37,22 +46,28 @@ import asyncio
 import hashlib
 import json
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any
 
 from ezchain_core import (
+    AUTOMATION_CONSENT_REQUIRED,
+    CUSTODY_OWNER_MISMATCH,
     SIGNING_BOUNDARY_REQUIRED,
     TRANSACTION_BUILD_FAILED,
     TRANSACTION_DIGEST_MISMATCH,
     TRANSACTION_NOT_APPROVABLE,
     TRANSACTION_SIGN_FAILED,
+    VAULT_BOUNDARY_REQUIRED,
     ApprovedIntent,
+    AutomationSetting,
     ExecutionResult,
     ExecutionStatus,
     Fill,
     Intent,
     Journal,
+    KeyHandle,
     Mode,
     Order,
     PositionState,
@@ -63,6 +78,7 @@ from ezchain_core import (
     SignedTransaction,
     TokenSnapshot,
     TransactionDecodeError,
+    VaultBackedSigner,
     Venue,
     decode_transaction,
     journal_from_fill,
@@ -144,6 +160,11 @@ class ExecutionPipeline:
     # a live pipeline without one refuses every submit instead of broadcasting unsigned.
     signing: SigningBoundary | None = None
     mode: Mode = "paper"
+    # Resolves one user's automation setting. An intent that runs with no person in the
+    # loop (``Intent.automation``) is refused unless this returns the setting for that
+    # same actor and it carries the opt-in disclosure; ``None`` refuses every unattended
+    # run rather than assuming consent nobody recorded.
+    automation_settings: Callable[[str], AutomationSetting | None] | None = None
     _in_flight: dict[str, tuple[str, asyncio.Future[ExecutionResult]]] = field(default_factory=dict)
 
     async def run(
@@ -228,6 +249,13 @@ class ExecutionPipeline:
         if position is None:
             position = _empty_position(intent)
 
+        # 0. Consent, before anything is sized or priced. An unattended intent is an order
+        # nobody will approve individually, so it needs the opt-in record for that same
+        # user and rule; with no setting configured it is refused rather than assumed.
+        consent = self._automation_denial(intent)
+        if consent is not None:
+            return consent
+
         # 1. Size the request. A sell is bounded to the held position; a reduce-only exit
         # is never capped below it, so an entry limit cannot leave the intended exit
         # unsubmitted. Sizing first means risk sees the quantity the order will trade.
@@ -303,7 +331,21 @@ class ExecutionPipeline:
         if self.signing is None:
             if self.mode != "paper":
                 return _refused_before_submit(intent, order, reason=SIGNING_BOUNDARY_REQUIRED)
+        elif self.mode != "paper" and not _custody_backed(self.signing):
+            # A non-paper pipeline needs a signing boundary that signs with the user's own
+            # handle through the vault seam. An in-memory signer with no handle would spend
+            # real money from a key nobody custodies, and a ``handle`` that is not a
+            # ``KeyHandle`` has no owner to compare, so it is refused rather than
+            # dereferenced.
+            return _refused_before_submit(intent, order, reason=VAULT_BOUNDARY_REQUIRED)
         else:
+            # With a custody-backed signer the handle's owner and the order's principal are
+            # compared here, before any signer runs: the signer receives the approval, not
+            # the caller's claim, so this is the check that stops one executor instance
+            # from signing user B's order with user A's key.
+            handle = _custody_handle(self.signing)
+            if handle is not None and handle.owner != order.actor:
+                return _refused_before_submit(intent, order, reason=CUSTODY_OWNER_MISMATCH)
             signed_result = await self._sign(order)
             if isinstance(signed_result, ExecutionResult):
                 return signed_result
@@ -436,6 +478,29 @@ class ExecutionPipeline:
             return _order_failed(order, "rejected", "RECEIPT_EXCEEDS_ORDER", fill=fill)
         return fill
 
+    def _automation_denial(self, intent: Intent) -> ExecutionResult | None:
+        """``None`` when this intent may run unattended, else the refusal.
+
+        An intent with no ``automation`` is placed by a person through the approval queue
+        and needs no automation consent. One that names a rule runs without anyone reading
+        it, so the user it runs for must have an ``AutomationSetting`` whose tier carries
+        the opt-in disclosure for that same user: the setting itself refuses at
+        construction without one, so a missing setting and a mismatched one are the two
+        ways to arrive here without consent. Both refuse before an order exists.
+        """
+        if intent.automation is None:
+            return None
+        setting = None
+        if intent.actor is not None and self.automation_settings is not None:
+            setting = self.automation_settings(intent.actor)
+        if setting is None or setting.user != intent.actor or setting.requires_approval:
+            return _denied(
+                intent,
+                RiskDecision(False, (RiskReason(AUTOMATION_CONSENT_REQUIRED),)),
+                reason=AUTOMATION_CONSENT_REQUIRED,
+            )
+        return None
+
     def _kill_switch_denial(
         self,
         intent: Intent,
@@ -563,6 +628,7 @@ def _order_from_quote(
         quote=quote,
         risk_decision=decision,
         reduce_only=intent.reduce_only,
+        actor=intent.actor,
     )
 
 
@@ -652,6 +718,7 @@ def _intent_from_order(order: Order) -> Intent:
         idempotency_key=order.idempotency_key,
         quantity=order.quantity,
         reduce_only=order.reduce_only,
+        actor=order.actor,
     )
 
 
@@ -664,6 +731,29 @@ def _refused_before_submit(intent: Intent, order: Order, *, reason: str) -> Exec
         quote=order.quote,
         reason=reason,
     )
+
+
+def _custody_backed(boundary: SigningBoundary) -> bool:
+    """True when the boundary signs through a signable per-user key handle.
+
+    A signer that carries no handle signs with a key nobody owns, which is not custody. A
+    ``handle`` that is not a :class:`~ezchain_core.vault.KeyHandle` has no owner and no
+    fingerprint, so it is not custody either; checking the type here keeps a signer whose
+    ``handle`` is merely present from raising ``AttributeError`` later. A watch-only handle
+    cannot sign. All of them refuse in live.
+    """
+    return _custody_handle(boundary) is not None
+
+
+def _custody_handle(boundary: SigningBoundary) -> KeyHandle | None:
+    """The boundary's signable handle, or ``None`` when it is not a custody path."""
+    signer = boundary.signer
+    if not isinstance(signer, VaultBackedSigner):
+        return None
+    handle = signer.handle
+    if not isinstance(handle, KeyHandle) or not handle.signable:
+        return None
+    return handle
 
 
 def _conflict(intent: Intent) -> ExecutionResult:
@@ -696,6 +786,9 @@ _FINGERPRINT_FIELDS = (
     "reduce_only",
     "strategy_id",
     "risk_profile",
+    # The principal is part of the payload: one user's intent and another's that happen to
+    # share an idempotency key are two different requests, never a replay of one.
+    "actor",
 )
 
 

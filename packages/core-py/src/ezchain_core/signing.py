@@ -106,6 +106,12 @@ class ApprovedIntent:
     the token quantity, for a sell the amount is the token quantity and the floor is USD.
     ``digest`` covers every field, so a later stage can carry one identifier for the whole
     approval instead of trusting a parameter list it did not see.
+
+    ``actor`` is the principal the order belongs to, copied from the order by
+    :meth:`from_order` and covered by the digest. It is the fact a custody signer compares
+    with the key handle's owner: the signer never accepts an owner from its own
+    constructor, so the principal that signing is authorised for always comes from the
+    order the pipeline priced. An approval with no actor cannot be custody-signed.
     """
 
     chain: str
@@ -117,6 +123,7 @@ class ApprovedIntent:
     recipient: str
     program_id: str
     idempotency_key: str
+    actor: str | None = None
 
     def __post_init__(self) -> None:
         if not self.chain:
@@ -152,6 +159,7 @@ class ApprovedIntent:
             "recipient": self.recipient,
             "program_id": self.program_id,
             "idempotency_key": self.idempotency_key,
+            "actor": self.actor,
         }
         raw = json.dumps(canonical, sort_keys=True, separators=(",", ":"), allow_nan=False)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -184,6 +192,7 @@ class ApprovedIntent:
             recipient=recipient,
             program_id=program_id,
             idempotency_key=order.idempotency_key,
+            actor=order.actor,
         )
 
 
