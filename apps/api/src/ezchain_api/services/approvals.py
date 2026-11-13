@@ -24,12 +24,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from ezchain_core import OrderRequest, RiskReason, utcnow
+from ezchain_core import (
+    AUTOMATION_FULL,
+    AUTOMATION_MANUAL,
+    AUTOMATION_TIERS,
+    DISCLOSURE_AUTOMATION_OPT_IN,
+    AutomationSetting,
+    OrderRequest,
+    RiskDisclosure,
+    RiskReason,
+    utcnow,
+)
 
 from ..actor import ACTOR_HUMAN, OrderActor
 from ..config import Settings
@@ -41,9 +51,12 @@ from ..models import (
     new_id,
 )
 
-MANUAL: Literal["manual"] = "manual"
-FULL_AUTO: Literal["full_auto"] = "full_auto"
+# The tier vocabulary and its consent rule live in ``ezchain_core.vault`` so the executor
+# pipeline and this queue cannot disagree about what ``manual`` means or when ``full_auto``
+# is consented. These are those strings, not a second set of literals.
 Tier = Literal["manual", "full_auto"]
+MANUAL: Tier = cast(Tier, AUTOMATION_MANUAL)
+FULL_AUTO: Tier = cast(Tier, AUTOMATION_FULL)
 TIERS: tuple[Tier, ...] = (MANUAL, FULL_AUTO)
 
 # The pending window. The owner's policy is five minutes, and the setting bounds it.
@@ -157,21 +170,37 @@ def _consent_for(session: Session, user_id: str) -> AutomationConsentRow | None:
     )
 
 
-def read_tier(session: Session, settings: Settings) -> Tier:
-    """The tier in force for this workspace.
+def automation_setting(session: Session, settings: Settings) -> AutomationSetting:
+    """This workspace's tier as the one core contract, never a local re-reading.
 
-    Anything that cannot be read as a consented ``full_auto`` is ``manual``. That includes
-    a missing row (a new user), an unrecognised tier string, and a ``full_auto`` row whose
-    consent record is absent — an unreadable opt-in never lets an agent order through.
+    ``ezchain_core.AutomationSetting`` refuses ``full_auto`` without an automation
+    disclosure for the same user, so the same rule gates the executor pipeline and this
+    queue. Anything the contract refuses — a missing row, an unrecognised tier string, a
+    ``full_auto`` row whose consent record is absent or for another version — reads as a
+    plain ``manual`` setting. The queue then holds the order; it never lets it through.
     """
-    row = session.get(AutomationSettingRow, settings.workspace_id)
-    if row is None:
-        return MANUAL
-    if row.tier != FULL_AUTO:
-        return MANUAL
-    if _consent_for(session, settings.workspace_id) is None:
-        return MANUAL
-    return FULL_AUTO
+    user = settings.workspace_id
+    row = session.get(AutomationSettingRow, user)
+    if row is None or row.tier not in AUTOMATION_TIERS or row.tier == MANUAL:
+        return AutomationSetting(user=user, tier=MANUAL)
+    consent = _consent_for(session, user)
+    if consent is None:
+        return AutomationSetting(user=user, tier=MANUAL)
+    disclosure = RiskDisclosure(
+        point=DISCLOSURE_AUTOMATION_OPT_IN,
+        user=user,
+        acknowledged_at=_aware(consent.acknowledged_at) or utcnow(),
+        version=consent.disclosure_version,
+    )
+    try:
+        return AutomationSetting(user=user, tier=FULL_AUTO, disclosure=disclosure)
+    except ValueError:
+        return AutomationSetting(user=user, tier=MANUAL)
+
+
+def read_tier(session: Session, settings: Settings) -> Tier:
+    """The tier in force for this workspace, as core's contract determines it."""
+    return FULL_AUTO if automation_setting(session, settings).tier == FULL_AUTO else MANUAL
 
 
 def automation_state(session: Session, settings: Settings) -> dict[str, Any]:
@@ -218,12 +247,26 @@ def set_tier(
             "AUTOMATION_TIER_UNKNOWN",
             f"tier must be one of {', '.join(TIERS)}",
         )
-    if tier == FULL_AUTO and not acknowledge_risk:
-        raise ApprovalError(
-            "AUTOMATION_CONSENT_REQUIRED",
-            "switching to full_auto requires acknowledging the risk disclosure",
-        )
     stamp = now or utcnow()
+    disclosure: RiskDisclosure | None = None
+    if tier == FULL_AUTO:
+        if not acknowledge_risk:
+            raise ApprovalError(
+                "AUTOMATION_CONSENT_REQUIRED",
+                "switching to full_auto requires acknowledging the risk disclosure",
+            )
+        disclosure = RiskDisclosure(
+            point=DISCLOSURE_AUTOMATION_OPT_IN,
+            user=settings.workspace_id,
+            acknowledged_at=stamp,
+            version=DISCLOSURE_VERSION,
+        )
+    # Core's contract is the only judge of whether this tier is consented; nothing is
+    # written if it refuses.
+    try:
+        AutomationSetting(user=settings.workspace_id, tier=tier, disclosure=disclosure)
+    except ValueError as exc:
+        raise ApprovalError("AUTOMATION_CONSENT_REQUIRED", str(exc)) from exc
     row = session.get(AutomationSettingRow, settings.workspace_id)
     if row is None:
         row = AutomationSettingRow(user_id=settings.workspace_id, tier=tier)

@@ -320,6 +320,31 @@ An armed operator switch refuses every buy here, whoever places it, before the m
 and the quote; the rejected order row is the record of the attempt. Sells are not refused
 by the switch: an exit can only reduce risk, so reduce-only sells still settle.
 
+**The one gate order for a paper order.** Every gate is a gate *on* `place_order`, in this
+order, and nothing is asked twice:
+
+1. Idempotency replay and integrity (side, amount) — no network, no second fill.
+2. The kill switch, **entry-only**, before the market read: `KILL_SWITCH_ARMED` /
+   `KILL_SWITCH_UNAVAILABLE` for a buy; a sell is never refused.
+3. The settlement wallet, entry-only: `WALLET_UNKNOWN` / `SETTLEMENT_ASSET_UNKNOWN`.
+4. The market read and the quote. A stale mark refuses an entry with `SNAPSHOT_STALE`; a
+   reduce-only exit sizes from the held quantity and still settles.
+5. Inside the fill window: the kill switch is re-read (again entry-only), then the position
+   replay and the quote-size checks.
+6. The risk decision.
+7. The **automation tier / approval queue**: an agent order under `manual` is stored as
+   `pending_approval` and queued — nothing is journaled; an unreadable queue refuses
+   `APPROVAL_STATE_UNREADABLE`.
+8. Fill and journal.
+
+Approving re-enters the same function with the stored intent, so steps 2–6 and 8 run again
+(the trade keeps its original id and key) and step 7 is skipped because a person already
+decided. Consent is therefore asked in exactly one place — the `PUT /paper/automation`
+acknowledgement — and is never re-asked at placement. The executor's live-path
+`AUTOMATION_CONSENT_REQUIRED` validates the same `AutomationSetting` for an unattended run,
+so a `manual`-tier intent cannot reach a venue by the executor path either.
+
+
 A fill journals a simulated fee: 30 bps of the notional by default on a `paper_mark`, or
 the quote's own venue cost when that is larger. No money reaches a venue or network.
 

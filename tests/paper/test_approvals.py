@@ -274,9 +274,12 @@ def test_an_approved_order_the_risk_gate_refuses_is_recorded_failed(
     assert placed.reason == "INSUFFICIENT_CASH"
     assert row.status == "failed"
     assert row.execution_reason == "INSUFFICIENT_CASH"
-    assert session.scalar(
-        select(func.count()).select_from(PaperFillRow).where(PaperFillRow.order_id == order.id)
-    ) == 0
+    assert (
+        session.scalar(
+            select(func.count()).select_from(PaperFillRow).where(PaperFillRow.order_id == order.id)
+        )
+        == 0
+    )
 
 
 def test_approving_an_unknown_approval_is_a_typed_404(session: Session, settings: Any) -> None:

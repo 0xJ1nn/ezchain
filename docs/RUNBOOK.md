@@ -173,6 +173,33 @@ curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   fill and no journal entry.
 - Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.
 
+### 10.2 The gate order for a paper order
+
+Every gate is a gate *on* `place_order`, and they compose in one order. Knowing it is what
+lets you tell an incident reviewer which gate refused an order, because the order row
+persists the reason code of the first gate that refused it.
+
+1. Idempotency replay and integrity (side, amount) — no network, no second fill.
+2. The kill switch, **entry-only**, before the market read (`KILL_SWITCH_ARMED` /
+   `KILL_SWITCH_UNAVAILABLE`); a sell is never refused.
+3. The settlement wallet, entry-only (`WALLET_UNKNOWN` / `SETTLEMENT_ASSET_UNKNOWN`).
+4. The market read and the quote; a stale mark refuses an entry (`SNAPSHOT_STALE`), a
+   reduce-only exit sizes from the held quantity and still settles.
+5. Inside the fill window: the kill switch is re-read (entry-only), then the position
+   replay and the quote-size checks.
+6. The risk decision.
+7. The automation tier / approval queue: an agent order under `manual` is stored as
+   `pending_approval` and queued with the server's own evidence — nothing is journaled;
+   an unreadable queue refuses `APPROVAL_STATE_UNREADABLE`.
+8. Fill and journal.
+
+A person's approval re-enters the same function with the stored intent, so steps 2–6 and 8
+run again (the trade keeps its id and idempotency key) and step 7 is skipped. Consent for
+`full_auto` is asked once, at `PUT /api/v1/paper/automation`; it is never re-asked at
+placement. The executor's live path refuses an unattended intent whose
+`AutomationSetting` still requires approval with `AUTOMATION_CONSENT_REQUIRED`, so a
+manual-tier intent cannot reach a venue by going around the queue.
+
 ## 11. Market monitor (market eyes)
 
 The API observes every registered chain continuously when

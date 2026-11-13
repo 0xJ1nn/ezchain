@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_order_actor import CHAIN, DEPLOYMENT, PEPPER, TOKEN, FakeDex
 
 from ezchain_adapters import QuoteRouter
-from ezchain_api.actor import ACTOR_AGENT, ACTOR_HUMAN
+from ezchain_api.actor import ACTOR_AGENT, ACTOR_HUMAN, OrderActor
 from ezchain_api.auth import BearerAuthMiddleware
 from ezchain_api.config import Settings
 from ezchain_api.deps import get_dexscreener, get_quote_router, get_session
@@ -325,6 +325,51 @@ def test_a_full_auto_row_without_its_consent_reads_as_manual(
         "/api/v1/paper/orders", json=_payload("api-orphan-auto-1"), headers=_bearer(agent)
     ).json()
     assert posted["status"] == "pending_approval"
+
+
+def test_a_consent_for_an_older_disclosure_version_reads_as_manual(
+    authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
+) -> None:
+    """The acknowledgement that counts is the current disclosure's, not any older one."""
+    session.add(AutomationSettingRow(user_id=authed_settings.workspace_id, tier="full_auto"))
+    session.add(
+        AutomationConsentRow(
+            user_id=authed_settings.workspace_id,
+            tier="full_auto",
+            disclosure_version="v0",
+            disclosure_text="an older wording",
+        )
+    )
+    session.commit()
+    client = _client(authed_settings, session, key_factory)
+
+    assert client.get("/api/v1/paper/automation").json()["tier"] == "manual"
+
+
+def test_the_tier_in_force_is_cores_automation_setting(
+    authed_settings: Settings, session: Session
+) -> None:
+    """One contract decides: the queue reads ``ezchain_core.AutomationSetting``, not a copy."""
+    from ezchain_api.services import approvals
+    from ezchain_core import AUTOMATION_FULL, AUTOMATION_MANUAL, AutomationSetting
+
+    setting = approvals.automation_setting(session, authed_settings)
+    assert isinstance(setting, AutomationSetting)
+    assert setting.tier == AUTOMATION_MANUAL and setting.requires_approval
+
+    session.add(AutomationSettingRow(user_id=authed_settings.workspace_id, tier="full_auto"))
+    session.commit()
+    assert approvals.read_tier(session, authed_settings) == AUTOMATION_MANUAL
+    assert approvals.automation_setting(session, authed_settings).requires_approval
+
+    approvals.set_tier(
+        session,
+        tier=AUTOMATION_FULL,
+        actor=OrderActor(ACTOR_HUMAN, "deployment"),
+        settings=authed_settings,
+        acknowledge_risk=True,
+    )
+    assert not approvals.automation_setting(session, authed_settings).requires_approval
 
 
 def test_a_human_order_is_never_queued_under_manual(
