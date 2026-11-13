@@ -9,6 +9,11 @@ import { PROXY_TEST_API_URL } from "./proxy-env";
 const live = process.env.EZCHAIN_WEB_MODE === "live";
 const apiPort = Number(new URL(process.env.EZCHAIN_API_URL ?? PROXY_TEST_API_URL).port || 80);
 
+// These cases drive the fixture sample state; the server-read cases at the end run under
+// EZCHAIN_WEB_MODE=live and are skipped otherwise, and vice versa.
+const fixtureOnly =
+	"drives the fixture sample state; server-read behaviour is covered by the EZCHAIN_WEB_MODE=live cases";
+
 test("dashboard renders from fixtures with no external requests", async ({ page }) => {
 	const external: string[] = [];
 	page.on("request", (request) => {
@@ -163,51 +168,140 @@ test("unknown routes return 404 with the shell", async ({ page }) => {
 	await expect(page.getByRole("heading", { name: "Not found", level: 1 })).toBeVisible();
 });
 
-// EZ-258: the equity number is the hero of the KPI band, so it must stay on one line at
-// the desktop gate width. A wrapped currency string reads as two numbers.
-test("the equity value fits its tile on one line at 1440", async ({ page }) => {
-	for (const state of ["many", "complete", "flat"]) {
-		await page.goto(`/?state=${state}`);
+// The widest fixture equity, so every layout case is measured against the real worst case
+// the sample data can produce.
+const WIDEST_FIXTURE_EQUITY = "$10,000.00";
 
-		const equity = page.locator('section.kpi-band[aria-label="Paper account"] .hero-stat .value');
-		await expect(equity).toBeVisible();
+/** Measure the hero glyphs, its tile and the band with rects, not scroll geometry. */
+async function heroGeometry(equity: import("@playwright/test").Locator) {
+	return equity.evaluate((node) => {
+		const style = getComputedStyle(node);
+		const range = document.createRange();
+		range.selectNodeContents(node);
+		const text = range.getBoundingClientRect();
+		const tile = (node.parentElement as HTMLElement).getBoundingClientRect();
+		const band = (node.closest(".kpi-band") as HTMLElement).getBoundingClientRect();
+		const rect = node.getBoundingClientRect();
+		return {
+			lineHeight: Number.parseFloat(style.lineHeight),
+			height: rect.height,
+			label: node.textContent ?? "",
+			text: { left: text.left, right: text.right, width: text.width },
+			tile: { left: tile.left, right: tile.right, width: tile.width },
+			band: { left: band.left, right: band.right },
+			overflow:
+				document.documentElement.scrollWidth - document.documentElement.clientWidth,
+		};
+	});
+}
 
-		const metrics = await equity.evaluate((node) => {
-			const rect = node.getBoundingClientRect();
-			const style = getComputedStyle(node);
-			const band = node.closest(".kpi-band");
-			const bandRect = band?.getBoundingClientRect();
-			const statRect = node.parentElement?.getBoundingClientRect();
+// the equity number is the hero of the KPI band, so it must stay on one line at
+// the desktop gate widths. A wrapped currency string reads as two numbers. Containment is
+// measured on rects: on a nowrap node scrollWidth always equals clientWidth, so the old
+// "not clipped" check could never fail.
+test("the equity value stays on one line inside its tile at the desktop widths", async ({
+	page,
+}) => {
+	for (const width of [1440, 1200]) {
+		await page.setViewportSize({ width, height: 900 });
+
+		for (const state of ["many", "complete", "flat"]) {
+			await page.goto(`/?state=${state}`);
+
+			const equity = page.locator(
+				'section.kpi-band[aria-label="Paper account"] .hero-stat .value',
+			);
+			await expect(equity).toBeVisible();
+
+			const metrics = await heroGeometry(equity);
+
+			const lines = Math.round(metrics.height / metrics.lineHeight);
+			expect(lines, `equity wraps: ${metrics.label} at ${width}/state=${state}`).toBe(1);
+			expect(metrics.height, "the value stayed on one line").toBeLessThan(
+				metrics.lineHeight * 1.5,
+			);
+			expect(
+				metrics.text.left,
+				`the value starts inside its tile at ${width}`,
+			).toBeGreaterThanOrEqual(metrics.tile.left - 1);
+			expect(
+				metrics.text.right,
+				`the value ends inside its tile at ${width}`,
+			).toBeLessThanOrEqual(metrics.tile.right + 1);
+			expect(
+				metrics.tile.right,
+				`the tile stays inside the band at ${width}`,
+			).toBeLessThanOrEqual(metrics.band.right + 1);
+			expect(metrics.overflow, `no document overflow at ${width}`).toBeLessThanOrEqual(1);
+		}
+	}
+});
+
+// at phone widths the band's overflow:hidden clipped any value wider than the
+// band, and the hero's min-width:max-content pushed its tile past the band first. The
+// largest fixture value must sit inside the tile, and a deliberately wide value must stay
+// inside the band (growing the tile to the band, or wrapping inside it) without making
+// the document scroll.
+test("the equity value is contained by its tile at 360 and 390", async ({ page }) => {
+	for (const width of [360, 390]) {
+		await page.setViewportSize({ width, height: 844 });
+		await page.goto("/?state=many");
+
+		const equity = page.locator(
+			'section.kpi-band[aria-label="Paper account"] .hero-stat .value',
+		);
+		await expect(equity).toHaveText(WIDEST_FIXTURE_EQUITY);
+
+		const metrics = await heroGeometry(equity);
+		expect(
+			metrics.text.left,
+			`the value starts inside its tile at ${width}`,
+		).toBeGreaterThanOrEqual(metrics.tile.left - 1);
+		expect(
+			metrics.text.right,
+			`the value ends inside its tile at ${width}`,
+		).toBeLessThanOrEqual(metrics.tile.right + 1);
+		expect(
+			metrics.tile.right,
+			`the tile stays inside the band at ${width}`,
+		).toBeLessThanOrEqual(metrics.band.right + 1);
+		expect(metrics.overflow, `no document overflow at ${width}`).toBeLessThanOrEqual(1);
+
+		const probe = await equity.evaluate((node) => {
+			node.textContent = "$12,345,678,901,234.56";
+			const range = document.createRange();
+			range.selectNodeContents(node);
+			const text = range.getBoundingClientRect();
+			const tile = (node.parentElement as HTMLElement).getBoundingClientRect();
+			const band = (node.closest(".kpi-band") as HTMLElement).getBoundingClientRect();
 			return {
-				lineHeight: Number.parseFloat(style.lineHeight),
-				height: rect.height,
-				text: node.textContent ?? "",
-				statWidth: statRect?.width ?? 0,
-				scrollWidth: node.scrollWidth,
-				clientWidth: node.clientWidth,
-				bandRight: bandRect?.right ?? 0,
+				text: { left: text.left, right: text.right },
+				tile: { left: tile.left, right: tile.right },
+				band: { left: band.left, right: band.right },
+				overflow:
+					document.documentElement.scrollWidth - document.documentElement.clientWidth,
 			};
 		});
 
-		const lines = Math.round(metrics.height / metrics.lineHeight);
-		expect(lines, `equity wraps: ${metrics.text} at state=${state}`).toBe(1);
-		expect(metrics.height, "the value stayed on one line").toBeLessThan(
-			metrics.lineHeight * 1.5,
+		expect(
+			probe.text.right,
+			`a wide value is clipped by the band at ${width}`,
+		).toBeLessThanOrEqual(probe.band.right + 1);
+		expect(
+			probe.text.right,
+			`a wide value leaves its tile at ${width}`,
+		).toBeLessThanOrEqual(probe.tile.right + 1);
+		expect(
+			probe.text.left,
+			`a wide value starts inside the band at ${width}`,
+		).toBeGreaterThanOrEqual(probe.band.left - 1);
+		expect(probe.overflow, `a wide value scrolls the document at ${width}`).toBeLessThanOrEqual(
+			1,
 		);
-		// Fitting must not be bought by clipping the number.
-		expect(metrics.scrollWidth, "the value is not clipped").toBeLessThanOrEqual(
-			Math.ceil(metrics.clientWidth) + 1,
-		);
-		expect(metrics.bandRight).toBeLessThanOrEqual(1441);
 	}
-
-	const overflow = await page.evaluate(
-		() => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-	);
-	expect(overflow).toBeLessThanOrEqual(1);
 });
 
-// EZ-258: the strip calls the column "Age", which reads as quote freshness next to the
+// the strip calls the column "Age", which reads as quote freshness next to the
 // trending table's age. It is pair age, and the panel promises a launch window, so only
 // pairs born inside that window may be listed.
 test("the launches column is pair age and only lists pairs inside the window", async ({
@@ -234,10 +328,12 @@ test("the launches column is pair age and only lists pairs inside the window", a
 	}
 });
 
-// EZ-258: the composition action row carried FIXTURE and a second, literal PAPER badge, so
+// the composition action row carried FIXTURE and a second, literal PAPER badge, so
 // a fixture build showed two mode claims in one row and a live build showed PAPER twice.
-// The row states the data mode once; the page header carries the rest.
+// The row states the execution mode once, from the same server read as the chip, and the
+// data-source label names where the rows came from. It is exactly one badge.
 test("the equity composition shows one mode badge", async ({ page }) => {
+	test.skip(live, fixtureOnly);
 	await page.goto("/");
 
 	const composition = page
@@ -245,14 +341,58 @@ test("the equity composition shows one mode badge", async ({ page }) => {
 		.filter({ has: page.getByRole("heading", { name: "Equity composition" }) });
 	const actions = composition.locator(".panel-head .right");
 	await expect(actions.locator(".badge")).toHaveCount(1);
-	// Fixture data must be labelled FIXTURE here, never a second PAPER claim.
-	expect(await actions.locator(".badge").allTextContents()).toEqual(["FIXTURE"]);
+	// Fixture mode performs no API read, so the server reported no mode: neither a PAPER
+	// nor a FIXTURE mode claim is allowed here, only the UNKNOWN state with its reason.
+	expect(await actions.locator(".badge").allTextContents()).toEqual(["UNKNOWN"]);
 	await expect(actions.getByText("PAPER", { exact: true })).toHaveCount(0);
+	await expect(actions.getByText("FIXTURE", { exact: true })).toHaveCount(0);
+	await expect(actions.locator(".badge")).toHaveAttribute("title", /unavailable/i);
 });
 
-// EZ-258: the mode chip was literal text. It must name the mode the API derives, and a
-// read that fails must say unknown instead of falling back to a guess.
+// the page derived PAPER from the data mode, which is not the execution mode, so
+// its badges could contradict the chip. No hardcoded mode display string may remain on
+// the page: every mode claim comes from the server read the chip uses.
+test("the dashboard asserts no execution mode of its own", async ({ page }) => {
+	test.skip(live, fixtureOnly);
+	await page.goto("/");
+
+	// The fixture gate never reaches the API, so a mode claim of any kind would be a guess.
+	// Scoped to the page: the shell chrome keeps its own labels, which this task did not
+	// touch.
+	const main = page.locator("main#main");
+	await expect(main.getByText("PAPER", { exact: true })).toHaveCount(0);
+	await expect(main.getByText(/LIVE PAPER API/i)).toHaveCount(0);
+	await expect(main.getByText(/paper mode only/i)).toHaveCount(0);
+	await expect(main.getByText(/run in paper/i)).toHaveCount(0);
+	await expect(main.getByText(/· paper$/)).toHaveCount(0);
+
+	// Every panel action badge is either the unknown server read or a data-source label.
+	// None of them may name an execution mode, which is what the literal PAPER did.
+	const badges = page.locator("section.panel .panel-head .right .badge");
+	await expect(badges.first()).toHaveText("UNKNOWN");
+	for (const text of await badges.allTextContents()) {
+		expect(["UNKNOWN", "FIXTURE", "LIVE API"]).toContain(text.trim());
+	}
+
+	// The Mode KPI is the server value too, and it says why it has none.
+	const mode = page
+		.locator('section.kpi-band[aria-label="Paper account"] .stat')
+		.filter({ hasText: /^Mode/ });
+	await expect(mode.locator(".value")).toHaveText("UNKNOWN");
+	await expect(mode).toContainText("mode not reported");
+	await expect(mode.locator(".value")).toHaveAttribute("title", /unavailable/i);
+
+	// The market strip footer states what the server reports, never a constant.
+	const foot = page.getByTestId("market-strip").locator(".panel-foot");
+	await expect(foot).toContainText("did not report its execution mode");
+	await expect(foot).not.toContainText("reports paper execution");
+});
+
+// the mode chip was literal text. It must name the mode the API derives, and a
+// read that fails must say unknown instead of falling back to a guess. Fixture mode never
+// performs the read, so this case only runs where the shell actually calls the API.
 test("the topbar mode chip reads the execution mode from the API", async ({ page }) => {
+	test.skip(!live, "needs EZCHAIN_WEB_MODE=live so the shell performs the GET");
 	await page.goto("/");
 	const chip = page.locator("header.topbar .mode");
 	await expect(chip).toHaveCount(1);

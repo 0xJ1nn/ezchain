@@ -181,7 +181,7 @@ test("liveness reads the API root, not the proxied /api path", async () => {
 	});
 });
 
-// EZ-258: the execution mode is server-derived (ADR-0035), so the shell reads it and
+// the execution mode is server-derived (ADR-0035), so the shell reads it and
 // never states one. A read that fails or answers without a mode is unknown, not PAPER.
 test("the execution mode comes from the API health read", async () => {
 	await withMode("live", async () => {

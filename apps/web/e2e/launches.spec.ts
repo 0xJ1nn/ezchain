@@ -27,7 +27,10 @@ test("dashboard has a market-first strip above equity with fixture launches + tr
 	await expect(strip.getByText("Launches", { exact: true })).toBeVisible();
 	await expect(strip.getByText("Trending", { exact: true })).toBeVisible();
 	await expect(strip.getByText("FIXTURE", { exact: true }).first()).toBeVisible();
-	await expect(strip.getByText("PAPER", { exact: true }).first()).toBeVisible();
+	// The strip's mode badge reports the server read, which fixture mode never performs.
+	// A literal PAPER here would be a mode claim the page cannot make.
+	await expect(strip.getByText("PAPER", { exact: true })).toHaveCount(0);
+	await expect(strip.locator(".panel-head .right .badge").first()).toHaveText("UNKNOWN");
 
 	// Each hero row carries chain + age and a one-click Trade link to the token page.
 	const tradeLinks = strip.getByRole("link", { name: "Trade" });

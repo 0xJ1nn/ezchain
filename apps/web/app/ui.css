@@ -509,8 +509,11 @@ table.table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .kpi-band .stat .value, .kpi-band .stat .meta { overflow-wrap: anywhere; }
 /* The hero carries a currency string, not prose: it must never break mid-number. It takes
    a wider share of the band and never wraps; the breakpoint overrides below keep the
-   band's own wrapping intact instead of forcing a full row. */
-.kpi-band .stat.hero-stat { flex: 1.35 1 0; min-width: max-content; }
+   band's own wrapping intact instead of forcing a full row.
+   The content-sized minimum is capped at the band's own width: an unbounded
+   `min-width: max-content` let a value wider than the band push its tile past the band,
+   where the band's `overflow: hidden` cut the digits off. */
+.kpi-band .stat.hero-stat { flex: 1.35 1 0; min-width: min(max-content, 100%); }
 .hero-stat .value { white-space: nowrap; }
 .kpi-band .stat:last-child { border-right: 0; }
 
@@ -694,6 +697,10 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .step-line { width: 14px; }
   .step-item { font-size: 10.5px; }
   .step-item .n { width: 18px; height: 18px; }
+  /* The hero takes the full band row here, so its value scales with the viewport instead
+     of holding the desktop 30px. At 30px a seven-digit balance is wider than a 360px
+     phone, and nowrap would either clip it or push the tile out of the band. */
+  .hero-stat .value { font-size: clamp(16px, 5.2vw, 26px); }
 }
 .mobile-note { display: none; border: 1px dashed var(--dash); padding: 8px; font-size: 11px; color: var(--muted); margin-bottom: 12px; }
 

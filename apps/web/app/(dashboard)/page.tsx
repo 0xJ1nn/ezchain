@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ModeBadge } from "@/components/ops";
 import { AppShell } from "@/components/shell";
 import { Badge, ButtonLink, Meter, Panel, Stat, TokenAvatar } from "@/components/ui";
 import {
@@ -8,6 +9,11 @@ import {
 	getPaperOrders,
 } from "@/lib/account-api";
 import { asApiError, getChains, getLaunches, getMarkets, LAUNCH_WINDOW_MINUTES } from "@/lib/api";
+import {
+	getExecutionMode,
+	type ExecutionMode,
+	type SystemResult,
+} from "@/lib/system-api";
 import {
 	ageLabel,
 	chainInitial,
@@ -48,8 +54,31 @@ function failure(result: Failure) {
 	);
 }
 
-function SectionBadge({ live }: { live: boolean }) {
-	return <Badge tone="ghost">{live ? "PAPER" : "FIXTURE"}</Badge>;
+function SectionBadge({ mode }: { mode: SystemResult<ExecutionMode> }) {
+	if (!mode.ok) {
+		return (
+			<Badge
+				tone="warn"
+				title={`Execution mode unavailable · ${mode.error.code}: ${mode.error.message}`}
+			>
+				UNKNOWN
+			</Badge>
+		);
+	}
+	return (
+		<Badge
+			tone={mode.data === "live" ? "info" : "ghost"}
+			title={`Execution mode · ${mode.data} · derived by the API`}
+		>
+			{mode.data.toUpperCase()}
+		</Badge>
+	);
+}
+
+// Prose uses the same server value the badges render, and says nothing when the
+// server reported no mode: a sentence must not assert a mode the page cannot know.
+function modeNote(mode: SystemResult<ExecutionMode>) {
+	return mode.ok ? ` · ${mode.data}` : "";
 }
 
 function money(value: string | null | undefined, signed = false) {
@@ -74,8 +103,18 @@ export default async function DashboardPage({
 	searchParams: Promise<{ state?: string }>;
 }) {
 	const { state } = await searchParams;
-	const [snapshot, strategies, marketsOutcome, launchesOutcome, chainsOutcome, limits, alerts, orders, overview] =
-		await Promise.all([
+	const [
+		snapshot,
+		strategies,
+		marketsOutcome,
+		launchesOutcome,
+		chainsOutcome,
+		limits,
+		alerts,
+		orders,
+		overview,
+		executionMode,
+	] = await Promise.all([
 			getPaperSnapshot(),
 			getStrategies(),
 			getMarkets({ limit: 5, sort: "trending" })
@@ -91,6 +130,7 @@ export default async function DashboardPage({
 			getPaperAlerts(),
 			getPaperOrders(5),
 			getMarketOverview(),
+			getExecutionMode(),
 		]);
 
 	const live = snapshot.mode === "live";
@@ -143,7 +183,8 @@ export default async function DashboardPage({
 					</p>
 				</div>
 				<div className="page-actions">
-					<Badge tone={live ? "info" : "ghost"}>{live ? "LIVE PAPER API" : "FIXTURE"}</Badge>
+					{/* A data-source label, not a mode claim: it says where the rows come from. */}
+					<ModeBadge mode={snapshot.mode} />
 					<Link className="btn" href="/performance">
 						Performance
 					</Link>
@@ -156,10 +197,12 @@ export default async function DashboardPage({
 			<section className="panel" data-testid="market-strip" aria-label="Market strip">
 				<div className="panel-head">
 					<h2>Market</h2>
-					<span className="sub">launches + trending · paper · every number carries source and age</span>
+					<span className="sub">
+						launches + trending{modeNote(executionMode)} · every number carries source and age
+					</span>
 					<div className="right">
-						<Badge tone="ghost">PAPER</Badge>
-						{!live && <Badge tone="ghost">FIXTURE</Badge>}
+						<SectionBadge mode={executionMode} />
+						<ModeBadge mode={snapshot.mode} />
 					</div>
 				</div>
 				<div className="grid cols-2">
@@ -304,15 +347,13 @@ export default async function DashboardPage({
 					</div>
 				</div>
 				<div className="panel-foot">
-					{live ? (
-						<>
-							Unknown is <span className="mono">—</span>, never zero. Paper mode only · every number carries source and age.
-						</>
-					) : (
-						<>
-							Unknown is <span className="mono">—</span>, never zero. Preview rows are fixture sample data and say so.
-						</>
-					)}
+					Unknown is <span className="mono">—</span>, never zero.{" "}
+					{executionMode.ok
+						? `The server reports ${executionMode.data} execution.`
+						: "The server did not report its execution mode."}{" "}
+					{snapshot.mode === "fixture"
+						? "Preview rows are fixture sample data and say so."
+						: "Every number carries its source and age."}
 				</div>
 			</section>
 
@@ -325,7 +366,7 @@ export default async function DashboardPage({
 						account
 							? account.marks_unknown
 								? `equity unavailable — ${markCountLabel(unpricedCount)}`
-								: `${positions.length} open position${positions.length === 1 ? "" : "s"} · paper`
+								: `${positions.length} open position${positions.length === 1 ? "" : "s"}${modeNote(executionMode)}`
 							: "account unavailable"
 					}
 				/>
@@ -360,8 +401,13 @@ export default async function DashboardPage({
 				/>
 				<Stat
 					label="Mode"
-					value={account ? account.mode.toUpperCase() : "—"}
-					meta={<Badge tone="ghost">no keys · no live money</Badge>}
+					value={executionMode.ok ? executionMode.data.toUpperCase() : "UNKNOWN"}
+					title={
+						executionMode.ok
+							? `Execution mode · ${executionMode.data} · derived by the API, never by this page`
+							: `Execution mode unavailable · ${executionMode.error.code}: ${executionMode.error.message}`
+					}
+					meta={executionMode.ok ? "server-derived · no keys" : "mode not reported"}
 				/>
 			</section>
 
@@ -374,7 +420,7 @@ export default async function DashboardPage({
 							: `equity withheld · ${markCountLabel(unpricedCount)}`
 						: "unavailable"
 				}
-				action={<SectionBadge live={live} />}
+				action={<SectionBadge mode={executionMode} />}
 				footer={
 					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
 						<span>
@@ -536,8 +582,8 @@ export default async function DashboardPage({
 				<div className="stack">
 					<Panel
 						title="Open positions"
-						sub={`${positions.length} from the ledger · paper`}
-						action={<><SectionBadge live={live} /><ButtonLink href="/positions" size="sm">All positions</ButtonLink></>}
+						sub={`${positions.length} from the ledger${modeNote(executionMode)}`}
+						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/positions" size="sm">All positions</ButtonLink></>}
 						flush
 					>
 						{!accountResult.ok ? (
@@ -601,7 +647,7 @@ export default async function DashboardPage({
 					<Panel
 						title="Strategies"
 						sub={`${strategyRows.filter((row) => row.status === "active").length} active · scheduler-owned`}
-						action={<><SectionBadge live={live} /><ButtonLink href="/strategies" size="sm">All strategies</ButtonLink></>}
+						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/strategies" size="sm">All strategies</ButtonLink></>}
 						flush
 					>
 						{!strategies.ok ? (
@@ -610,7 +656,7 @@ export default async function DashboardPage({
 							<div className="panel-body">
 								<div className="note">
 									No strategies yet. The platform ships no alpha; create a rule set or draw a
-									graph, then watch it run in paper.
+									graph, then watch it run{modeNote(executionMode)}.
 								</div>
 								<div className="row mt-12">
 									<ButtonLink href="/strategies" variant="primary">Create a strategy</ButtonLink>
@@ -639,7 +685,7 @@ export default async function DashboardPage({
 					<Panel
 						title="Account history"
 						sub="No equity snapshots are stored yet"
-						action={<SectionBadge live={live} />}
+						action={<SectionBadge mode={executionMode} />}
 					>
 						<div className="note">
 							The ledger is the source of truth, but ezCHAIN does not persist a periodic
@@ -656,8 +702,10 @@ export default async function DashboardPage({
 				<div className="stack">
 					<Panel
 						title="Risk"
-						sub={limitRows ? "server limits · paper" : "limits unavailable"}
-						action={<><SectionBadge live={live} /><ButtonLink href="/risk" size="sm">Risk</ButtonLink></>}
+						sub={
+							limitRows ? `server limits${modeNote(executionMode)}` : "limits unavailable"
+						}
+						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/risk" size="sm">Risk</ButtonLink></>}
 					>
 						{!limits.ok ? (
 							<div className="panel-body">{failure(limits)}</div>
@@ -684,7 +732,7 @@ export default async function DashboardPage({
 					<Panel
 						title="Alerts"
 						sub={alerts.ok ? `${alertRows.length} derived` : "unavailable"}
-						action={<><SectionBadge live={live} /><ButtonLink href="/alerts" size="sm">All</ButtonLink></>}
+						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/alerts" size="sm">All</ButtonLink></>}
 						flush
 					>
 						{!alerts.ok ? (
@@ -717,7 +765,7 @@ export default async function DashboardPage({
 									? "stale source"
 									: `${sourceLabel(marketSource?.name)} · ${ageLabel(marketSource?.observed_at)}`
 						}
-						action={<><SectionBadge live={live} /><ButtonLink href="/markets" size="sm">Markets</ButtonLink></>}
+						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/markets" size="sm">Markets</ButtonLink></>}
 						flush
 					>
 						{!marketsOutcome.ok ? (
@@ -751,7 +799,7 @@ export default async function DashboardPage({
 					<Panel
 						title="Chains"
 						sub={chainCovered === null ? `${chainTotal} registered` : `${chainCovered}/${chainTotal} with fresh data`}
-						action={<><SectionBadge live={live} /><ButtonLink href="/chains" size="sm">Coverage</ButtonLink></>}
+						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/chains" size="sm">Coverage</ButtonLink></>}
 					>
 						{!chainsOutcome.ok ? (
 							failure(chainsOutcome)
@@ -773,7 +821,7 @@ export default async function DashboardPage({
 			<Panel
 				title="Recent paper orders"
 				sub={orders.ok ? `${orderRows.length} newest` : "unavailable"}
-				action={<><SectionBadge live={live} /><ButtonLink href="/ledger" size="sm">Activity</ButtonLink></>}
+				action={<><SectionBadge mode={executionMode} /><ButtonLink href="/ledger" size="sm">Activity</ButtonLink></>}
 				flush
 				footer="Orders are append-only evidence. A rejection carries its reason code; it is never shown as a fill."
 			>
