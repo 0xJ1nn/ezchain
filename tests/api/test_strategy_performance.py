@@ -25,7 +25,7 @@ from ezchain_api.models import (
 )
 from ezchain_api.routers import account as account_router
 from ezchain_api.routers import strategies
-from ezchain_core import buy_entries, sell_entries
+from ezchain_core import buy_entries, sell_entries, utcnow
 
 CHAIN = "solana"
 TOKEN = "So11111111111111111111111111111111111111112"
@@ -183,7 +183,7 @@ def test_performance_uses_only_the_strategys_own_fills(
             name="Test",
             price_usd=Decimal("1.5"),
             source="dexscreener",
-            observed_at=BASE + timedelta(minutes=10),
+            observed_at=utcnow(),
         )
     )
     session.commit()
@@ -258,7 +258,7 @@ def test_account_and_strategy_agree_on_a_partial_close(
             name="Test",
             price_usd=Decimal("1.5"),
             source="dexscreener",
-            observed_at=BASE + timedelta(minutes=10),
+            observed_at=utcnow(),
         )
     )
     session.commit()
@@ -372,7 +372,7 @@ def test_account_and_strategy_agree_across_a_seeded_random_walk(
         name="Test",
         price_usd=Decimal("10"),
         source="test",
-        observed_at=BASE,
+        observed_at=utcnow(),
     )
     session.add(snapshot)
     session.commit()
@@ -387,7 +387,7 @@ def test_account_and_strategy_agree_across_a_seeded_random_walk(
         drift = Decimal(str(rng.uniform(-0.04, 0.04)))
         price = max(Decimal("0.5"), (price * (Decimal(1) + drift)).quantize(Decimal("0.0001")))
         snapshot.price_usd = price
-        snapshot.observed_at = BASE + timedelta(minutes=step + 1)
+        snapshot.observed_at = utcnow()
         session.commit()
 
         at = BASE + timedelta(minutes=step + 1)
@@ -460,6 +460,44 @@ def test_account_and_strategy_agree_across_a_seeded_random_walk(
 
     fills = session.scalar(select(func.count()).select_from(PaperFillRow))
     assert fills == steps
+
+
+def test_stale_mark_prices_nothing_on_strategy_performance(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """The strategy read applies the account read's freshness policy to its mark."""
+    own = strategy(session, "own")
+    fill(
+        session,
+        strategy_id=own.id,
+        side="buy",
+        quantity="10",
+        price="1",
+        notional="10",
+        fee="0.1",
+        at=BASE,
+    )
+    session.add(
+        MarketSnapshotRow(
+            chain=CHAIN,
+            token_address=TOKEN,
+            symbol="TEST",
+            name="Test",
+            price_usd=Decimal("2"),
+            source="dexscreener",
+            observed_at=utcnow() - timedelta(seconds=7200),
+        )
+    )
+    session.commit()
+
+    body = client_for(strategies.router).get(f"/api/v1/strategies/{own.id}/performance").json()
+
+    assert body["mark_usd"] is None
+    assert body["market_value_usd"] is None
+    assert body["unrealized_pnl_usd"] is None
+    assert body["complete"] is False
+    assert body["marks_unknown"] is True
+    assert all(point["value"] is None for point in body["equity_series"][1:])
 
 
 def test_unknown_strategy_is_404(client_for: Callable[..., TestClient]) -> None:

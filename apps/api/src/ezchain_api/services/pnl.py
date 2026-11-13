@@ -24,6 +24,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ezchain_core import MARK_FUTURE_SKEW_SECONDS, MarkStatus
+
 from ..models import LedgerEntryRow, MarketSnapshotRow
 
 POSITION_PREFIX = "position:"
@@ -85,12 +87,61 @@ class Mark:
     symbol: str
 
 
-def mark_index(session: Session) -> dict[TokenKey, Mark]:
-    """One mark per (chain, token) from the same table for every read model."""
+def mark_status(
+    price_usd: Decimal | None,
+    observed_at: datetime | None,
+    *,
+    max_age_seconds: float,
+    now: datetime | None = None,
+) -> MarkStatus:
+    """The freshness verdict for one mark, shared with the account read model.
+
+    ``unknown`` when the price or its observation time is missing, or when the
+    observation runs beyond the tolerated clock skew; ``future`` within the skew;
+    ``stale`` past the budget; ``fresh`` otherwise. Only ``fresh`` and ``future`` may
+    price a valuation (CONTRACT I3): the account read and the performance/attribution
+    surfaces reach this one verdict, so they cannot disagree about the same mark.
+    """
+    if price_usd is None or observed_at is None:
+        return "unknown"
+    stamp = _aware(observed_at)
+    assert stamp is not None
+    current = now or datetime.now(UTC)
+    skew = (stamp - current).total_seconds()
+    if skew > MARK_FUTURE_SKEW_SECONDS:
+        return "unknown"
+    if skew > 0:
+        return "future"
+    if -skew > max_age_seconds:
+        return "stale"
+    return "fresh"
+
+
+def mark_index(
+    session: Session,
+    *,
+    max_age_seconds: float | None = None,
+    now: datetime | None = None,
+) -> dict[TokenKey, Mark]:
+    """One mark per (chain, token) from the same table for every read model.
+
+    ``max_age_seconds`` applies the account read's freshness policy. A stale or
+    unknown mark keeps its symbol but carries no price, so :func:`project` and
+    :func:`performance_series` withhold the valuation instead of pricing it from an old
+    or untrusted observation (CONTRACT I3). ``None`` keeps the stored price for callers
+    that only need the row and never derive a money number from it.
+    """
     index: dict[TokenKey, Mark] = {}
     for row in session.scalars(select(MarketSnapshotRow)):
+        price_usd = None if row.price_usd is None else Decimal(str(row.price_usd))
+        if max_age_seconds is not None:
+            status = mark_status(
+                price_usd, row.observed_at, max_age_seconds=max_age_seconds, now=now
+            )
+            if status in ("stale", "unknown"):
+                price_usd = None
         index[(row.chain, row.token_address)] = Mark(
-            price_usd=None if row.price_usd is None else Decimal(str(row.price_usd)),
+            price_usd=price_usd,
             symbol=row.symbol or row.token_address,
         )
     return index
@@ -521,6 +572,7 @@ __all__ = [
     "ledger_lines",
     "lines",
     "mark_index",
+    "mark_status",
     "num",
     "performance_series",
     "prices",

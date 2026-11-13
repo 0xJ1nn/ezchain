@@ -277,6 +277,60 @@ def test_unknown_mark_and_undefined_win_rate_are_null(
     assert token["market_value_usd"] is None
 
 
+def test_stale_mark_never_prices_any_read_surface(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """A stale mark prices nothing, on the account and on the performance surfaces.
+
+    The readiness probe: a 7200s-old mark under the 60s budget. Accounting for it would
+    value the position at 150 and report equity 10050 from an observation the server will
+    not vouch for. The account read already withholds it (#277); performance and
+    attribution must refuse the same mark, and the series must show the gap, never a
+    point priced from the stale number.
+    """
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="50",
+        price="2",
+        fee="0",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        price="3",
+        observed_at=utcnow() - timedelta(seconds=7200),
+    )
+
+    account = client_for(paper_router.router).get("/api/v1/paper/account").json()
+    performance = _client(client_for).get("/api/v1/paper/performance").json()
+    attribution = _client(client_for).get("/api/v1/paper/attribution").json()
+
+    for body in (account, performance):
+        assert body["equity_usd"] is None
+        assert body["complete"] is False
+        assert body["marks_unknown"] is True
+    assert performance["unrealized_usd"] is None
+
+    point = performance["equity_series"][-1]
+    assert point["value"] is None
+    assert point["equity_usd"] is None
+    assert all(row["value"] != "10050" for row in performance["equity_series"])
+    assert performance["drawdown_series"][-1]["drawdown_pct"] is None
+
+    token = next(row for row in performance["by_token"] if row["token_address"] == TOKEN_A)
+    assert token["mark_usd"] is None
+    assert token["market_value_usd"] is None
+    assert token["unrealized_usd"] is None
+    assert attribution[0]["mark_usd"] is None
+    assert attribution[0]["market_value_usd"] is None
+
+
 def test_empty_account_reports_defined_zero_and_no_alerts(
     client_for: Callable[..., TestClient], session: Session
 ) -> None:
