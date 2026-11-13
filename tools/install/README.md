@@ -10,12 +10,22 @@ installer drives.
 
 ```bash
 # on the server, as a user with sudo
-curl -fsSLO https://github.com/0xJ1nn/ezchain/releases/download/<tag>/ezchain-<tag>.tar.gz
-curl -fsSLO https://github.com/0xJ1nn/ezchain/releases/download/<tag>/ezchain-<tag>.tar.gz.sha256
+TAG=v0.2.0
+curl -fsSLO "https://github.com/0xJ1nn/ezchain/releases/download/${TAG}/ezchain-${TAG}.tar.gz"
+curl -fsSLO "https://github.com/0xJ1nn/ezchain/releases/download/${TAG}/ezchain-${TAG}.tar.gz.sha256"
 
-tar -xzf ezchain-<tag>.tar.gz
-./ezchain-<tag>/tools/install/install.sh --version <tag>
+# verify the archive before anything is extracted or executed; the checksum file
+# names the archive, so a digest for some other file is refused
+sha256sum -c "ezchain-${TAG}.tar.gz.sha256"
+
+tar -xzf "ezchain-${TAG}.tar.gz"
+"./ezchain-${TAG}/tools/install/install.sh" --version "$TAG"
 ```
+
+The digest comes from the same HTTPS origin as the archive (GitHub releases), so it
+proves the download was not corrupted or altered in transit; it cannot defend against a
+compromised release host, which could replace both files. The installer repeats this
+verification itself and refuses a mismatch.
 
 Or run it from a checkout of the tagged release:
 
@@ -148,9 +158,10 @@ tests/install/test_container_install.sh
 
 It starts a privileged Docker-in-Docker container, runs the installer against a locally
 packaged release, checks `/healthz`, `/readyz` and the denied operational paths, re-runs
-the installer, and verifies the secrets were not regenerated and a seeded database row
-survived. Docker is required; without a daemon it prints `SKIP` and the container run is
-not verified.
+the installer at the same tag, and then installs a second tag: it verifies the release
+symlink moved, the backup directory exists, and the secrets and a seeded database row
+survived the upgrade. Docker is required; without a daemon it prints `SKIP` and the
+container run is not verified.
 
 Deployment topology and the manual path are in
 [`docs/INFRA.md`](../../docs/INFRA.md); the runnable stack is

@@ -342,8 +342,13 @@ download_release() {
   if [ -n "$ARCHIVE_SHA256" ]; then
     expected="$(lower "$ARCHIVE_SHA256")"
   elif [ -f "${dest}.sha256" ]; then
-    expected="$(awk -v f="$archive_name" '$2==f {print $1; exit}' "${dest}.sha256")"
-    [ -n "$expected" ] || expected="$(awk 'NR==1{print $1}' "${dest}.sha256")"
+    # The digest must name this archive. A bare digest, or one written for a
+    # different file, binds to nothing and is refused.
+    expected="$(awk -v f="$archive_name" '
+      $2 == f || $2 == "*" f || $2 == "./" f {print $1; exit}
+    ' "${dest}.sha256")"
+    [ -n "$expected" ] ||
+      die "the checksum file does not name ${archive_name}; refusing an unbound digest"
     expected="$(lower "$expected")"
   else
     die "no checksum available; publish ${archive_name}.sha256 or pass --sha256"
@@ -523,6 +528,8 @@ backup_before_upgrade() {
   chmod 700 "$backup_dir"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   if compose_at "$old_dir/infra" ps -q postgres 2>/dev/null | grep -q .; then
+    # The single quotes are intentional: the variables expand inside the container.
+    # shellcheck disable=SC2016
     if compose_at "$old_dir/infra" exec -T postgres sh -c \
       'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup_dir/ezchain-${stamp}.dump"; then
       chmod 600 "$backup_dir/ezchain-${stamp}.dump"

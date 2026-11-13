@@ -209,6 +209,28 @@ class _QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def serve_release(tmp_path: Path) -> tuple[ThreadingHTTPServer, str]:
+    handler = functools.partial(_QuietHandler, directory=str(tmp_path / "releases"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def install_from_publication(
+    tmp_path: Path, base: str
+) -> subprocess.CompletedProcess[str]:
+    return run_installer(
+        "--version",
+        TAG,
+        "--base-url",
+        base,
+        "--dir",
+        str(tmp_path / "install"),
+        "--no-start",
+        env={"NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"},
+    )
+
+
 def test_downloaded_release_is_verified_against_its_checksum(tmp_path: Path) -> None:
     archive, digest = make_release(tmp_path)
     published = tmp_path / "releases" / TAG
@@ -217,23 +239,10 @@ def test_downloaded_release_is_verified_against_its_checksum(tmp_path: Path) -> 
     (published / name).write_bytes(archive.read_bytes())
     (published / f"{name}.sha256").write_text(f"{digest}  {name}\n", encoding="utf-8")
 
-    handler = functools.partial(_QuietHandler, directory=str(tmp_path / "releases"))
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{server.server_address[1]}"
+    server, base = serve_release(tmp_path)
     try:
         target = tmp_path / "install"
-        result = run_installer(
-            "--version",
-            TAG,
-            "--base-url",
-            base,
-            "--dir",
-            str(target),
-            "--no-start",
-            env={"NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"},
-        )
+        result = install_from_publication(tmp_path, base)
     finally:
         server.shutdown()
         server.server_close()
@@ -241,6 +250,62 @@ def test_downloaded_release_is_verified_against_its_checksum(tmp_path: Path) -> 
     assert result.returncode == 0, result.stderr
     assert f"verified SHA-256 {digest}" in result.stdout
     assert (target / "current" / "infra" / "compose.yaml").is_file()
+
+
+def publish(
+    tmp_path: Path, archive: Path, checksum_text: str
+) -> None:
+    published = tmp_path / "releases" / TAG
+    published.mkdir(parents=True, exist_ok=True)
+    name = f"ezchain-{TAG}.tar.gz"
+    (published / name).write_bytes(archive.read_bytes())
+    (published / f"{name}.sha256").write_text(checksum_text, encoding="utf-8")
+
+
+def test_checksum_naming_a_different_file_is_refused(tmp_path: Path) -> None:
+    archive, digest = make_release(tmp_path)
+    publish(tmp_path, archive, f"{digest}  ezchain-other.tar.gz\n")
+
+    server, base = serve_release(tmp_path)
+    try:
+        result = install_from_publication(tmp_path, base)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert result.returncode != 0
+    assert "does not name" in result.stderr
+    assert not (tmp_path / "install" / "ezchain.env").exists()
+
+
+def test_checksum_without_a_bound_filename_is_refused(tmp_path: Path) -> None:
+    archive, digest = make_release(tmp_path)
+    publish(tmp_path, archive, f"{digest}\n")
+
+    server, base = serve_release(tmp_path)
+    try:
+        result = install_from_publication(tmp_path, base)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert result.returncode != 0
+    assert "does not name" in result.stderr
+
+
+def test_checksum_with_a_binary_marker_names_the_archive(tmp_path: Path) -> None:
+    archive, digest = make_release(tmp_path)
+    name = f"ezchain-{TAG}.tar.gz"
+    publish(tmp_path, archive, f"{digest} *{name}\n")
+
+    server, base = serve_release(tmp_path)
+    try:
+        result = install_from_publication(tmp_path, base)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_archive_with_parent_traversal_is_rejected(tmp_path: Path) -> None:
