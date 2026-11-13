@@ -7,6 +7,8 @@ them only to a loopback client or to a request carrying the deployment token.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, select, text
@@ -17,6 +19,7 @@ from ezchain_adapters import CHAINS
 from ..config import Settings, get_settings
 from ..db import database_revision, head_revision
 from ..deps import get_session
+from ..mode import mode_status
 from ..models import PaperFillRow, PaperOrderRow
 from ..observability import HTTP_METRICS, render_prometheus
 from ..schemas import ChainOut, KillSwitchIn, KillSwitchOut
@@ -37,9 +40,13 @@ def _rollback_quietly(session: Session) -> None:
 
 
 @router.get("/healthz")
-def healthz() -> dict[str, str]:
-    """Liveness: the process is up. Never touches the database."""
-    return {"status": "ok"}
+def healthz(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    """Liveness: the process is up. Never touches the database.
+
+    The mode is the same derived value the capabilities document reports, so a probe and
+    an agent cannot disagree about whether this deployment can trade.
+    """
+    return {"status": "ok", "mode": mode_status(settings)}
 
 
 @router.get("/readyz")

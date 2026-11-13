@@ -20,6 +20,7 @@ from ezchain_engine import PluginRegistry
 
 from ..config import Settings, get_settings
 from ..deps import get_plugin_registry, get_session
+from ..mode import mode_status
 from ..models import StrategyRow
 from ..services import account_read, api_keys, paper, reconciliation
 from ..services.system_flags import read_kill_switch
@@ -93,12 +94,7 @@ def capabilities(
             "scopes": sorted(principal.scopes),
             "legacy": principal.legacy,
         },
-        "mode": {
-            "execution": settings.execution_mode,
-            "data": settings.data_mode,
-            "live_available": False,
-            "live_blocked_reason": "the live executor is not shipped",
-        },
+        "mode": {**mode_status(settings), "data": settings.data_mode},
         "auth": {
             "reads": (
                 "Authorization: Bearer <agent-key>" if settings.require_auth_for_reads else "open"
@@ -131,11 +127,7 @@ def state(
     report = reconciliation.reconciliation(session)
     return {
         "as_of": utcnow().isoformat(),
-        "mode": {
-            "execution": settings.execution_mode,
-            "data": settings.data_mode,
-            "live_available": False,
-        },
+        "mode": {**mode_status(settings), "data": settings.data_mode},
         "kill_switch": read_kill_switch(session, settings).to_dict(),
         "risk": account_read.limits(session, settings),
         "account": account,

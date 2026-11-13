@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ezchain_api.config import Settings
+from ezchain_api.config import Settings, get_settings
 from ezchain_api.db import head_revision
 from ezchain_api.deps import get_session
 from ezchain_api.models import PaperOrderRow
@@ -205,11 +205,13 @@ def system_client(session: Session) -> TestClient:
 def test_healthz_never_touches_the_database() -> None:
     app = FastAPI()
     app.include_router(system.router)
+    app.dependency_overrides[get_settings] = lambda: Settings(environment="test")
 
     response = TestClient(app).get("/healthz")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
+    assert response.json()["mode"]["execution"] == "paper"
 
 
 def test_readyz_requires_the_migration_head(session: Session) -> None:

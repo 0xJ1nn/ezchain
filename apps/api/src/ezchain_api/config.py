@@ -53,9 +53,13 @@ class Settings(BaseSettings):
     trusted_proxy_cidrs: list[str] = Field(default_factory=list)
 
     data_mode: Literal["live", "fixture"] = "live"
-    # Server-derived execution mode. Live is refused until the executor exists; a client
-    # can never request a mode on an order or a tool call.
+    # Server-derived execution mode. A client can never request a mode on an order or a
+    # tool call. Live requires a signed gate record for this exact build (see mode.py).
     execution_mode: Literal["paper", "live"] = "paper"
+    # Provenance the live gate record is bound to. A live start refuses a placeholder.
+    build_hash: str = Field(default="", max_length=64)
+    live_gate_record: str | None = None
+    live_gate_key: SecretStr | None = None
     engine_inline: bool = True
     engine_interval_seconds: int = 30
     # Seed for the persisted operator kill switch when ``system_flags`` has no row yet.
@@ -120,7 +124,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
 
     @field_validator(
-        "api_token", "api_key_pepper", "provider_key_fingerprint_pepper", mode="before"
+        "api_token",
+        "api_key_pepper",
+        "provider_key_fingerprint_pepper",
+        "live_gate_key",
+        mode="before",
     )
     @classmethod
     def _blank_secret_is_unset(cls, value: object) -> object:
@@ -165,9 +173,14 @@ class Settings(BaseSettings):
     def _validate_production(self) -> Settings:
         """Refuse an unsafe boot, naming the exact configuration key."""
         if self.execution_mode == "live":
-            raise ValueError(
-                "EZCHAIN_EXECUTION_MODE=live is not available: the live executor is not shipped"
-            )
+            # One derivation decides the mode. A live start without a signed record for
+            # this build refuses with the record's name, not a stack trace.
+            from .mode import LiveGateRefused, derive_execution_mode
+
+            try:
+                derive_execution_mode(self)
+            except LiveGateRefused as exc:
+                raise ValueError(str(exc)) from None
         if self.environment != "prod":
             return self
 
