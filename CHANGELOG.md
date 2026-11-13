@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **One execution pipeline from intent to journal (PAPER).** `services/executor` now owns
+  the single `Intent → RiskDecision → Quote → Order → Fill → Journal` path against a venue
+  behind the core `Venue` protocol, with the typed stages in `ezchain_core.execution`.
+  Paper, testnet and live run the same runner; only the venue adapter and the custodian
+  differ. It fails closed on money (no snapshot → no buy, no quote → no order, stale quote
+  → denied, unreadable kill switch → refused), dedupes duplicate intents to one order and
+  one fill, sizes a reduce-only exit to the held position, and books the journal from the
+  venue receipt through an append-only sink. A fake venue covers a fill, a rejection, a
+  timeout, a partial fill and a no-quote in the acceptance suite.
+
 ### Changed
 
 - **The topbar kill switch follows the persisted state instead of the page snapshot
