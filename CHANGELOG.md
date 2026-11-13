@@ -71,6 +71,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `size_sol`; consumers must read `direction`, `price` and `size` instead.** A firehose
   observation now records and replays through `services/ingest` unchanged, with age derived
   from the reader's clock.
+- **A stale source fails closed and raises one alert per transition (DATA).** Freshness is
+  now a per-source-class policy (`ezchain_core.freshness`: `mark`, `quote`, `candle`,
+  `feed`) that classifies a read as `fresh`, `stale`, `unknown` or `future`, and only a
+  fresh read prices. The mark path had a hole: `TokenSnapshot.stale` was hardcoded `False`
+  in every production constructor, so `SNAPSHOT_STALE` could only fire from a test. The
+  order gate now derives staleness from the mark's own observation age at
+  `RiskLimits.max_mark_age_seconds`, and the quote router refuses to build a quote — or to
+  size a sell — from a mark past its budget, answering `SNAPSHOT_STALE` instead of pricing
+  from the last value. Adapter caches no longer re-stamp a cached payload with the read
+  time, so a 15-second-old answer keeps its real age instead of being presented as current.
+  A source that goes stale raises `provider_stale` once per transition, not once per
+  request, and a recovery re-arms the alert. Tests cover stale-on-read, a stale mark during
+  order placement, and recovery.
 
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
   cash now comes from the same Python `Decimal` replay that computes the account's cash,

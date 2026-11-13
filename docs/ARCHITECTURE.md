@@ -163,6 +163,14 @@ so the overview survives a restart; attempt times and error text are process-loc
 with no rows is `no_data`, and an old row is `stale` after
 `max(60s, scan interval + last scan duration + 15s)` — never zero.
 
+**Freshness is per source class.** `ezchain_core.freshness.FreshnessPolicy` bounds a read's
+age by the kind of read (`mark`, `quote`, `candle`, `feed`), and each read is classified as
+`fresh`, `stale`, `unknown` (no observation) or `future` (dated ahead of the clock). Only
+`fresh` prices. A stale mark refuses to price an order instead of handing back its last
+value, and a source that goes stale raises one `provider_stale` alert per transition, not
+one per request. A cached provider payload keeps the time the provider answered it, so a
+re-read cannot re-stamp an old price as current.
+
 ### 4.2 Candle history
 
 Graph strategies need indicator inputs (EMA/RSI/ATR) and a backtest needs bars, so OHLCV

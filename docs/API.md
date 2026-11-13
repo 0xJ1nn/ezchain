@@ -193,9 +193,16 @@ It returns `201` with the stored order. A risk refusal is also a stored order, w
 `status: "rejected"` and a comma-joined `reason`; it is not an HTTP error. The order row
 is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`,
 `POSITION_LIMIT`, `MAX_OPEN_POSITIONS`, `DAILY_LOSS_LIMIT`, `INSUFFICIENT_CASH`,
-`INSUFFICIENT_POSITION`, `PRICE_UNKNOWN`, `QUOTE_STALE`, `MARK_TIMESTAMP_FUTURE`,
+`INSUFFICIENT_POSITION`, `PRICE_UNKNOWN`, `QUOTE_STALE`, `SNAPSHOT_STALE`,
+`MARK_TIMESTAMP_FUTURE`,
 `LIQUIDITY_UNKNOWN`, `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
 `NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ARMED`.
+
+`QUOTE_STALE` and `SNAPSHOT_STALE` mean a price was too old to trust: the venue quote and
+the market mark respectively. `MARK_TIMESTAMP_FUTURE` means a timestamp ran further ahead
+of the clock than the tolerated skew, which is a clock fault rather than fresh evidence.
+None is ever zero-filled or carried forward — a stale source refuses to price, and the
+order row is the record of the refusal.
 
 Every order, including a rejected one, carries an `actor` object recording who placed it.
 The server sets it from the authenticated caller and never from the request body: `actor`

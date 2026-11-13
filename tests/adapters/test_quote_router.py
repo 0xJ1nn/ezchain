@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -27,7 +28,7 @@ from ezchain_adapters import (
     UpstreamError,
 )
 from ezchain_adapters.jupiter import LITE_BASE
-from ezchain_core import PairInfo, Quote, SourceRef, TokenSnapshot, utcnow
+from ezchain_core import FreshnessPolicy, PairInfo, Quote, SourceRef, TokenSnapshot, utcnow
 
 USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 
@@ -91,8 +92,15 @@ class FakeProvider:
 
 
 class FakeDex:
-    def __init__(self, *, price: Decimal | None = Decimal("2")) -> None:
+    def __init__(
+        self,
+        *,
+        price: Decimal | None = Decimal("2"),
+        observed_at: datetime | None = None,
+    ) -> None:
         self.price = price
+        # A test can age the mark to prove the router refuses to price from it.
+        self.observed_at = observed_at
         self.calls: list[tuple[str, str]] = []
 
     async def get_token(self, chain: str, address: str) -> TokenSnapshot:
@@ -110,7 +118,7 @@ class FakeDex:
             price_change_h6=None,
             price_change_h24=None,
             pairs=(PairInfo("p", "uniswap", "USDC", self.price or Decimal(0), None, None, None),),
-            source=SourceRef("dexscreener", None, utcnow()),
+            source=SourceRef("dexscreener", None, self.observed_at or utcnow()),
         )
 
 
@@ -397,3 +405,103 @@ async def test_a_competing_wait_is_refused_before_the_attempt_deadline(monkeypat
     assert caught.value.code == "PROVIDER_BUDGET_EXHAUSTED"
     assert caught.value.http_status == 429
 
+
+async def test_a_stale_mark_refuses_to_price() -> None:
+    """A mark past its budget is not current: the router refuses instead of pricing."""
+    stale = utcnow() - timedelta(seconds=120)
+    with pytest.raises(NoRoute) as caught:
+        await router(dex=FakeDex(price=Decimal("2"), observed_at=stale)).quote(
+            chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+        )
+    assert caught.value.code == "SNAPSHOT_STALE"
+
+
+async def test_a_stale_mark_refuses_to_size_a_sell() -> None:
+    """Sizing from a stale mark is pricing from it, so a sell without a quantity refuses."""
+    stale = utcnow() - timedelta(seconds=120)
+    with pytest.raises(NoRoute):
+        await router(FakeProvider("kyberswap"), dex=FakeDex(observed_at=stale)).quote(
+            chain="base", token_address="0xtoken", side="sell", amount_usd=Decimal("10")
+        )
+
+
+async def test_a_fresh_mark_still_prices() -> None:
+    quote = await router(dex=FakeDex(price=Decimal("2"), observed_at=utcnow())).quote(
+        chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+    )
+    assert quote.kind == "paper_mark"
+    assert quote.amount_out == Decimal("12.5")
+
+
+async def test_the_mark_budget_is_configurable() -> None:
+    aged = utcnow() - timedelta(seconds=45)
+    strict = QuoteRouter(
+        providers=[],
+        dexscreener=FakeDex(price=Decimal("2"), observed_at=aged),  # type: ignore[arg-type]
+        freshness=FreshnessPolicy(max_age_by_class={"mark": 30.0}),
+    )
+    with pytest.raises(NoRoute):
+        await strict.quote(
+            chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+        )
+    lenient = QuoteRouter(
+        providers=[],
+        dexscreener=FakeDex(price=Decimal("2"), observed_at=aged),  # type: ignore[arg-type]
+        freshness=FreshnessPolicy(max_age_by_class={"mark": 60.0}),
+    )
+    quote = await lenient.quote(
+        chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+    )
+    assert quote.kind == "paper_mark"
+
+
+async def test_a_stale_mark_alerts_once_per_transition() -> None:
+    stale = utcnow() - timedelta(seconds=120)
+    router_ = router(dex=FakeDex(price=Decimal("2"), observed_at=stale))
+    for _ in range(3):
+        with pytest.raises(NoRoute):
+            await router_.quote(
+                chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+            )
+    alerts = router_.stale_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].type == "provider_stale"
+    assert alerts[0].entity == "mark:blast"
+    # Drained once; a repeat read of the same outage raises nothing new.
+    assert router_.stale_alerts() == ()
+    with pytest.raises(NoRoute):
+        await router_.quote(
+            chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+        )
+    assert router_.stale_alerts() == ()
+
+
+async def test_recovery_lets_the_next_outage_alert_again() -> None:
+    stale = utcnow() - timedelta(seconds=120)
+    dex = FakeDex(price=Decimal("2"), observed_at=stale)
+    router_ = router(dex=dex)
+    with pytest.raises(NoRoute):
+        await router_.quote(
+            chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+        )
+    assert len(router_.stale_alerts()) == 1
+    dex.observed_at = utcnow()
+    quote = await router_.quote(
+        chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+    )
+    assert quote.kind == "paper_mark"
+    dex.observed_at = stale
+    with pytest.raises(NoRoute):
+        await router_.quote(
+            chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+        )
+    assert len(router_.stale_alerts()) == 1
+
+
+async def test_a_future_dated_mark_is_left_to_the_risk_gate() -> None:
+    """A future mark is a clock fault, named by the risk gate, not a stale-mark refusal."""
+    ahead = utcnow() + timedelta(hours=1)
+    quote = await router(dex=FakeDex(price=Decimal("2"), observed_at=ahead)).quote(
+        chain="blast", token_address="0xtoken", side="buy", amount_usd=Decimal("25")
+    )
+    assert quote.kind == "paper_mark"

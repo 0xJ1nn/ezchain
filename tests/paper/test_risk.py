@@ -413,3 +413,41 @@ def test_reduce_only_still_rejects_a_zero_amount() -> None:
     )
     assert allowed is False
     assert reasons == ("INVALID_AMOUNT",)
+
+
+def test_a_mark_older_than_its_own_budget_denies_even_when_the_flag_is_unset() -> None:
+    """``snapshot.stale`` can be forgotten; the mark's own age cannot."""
+    stale_mark = utcnow() - timedelta(seconds=120)
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(observed_at=stale_mark),
+    )
+    assert allowed is False
+    assert "SNAPSHOT_STALE" in reasons
+
+
+def test_a_fresh_mark_passes_the_mark_age_gate() -> None:
+    allowed, reasons = evaluate(snapshot=make_snapshot(observed_at=utcnow()))
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_the_mark_budget_is_its_own_limit_not_the_quote_budget() -> None:
+    aged = utcnow() - timedelta(seconds=45)
+    limits = RiskLimits(max_quote_age_seconds=30.0, max_mark_age_seconds=60.0)
+    allowed, reasons = evaluate(
+        snapshot=make_snapshot(observed_at=aged),
+        limits=limits,
+    )
+    assert allowed is True
+    assert reasons == ()
+
+
+def test_a_reduce_only_exit_is_not_blocked_by_a_stale_mark() -> None:
+    """An exit is priced by its executable sell quote; the feed cannot trap it."""
+    allowed, reasons = evaluate(
+        req=request(side="sell", amount="100", reduce_only=True),
+        quote=make_quote(side="sell", amount_out="100", amount_in="50", kind="jupiter"),
+        snapshot=make_snapshot(observed_at=utcnow() - timedelta(seconds=120), stale=True),
+    )
+    assert allowed is True
+    assert reasons == ()

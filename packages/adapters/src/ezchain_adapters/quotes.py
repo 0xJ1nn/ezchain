@@ -28,7 +28,17 @@ from typing import Any, ClassVar, Protocol, cast
 
 import httpx
 
-from ezchain_core import DEFAULT_SLIPPAGE_BPS, Quote, QuoteKind, Side, SourceRef, utcnow
+from ezchain_core import (
+    DEFAULT_SLIPPAGE_BPS,
+    FreshnessPolicy,
+    Quote,
+    QuoteKind,
+    Side,
+    SourceFreshness,
+    SourceRef,
+    utcnow,
+)
+from ezchain_core.freshness import ProviderStaleAlert
 
 from .breaker import CircuitBreaker
 from .cache import BoundedTTLCache
@@ -237,12 +247,28 @@ class QuoteRouter:
     """Walk one chain's ladder and return the first quote that can also be exited."""
 
     def __init__(
-        self, *, providers: Iterable[QuoteProvider], dexscreener: DexScreenerClient
+        self,
+        *,
+        providers: Iterable[QuoteProvider],
+        dexscreener: DexScreenerClient,
+        freshness: FreshnessPolicy | None = None,
     ) -> None:
         self._providers: dict[str, QuoteProvider] = {
             provider.kind: provider for provider in providers
         }
         self._dexscreener = dexscreener
+        self._freshness = freshness or FreshnessPolicy()
+        # One tracker per source entity, so a refusal raises ``provider_stale`` on the
+        # fresh->stale edge only and an operator sees one alert per outage, not per order.
+        self._sources = SourceFreshness(self._freshness)
+
+    @property
+    def freshness(self) -> FreshnessPolicy:
+        return self._freshness
+
+    def stale_alerts(self) -> tuple[ProviderStaleAlert, ...]:
+        """Alerts raised since the last drain, for the caller's alert surface."""
+        return self._sources.drain()
 
     async def quote(
         self,
@@ -367,17 +393,43 @@ class QuoteRouter:
         self, meta: ChainMeta, token_address: str, amount_usd: Decimal
     ) -> Decimal:
         snapshot = await self._dexscreener.get_token(meta.id, token_address)
+        # Sizing a sell from the mark is still pricing from it, so a stale mark cannot
+        # pick the quantity. A future-dated mark is a clock fault the risk gate names
+        # (MARK_TIMESTAMP_FUTURE); this path only refuses a mark that is genuinely old.
         price = snapshot.price_usd
         if price is None or price <= 0:
             raise NoRoute("sell requires a positive price")
+        verdict = self._freshness.classify(snapshot.source)
+        if verdict.status == "stale":
+            raise NoRoute(
+                "sell requires a fresh price",
+                detail=f"mark freshness: {verdict.status}",
+                code="SNAPSHOT_STALE",
+            )
         return amount_usd / price
 
     async def _paper_mark(self, request: QuoteRequest) -> Quote:
-        """The capped DexScreener mark for chains with no keyless executable source."""
+        """The capped DexScreener mark for chains with no keyless executable source.
+
+        A mark prices an order, so it obeys the same fail-closed rule as an executable
+        quote: past its freshness budget the mark is not current, and the router refuses
+        to price from it instead of handing back the last value as a live price.
+        """
         snapshot = await self._dexscreener.get_token(request.chain.id, request.token_address)
+        entity = _mark_entity(request.chain.id)
+        verdict = self._freshness.classify(snapshot.source)
+        # Record the read so an outage raises one alert on the transition edge, even
+        # though the refusal below is what the caller actually sees.
+        self._sources.observe(entity, snapshot.source)
         price = snapshot.price_usd
         if price is None or price <= 0:
             raise NoRoute("no executable paper mark")
+        if verdict.status == "stale":
+            raise NoRoute(
+                "no executable paper mark",
+                detail=f"mark freshness: {verdict.status}",
+                code="SNAPSHOT_STALE",
+            )
         if request.side == "buy":
             amount_in = request.amount_usd
             amount_out = request.amount_usd / price
@@ -415,3 +467,8 @@ def _stable_symbol(chain: ChainMeta) -> str:
     """The stable leg's label for a mark; chains without one quote against USDC."""
     asset = chain.quote_asset
     return asset.symbol if asset is not None else "USDC"
+
+
+def _mark_entity(chain: str) -> str:
+    """One dedupe entity per chain mark source, so an outage is not one alert per token."""
+    return f"mark:{chain}"

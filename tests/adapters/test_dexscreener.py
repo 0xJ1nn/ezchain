@@ -10,7 +10,7 @@ import asyncio
 import copy
 import re
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -557,3 +557,45 @@ def test_snapshot_fails_closed_when_quote_side_has_no_native_price() -> None:
     assert meta is not None
     with pytest.raises(NotFound):
         snapshot_from_pairs(meta, "0xquote", [pair])
+
+
+@respx.mock
+async def test_a_cached_payload_keeps_the_time_the_provider_answered(
+    dexscreener: DexScreenerClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """A re-read of a cached payload must not re-stamp it as a current observation."""
+    pairs = load_fixture("token_pairs_ethereum_weth.json")
+    respx.get(f"{BASE}/token-pairs/v1/ethereum/{ETH_WETH}").mock(
+        return_value=httpx.Response(200, json=pairs)
+    )
+    async with dexscreener as client:
+        first = await client.get_token("ethereum", ETH_WETH)
+        second = await client.get_token("ethereum", ETH_WETH)
+    assert second.source is not None
+    assert second.source.observed_at == first.source.observed_at
+
+
+@respx.mock
+async def test_a_mark_carries_the_budget_verdict_at_the_adapter_boundary(
+    dexscreener: DexScreenerClient, load_fixture: Callable[[str], Any]
+) -> None:
+    pairs = load_fixture("token_pairs_ethereum_weth.json")
+    respx.get(f"{BASE}/token-pairs/v1/ethereum/{ETH_WETH}").mock(
+        return_value=httpx.Response(200, json=pairs)
+    )
+    async with dexscreener as client:
+        fresh = await client.get_token("ethereum", ETH_WETH, max_age_seconds=60.0)
+    assert fresh.stale is False
+    # The same payload, answered 120s before a fixed clock, is stale at a 60s budget.
+    answered = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    meta = get_chain("ethereum")
+    assert meta is not None
+    stale = snapshot_from_pairs(
+        meta,
+        ETH_WETH,
+        pairs,
+        observed_at=answered,
+        max_age_seconds=60.0,
+        now=answered + timedelta(seconds=120),
+    )
+    assert stale.stale is True

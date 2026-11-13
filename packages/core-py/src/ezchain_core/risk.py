@@ -11,7 +11,7 @@ unknown mark or a missing route still fails closed with a typed reason.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from .types import (
@@ -49,6 +49,9 @@ class RiskLimits:
     max_quote_age_seconds: float = 60.0
     # An observation dated further ahead than this is a clock fault, never fresh evidence.
     max_future_skew_seconds: float = MARK_FUTURE_SKEW_SECONDS
+    # A mark is a different read from an executable quote, so its budget is separate. A
+    # mark older than this cannot size new risk even when the snapshot flag was unset.
+    max_mark_age_seconds: float = 60.0
     min_liquidity_usd: Decimal = Decimal("10000")
     min_pair_age_minutes: int = 10
     paper_mark_max_order_usd: Decimal = Decimal("250")
@@ -102,6 +105,7 @@ def evaluate_order(
     limits: RiskLimits | None = None,
     now_source: SourceRef | None = None,
     equity_usd: Decimal | None = None,
+    now: datetime | None = None,
 ) -> tuple[bool, tuple[RiskReason, ...]]:
     """Return (allowed, reasons). Unknown or missing data always denies new risk.
 
@@ -234,7 +238,7 @@ def evaluate_order(
     # Quote freshness protects both sides: an exit priced from an old quote is not an
     # exit the trader can trust. It is never waived for a reduce-only sell. Before a
     # quote exists there is nothing to age, so the pre-quote stage skips this gate.
-    now = utcnow()
+    now = now or utcnow()
     source: SourceRef | None
     quote_is_future = False
     if quote is not None:
@@ -291,7 +295,17 @@ def evaluate_order(
             )
         if not snapshot.pairs:
             reasons.append(RiskReason("NO_PAIR"))
-        if snapshot.stale:
+        # The mark must be fresh in its own right. ``snapshot.stale`` is a caller-supplied
+        # flag that can be forgotten; the source age cannot, and a stale mark is stale
+        # whether or not the producer set the flag.
+        mark_source = snapshot.source
+        if (
+            snapshot.price_usd is not None
+            and mark_source is not None
+            and mark_source.is_stale(limits.max_mark_age_seconds, now)
+        ):
+            reasons.append(RiskReason("SNAPSHOT_STALE"))
+        elif snapshot.stale:
             reasons.append(RiskReason("SNAPSHOT_STALE"))
 
     # Pair age sizes new risk. A missing creation time is unknown, never "old"; sells
