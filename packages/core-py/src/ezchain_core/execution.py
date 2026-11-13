@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from .ledger import LedgerEntry, buy_entries, sell_entries
 from .risk import RiskLimits, evaluate_order
@@ -27,6 +27,9 @@ from .types import (
     TokenSnapshot,
     utcnow,
 )
+
+if TYPE_CHECKING:
+    from .signing import SignedTransaction
 
 ExecutionStatus = Literal[
     "filled",
@@ -136,6 +139,9 @@ class Fill:
     fee_usd: Decimal
     status: Literal["filled", "partial", "rejected"] = "filled"
     receipt: Mapping[str, Any] = field(default_factory=dict)
+    # The digest of the exact payload that was signed. A receipt for a signature this
+    # process produced must echo it, so a venue cannot answer with a different fill.
+    transaction_digest: str | None = None
     created_at: datetime = field(default_factory=utcnow)
 
     def __post_init__(self) -> None:
@@ -184,11 +190,16 @@ class ExecutionResult:
 
 @runtime_checkable
 class Venue(Protocol):
-    """The only thing that differs between paper, testnet and live."""
+    """The only thing that differs between paper, testnet and live.
+
+    ``submit`` receives the signed transaction when the executor signed one, so the venue
+    can echo its digest back in the receipt and confirmation can prove it was the same
+    payload.
+    """
 
     async def quote(self, intent: Intent) -> Quote: ...
 
-    async def submit(self, order: Order) -> Fill: ...
+    async def submit(self, order: Order, signed: SignedTransaction | None = None) -> Fill: ...
 
 
 def risk_decision_from_intent(

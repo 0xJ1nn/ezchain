@@ -9,13 +9,20 @@ returns after confirmation.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from ezchain_core import Quote, SourceRef, utcnow
+from ezchain_core import (
+    ApprovedIntent,
+    Quote,
+    SignedTransaction,
+    SourceRef,
+    TransactionPayload,
+    encode_transaction,
+    utcnow,
+)
 from ezchain_core.execution import Fill, Intent, Order
 
 VenueMode = Literal["fill", "reject", "timeout", "partial", "quote_timeout", "no_quote"]
@@ -42,6 +49,9 @@ class FakeVenue:
     quote_calls: int = 0
     submit_calls: int = 0
     submitted: list[Order] = field(default_factory=list)
+    prepare_calls: int = 0
+    prepared: list[ApprovedIntent] = field(default_factory=list)
+    signed: list[SignedTransaction] = field(default_factory=list)
 
     def _source(self) -> SourceRef:
         return SourceRef(
@@ -81,14 +91,38 @@ class FakeVenue:
             source=self._source(),
         )
 
-    async def submit(self, order: Order) -> Fill:
+    async def prepare(self, approved: ApprovedIntent) -> bytes:
+        """Build the unsigned transaction from the approval, and from nothing else."""
+        self.prepare_calls += 1
+        self.prepared.append(approved)
+        return encode_transaction(self.payload_for(approved))
+
+    def payload_for(self, approved: ApprovedIntent) -> TransactionPayload:
+        """The wire payload the fake boundary commits to; tests tamper with it."""
+        return TransactionPayload(
+            cluster=approved.cluster,
+            program_id=approved.program_id,
+            mint=approved.mint,
+            side=approved.side,
+            amount=approved.amount,
+            min_out=approved.min_out,
+            recipient=approved.recipient,
+            idempotency_key=approved.idempotency_key,
+        )
+
+    async def submit(self, order: Order, signed: SignedTransaction | None = None) -> Fill:
         self.submit_calls += 1
         self.submitted.append(order)
+        if signed is not None:
+            self.signed.append(signed)
         if self.mode == "reject":
             raise VenueError("VENUE_REJECTED")
         if self.mode == "timeout":
             await asyncio.sleep(self.timeout_seconds)
-        receipt: Mapping[str, Any] = {"venue": "fake", "order": order.id}
+        receipt: dict[str, Any] = {"venue": "fake", "order": order.id}
+        digest = signed.payload_digest if signed is not None else None
+        if digest is not None:
+            receipt["transaction_digest"] = digest
         if self.mode == "partial":
             quantity = order.quantity * self.partial_ratio
             return Fill(
@@ -100,6 +134,7 @@ class FakeVenue:
                 fee_usd=self.fee_usd * self.partial_ratio,
                 status="partial",
                 receipt=receipt,
+                transaction_digest=digest,
             )
         return Fill(
             order_id=order.id,
@@ -110,6 +145,7 @@ class FakeVenue:
             fee_usd=self.fee_usd,
             status="filled",
             receipt=receipt,
+            transaction_digest=digest,
         )
 
 
