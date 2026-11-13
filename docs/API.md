@@ -114,6 +114,28 @@ optional filters `min_liquidity_usd`, `min_volume_24h_usd`, `min_change_h24`,
 `null`, never zero. A `chain=all` query is a per-chain round robin, not one global
 ranking; `sort_semantics` and `ordered_by` say which ordering was used.
 
+### Market freshness
+
+Every market read model — `/markets` rows, `/markets/stored` rows and the token header —
+reports provenance from the one `MarketEvent` contract, never from the adapter that
+happened to answer:
+
+- `source` is the observation's `SourceRef` (`name`, `url`, `observed_at`).
+- `age_seconds` is that source timestamp measured against the read clock, computed at read
+  time and floored to whole seconds. It is `null` when the read has no usable source.
+- `stale` is the contract's verdict on the same clock (`DEFAULT_STALENESS_SECONDS`, 60s),
+  derived from the same floored age, so the number shown and the verdict always agree.
+
+A row whose persisted source is blank or the writer's `unknown` sentinel has no
+observation behind it: `source` is `null` and `age_seconds` and `stale` are `null` too, so
+an unprovenanced row is never presented as fresh. A source dated further ahead than the
+tolerated clock skew is likewise an unusable unknown (ADR-0036): its `age_seconds` and
+`stale` are `null` rather than a fresh-looking zero. On `/markets/stored` this makes
+`stale` nullable; `/markets` always has a discovery source. The token header keeps its
+boolean `stale` field and adds `age_seconds`; a token with no source reports `stale: false`
+and a null age, while a token dated beyond the tolerated skew reports `stale: true` and a
+null age so it never reads as fresh.
+
 `/quotes` requires `chain`, `token`, `side` (`buy` or `sell`) and `amount_usd`, with an
 optional `quantity`. It returns the quote kind, route, price, fee and the same cost sheet
 the journal records. A non-executable `paper_mark` is labelled as such.

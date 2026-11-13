@@ -27,6 +27,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   names the scopes the API returned after the change, and when the API returns no state
   the launcher says UNKNOWN, names no scope and promises no action it cannot know.
 
+- **Market read models carry the contract's source and read-time age.** `GET
+  /api/v1/markets` rows, `GET /api/v1/markets/stored` rows and the token header now report
+  provenance from the one `MarketEvent` contract instead of whatever the adapter answered.
+  Rows gain `age_seconds` and `stale`, both derived from the row's `SourceRef` against the
+  read clock, plus a structured `source` object on the stored list (it was a bare name).
+  The token header keeps its boolean `stale` but no longer trusts the adapter's flag, and
+  gains `age_seconds`. A row whose persisted source is blank or `unknown` has no
+  observation behind it, so `source`, `age_seconds` and `stale` are all `null` on the
+  stored list rather than a fresh-looking zero; a token with no source reports `stale:
+  false` and a null age. PnL is still replayed from the ledger, never recomputed here.
+
+- **There is one market event, and the pump.fun firehose adapter emits it.** The adapter
+  no longer defines its own `MarketEvent`; `normalize_firehose_event` returns a
+  `FirehoseEvent` carrying the core `ezchain_core.MarketEvent` observation plus this
+  wire's pump.fun extras (kind, signature, slot, token metadata), and its `to_dict`
+  composes the contract's serialiser. Contract fields are read under the contract's names
+  (`pair`, `price`, `size`, `direction`, `units`, `source`, `observed_at`) rather than
+  `mint`/`price_sol`/`size_sol`/`side`; `mint` remains in the serialised body as the wire
+  alias. **The serialised snapshot body no longer contains `side`, `price_sol` or
+  `size_sol`; consumers must read `direction`, `price` and `size` instead.** A firehose
+  observation now records and replays through `services/ingest` unchanged, with age derived
+  from the reader's clock.
+
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
   cash now comes from the same Python `Decimal` replay that computes the account's cash,
   bucketed per wallet in one pass, instead of a SQL `SUM` over the cash account. SQLite

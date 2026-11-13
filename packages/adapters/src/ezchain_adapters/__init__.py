@@ -19,7 +19,7 @@ from .errors import (
     RateLimited,
     UpstreamError,
 )
-from .firehose import FirehoseFeed, MarketEvent, normalize_firehose_event
+from .firehose import FirehoseEvent, FirehoseFeed, normalize_firehose_event
 from .geckoterminal import TIMEFRAMES as CANDLE_TIMEFRAMES
 from .geckoterminal import GeckoTerminalClient, parse_ohlcv, timeframe_seconds
 from .http import JsonApiClient
@@ -59,6 +59,7 @@ __all__ = [
     "CetusClient",
     "DecimalsResolver",
     "DexScreenerClient",
+    "FirehoseEvent",
     "FirehoseFeed",
     "GeckoTerminalClient",
     "HttpQuoteProvider",
@@ -67,7 +68,6 @@ __all__ = [
     "JUPITER_LIMIT",
     "KyberSwapClient",
     "LifiClient",
-    "MarketEvent",
     "NoRoute",
     "NotFound",
     "OsmosisSqsClient",

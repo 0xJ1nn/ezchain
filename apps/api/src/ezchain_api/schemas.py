@@ -47,6 +47,12 @@ class SourceOut(BaseModel):
 
 
 class MarketRowOut(BaseModel):
+    """One live pair row with the contract's own source and read-time age.
+
+    ``age_seconds`` and ``stale`` come from the row's ``SourceRef`` against the read
+    clock, not from a freshness flag the adapter wrote.
+    """
+
     chain: str
     pair_address: str
     dex: str
@@ -64,6 +70,8 @@ class MarketRowOut(BaseModel):
     pair_created_at: str | None = None
     url: str | None = None
     source: SourceOut
+    age_seconds: int | None = None
+    stale: bool | None = None
 
 
 MarketSort = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
@@ -175,7 +183,12 @@ class MarketOverviewOut(BaseModel):
 
 
 class StoredSnapshotOut(BaseModel):
-    """A persisted token observation. Pair identity is carried over from the observation."""
+    """A persisted token observation with the contract's source and read-time age.
+
+    ``source`` is null when the row carries no usable provenance (a blank name or the
+    writer's ``unknown`` sentinel), and then ``age_seconds`` and ``stale`` are null too:
+    there is no observation to age, and an unprovenanced row is never reported as fresh.
+    """
 
     chain: str
     token_address: str
@@ -188,9 +201,10 @@ class StoredSnapshotOut(BaseModel):
     price_change_h1: str | None = None
     price_change_h6: str | None = None
     price_change_h24: str | None = None
-    source: str
+    source: SourceOut | None = None
     observed_at: str
     age_seconds: int | None = None
+    stale: bool | None = None
     pair_address: str | None = None
     dex: str | None = None
     base_token_address: str | None = None
@@ -211,6 +225,13 @@ class PairOut(BaseModel):
 
 
 class TokenOut(BaseModel):
+    """Token header whose source and age come from the contract, not the adapter.
+
+    ``age_seconds`` is measured at read time from ``source``. ``stale`` is the contract's
+    verdict at the same clock; when there is no source the age is null and ``stale`` is
+    ``False`` because the token page treats a missing observation as unknown, not stale.
+    """
+
     chain: str
     address: str
     symbol: str
@@ -226,6 +247,7 @@ class TokenOut(BaseModel):
     safety: dict[str, Any]
     source: SourceOut | None = None
     stale: bool
+    age_seconds: int | None = None
     pair_address: str | None = None
     dex: str | None = None
     base_token_address: str | None = None

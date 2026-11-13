@@ -9,6 +9,7 @@ src = [
     "apps/mcp/src",
     "services/engine/src",
     "services/executor/src",
+    "services/ingest/src",
 ]
 
 [tool.ruff.lint]
@@ -19,10 +20,10 @@ ignore = ["B008"]  # FastAPI uses Depends()/Query() in argument defaults by desi
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
-mypy_path = "packages/core-py/src:packages/adapters/src:packages/sdk-py/src:apps/api/src:apps/mcp/src:services/engine/src:services/executor/src"
+mypy_path = "packages/core-py/src:packages/adapters/src:packages/sdk-py/src:apps/api/src:apps/mcp/src:services/engine/src:services/executor/src:services/ingest/src"
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "packages", "apps/api", "services/engine"]
+testpaths = ["tests", "packages", "apps/api", "services/engine", "services/ingest"]
 python_files = ["test_*.py"]

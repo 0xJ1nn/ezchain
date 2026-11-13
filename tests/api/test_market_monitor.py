@@ -589,7 +589,10 @@ def test_overview_and_stored_endpoints(
     assert body["total"] == 2
     assert rows[0]["liquidity_usd"] == "500000"
     assert all(isinstance(row["price_usd"], str) for row in rows)
-    assert rows[0]["source"] == "dexscreener"
+    assert rows[0]["source"]["name"] == "dexscreener"
+    assert rows[0]["source"]["observed_at"]
+    assert rows[0]["age_seconds"] is not None and rows[0]["age_seconds"] >= 0
+    assert rows[0]["stale"] is False
     assert rows[0]["observed_at"]
     assert {row["pair_address"] for row in rows} == {
         "pair-ethereum-" + ETH_TOKEN,
