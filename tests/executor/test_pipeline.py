@@ -22,7 +22,13 @@ from ezchain_core import (
     TokenSnapshot,
     utcnow,
 )
-from ezchain_executor import ExecutionPipeline, FakeVenue, MemoryJournal
+from ezchain_executor import (
+    ExecutionPipeline,
+    FakeVenue,
+    LocalTransactionSigner,
+    MemoryJournal,
+    SigningBoundary,
+)
 from ezchain_executor.kill_switch import KillSwitch
 from ezchain_executor.pipeline import IntentRejected
 
@@ -553,6 +559,19 @@ class ArmingVenue(FakeVenue):
         return quote
 
 
+@dataclass
+class ArmingKeyRing:
+    """Arms the operator switch while the signed transaction is being produced."""
+
+    state: dict[str, bool] = field(default_factory=lambda: {"armed": False})
+    calls: int = 0
+
+    def sign(self, payload: bytes) -> bytes:
+        self.calls += 1
+        self.state["armed"] = True
+        return b"test-signature"
+
+
 @pytest.mark.asyncio
 async def test_a_stale_quote_is_refused_for_a_sell_with_no_snapshot() -> None:
     # The re-risk stage must consult the quote for an exit as well: a missing snapshot
@@ -693,9 +712,10 @@ async def test_the_kill_switch_is_rechecked_after_the_quote() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_kill_switch_is_rechecked_after_the_position_rebound() -> None:
-    # A sell re-reads its position between pricing and submit. An arm that lands during
-    # that await must refuse the signature, not wait for the next intent.
+async def test_the_kill_switch_does_not_recall_an_exit_armed_after_the_position_rebound() -> None:
+    # The signature-time re-read gates new entries only. A sell re-reads its position
+    # between pricing and submit; an arm that lands during that await must not trap the
+    # exit, which is bounded by the held quantity and cannot open a short.
     state = {"armed": False}
     reads = {"count": 0}
 
@@ -709,11 +729,53 @@ async def test_the_kill_switch_is_rechecked_after_the_position_rebound() -> None
     pipe.position_source = position_source
     result = await pipe.run(sell(), snapshot=make_snapshot())
 
+    assert result.status == "filled"
+    assert result.reason is None
+    assert result.order is not None
+    assert result.order.reduce_only is True
+    assert venue.quote_calls == 1
+    assert venue.submit_calls == 1
+    assert journal.groups != ()
+
+
+@pytest.mark.asyncio
+async def test_an_armed_switch_settles_an_exit_and_refuses_an_entry_in_the_same_pass() -> None:
+    # One armed switch, one pipeline: the sell settles because it only reduces risk,
+    # while the buy is refused. An exit must never be blocked by an entry-only gate.
+    pipe, venue, journal = pipeline(kill_switch=KillSwitch(read=lambda: True))
+
+    exit_result = await pipe.run(sell(), snapshot=make_snapshot(), position=position("10", "20"))
+    entry_result = await pipe.run(buy(idempotency_key="armed-entry"), snapshot=make_snapshot())
+
+    assert exit_result.status == "filled"
+    assert exit_result.order is not None
+    assert exit_result.order.reduce_only is True
+    assert entry_result.status == "denied"
+    assert entry_result.reason == "KILL_SWITCH_ACTIVE"
+    assert venue.submit_calls == 1
+    assert len(journal.groups) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_buy_armed_during_signing_is_refused_before_the_venue_submit() -> None:
+    # Signing awaits too: an arm that lands there must refuse the submit, not the next
+    # intent. The signed transaction is discarded and the venue never sees it.
+    keyring = ArmingKeyRing()
+    pipe, venue, journal = pipeline(kill_switch=KillSwitch(read=lambda: keyring.state["armed"]))
+    pipe.signing = SigningBoundary(
+        cluster="devnet",
+        recipient="Wallet11111111111111111111111111111111111111",
+        program_id="JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+        adapter=venue,
+        signer=LocalTransactionSigner(keyring),
+    )
+
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
     assert result.status == "denied"
     assert result.reason == "KILL_SWITCH_ACTIVE"
-    assert venue.quote_calls == 1
+    assert keyring.calls == 1  # the signature was produced, then discarded
     assert venue.submit_calls == 0
-    assert result.order is None
     assert journal.groups == ()
 
 

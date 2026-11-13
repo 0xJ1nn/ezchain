@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 from ezchain_api.services import paper
+from ezchain_api.services.system_flags import KillSwitch as StoredKillSwitch
 from ezchain_api.services.system_flags import set_kill_switch
 
 from .conftest import FakeDexScreener, make_request, make_snapshot, place
@@ -96,6 +97,67 @@ def test_armed_switch_still_allows_a_reduce_only_exit(session, settings, dex, ju
     fill = session.scalar(select(PaperFillRow).where(PaperFillRow.order_id == exit_order.id))
     assert fill is not None
     assert fill.quantity == Decimal("50")
+
+
+def test_an_unreadable_switch_refuses_a_buy_with_a_typed_code(
+    session, settings, dex, jupiter, monkeypatch
+) -> None:
+    """An unreadable flag is a typed refusal, not a raw exception out of place_order."""
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    journal_before = _ledger_entries(session)
+
+    def unavailable(db, config):  # type: ignore[no-untyped-def]
+        raise RuntimeError("system_flags unreadable")
+
+    monkeypatch.setattr(paper, "read_kill_switch", unavailable)
+
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="100", key="unreadable-pre"),
+    )
+
+    assert order.status == "rejected"
+    assert order.reason == "KILL_SWITCH_UNAVAILABLE"
+    assert dex.calls == 0
+    assert jupiter.calls == []
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
+    assert _ledger_entries(session) == journal_before
+
+
+def test_an_unreadable_switch_in_the_fill_window_refuses_with_a_typed_code(
+    session, settings, dex, jupiter, monkeypatch
+) -> None:
+    """The mid-flight read fails unknown: fail closed with the typed code, book nothing."""
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    journal_before = _ledger_entries(session)
+    released = StoredKillSwitch(active=False, reason=None, updated_at=None)
+    calls = {"n": 0}
+
+    def released_then_unreadable(db, config):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("system_flags unreadable")
+        return released
+
+    monkeypatch.setattr(paper, "read_kill_switch", released_then_unreadable)
+
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(amount_usd="100", key="unreadable-fill"),
+    )
+
+    assert order.status == "rejected"
+    assert order.reason == "KILL_SWITCH_UNAVAILABLE"
+    assert calls["n"] >= 2
+    assert dex.calls >= 1  # the fill-window read happens after the market read
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
+    assert _ledger_entries(session) == journal_before
 
 
 def test_released_switch_allows_an_order(session, settings, dex, jupiter) -> None:

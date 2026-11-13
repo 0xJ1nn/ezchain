@@ -1341,8 +1341,15 @@ async def place_order(
     # held quantity and can never open a short, so exits -- including reduce-only
     # protection arms -- still settle while the switch is armed. The refusal happens
     # before the market read and the quote, so it touches no venue and journals nothing.
-    if payload.side == "buy" and read_kill_switch(session, settings).active:
-        return _reject_new(session, payload, "KILL_SWITCH_ARMED", actor=placed_by)
+    # An unreadable switch fails closed with a typed refusal: it never assumes "released"
+    # and never raises raw out of the order service.
+    if payload.side == "buy":
+        try:
+            armed = read_kill_switch(session, settings).active
+        except Exception:  # noqa: BLE001 - an unreadable switch must refuse the entry
+            return _reject_new(session, payload, "KILL_SWITCH_UNAVAILABLE", actor=placed_by)
+        if armed:
+            return _reject_new(session, payload, "KILL_SWITCH_ARMED", actor=placed_by)
 
     # Settlement routing is an entry gate. A buy must settle to a wallet that exists for
     # its chain and declares the ledger asset, so a refusal names the chain and the asset
@@ -1501,16 +1508,31 @@ async def place_order(
         # The gate above ran before the market read and the quote. Re-read the persisted
         # switch inside the fill window so an operator who arms mid-flight is obeyed by
         # the order this intent is about to book, not only by the next one. Only a buy
-        # adds risk: an exit must still settle, as it does at the first gate.
-        if payload.side == "buy" and read_kill_switch(session, settings).active:
-            return _reject_after_quote(
-                session,
-                payload,
-                "KILL_SWITCH_ARMED",
-                snapshot=snapshot,
-                quote=quote,
-                settings=settings,
-            )
+        # adds risk: an exit must still settle, as it does at the first gate. An
+        # unreadable switch refuses the buy with a typed code, never a raw exception.
+        if payload.side == "buy":
+            try:
+                armed = read_kill_switch(session, settings).active
+            except Exception:  # noqa: BLE001 - fail closed; place_order returns, never raises
+                return _reject_after_quote(
+                    session,
+                    payload,
+                    "KILL_SWITCH_UNAVAILABLE",
+                    snapshot=snapshot,
+                    quote=quote,
+                    settings=settings,
+                    actor=placed_by,
+                )
+            if armed:
+                return _reject_after_quote(
+                    session,
+                    payload,
+                    "KILL_SWITCH_ARMED",
+                    snapshot=snapshot,
+                    quote=quote,
+                    settings=settings,
+                    actor=placed_by,
+                )
 
         # Replay under the lock: this is the only position view the fill may use.
         replay = _replay(_ledger_rows(session), day_start=_day_start())

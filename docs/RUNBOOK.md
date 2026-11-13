@@ -147,18 +147,30 @@ curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   run log records `hold` / `KILL_SWITCH_ACTIVE` with the attempted action and amount, and
   the strategy's interval window is **not** consumed — releasing the switch retries on the
   next tick.
-- The order service is the last gate and it is not scoped by attribution: a manual paper
-  order carries no `strategy_id`, so while the switch is armed any **buy** is refused
-  before the market read and the quote, with reason `KILL_SWITCH_ARMED`. The same gate is
-  read again inside the fill window, after the quote, so an order that was already in
-  flight when the operator armed is refused too — it keeps the rejected row and its quote
-  but books no fill and no journal entry. Each read crosses the process boundary; a value
-  read earlier in the session is never reused, so obedience is at most one tick old.
-  Refusals persist the rejected order row (so the attempt stays replayable) but write no
-  fill and no journal entry. A sell can only reduce risk — it is bounded by the held
-  quantity and cannot open a short -- so exits, stops and reduce-only sells still settle;
-  blocking them would trap funds. Existing positions are not sold by the switch; close
-  them deliberately.
+- The executor pipeline and the paper order service both treat the switch as an
+  **entry-only** gate. Every read is buy-only; a sell is bounded by the held quantity and
+  cannot open a short, so an armed switch refuses a new entry and still settles an exit,
+  stop or reduce-only sell. Blocking an exit would trap funds. Existing positions are not
+  sold by the switch; close them deliberately.
+- The executor reads the switch once before any venue contact, again after the quote, and
+  once more between the pre-submit position re-bound and the signature. An entry that meets
+  an armed switch is refused `KILL_SWITCH_ACTIVE` without the venue ever signing. The
+  paper order service reads it before the market read and the quote (refusal reason
+  `KILL_SWITCH_ARMED`), and again inside the fill window after the quote, so a buy that was
+  already in flight when the operator armed is refused too: it keeps the rejected row and
+  its quote but books no fill and no journal entry.
+- An unreadable switch is not a released switch: both paths refuse an entry with the typed
+  `KILL_SWITCH_UNAVAILABLE` instead of raising out of the order path, and neither contacts
+  the venue for new risk.
+- Each read crosses the process boundary; `read_kill_switch` forces the SELECT past the
+  session identity map, so a value read earlier in the session is never reused. An arm is
+  therefore obeyed by the same intent when it lands before one of the reads above, and in
+  the worst case by the next tick: obedience is at most one tick old.
+- A signature already sent is not recalled. Once the signed submit has left for the venue,
+  a later arm cannot unwind it; the fill is journaled from the receipt. The switch prevents
+  new signatures, not orders already in flight.
+- A refusal persists the rejected order row (so the attempt stays replayable) but writes no
+  fill and no journal entry.
 - Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.
 
 ## 11. Market monitor (market eyes)
