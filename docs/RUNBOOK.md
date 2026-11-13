@@ -149,11 +149,16 @@ curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   next tick.
 - The order service is the last gate and it is not scoped by attribution: a manual paper
   order carries no `strategy_id`, so while the switch is armed any **buy** is refused
-  before the market read and the quote, with reason `KILL_SWITCH_ARMED`. Refusals persist
-  the rejected order row (so the attempt stays replayable) but write no fill and no
-  journal entry. A sell can only reduce risk — it is bounded by the held quantity and
-  cannot open a short -- so exits, stops and reduce-only sells still settle; blocking them
-  would trap funds. Existing positions are not sold by the switch; close them deliberately.
+  before the market read and the quote, with reason `KILL_SWITCH_ARMED`. The same gate is
+  read again inside the fill window, after the quote, so an order that was already in
+  flight when the operator armed is refused too — it keeps the rejected row and its quote
+  but books no fill and no journal entry. Each read crosses the process boundary; a value
+  read earlier in the session is never reused, so obedience is at most one tick old.
+  Refusals persist the rejected order row (so the attempt stays replayable) but write no
+  fill and no journal entry. A sell can only reduce risk — it is bounded by the held
+  quantity and cannot open a short -- so exits, stops and reduce-only sells still settle;
+  blocking them would trap funds. Existing positions are not sold by the switch; close
+  them deliberately.
 - Before disarming, read `GET /api/v1/paper/reconciliation` and confirm `ok: true`.
 
 ## 11. Market monitor (market eyes)

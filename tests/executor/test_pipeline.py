@@ -692,5 +692,51 @@ async def test_the_kill_switch_is_rechecked_after_the_quote() -> None:
     assert journal.groups == ()
 
 
+@pytest.mark.asyncio
+async def test_the_kill_switch_is_rechecked_after_the_position_rebound() -> None:
+    # A sell re-reads its position between pricing and submit. An arm that lands during
+    # that await must refuse the signature, not wait for the next intent.
+    state = {"armed": False}
+    reads = {"count": 0}
+
+    async def position_source(intent: Intent) -> PositionState:
+        reads["count"] += 1
+        if reads["count"] == 2:  # the pre-submit re-bound, not the initial read
+            state["armed"] = True
+        return position("10", "20")
+
+    pipe, venue, journal = pipeline(kill_switch=KillSwitch(read=lambda: state["armed"]))
+    pipe.position_source = position_source
+    result = await pipe.run(sell(), snapshot=make_snapshot())
+
+    assert result.status == "denied"
+    assert result.reason == "KILL_SWITCH_ACTIVE"
+    assert venue.quote_calls == 1
+    assert venue.submit_calls == 0
+    assert result.order is None
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_an_armed_switch_is_never_served_from_an_earlier_released_read() -> None:
+    # The reader is the only source of truth: the released value observed at the start of
+    # a run cannot survive the arm that lands before the signature.
+    venue = ArmingVenue(state={"armed": False})
+    reads = {"count": 0}
+
+    def read() -> bool:
+        reads["count"] += 1
+        return bool(venue.state["armed"])
+
+    pipe, _, _ = pipeline(venue, kill_switch=KillSwitch(read=read))
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.reason == "KILL_SWITCH_ACTIVE"
+    assert venue.submit_calls == 0
+    # The pre-quote read saw released; the next read, after the quote armed the switch,
+    # crossed the process boundary again instead of reusing that value.
+    assert reads["count"] == 2
+
+
 def _sum_usd(entries: tuple[LedgerEntry, ...]) -> Decimal:
     return sum((entry.usd_value for entry in entries), Decimal(0))

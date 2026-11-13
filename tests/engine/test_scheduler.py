@@ -440,6 +440,46 @@ async def test_scheduler_skips_the_pass_without_touching_market_data_while_armed
     assert get_strategy(session_factory, strategy_id).last_run_at is None
 
 
+async def test_an_arm_inside_a_tick_is_obeyed_by_that_same_tick(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    """One tick of obedience: the pass-start read is not a licence for the whole pass."""
+    strategy_id = add_strategy(params={"interval_minutes": 1})
+    state = {"armed": False}
+
+    class ArmingSource(FakeSource):
+        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+            snapshot = await super().get_token(chain, address)
+            # The operator arms after the scheduler's pass-start read, while the strategy
+            # is evaluating: the order this tick wants to place must still be refused.
+            state["armed"] = True
+            return snapshot
+
+    source = ArmingSource(make_snapshot(change_h1="6"))
+    inner = FakeExecutor()
+    guard = KillSwitchExecutor(inner, lambda: state["armed"])
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+    scheduler = StrategyScheduler(
+        session_factory, source, guard, interval_seconds=1, now=lambda: now
+    )
+
+    results = await scheduler.run_once()
+
+    assert [result.action for result in results] == ["hold"]
+    assert results[0].reason == "KILL_SWITCH_ACTIVE"
+    assert inner.requests == []
+    # A hold does not consume the interval window, so the next tick is due immediately.
+    assert get_strategy(session_factory, strategy_id).last_run_at is None
+
+    # The window is due again, and the switch is read fresh for the pass: no market read,
+    # no order. No cached released state survived one tick.
+    source.calls.clear()
+    now = now + timedelta(minutes=1)
+    assert await scheduler.run_once() == []
+    assert source.calls == []
+    assert inner.requests == []
+
+
 async def test_run_log_insert_after_strategy_delete_is_dropped(
     session_factory: sessionmaker[Session], add_strategy: Any
 ) -> None:

@@ -9,6 +9,9 @@ this file keeps:
 * Fail closed on money. A missing snapshot or stale quote refuses both sides at the
   re-risk stage; a missing or malformed quote, or an unknown risk verdict, produces no
   order. Entry-only gates never block a reduce-only exit.
+* The kill switch is read before any venue contact, again after the quote, and once more
+  between the pre-submit position re-bound and the signature, so an arm lands within the
+  same intent rather than on the next one. An unreadable switch refuses.
 * The order is priced by the quote only when the quote's size is the risk-approved size;
   the journal is built from the venue's receipt, never from either.
 * Idempotency is bound to the payload: the same key with a different order is a typed
@@ -302,6 +305,15 @@ class ExecutionPipeline:
             if isinstance(signed_result, ExecutionResult):
                 return signed_result
             signed = signed_result
+
+        # 6.8 The last gate for a buy is the submit boundary: an arm that landed during
+        # the signing await above must refuse without the signed transaction reaching the
+        # venue. Nothing awaits between this read and the submit call, so no stage can
+        # outlive it. An exit is not recalled here: it only reduces the position and must
+        # still settle.
+        blocked = self._kill_switch_denial(intent, quote_decision, quote=quote)
+        if blocked is not None:
+            return blocked
 
         # 7. Fill from the venue receipt. A signature this process produced must come
         # back with the same payload digest, or the receipt is not for our transaction.

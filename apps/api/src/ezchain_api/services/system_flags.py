@@ -66,8 +66,15 @@ def _state(row: SystemFlagRow) -> KillSwitch:
 
 
 def read_kill_switch(session: Session, settings: Settings) -> KillSwitch:
-    """Current switch. Absent row falls back to the configured seed without writing."""
-    row = session.get(SystemFlagRow, KILL_SWITCH_KEY)
+    """Current switch. Absent row falls back to the configured seed without writing.
+
+    ``populate_existing`` forces the SELECT even when the session already holds the row:
+    ``Session.get`` would otherwise return the identity-map instance, so a session that
+    read a released flag earlier could keep serving it after another process armed the
+    switch. The flag decides whether money moves, so every read crosses the process
+    boundary rather than trusting a cached instance.
+    """
+    row = session.get(SystemFlagRow, KILL_SWITCH_KEY, populate_existing=True)
     if row is None:
         return KillSwitch(active=settings.engine_kill_switch, reason=None, updated_at=None)
     return _state(row)

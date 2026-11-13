@@ -1498,6 +1498,20 @@ async def place_order(
     snapshot = _attach_quote_price(snapshot, quote)
 
     with _serialized_paper_fill(session):
+        # The gate above ran before the market read and the quote. Re-read the persisted
+        # switch inside the fill window so an operator who arms mid-flight is obeyed by
+        # the order this intent is about to book, not only by the next one. Only a buy
+        # adds risk: an exit must still settle, as it does at the first gate.
+        if payload.side == "buy" and read_kill_switch(session, settings).active:
+            return _reject_after_quote(
+                session,
+                payload,
+                "KILL_SWITCH_ARMED",
+                snapshot=snapshot,
+                quote=quote,
+                settings=settings,
+            )
+
         # Replay under the lock: this is the only position view the fill may use.
         replay = _replay(_ledger_rows(session), day_start=_day_start())
         held_qty, held_cost = replay.positions.get(account, (Decimal(0), Decimal(0)))

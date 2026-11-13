@@ -20,6 +20,7 @@ from ezchain_api.services.system_flags import (
     KILL_SWITCH_KEY,
     read_kill_switch,
     seed_kill_switch,
+    set_kill_switch,
 )
 from ezchain_core import utcnow
 
@@ -178,3 +179,34 @@ def test_schema_scopes_track_the_system_flags_source() -> None:
     schema = KillSwitchOut(active=True)
 
     assert list(schema.scopes) == list(system_flags.KILL_SWITCH_SCOPES)
+
+
+def test_a_read_never_serves_a_released_state_cached_before_arming(tmp_path: Path) -> None:
+    """The flag is a row read across processes, not an identity-map value.
+
+    A session that read the released state must see an arm committed by another process
+    on its next read; a cached instance would keep obeying the old state for the life of
+    the session, which is exactly the stale released state the one-tick rule forbids.
+    """
+    url = f"sqlite+pysqlite:///{tmp_path / 'flag-fresh.db'}"
+    reader_engine = create_engine(url)
+    writer_engine = create_engine(url)
+    Base.metadata.create_all(writer_engine)
+    settings = Settings(environment="test", database_url=url, engine_kill_switch=False)
+    reader_maker = sessionmaker(bind=reader_engine, expire_on_commit=False)
+    writer_maker = sessionmaker(bind=writer_engine, expire_on_commit=False)
+
+    try:
+        with writer_maker() as writer:
+            set_kill_switch(writer, active=False, reason=None)
+        with reader_maker() as reader:
+            assert read_kill_switch(reader, settings).active is False
+            # End the read transaction; expire_on_commit=False keeps the released row in
+            # this session's identity map.
+            reader.commit()
+            with writer_maker() as writer:
+                set_kill_switch(writer, active=True, reason="armed mid-flight")
+            assert read_kill_switch(reader, settings).active is True
+    finally:
+        reader_engine.dispose()
+        writer_engine.dispose()
