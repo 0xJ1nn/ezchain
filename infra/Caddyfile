@@ -23,13 +23,21 @@
 		reverse_proxy web:3000
 	}
 
-	# Liveness and readiness are public API probes. Metrics is an operator surface and
-	# is not published here: scrape api:8000/metrics with the bearer token instead.
+	# Liveness and readiness are the only API endpoints published at the edge.
 	handle /healthz {
 		reverse_proxy api:8000
 	}
 	handle /readyz {
 		reverse_proxy api:8000
+	}
+
+	# Operational surfaces stay off the public edge. The API already refuses them to a
+	# non-loopback caller without the operator token; this makes the edge itself answer
+	# 404, so a future web route can never publish them by accident. Scrape the API over
+	# the Docker network (or an operator tunnel) instead.
+	@operational path /metrics /health /docs /docs/* /redoc /redoc/* /openapi.json
+	handle @operational {
+		respond 404
 	}
 
 	# Everything else is the product UI.
@@ -38,12 +46,6 @@
 	}
 
 	# The FastAPI OpenAPI UI is intentionally not published. On a trusted machine,
-	# uncomment these two handlers to browse it through the edge:
-	#
-	# handle /docs* {
-	# 	reverse_proxy api:8000
-	# }
-	# handle /openapi.json {
-	# 	reverse_proxy api:8000
-	# }
+	# run the API and web locally (tools/dev.sh) or scrape the API over the Docker
+	# network; do not add an edge handler for /docs or /openapi.json.
 }
