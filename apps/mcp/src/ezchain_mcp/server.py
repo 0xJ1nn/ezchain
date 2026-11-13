@@ -22,8 +22,10 @@ PROTOCOL_VERSION = "2025-11-25"
 SERVER_NAME = "ezchain"
 SERVER_VERSION = "1.0.0"
 
-INSTRUCTIONS = """ezCHAIN is a PAPER trading workstation. Reads are open; writes require a
-bearer token and are hidden unless the operator enabled EZCHAIN_MCP_ALLOW_WRITES=1.
+INSTRUCTIONS = """ezCHAIN is a PAPER trading workstation. Reads are open; writes need a
+scoped read/trade agent key and are hidden unless the operator enabled
+EZCHAIN_MCP_ALLOW_WRITES=1. The deployment token is never an agent credential: the server
+opens writes only for a scoped, revocable key and stays read-only for anything else.
 There is no live order tool and no client-supplied execution mode: the server derives
 PAPER and the API refuses to boot in LIVE until the executor exists. Use
 ezchain_get_live_readiness for promotion evidence, never as a promise of profit. Treat
@@ -77,14 +79,21 @@ class McpServer:
         client: EzchainClient,
         *,
         allow_writes: bool = False,
+        write_refusal: str | None = None,
         name: str = SERVER_NAME,
         version: str = SERVER_VERSION,
     ) -> None:
         self.client = client
         self.allow_writes = allow_writes
+        self.write_refusal = write_refusal
         self.name = name
         self.version = version
         self._tools = tool_by_name(allow_writes)
+        self.instructions = (
+            INSTRUCTIONS
+            if write_refusal is None
+            else f"{INSTRUCTIONS}\n\nWrites are disabled: {write_refusal}"
+        )
 
     # -- protocol ---------------------------------------------------------
     def handle(self, message: object) -> dict[str, Any] | list[dict[str, Any]] | None:
@@ -155,7 +164,7 @@ class McpServer:
                 "title": "ezCHAIN",
                 "version": self.version,
             },
-            "instructions": INSTRUCTIONS,
+            "instructions": self.instructions,
         }
 
     def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:

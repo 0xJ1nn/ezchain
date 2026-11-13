@@ -79,7 +79,8 @@ def test_read_only_hides_every_write_tool(client: EzchainClient) -> None:
     assert allowed is not None
     names = {tool["name"] for tool in allowed["result"]["tools"]}
     assert "ezchain_place_paper_order" in names
-    assert "ezchain_arm_kill_switch" in names
+    # Admin-scope routes stay off the agent surface even with writes enabled.
+    assert "ezchain_disarm_kill_switch" not in names
 
 
 def test_read_tool_returns_structured_content(
@@ -144,7 +145,7 @@ def test_paper_order_tool_uses_the_paper_endpoint(
 
 
 def test_order_and_kill_switch_tools_advertise_closed_schemas(client: EzchainClient) -> None:
-    """The MCP twins of the strict API routes admit only the fields they forward.
+    """The MCP twin of the strict order route admits only the fields it forwards.
 
     An order tool that advertised extra properties would invite a caller to send a field
     the API now refuses, so the closed-object flag and the property set are both pinned.
@@ -162,9 +163,8 @@ def test_order_and_kill_switch_tools_advertise_closed_schemas(client: EzchainCli
         "amount_usd",
         "idempotency_key",
     }
-    for name in ("ezchain_arm_kill_switch", "ezchain_disarm_kill_switch"):
-        assert tools[name]["additionalProperties"] is False
-        assert set(tools[name]["properties"]) == {"reason"}
+    assert "ezchain_arm_kill_switch" not in tools
+    assert "ezchain_disarm_kill_switch" not in tools
 
 
 def test_api_error_becomes_a_tool_error(client: EzchainClient) -> None:
