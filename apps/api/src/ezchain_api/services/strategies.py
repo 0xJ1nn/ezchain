@@ -81,6 +81,7 @@ async def run_strategy_once(
     plugin_host: PluginHost | None = None,
     plugin_registry: PluginRegistry | None = None,
     now: datetime | None = None,
+    force: bool = False,
 ) -> RunResult:
     return await evaluate_strategy(
         session,
@@ -92,4 +93,5 @@ async def run_strategy_once(
         plugin_host=plugin_host,
         plugin_registry=plugin_registry,
         now=now,
+        force=force,
     )

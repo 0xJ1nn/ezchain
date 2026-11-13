@@ -134,16 +134,22 @@ def positions(
 
 @router.get("/orders", response_model=list[OrderOut])
 def order_history(
-    limit: int = Query(default=50, ge=1, le=200), session: Session = Depends(get_session)
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
 ) -> list[OrderOut]:
-    return [_order(row) for row in paper.orders(session, limit)]
+    """Newest-first orders. ``offset`` pages past the newest ``limit`` rows."""
+    return [_order(row) for row in paper.orders(session, limit, offset)]
 
 
 @router.get("/fills", response_model=list[FillOut])
 def fill_history(
-    limit: int = Query(default=50, ge=1, le=200), session: Session = Depends(get_session)
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
 ) -> list[FillOut]:
-    return [_fill(row) for row in paper.fills(session, limit)]
+    """Newest-first fills. ``offset`` pages past the newest ``limit`` rows."""
+    return [_fill(row) for row in paper.fills(session, limit, offset)]
 
 
 @router.get("/reconciliation", response_model=ReconciliationOut)

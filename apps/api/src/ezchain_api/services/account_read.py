@@ -63,16 +63,21 @@ def ledger(
     session: Session,
     *,
     limit: int = 200,
+    offset: int = 0,
     account: str | None = None,
     kind: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Newest-first journal slice. Filters are exact so a caller cannot invent a query."""
+    """Newest-first journal slice. Filters are exact so a caller cannot invent a query.
+
+    ``seq`` is unique and monotonic, so ``offset`` pages deterministically past the newest
+    slice: the owner can reach entries older than the first page.
+    """
     query = select(LedgerEntryRow).order_by(LedgerEntryRow.seq.desc())
     if account is not None:
         query = query.where(LedgerEntryRow.account == account)
     if kind is not None:
         query = query.where(LedgerEntryRow.kind == kind)
-    rows = session.scalars(query.limit(limit)).all()
+    rows = session.scalars(query.offset(offset).limit(limit)).all()
     return [
         {
             "id": row.id,

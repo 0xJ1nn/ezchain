@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import QuoteRouter
+from ezchain_api.config import Settings, get_settings
 from ezchain_api.deps import get_dexscreener, get_quote_router
 from ezchain_api.models import PaperFillRow, PaperOrderRow
 from ezchain_api.routers import paper as paper_router
@@ -314,3 +315,97 @@ def test_json_float_overflow_is_422_not_500(client_for, session: Session) -> Non
 
     assert response.status_code == 422
     assert session.scalar(select(PaperOrderRow)) is None
+
+
+def test_order_and_fill_history_page_with_offset(client_for, session: Session) -> None:
+    """``limit`` alone could not reach history older than the newest page."""
+    client = _paper_client(client_for, FakeDex())
+    for key in ("page-order-1", "page-order-2"):
+        assert client.post("/api/v1/paper/orders", json=_payload(key)).status_code == 201
+
+    orders = client.get("/api/v1/paper/orders", params={"limit": 200}).json()
+    assert len(orders) == 2
+    newest = client.get("/api/v1/paper/orders", params={"limit": 1, "offset": 0}).json()
+    older = client.get("/api/v1/paper/orders", params={"limit": 1, "offset": 1}).json()
+    assert [row["id"] for row in newest + older] == [row["id"] for row in orders]
+    assert newest[0]["id"] != older[0]["id"]
+    assert client.get("/api/v1/paper/orders", params={"offset": 2}).json() == []
+
+    fills = client.get("/api/v1/paper/fills", params={"limit": 200}).json()
+    assert len(fills) == 2
+    newest_fill = client.get("/api/v1/paper/fills", params={"limit": 1, "offset": 0}).json()
+    older_fill = client.get("/api/v1/paper/fills", params={"limit": 1, "offset": 1}).json()
+    assert [row["id"] for row in newest_fill + older_fill] == [row["id"] for row in fills]
+    assert client.get("/api/v1/paper/fills", params={"offset": 2}).json() == []
+
+    assert client.get("/api/v1/paper/orders", params={"offset": -1}).status_code == 422
+    assert client.get("/api/v1/paper/fills", params={"offset": -1}).status_code == 422
+
+
+def test_a_requested_profile_other_than_the_deployment_default_is_accepted(
+    client_for, session: Session
+) -> None:
+    """The user picks their own risk appetite; the deployment profile is only the default."""
+    client = _paper_client(client_for, FakeDex())
+
+    response = client.post(
+        "/api/v1/paper/orders", json={**_payload("profile-high"), "risk_profile": "high"}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "filled"
+
+
+def test_a_chosen_profile_uses_the_deployment_order_ceiling(client_for, session: Session) -> None:
+    """A profile shapes the order; it must never silently shrink the deployment ceiling.
+
+    The deployment allows $1000 orders, so choosing ``high`` (whose preset max is $250)
+    must not cap the owner below that ceiling. The profile still supplies its percent-of-
+    equity, per-token and slippage policy.
+    """
+    profile_settings = Settings(
+        environment="test",
+        database_url="sqlite+pysqlite://",
+        trade_risk_profile="mid",
+        max_order_usd=Decimal("1000"),
+        paper_mark_max_order_usd=Decimal("1000"),
+    )
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {
+            get_settings: lambda: profile_settings,
+            get_dexscreener: lambda: dex,
+            get_quote_router: lambda: router,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/paper/orders",
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "side": "buy",
+            "amount_usd": "300",
+            "idempotency_key": "profile-ceiling-1",
+            "risk_profile": "high",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "filled", body
+    assert body["amount_usd"] == "300.00"
+
+
+def test_an_unknown_profile_is_still_a_typed_rejection(client_for, session: Session) -> None:
+    client = _paper_client(client_for, FakeDex())
+
+    response = client.post(
+        "/api/v1/paper/orders", json={**_payload("profile-typo"), "risk_profile": "turbo"}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "rejected"
+    assert response.json()["reason"] == "PROFILE_UNKNOWN"

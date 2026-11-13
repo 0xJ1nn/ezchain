@@ -183,6 +183,50 @@ def test_ledger_is_newest_first_and_filterable(
         assert client.get("/api/v1/paper/ledger", params={"limit": bad}).status_code == 422
 
 
+def test_ledger_offset_pages_past_the_newest_slice(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """``limit`` alone hid the owner's older history; ``offset`` makes it reachable."""
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="100",
+        price="2",
+        fee="0.6",
+        at=START + timedelta(hours=1),
+    )
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="sell",
+        quantity="40",
+        price="3",
+        fee="0.36",
+        avg_cost="2",
+        at=START + timedelta(hours=2),
+    )
+    client = _client(client_for)
+
+    full = client.get("/api/v1/paper/ledger", params={"limit": 500}).json()
+    assert len(full) > 3
+
+    pages = [
+        client.get("/api/v1/paper/ledger", params={"limit": 3, "offset": offset}).json()
+        for offset in range(0, len(full), 3)
+    ]
+
+    assert [row["id"] for page in pages for row in page] == [row["id"] for row in full]
+    assert len({row["id"] for page in pages for row in page}) == len(full)
+    # The oldest row is only reachable past the newest page.
+    assert full[-1]["id"] == pages[-1][-1]["id"]
+    assert client.get("/api/v1/paper/ledger", params={"offset": len(full)}).json() == []
+    assert client.get("/api/v1/paper/ledger", params={"offset": -1}).status_code == 422
+
+
 def test_performance_matches_a_known_ledger(
     client_for: Callable[..., TestClient], session: Session
 ) -> None:

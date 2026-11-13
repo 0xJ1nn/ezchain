@@ -84,6 +84,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **Owner history pages past the newest slice (api).** `GET /paper/orders`,
+  `GET /paper/fills` and `GET /paper/ledger` accepted only `limit`, so the newest 200/500
+  rows were all an owner could ever read back. All three now accept `offset` alongside
+  `limit`; orders and fills break a `created_at` tie by id so pages neither overlap nor
+  skip a row, and the ledger pages on its unique `seq`.
+
+- **An order may name any defined risk profile (api).** `POST /paper/orders` used to
+  accept a profile only when it equalled the deployment's, so the client offered a choice
+  the server refused. Any of `low`/`mid`/`high` now shapes that order's gates; the
+  deployment profile is only the default when the request names none, and an unknown
+  name is still `PROFILE_UNKNOWN`. The profile's absolute order preset no longer
+  `min()`-shrinks the deployment ceiling — choosing `high` is not silently capped at the
+  preset's $250 — while its percent-of-equity, per-token and slippage policy still apply.
+
+- **A manual run is not a scheduled tick (api).** "Run now" on a paused strategy used to
+  refuse with `409 STRATEGY_PAUSED`. The pause now gates automatic scheduling only: an
+  explicit owner request runs exactly one cycle (even inside its interval), and the
+  strategy stays paused, so the scheduler keeps skipping it. Resuming separately is still
+  what re-enables scheduling.
+
+- **The kill switch arms and releases symmetrically (api).** Releasing required a reason
+  while arming did not, gating the direction that gives the owner their trading back. Both
+  directions are now one step with an optional reason, which is stored when supplied; the
+  admin scope and bearer requirement are unchanged.
+
 - **The topbar kill switch follows the persisted state instead of the page snapshot
   (web).** The shell read the flag once when a page rendered, so arming or releasing
   from the Risk page left the topbar showing the state it had loaded with, and the two
