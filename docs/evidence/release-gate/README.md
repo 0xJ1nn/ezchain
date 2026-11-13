@@ -1,7 +1,7 @@
 # Clean-clone gate and publication audit
 
 Measured 2026-11-13 on branch `chore/clean-clone-gate` at commit
-`f649ddb01b67dca40336853261f3a6c2e14428d7`, based on `c763cb3`. Every result below is the
+`be7d2dbf9d8fe93e4d42dfefc450493fadbdc92e`, based on `c763cb3`. Every result below is the
 output of the command shown with it; nothing is inferred.
 
 ## Environment
@@ -19,7 +19,7 @@ an empty directory:
 git clone --branch chore/clean-clone-gate file://<branch checkout> <temporary directory>
 cd <temporary directory>
 git rev-parse HEAD
-# f649ddb01b67dca40336853261f3a6c2e14428d7
+# be7d2dbf9d8fe93e4d42dfefc450493fadbdc92e
 ls -d node_modules .venv
 # no output: neither exists in a fresh clone
 bash tools/setup-web.sh
@@ -29,7 +29,9 @@ PYTHON=python3.11 bash tools/setup-python.sh
 # Successfully installed ezchain-adapters ezchain-api ezchain-core ezchain-engine ezchain-mcp ezchain-sdk
 ```
 
-The clone holds 613 tracked files and three commits above the base.
+The clone holds 614 tracked files and four commits above the base. It contains the branch
+and published `main` only; other feature branches in the working checkout are outside this
+measurement.
 
 ## Gate
 
@@ -47,9 +49,9 @@ links: ok
 secrets: ok
 131 files already formatted
 Success: no issues found in 118 source files
-1446 passed, 5 skipped, 1 warning in 29.76s
+1446 passed, 5 skipped, 1 warning in 30.18s
 ✓ Compiled successfully in 4.0s
-197 passed (4.0m)
+197 passed (5.4m)
 ci: ok
 exit=0
 ```
@@ -58,7 +60,7 @@ The default invocation is green as well:
 
 ```bash
 bash tools/ci.sh; echo "exit=$?"
-# 1446 passed, 5 skipped, 1 warning in 28.93s
+# 1446 passed, 5 skipped, 1 warning in 34.33s
 # web gates skipped: the diff touches no web paths (EZCHAIN_GATE_WEB=always forces them)
 # ci: ok
 # exit=0
@@ -91,14 +93,14 @@ Both runs exit 1. `tools/setup-web.sh` installs from `pnpm-lock.yaml` after clea
 
 ## Publication audit
 
-The checkout has no finding at HEAD. The CLI also reads every line added on every
-reachable ref, so its total includes superseded history that cannot be removed without
+The clone has no finding at HEAD. The CLI also reads every line added on the branch and on
+published `main`, so its total includes superseded history that cannot be removed without
 rewriting published commits, which `docs/WORKFLOW.md` forbids.
 
 The range added by the branch:
 
 ```bash
-python3 <publication tool>/check_range.py <branch checkout> origin/main chore/clean-clone-gate --profile public
+python3 <publication tool>/check_range.py <clean clone> origin/main HEAD --profile public
 # exit=0, no findings
 ```
 
@@ -111,40 +113,34 @@ findings=0 blocking=0
 The full CLI:
 
 ```bash
-python3 <publication tool>/publication_audit.py --repo <branch checkout>
+python3 <publication tool>/publication_audit.py --repo <clean clone>
 ```
 
 ```
-clean-clone  -  blocked  block=14  {'draft-voice': 1, 'internal-id': 57, 'internal-marker': 8, 'local-path': 3, 'promotion-claim': 2}
+release-clone  -  blocked  block=12  {'internal-id': 43, 'internal-marker': 7, 'local-path': 3, 'promotion-claim': 2}
 ```
 
-All 71 findings are history-only. The 14 blocking entries are added lines from earlier
+All 55 findings are history-only. The 12 blocking entries are added lines from earlier
 commits, or a file deleted at HEAD but still present in published history:
 
 | Kind | Location | Content |
 |---|---|---|
-| draft-voice | `docs/CHAINS.md:23` | a progress-narration phrase on the unmerged remote branch `origin/fix/markets-browse` |
-| internal-marker | `docs/DECISIONS.md:607` | a review-role word beside an accepted decision |
 | internal-marker | `.state/HANDOFF.md:69-75` | seven provider and model lines |
 | local-path | `.state/HANDOFF.md:4` | a repository path under a home directory |
 | local-path | `docs/evidence/agent-integration/openclaw.md:12` | an install path under a home directory |
 | local-path | `docs/evidence/agent-integration/openclaw.md:20` | an extension path under a home directory |
-| promotion-claim | `docs/DECISIONS.md:903` | the commitment sentence reworded at HEAD |
-| promotion-claim | `docs/PRODUCTION-READINESS.md:188` | the readiness sentence reworded at HEAD |
+| promotion-claim | `docs/DECISIONS.md:470` | the commitment sentence reworded at HEAD |
+| promotion-claim | `docs/PRODUCTION-READINESS.md:171` | the readiness sentence reworded at HEAD |
 
-The 57 review-level entries are phase identifiers in superseded revisions:
+The 43 review-level entries are phase identifiers in superseded revisions:
 
 | File | Findings |
 |---|---|
-| `ROADMAP.md` | 17 |
-| `docs/PLAN-LIVE-PAPER.md` | 16 |
+| `ROADMAP.md` | 9 |
+| `docs/PLAN-LIVE-PAPER.md` | 15 |
 | `docs/TODO.md` | 10 |
 | `.state/PR_LOG.md` | 5 |
 | `.state/CURRENT_TASK.md` | 4 |
-| `apps/api/src/ezchain_api/routers/strategies.py` | 2 |
-| `apps/api/src/ezchain_api/routers/paper.py` | 1 |
-| `apps/api/src/ezchain_api/services/paper.py` | 1 |
-| `tests/executor/test_pipeline.py` | 1 |
 
 ## What changed
 
@@ -160,8 +156,6 @@ The 57 review-level entries are phase identifiers in superseded revisions:
 
 ## Remaining
 
-Closing the 71 history-only findings requires rewriting published commits: deleting
-`.state/HANDOFF.md` from history and removing superseded lines. That is a maintainer
-action; this branch does not rewrite history. The unmerged remote branch
-`origin/fix/markets-browse` also needs deletion or rewriting for the `docs/CHAINS.md`
-line to disappear from a clone that fetches every branch.
+Closing the 55 history-only findings requires rewriting published commits: deleting
+`.state/HANDOFF.md` from history and removing the superseded lines. That is a maintainer
+action; this branch does not rewrite history.
