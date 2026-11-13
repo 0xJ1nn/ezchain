@@ -917,15 +917,19 @@ now safe to show on a public probe because a refused live start reports paper, n
 value, and the public reason omits the record's path (the boot refusal and the log keep it). A
 signed record must be regenerated for each deployed build hash.
 
-## Mark freshness skew bound (GH-116)
+## ADR-0036 — A future-dated observation is rejected, and an unknown mark prices nothing
 
-**Context:** A market observation dated in the future used to report `future` for any
-negative age, so a far-future (skewed or malicious) observation kept a position's mark
-looking usable indefinitely and could freeze the price against later updates.
+**Status:** accepted 2026-11-13.
 
-**Decision:** The read-side mark freshness rule keeps `future` only inside a small
-tolerated clock skew (`FUTURE_SKEW_SECONDS`, 5s, shared with the write-side bound in
-`market_snapshots`). An observation further ahead than that reports `unknown` with no
-age, so no surface prints a frozen price as usable. The four-value vocabulary
-(`fresh`/`stale`/`unknown`/`future`) is unchanged and the rule is computed once on the
-server in `_mark_status`.
+**Context:** A market observation dated in the future reported `future` for any negative age,
+so a far-future observation (skewed or malicious) kept a position's mark looking usable
+indefinitely, priced equity while its status said `unknown`, and — once stored — vetoed every
+later correct observation because its bogus timestamp outranked real ones.
+
+**Decision:** The write side rejects an observation dated beyond a bounded clock-skew window
+with `MARK_TIMESTAMP_FUTURE` and stores nothing. The receiver's clock is recorded separately
+as `received_at`, so a row stored beyond the skew is a clock fault that never outranks an
+accepted observation and a corrected write replaces it. On the read side a mark whose status
+is `unknown` prices nothing: no mark value, no market value, no unrealized PnL, and the
+account reports incomplete. The four-value vocabulary (`fresh`/`stale`/`unknown`/`future`)
+is unchanged and the rule is computed once on the server in `_mark_status`.
