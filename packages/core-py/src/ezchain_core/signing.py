@@ -37,9 +37,14 @@ TRANSACTION_MIN_OUT_MISMATCH = "TRANSACTION_MIN_OUT_MISMATCH"
 TRANSACTION_RECIPIENT_MISMATCH = "TRANSACTION_RECIPIENT_MISMATCH"
 TRANSACTION_IDEMPOTENCY_MISMATCH = "TRANSACTION_IDEMPOTENCY_MISMATCH"
 TRANSACTION_DIGEST_MISMATCH = "TRANSACTION_DIGEST_MISMATCH"
+TRANSACTION_APPROVAL_MISMATCH = "TRANSACTION_APPROVAL_MISMATCH"
 TRANSACTION_UNSIGNED = "TRANSACTION_UNSIGNED"
 TRANSACTION_BUILD_FAILED = "TRANSACTION_BUILD_FAILED"
 TRANSACTION_SIGN_FAILED = "TRANSACTION_SIGN_FAILED"
+
+# An execution mode that spends real money has no unsigned path: a submit without a
+# signing boundary is refused before it reaches the venue.
+SIGNING_BOUNDARY_REQUIRED = "SIGNING_BOUNDARY_REQUIRED"
 
 BINDING_REASONS: tuple[str, ...] = (
     TRANSACTION_UNDECODABLE,
@@ -52,6 +57,7 @@ BINDING_REASONS: tuple[str, ...] = (
     TRANSACTION_RECIPIENT_MISMATCH,
     TRANSACTION_IDEMPOTENCY_MISMATCH,
     TRANSACTION_DIGEST_MISMATCH,
+    TRANSACTION_APPROVAL_MISMATCH,
 )
 
 
@@ -248,6 +254,7 @@ class SignedTransaction:
 
     @property
     def approval_digest(self) -> str:
+        """The approval's identifier; the boundary refuses a signature that carries another."""
         return self.approved.digest
 
 
@@ -328,6 +335,24 @@ def verify_prepared_transaction(
     return None
 
 
+def verify_signed_transaction(
+    signed: SignedTransaction, prepared: PreparedTransaction, approved: ApprovedIntent
+) -> str | None:
+    """The first thing that makes ``signed`` not a signature over the approved payload.
+
+    A signer is trusted for the bytes it returned, never for its own bookkeeping: the
+    approval it attached must be the approved one, the bytes must be exactly what this
+    process decoded and bound, and the digest must cover them. The prepared payload is
+    re-verified here so the check holds whichever signer ran, including one that verifies
+    nothing.
+    """
+    if signed.approval_digest != approved.digest:
+        return TRANSACTION_APPROVAL_MISMATCH
+    if signed.raw != prepared.raw or signed.payload_digest != prepared.payload_digest:
+        return TRANSACTION_DIGEST_MISMATCH
+    return verify_prepared_transaction(prepared, approved)
+
+
 @runtime_checkable
 class TransactionAdapter(Protocol):
     """Builds the unsigned transaction from the approval, and from nothing else."""
@@ -346,7 +371,9 @@ class TransactionSigner(Protocol):
 
 __all__ = [
     "BINDING_REASONS",
+    "SIGNING_BOUNDARY_REQUIRED",
     "TRANSACTION_AMOUNT_MISMATCH",
+    "TRANSACTION_APPROVAL_MISMATCH",
     "TRANSACTION_BUILD_FAILED",
     "TRANSACTION_CLUSTER_MISMATCH",
     "TRANSACTION_DIGEST_MISMATCH",
@@ -371,4 +398,5 @@ __all__ = [
     "decode_transaction",
     "encode_transaction",
     "verify_prepared_transaction",
+    "verify_signed_transaction",
 ]

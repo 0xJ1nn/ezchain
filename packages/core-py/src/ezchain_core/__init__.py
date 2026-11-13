@@ -63,7 +63,9 @@ from .risk import (
 )
 from .signing import (
     BINDING_REASONS,
+    SIGNING_BOUNDARY_REQUIRED,
     TRANSACTION_AMOUNT_MISMATCH,
+    TRANSACTION_APPROVAL_MISMATCH,
     TRANSACTION_BUILD_FAILED,
     TRANSACTION_CLUSTER_MISMATCH,
     TRANSACTION_DIGEST_MISMATCH,
@@ -88,6 +90,7 @@ from .signing import (
     decode_transaction,
     encode_transaction,
     verify_prepared_transaction,
+    verify_signed_transaction,
 )
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
@@ -95,6 +98,7 @@ from .types import (
     Candle,
     MarketRow,
     MarkStatus,
+    Mode,
     OrderRequest,
     PairInfo,
     PositionState,
@@ -135,6 +139,7 @@ __all__ = [
     "MarkStatus",
     "MarketRow",
     "MARK_FUTURE_SKEW_SECONDS",
+    "Mode",
     "Order",
     "OrderRequest",
     "PairInfo",
@@ -152,6 +157,7 @@ __all__ = [
     "RiskLimits",
     "RiskProfile",
     "RiskReason",
+    "SIGNING_BOUNDARY_REQUIRED",
     "Side",
     "SignedTransaction",
     "SourceRef",
@@ -160,6 +166,7 @@ __all__ = [
     "TRADE_PROFILES",
     "TRADE_RISK_PROFILES",
     "TRANSACTION_AMOUNT_MISMATCH",
+    "TRANSACTION_APPROVAL_MISMATCH",
     "TRANSACTION_BUILD_FAILED",
     "TRANSACTION_CLUSTER_MISMATCH",
     "TRANSACTION_DIGEST_MISMATCH",
@@ -207,4 +214,5 @@ __all__ = [
     "validate_arm",
     "validate_profile",
     "verify_prepared_transaction",
+    "verify_signed_transaction",
 ]

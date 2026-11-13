@@ -18,8 +18,11 @@ this file keeps:
   and cannot be capped below it.
 * With a signing boundary configured, the venue builds from an immutable approved intent
   and the executor decodes the bytes and checks them against it before the key is touched;
-  a changed field refuses with a typed code. The signed payload's digest then travels
-  through submit and a receipt that does not echo it is never journaled.
+  a changed field refuses with a typed code. That check runs in the pipeline, not in the
+  signer, so a signer that verifies nothing cannot disarm it; the boundary re-checks the
+  signature it got back against the approved payload and approval it decoded. The signed
+  payload's digest then travels through submit and a receipt that does not echo it is never
+  journaled. Live refuses an unsigned submit before the venue; paper may run unsigned.
 * Nothing here writes the ledger; the sink does, and only after a confirmed fill.
 """
 
@@ -34,6 +37,7 @@ from decimal import Decimal
 from typing import Any
 
 from ezchain_core import (
+    SIGNING_BOUNDARY_REQUIRED,
     TRANSACTION_BUILD_FAILED,
     TRANSACTION_DIGEST_MISMATCH,
     TRANSACTION_NOT_APPROVABLE,
@@ -44,6 +48,7 @@ from ezchain_core import (
     Fill,
     Intent,
     Journal,
+    Mode,
     Order,
     PositionState,
     Quote,
@@ -57,6 +62,8 @@ from ezchain_core import (
     decode_transaction,
     journal_from_fill,
     risk_decision_from_intent,
+    verify_prepared_transaction,
+    verify_signed_transaction,
 )
 
 from .journal import JournalSink
@@ -128,8 +135,10 @@ class ExecutionPipeline:
     timeout_seconds: float = 10.0
     idempotency_store: DedupeStore = field(default_factory=DedupeStore)
     # When set, every order is built from an immutable approved intent, decoded and
-    # checked against it, then signed before the venue sees it. Paper may leave it unset.
+    # checked against it, then signed before the venue sees it. Paper may leave it unset;
+    # a live pipeline without one refuses every submit instead of broadcasting unsigned.
     signing: SigningBoundary | None = None
+    mode: Mode = "paper"
     _in_flight: dict[str, tuple[str, asyncio.Future[ExecutionResult]]] = field(default_factory=dict)
 
     async def run(
@@ -282,9 +291,13 @@ class ExecutionPipeline:
                 return _refused_before_submit(intent, order, reason="POSITION_CHANGED")
 
         # 6.7 Sign. The adapter sees only the approved intent, the decode is checked
-        # against it, and a single changed field refuses before the key is touched.
+        # against it here in the pipeline, and a signer that verifies nothing cannot
+        # disarm that. Live has no unsigned path: without a boundary the submit refuses.
         signed: SignedTransaction | None = None
-        if self.signing is not None:
+        if self.signing is None:
+            if self.mode != "paper":
+                return _refused_before_submit(intent, order, reason=SIGNING_BOUNDARY_REQUIRED)
+        else:
             signed_result = await self._sign(order)
             if isinstance(signed_result, ExecutionResult):
                 return signed_result
@@ -341,7 +354,13 @@ class ExecutionPipeline:
         return quote
 
     async def _sign(self, order: Order) -> SignedTransaction | ExecutionResult:
-        """Build, decode, bind and sign one order; refuse before the key on any doubt."""
+        """Build, decode, bind and sign one order; refuse before the key on any doubt.
+
+        The binding is checked here, not delegated to the signer: whichever
+        :class:`~ezchain_core.signing.TransactionSigner` the boundary carries, the decoded
+        payload must reproduce the approved intent before it is handed over, and the
+        signature that comes back must cover those exact bytes and that same approval.
+        """
         boundary = self.signing
         assert boundary is not None  # narrowed by the caller
         try:
@@ -365,14 +384,21 @@ class ExecutionPipeline:
             prepared = decode_transaction(raw)
         except TransactionDecodeError as exc:
             return _refused_before_submit(_intent_from_order(order), order, reason=exc.code)
+        code = verify_prepared_transaction(prepared, approved)
+        if code is not None:
+            return _refused_before_submit(_intent_from_order(order), order, reason=code)
         try:
-            return boundary.signer.sign(prepared, approved)
+            signed = boundary.signer.sign(prepared, approved)
         except SigningRefused as exc:
             return _refused_before_submit(_intent_from_order(order), order, reason=exc.code)
         except Exception:  # noqa: BLE001 - an unverified signature is no signature
             return _refused_before_submit(
                 _intent_from_order(order), order, reason=TRANSACTION_SIGN_FAILED
             )
+        code = verify_signed_transaction(signed, prepared, approved)
+        if code is not None:
+            return _refused_before_submit(_intent_from_order(order), order, reason=code)
+        return signed
 
     async def _submit(
         self,

@@ -27,12 +27,19 @@ With a signing boundary configured, what is signed is provably what was approved
 venue adapter receives an immutable `ezchain_core.signing.ApprovedIntent` (chain, cluster,
 mint, side, amount, minimum output, recipient, program id, idempotency key) and returns
 bytes; it is not handed the order or the quote, so it has no second source of truth. The
-executor decodes those bytes and compares every one of those fields with the approval
-before it touches a key: a swapped mint, an inflated amount, a changed recipient, a
+pipeline itself decodes those bytes and compares every one of those fields with the
+approval before any signer runs: a swapped mint, an inflated amount, a changed recipient, a
 foreign program, another cluster, the wrong side, a lowered floor or a replaced key refuses
-with its own `TRANSACTION_*` code and no signature. The signed payload's SHA-256 digest is
-carried through submission, and a receipt that does not echo it is refused
-(`TRANSACTION_DIGEST_MISMATCH`) and never journaled.
+with its own `TRANSACTION_*` code and no signature. Because the check is in the pipeline,
+not in the signer, a substitute or buggy `TransactionSigner` cannot disarm it; the shipped
+signer keeps its own check as defence in depth. The signature that returns is verified
+again against the pipeline's decode — the approval it carries must be the approved one
+(`TRANSACTION_APPROVAL_MISMATCH`) and its bytes and digest must be the ones that were
+bound. The signed payload's SHA-256 digest is then carried through submission, and a
+receipt that does not echo it is refused (`TRANSACTION_DIGEST_MISMATCH`) and never
+journaled. Paper may run without a boundary and submits unsigned; a pipeline in any other
+mode refuses an unsigned submit with `SIGNING_BOUNDARY_REQUIRED` before the venue is
+called.
 
 ## 1. Deployables and trust
 
@@ -81,15 +88,16 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
    `ApprovedIntent` for the wallet address — it is handed nothing else. Solana via Jupiter
    `/swap/v1/swap` (versioned tx); EVM via KyberSwap `/api/v1/route/build` (router
    calldata) with an exact ERC-20 `approve` for the amount when allowance is short (never
-   unlimited). `min_out` comes from the quote and `max_slippage_bps`. The returned bytes
-   are decoded and checked against the approval before signing (program id, cluster, mint,
-   side, amount, minimum output, recipient, idempotency key); any difference is a
-   `TRANSACTION_*` refusal with no signature.
+   unlimited). `min_out` comes from the quote and `max_slippage_bps`. The pipeline decodes
+   the returned bytes and checks them against the approval before any signer runs (program
+   id, cluster, mint, side, amount, minimum output, recipient, idempotency key); any
+   difference is a `TRANSACTION_*` refusal with no signature.
 4. **Simulate**: Solana `simulateTransaction`; EVM `eth_estimateGas` + `eth_call`. A
    failed simulation rejects (`SIMULATION_FAILED`) — nothing is signed.
 5. **Sign + broadcast** in the executor; nonce per (chain, address) serialized; one
    in-flight tx per wallet per chain. The signer verifies the decode again immediately
-   before signing, and the signed payload's digest is recorded as the transaction's
+   before signing, the boundary rejects a signature whose approval, bytes or digest are not
+   the ones it bound, and the signed payload's digest is recorded as the transaction's
    identity.
 6. **Confirm**: poll receipt/signature status to finality (`confirmed` Solana, 1–3 blocks
    EVM per chain config) with a timeout (default 90 s). The receipt must echo the signed

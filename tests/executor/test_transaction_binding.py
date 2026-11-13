@@ -20,7 +20,10 @@ from decimal import Decimal
 import pytest
 
 from ezchain_core import (
+    BINDING_REASONS,
+    SIGNING_BOUNDARY_REQUIRED,
     TRANSACTION_AMOUNT_MISMATCH,
+    TRANSACTION_APPROVAL_MISMATCH,
     TRANSACTION_BUILD_FAILED,
     TRANSACTION_CLUSTER_MISMATCH,
     TRANSACTION_DIGEST_MISMATCH,
@@ -37,7 +40,9 @@ from ezchain_core import (
     Intent,
     PairInfo,
     PositionState,
+    PreparedTransaction,
     RiskLimits,
+    SignedTransaction,
     SourceRef,
     TokenSnapshot,
     TransactionPayload,
@@ -117,6 +122,71 @@ class BrokenBuilderVenue(FakeVenue):
     async def prepare(self, approved: ApprovedIntent) -> bytes:
         self.prepare_calls += 1
         raise RuntimeError("builder unavailable")
+
+
+@dataclass
+class UncheckedSigner:
+    """A conforming signer that verifies nothing: it signs whatever it is handed.
+
+    The binding must not depend on this class being well behaved. Whatever the signer does,
+    the pipeline refused the transaction the venue prepared before this was ever called.
+    """
+
+    key: bytes = TEST_ONLY_KEY_SOLANA
+    calls: int = 0
+
+    def sign(self, prepared: PreparedTransaction, approved: ApprovedIntent) -> SignedTransaction:
+        self.calls += 1
+        return SignedTransaction(
+            raw=prepared.raw,
+            signature=hmac.new(self.key, prepared.raw, hashlib.sha256).digest(),
+            approved=approved,
+            payload_digest=prepared.payload_digest,
+        )
+
+
+@dataclass
+class ForeignApprovalSigner(UncheckedSigner):
+    """Signs the verified bytes but attaches an approval nobody approved."""
+
+    def sign(self, prepared: PreparedTransaction, approved: ApprovedIntent) -> SignedTransaction:
+        self.calls += 1
+        foreign = replace(approved, amount=approved.amount + Decimal("1"))
+        return SignedTransaction(
+            raw=prepared.raw,
+            signature=hmac.new(self.key, prepared.raw, hashlib.sha256).digest(),
+            approved=foreign,
+            payload_digest=prepared.payload_digest,
+        )
+
+
+@dataclass
+class SwappedBytesSigner(UncheckedSigner):
+    """Signs bytes the pipeline never decoded, with a digest that covers those bytes."""
+
+    def sign(self, prepared: PreparedTransaction, approved: ApprovedIntent) -> SignedTransaction:
+        self.calls += 1
+        foreign = encode_transaction(
+            replace(
+                TransactionPayload(
+                    cluster=approved.cluster,
+                    program_id=approved.program_id,
+                    mint=approved.mint,
+                    side=approved.side,
+                    amount=approved.amount,
+                    min_out=approved.min_out,
+                    recipient=approved.recipient,
+                    idempotency_key=approved.idempotency_key,
+                ),
+                recipient=OTHER_WALLET,
+            )
+        )
+        return SignedTransaction(
+            raw=foreign,
+            signature=hmac.new(self.key, foreign, hashlib.sha256).digest(),
+            approved=approved,
+            payload_digest=hashlib.sha256(foreign).hexdigest(),
+        )
 
 
 @dataclass
@@ -225,13 +295,14 @@ def boundary(
     cluster: str = CLUSTER,
     recipient: str = WALLET,
     program_id: str = PROGRAM,
+    signer: object = None,
 ) -> SigningBoundary:
     return SigningBoundary(
         cluster=cluster,
         recipient=recipient,
         program_id=program_id,
         adapter=venue,
-        signer=LocalTransactionSigner(keyring or SignatureCounter()),  # type: ignore[arg-type]
+        signer=signer or LocalTransactionSigner(keyring or SignatureCounter()),  # type: ignore[arg-type]
     )
 
 
@@ -239,6 +310,8 @@ def pipeline(
     venue: FakeVenue,
     signing: SigningBoundary | None = None,
     journal: MemoryJournal | None = None,
+    *,
+    mode: str = "paper",
 ) -> tuple[ExecutionPipeline, MemoryJournal]:
     journal = journal or MemoryJournal()
     return (
@@ -249,6 +322,7 @@ def pipeline(
             kill_switch=KillSwitch(),
             timeout_seconds=0.2,
             signing=signing,
+            mode=mode,  # type: ignore[arg-type]
         ),
         journal,
     )
@@ -415,6 +489,77 @@ async def test_a_receipt_without_a_digest_is_not_journaled() -> None:
 
     assert result.status == "rejected"
     assert result.reason == TRANSACTION_DIGEST_MISMATCH
+    assert journal.groups == ()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"mint": OTHER_TOKEN},
+        {"amount": Decimal("101")},
+        {"recipient": OTHER_WALLET},
+        {"program_id": OTHER_PROGRAM},
+        {"cluster": "mainnet-beta"},
+        {"side": "sell"},
+        {"min_out": Decimal("1")},
+        {"idempotency_key": "another-key"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_signer_that_skips_verification_cannot_disarm_the_binding(
+    change: dict[str, object],
+) -> None:
+    """The pipeline verifies the decode itself, so a permissive signer changes nothing."""
+    signer = UncheckedSigner()
+    venue = TamperingVenue(changes=change)
+    pipe, journal = pipeline(venue, boundary(venue, signer=signer))
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason in BINDING_REASONS
+    assert signer.calls == 0, "the pipeline must refuse before handing the bytes to any signer"
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_a_signer_that_attaches_a_different_approval_refuses() -> None:
+    signer = ForeignApprovalSigner()
+    venue = FakeVenue()
+    pipe, journal = pipeline(venue, boundary(venue, signer=signer))
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == TRANSACTION_APPROVAL_MISMATCH
+    assert signer.calls == 1
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_a_signer_that_swaps_the_verified_bytes_refuses() -> None:
+    signer = SwappedBytesSigner()
+    venue = FakeVenue()
+    pipe, journal = pipeline(venue, boundary(venue, signer=signer))
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == TRANSACTION_DIGEST_MISMATCH
+    assert signer.calls == 1
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_a_live_pipeline_without_a_signing_boundary_refuses_before_broadcast() -> None:
+    venue = FakeVenue()
+    pipe, journal = pipeline(venue, mode="live")
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == SIGNING_BOUNDARY_REQUIRED
+    assert result.fill is None
+    assert venue.submit_calls == 0, "an unsigned live submit must never reach the venue"
     assert journal.groups == ()
 
 
