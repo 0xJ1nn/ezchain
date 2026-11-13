@@ -22,7 +22,7 @@ from ezchain_api.models import (
 )
 from ezchain_api.routers import account as account_router
 from ezchain_api.routers import paper as paper_router
-from ezchain_api.services import account_read
+from ezchain_api.services import account_read, paper
 from ezchain_api.services.system_flags import set_kill_switch
 from ezchain_core import buy_entries, genesis_entries, sell_entries, utcnow
 
@@ -225,6 +225,8 @@ def test_ledger_offset_pages_past_the_newest_slice(
     assert full[-1]["id"] == pages[-1][-1]["id"]
     assert client.get("/api/v1/paper/ledger", params={"offset": len(full)}).json() == []
     assert client.get("/api/v1/paper/ledger", params={"offset": -1}).status_code == 422
+    assert client.get("/api/v1/paper/ledger", params={"offset": 10000}).status_code == 200
+    assert client.get("/api/v1/paper/ledger", params={"offset": 10001}).status_code == 422
 
 
 def test_performance_matches_a_known_ledger(
@@ -973,6 +975,29 @@ def test_limits_expose_settings_but_never_secrets(
     assert "supersecret" not in response.text
     assert "token-secret-abc" not in response.text
     assert "database_url" not in response.text
+
+
+def test_limits_report_the_effective_limit_the_order_gate_enforces(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    """The displayed max order is the ceiling an order is actually measured against.
+
+    A chosen profile owns its own bound (``high`` is $250), so the page must not report
+    the wider $1000 deployment constant beside a gate that refuses at $250.
+    """
+    profiled = Settings(
+        environment="test",
+        database_url="sqlite+pysqlite://",
+        trade_risk_profile="high",
+        max_order_usd=Decimal("1000"),
+    )
+    client: TestClient = client_for(account_router.router, {get_settings: lambda: profiled})
+
+    body = client.get("/api/v1/paper/limits").json()
+
+    assert body["max_order_usd"] == "250"
+    assert body["max_trade_usd"] == "250"
+    assert paper.limits_from_settings(profiled).max_order_usd == Decimal("250")
 
 
 def test_alerts_cover_stale_marks_kill_switch_and_rejections(

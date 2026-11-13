@@ -351,7 +351,6 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 	}
 
 	async function runNow(strategy: Strategy) {
-		if (strategy.status === "paused") return;
 		setBusy(`run:${strategy.id}`);
 		setNotice(null);
 		try {
@@ -424,7 +423,7 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 				<div className="stat">
 					<div className="label">Paused</div>
 					<div className="value sm">{pausedCount}</div>
-					<div className="meta">never evaluated while paused</div>
+					<div className="meta">scheduler skips · manual run allowed</div>
 				</div>
 				<div className="stat">
 					<div className="label">
@@ -580,10 +579,14 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 												className="btn sm primary"
 												type="button"
 												onClick={() => void runNow(strategy)}
-												disabled={paused || rowBusy}
-												title={paused ? "Resume the strategy before running it" : undefined}
+												disabled={rowBusy}
+												title={
+													paused
+														? "Runs one cycle now and leaves the strategy paused; resume separately to re-enable scheduling"
+														: undefined
+												}
 											>
-												{busy === `run:${strategy.id}` ? "Running…" : "Run now"}
+												{busy === `run:${strategy.id}` ? "Running…" : "Run one cycle (manual)"}
 											</button>
 											{confirmDelete === strategy.id ? (
 												<span className={styles.confirm}>

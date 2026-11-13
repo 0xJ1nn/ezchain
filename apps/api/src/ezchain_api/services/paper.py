@@ -995,14 +995,28 @@ def freshness_from_settings(settings: Settings) -> FreshnessPolicy:
     )
 
 
+def effective_max_order_usd(settings: Settings, profile: TradeRiskProfile | None) -> Decimal:
+    """The one absolute order ceiling enforced for this order.
+
+    A profile the owner chose owns its own bound: ``high`` means $250, the number the
+    profile defines, so an order above it is refused. The deployment's ``max_order_usd``
+    is only the fallback used when no profile shapes the order — it is never a cross-cap
+    that silently widens (or narrows) a profile's bound. Enforcement and the
+    ``/paper/limits`` read model both call this function, so the displayed limit cannot
+    diverge from the one the gate applies.
+    """
+    if profile is not None:
+        return profile.max_order_usd
+    return settings.max_order_usd
+
+
 def limits_from_settings(settings: Settings, requested: str | None = None) -> RiskLimits:
     """The limits enforced for one order, with the profile the owner chose.
 
     ``requested`` selects the profile for this order; the deployment profile is the
-    default. A profile shapes the trade (minimum size, percent of equity, per-token cap,
-    slippage), while the absolute order ceiling stays the deployment's ``max_order_usd``:
-    a preset may suggest a smaller order, never silently shrink a ceiling the deployment
-    already allows.
+    default. A profile shapes the trade (minimum size, its own maximum, percent of
+    equity, per-token cap, slippage). With no profile at all the deployment's settings
+    are the whole policy.
     """
     profile = trade_profile_from_settings(settings, requested)
     if profile is None:
@@ -1020,7 +1034,7 @@ def limits_from_settings(settings: Settings, requested: str | None = None) -> Ri
         )
     return RiskLimits(
         min_order_usd=profile.min_order_usd,
-        max_order_usd=settings.max_order_usd,
+        max_order_usd=effective_max_order_usd(settings, profile),
         max_order_pct_of_equity=profile.max_order_pct_of_equity,
         per_token_cap_usd=profile.per_token_cap_usd,
         max_slippage_bps=profile.max_slippage_bps,

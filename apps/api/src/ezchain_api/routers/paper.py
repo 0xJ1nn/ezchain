@@ -135,7 +135,9 @@ def positions(
 @router.get("/orders", response_model=list[OrderOut])
 def order_history(
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    # Bounded so a paging client cannot ask the database to skip an unbounded number
+    # of rows; the oldest page is reachable well inside this ceiling.
+    offset: int = Query(default=0, ge=0, le=10000),
     session: Session = Depends(get_session),
 ) -> list[OrderOut]:
     """Newest-first orders. ``offset`` pages past the newest ``limit`` rows."""
@@ -145,7 +147,7 @@ def order_history(
 @router.get("/fills", response_model=list[FillOut])
 def fill_history(
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=10000),
     session: Session = Depends(get_session),
 ) -> list[FillOut]:
     """Newest-first fills. ``offset`` pages past the newest ``limit`` rows."""

@@ -342,6 +342,15 @@ def test_order_and_fill_history_page_with_offset(client_for, session: Session) -
     assert client.get("/api/v1/paper/fills", params={"offset": -1}).status_code == 422
 
 
+def test_a_huge_offset_is_refused_before_it_can_force_a_scan(client_for, session: Session) -> None:
+    """``offset`` is bounded, so a paging client cannot ask the database to skip forever."""
+    client = _paper_client(client_for, FakeDex())
+
+    for path in ("/api/v1/paper/orders", "/api/v1/paper/fills"):
+        assert client.get(path, params={"offset": 10000}).status_code == 200
+        assert client.get(path, params={"offset": 10001}).status_code == 422
+
+
 def test_a_requested_profile_other_than_the_deployment_default_is_accepted(
     client_for, session: Session
 ) -> None:
@@ -356,12 +365,13 @@ def test_a_requested_profile_other_than_the_deployment_default_is_accepted(
     assert response.json()["status"] == "filled"
 
 
-def test_a_chosen_profile_uses_the_deployment_order_ceiling(client_for, session: Session) -> None:
-    """A profile shapes the order; it must never silently shrink the deployment ceiling.
+def test_a_chosen_profile_enforces_its_own_order_bound(client_for, session: Session) -> None:
+    """Choosing ``high`` means its $250 bound, not a wider deployment constant.
 
-    The deployment allows $1000 orders, so choosing ``high`` (whose preset max is $250)
-    must not cap the owner below that ceiling. The profile still supplies its percent-of-
-    equity, per-token and slippage policy.
+    Round 1 removed the deployment cross-cap, which was right, but it also stopped
+    enforcing the profile's own preset: a $300 ``high`` order filled against the default
+    $1000 deployment value. The profile the owner chose is the ceiling; the deployment
+    setting is only the fallback when no profile shapes the order.
     """
     profile_settings = Settings(
         environment="test",
@@ -395,8 +405,76 @@ def test_a_chosen_profile_uses_the_deployment_order_ceiling(client_for, session:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "filled", body
-    assert body["amount_usd"] == "300.00"
+    assert body["status"] == "rejected", body
+    assert body["reason"] == "SIZE_ABOVE_MAX"
+
+
+def test_a_profile_order_inside_its_bound_still_fills(client_for, session: Session) -> None:
+    """The bound is a ceiling, not a veto on the profile itself."""
+    profile_settings = Settings(
+        environment="test",
+        database_url="sqlite+pysqlite://",
+        trade_risk_profile="mid",
+        max_order_usd=Decimal("1000"),
+        paper_mark_max_order_usd=Decimal("1000"),
+    )
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {
+            get_settings: lambda: profile_settings,
+            get_dexscreener: lambda: dex,
+            get_quote_router: lambda: router,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/paper/orders",
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "side": "buy",
+            "amount_usd": "250",
+            "idempotency_key": "profile-ceiling-2",
+            "risk_profile": "high",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "filled", response.json()
+
+
+def test_without_a_profile_the_deployment_ceiling_still_bounds_a_buy(
+    client_for, session: Session
+) -> None:
+    """No profile shapes the order, so the deployment's ``max_order_usd`` is the ceiling."""
+    deployment = Settings(
+        environment="test",
+        database_url="sqlite+pysqlite://",
+        max_order_usd=Decimal("400"),
+        paper_mark_max_order_usd=Decimal("1000"),
+    )
+    dex = FakeDex()
+    router = QuoteRouter(providers=[], dexscreener=dex)  # type: ignore[arg-type]
+    client: TestClient = client_for(
+        paper_router.router,
+        {
+            get_settings: lambda: deployment,
+            get_dexscreener: lambda: dex,
+            get_quote_router: lambda: router,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/paper/orders",
+        json={**_payload("no-profile-ceiling"), "amount_usd": "500"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "rejected"
+    # With no profile the pipeline gate owns the ceiling and names both aliases.
+    assert "SIZE_ABOVE_MAX" in (response.json()["reason"] or "")
 
 
 def test_an_unknown_profile_is_still_a_typed_rejection(client_for, session: Session) -> None:

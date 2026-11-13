@@ -94,9 +94,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   accept a profile only when it equalled the deployment's, so the client offered a choice
   the server refused. Any of `low`/`mid`/`high` now shapes that order's gates; the
   deployment profile is only the default when the request names none, and an unknown
-  name is still `PROFILE_UNKNOWN`. The profile's absolute order preset no longer
-  `min()`-shrinks the deployment ceiling — choosing `high` is not silently capped at the
-  preset's $250 — while its percent-of-equity, per-token and slippage policy still apply.
+  name is still `PROFILE_UNKNOWN`. The profile the owner chose owns its own order bound —
+  `high` refuses an order above $250 — and its percent-of-equity, per-token and slippage
+  policy applies with it. The deployment's `max_order_usd` is the ceiling only for an
+  order no profile shapes; it is never `min()`-combined with a profile, so choosing a
+  profile neither silently widens the preset nor shrinks a ceiling above it.
+  `GET /paper/limits` resolves `max_order_usd` through the same function, so the number
+  the UI shows is the one the order gate enforces.
+
+- **A page offset is bounded (api).** `GET /paper/orders`, `GET /paper/fills` and
+  `GET /paper/ledger` accept `offset` up to 10000; a larger value is `422`. The newest
+  page and every page the UI offers stay reachable, and a paging client cannot ask the
+  database to skip an unbounded row count.
+
+- **The kill-switch GUI releases in one step (web).** The Risk card and the top-bar
+  control required a non-blank reason before either direction, so releasing — the
+  direction that gives the owner their trading back — was gated in the browser while the
+  API accepts an optional reason in both. Arming still asks for a note as bookkeeping;
+  releasing sends at once, and a blank reason is sent as `null`.
+
+- **Run-now works on a paused strategy (web).** The list disabled the control whenever a
+  strategy was paused, hiding the API's manual cycle. It stays enabled and is labelled
+  "Run one cycle (manual)": one cycle runs, the strategy stays paused, and resuming is
+  still what re-enables the scheduler.
+
+- **Activity pages its orders and fills (web).** The ledger view read the newest 100 rows
+  with no way forward and now carries Prev/Next for its orders and fills tables, using
+  independent offsets that the API bounds. `getPaperOrders`/`getPaperFills` send `offset`
+  in live mode and slice the same way in fixture mode.
 
 - **A manual run is not a scheduled tick (api).** "Run now" on a paused strategy used to
   refuse with `409 STRATEGY_PAUSED`. The pause now gates automatic scheduling only: an

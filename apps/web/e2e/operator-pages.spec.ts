@@ -119,6 +119,22 @@ test("the ledger shows truthful empty and error states", async ({ page }) => {
 	await expect(page.getByText("No rows are substituted.").first()).toBeVisible();
 });
 
+test("the ledger pages its orders and fills from the URL", async ({ page }) => {
+	await page.goto("/ledger");
+	await expect(page.getByRole("navigation", { name: "Order pages" })).toContainText("Page 1");
+	await expect(page.getByRole("navigation", { name: "Fill pages" })).toContainText("Page 1");
+
+	// Page two is a real offset-100 read, labelled with the page it is, not a rerender of
+	// page one under another number.
+	await page.goto("/ledger?orders=2&fills=2");
+	await expect(page.getByRole("navigation", { name: "Order pages" })).toContainText("Page 2");
+	await expect(page.getByRole("navigation", { name: "Fill pages" })).toContainText("Page 2");
+	await expect(page.getByText(/page 2 · \d+ rows · API/)).toHaveCount(2);
+	await expect(
+		page.getByRole("navigation", { name: "Order pages" }).getByRole("link", { name: "← Prev" }),
+	).toHaveAttribute("href", "/ledger?fills=2");
+});
+
 test("the performance error state does not substitute fixture KPIs", async ({ page }) => {
 	await page.goto("/performance?state=error");
 	await expect(page.getByRole("heading", { name: "Performance", level: 1 })).toBeVisible();

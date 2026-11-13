@@ -130,10 +130,10 @@ export const fixturePaperFills: PaperFillRecord[] = [
 	},
 ];
 
-export function fixtureOrders(limit: number): PaperOrderRecord[] {
-	return fixturePaperOrders.slice(0, limit).map((row) => ({ ...row }));
+export function fixtureOrders(limit: number, offset = 0): PaperOrderRecord[] {
+	return fixturePaperOrders.slice(offset, offset + limit).map((row) => ({ ...row }));
 }
 
-export function fixtureFills(limit: number): PaperFillRecord[] {
-	return fixturePaperFills.slice(0, limit).map((row) => ({ ...row }));
+export function fixtureFills(limit: number, offset = 0): PaperFillRecord[] {
+	return fixturePaperFills.slice(offset, offset + limit).map((row) => ({ ...row }));
 }

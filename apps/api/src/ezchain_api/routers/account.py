@@ -98,7 +98,9 @@ def _csv_response(filename: str, columns: tuple[str, ...], rows: list[dict[str, 
 @router.get("/ledger", response_model=list[LedgerEntryOut])
 def ledger_entries(
     limit: int = Query(default=200, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    # Bounded so a paging client cannot ask the database to skip an unbounded number
+    # of rows; the oldest page is reachable well inside this ceiling.
+    offset: int = Query(default=0, ge=0, le=10000),
     account: str | None = Query(default=None, max_length=160),
     kind: str | None = Query(default=None, max_length=32),
     session: Session = Depends(get_session),

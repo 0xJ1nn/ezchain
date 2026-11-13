@@ -129,7 +129,11 @@ test("paper reads in live mode hit the API and keep its reason codes", async () 
 		if (!orders.ok) return;
 		expect(orders.data[0]?.id).toBe("live-order-1");
 		expect(orders.data[0]?.reason).toBe("QUOTE_STALE");
-		expect(seen[0]?.url).toBe("/api/v1/paper/orders?limit=5");
+		expect(seen[0]?.url).toBe("/api/v1/paper/orders?limit=5&offset=0");
+
+		// The same reader sends the page offset the ledger's pager uses.
+		await getPaperOrders(5, 10);
+		expect(seen.at(-1)?.url).toBe("/api/v1/paper/orders?limit=5&offset=10");
 
 		const reconciliation = await getReconciliation();
 		expect(reconciliation.ok).toBe(false);

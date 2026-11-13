@@ -63,14 +63,16 @@ export function KillSwitchControl({
 
 	async function confirm() {
 		if (pending) return;
-		if (!reason.trim()) {
-			setError("A reason is required. The API records it with the switch state.");
+		// Arming asks for a note; releasing is one step, because the API accepts a blank
+		// reason in both directions and requiring one here gated the owner's own trading.
+		if (next && !reason.trim()) {
+			setError("A reason is required to arm. The API records it with the switch state.");
 			return;
 		}
 		setPending(true);
 		setError(null);
 		try {
-			const updated = await setKillSwitch(next, reason.trim());
+			const updated = await setKillSwitch(next, reason.trim() || null);
 			setState(updated);
 			publishKillSwitch(updated);
 			setAsking(false);
@@ -141,10 +143,12 @@ export function KillSwitchControl({
 						<p className="small muted mt-8">
 							{next
 								? "Armed, every new risk-increasing order is refused before a quote, whoever places it, with reason KILL_SWITCH_ARMED. Reduce-only exits and existing positions still settle; the switch does not sell or close anything."
-								: "Releasing allows new entries again. The API requires a reason for every release."}
+								: "Releasing allows new entries again in one step. A reason is optional and is recorded when you supply one."}
 						</p>
 						<div className="field mt-12">
-							<label htmlFor="kill-switch-reason">Reason for the operator log</label>
+							<label htmlFor="kill-switch-reason">
+								{next ? "Reason for the operator log" : "Reason (optional) for the operator log"}
+							</label>
 							<textarea
 								id="kill-switch-reason"
 								className="textarea"
@@ -244,14 +248,16 @@ export function TopbarKillSwitch({
 
 	async function confirm() {
 		if (pending) return;
-		if (!reason.trim()) {
-			setError("A reason is required. The API records it with the switch state.");
+		// Arming asks for a note; releasing is one step, because the API accepts a blank
+		// reason in both directions and requiring one here gated the owner's own trading.
+		if (next && !reason.trim()) {
+			setError("A reason is required to arm. The API records it with the switch state.");
 			return;
 		}
 		setPending(true);
 		setError(null);
 		try {
-			const updated = await setKillSwitch(next, reason.trim());
+			const updated = await setKillSwitch(next, reason.trim() || null);
 			setState(updated);
 			publishKillSwitch(updated);
 			setAsking(false);
@@ -347,13 +353,15 @@ export function TopbarKillSwitch({
 							<p className="small muted mt-8">
 								{next
 									? "New risk-increasing orders are refused by the API with KILL_SWITCH_ARMED. Exits and reduce-only sells still settle."
-									: "Releasing lets new entries through again. The API requires a reason."}{" "}
+									: "Releasing lets new entries through again in one step. A reason is optional and is recorded when you supply one."}{" "}
 								{scopes
 									? `Applies at the ${scopes} levels.`
 									: "The API did not report which levels this flag governs."}
 							</p>
 							<div className="field mt-12">
-								<label htmlFor="topbar-kill-reason">Reason for the operator log</label>
+								<label htmlFor="topbar-kill-reason">
+									{next ? "Reason for the operator log" : "Reason (optional) for the operator log"}
+								</label>
 								<textarea
 									id="topbar-kill-reason"
 									className="textarea"

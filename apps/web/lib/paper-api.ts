@@ -834,25 +834,38 @@ function boundedLimit(limit: number): number {
 	return Math.min(200, Math.max(1, Math.floor(limit)));
 }
 
-export async function getPaperOrders(limit = 100): Promise<PaperResult<PaperOrderRecord[]>> {
+/** The API refuses an offset past 10 000; a client never asks beyond that. */
+function boundedOffset(offset: number): number {
+	return Math.min(10000, Math.max(0, Math.floor(offset)));
+}
+
+export async function getPaperOrders(
+	limit = 100,
+	offset = 0,
+): Promise<PaperResult<PaperOrderRecord[]>> {
 	const bounded = boundedLimit(limit);
+	const from = boundedOffset(offset);
 	return capture(async () => {
 		if (webMode() === "fixture") {
 			const fixtures = await import("./ops-fixtures");
-			return fixtures.fixtureOrders(bounded);
+			return fixtures.fixtureOrders(bounded, from);
 		}
-		return request<PaperOrderRecord[]>(`/paper/orders?limit=${bounded}`);
+		return request<PaperOrderRecord[]>(`/paper/orders?limit=${bounded}&offset=${from}`);
 	});
 }
 
-export async function getPaperFills(limit = 100): Promise<PaperResult<PaperFillRecord[]>> {
+export async function getPaperFills(
+	limit = 100,
+	offset = 0,
+): Promise<PaperResult<PaperFillRecord[]>> {
 	const bounded = boundedLimit(limit);
+	const from = boundedOffset(offset);
 	return capture(async () => {
 		if (webMode() === "fixture") {
 			const fixtures = await import("./ops-fixtures");
-			return fixtures.fixtureFills(bounded);
+			return fixtures.fixtureFills(bounded, from);
 		}
-		return request<PaperFillRecord[]>(`/paper/fills?limit=${bounded}`);
+		return request<PaperFillRecord[]>(`/paper/fills?limit=${bounded}&offset=${from}`);
 	});
 }
 
@@ -893,7 +906,7 @@ export async function getKillSwitch(): Promise<PaperResult<KillSwitchState>> {
  */
 export async function setKillSwitch(
 	active: boolean,
-	reason: string,
+	reason: string | null,
 ): Promise<KillSwitchState> {
 	return request<KillSwitchState>("/system/kill-switch", {
 		method: "POST",

@@ -48,7 +48,7 @@ test("create -> run -> pause a strategy in fixture mode", async ({ page }) => {
 	await expect(created).toContainText("every 30m");
 
 	// Run-now records an engine decision with its reason and order id.
-	await created.getByRole("button", { name: "Run now" }).click();
+	await created.getByRole("button", { name: "Run one cycle (manual)" }).click();
 	await expect(created).toContainText("paper order accepted");
 	await expect(created.locator(".badge", { hasText: "enter" })).toBeVisible();
 	await expect(page.getByText("7 runs · newest first")).toBeVisible();
@@ -62,12 +62,17 @@ test("create -> run -> pause a strategy in fixture mode", async ({ page }) => {
 	await expect(firstRun).toContainText("paper order accepted");
 	await expect(firstRun.locator("code")).toContainText("paper-");
 
-	// Pausing is immediate and disables further runs.
+	// Pausing stops the scheduler, not the owner: the manual control stays enabled, runs
+	// exactly one cycle and leaves the strategy paused.
 	await created.getByRole("button", { name: "Pause" }).click();
 	await expect(page.getByRole("status")).toContainText("WIF momentum is now paused");
 	await expect(created.locator(".badge", { hasText: "paused" })).toBeVisible();
-	await expect(created.getByRole("button", { name: "Run now" })).toBeDisabled();
 	await expect(page.getByText("5 total · 3 active · 2 paused")).toBeVisible();
+	const manual = created.getByRole("button", { name: "Run one cycle (manual)" });
+	await expect(manual).toBeEnabled();
+	await manual.click();
+	await expect(page.getByText("8 runs · newest first")).toBeVisible();
+	await expect(created.locator(".badge", { hasText: "paused" })).toBeVisible();
 
 	await page.evaluate(() => window.scrollTo(0, 0));
 	await page.screenshot({ path: ".shots/strategies-1440.png", fullPage: true });
