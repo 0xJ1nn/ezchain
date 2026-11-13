@@ -475,6 +475,69 @@ class ProtectionEventRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 
+class MarketEventRow(Base):
+    """One normalised market observation, as ``ezchain_core.MarketEvent`` writes it.
+
+    The primary key is the contract's own idempotency identity
+    ``(source name, pair, source timestamp)`` — the triple replay dedupes on — so a repeat
+    of an observation cannot become a second row. Every key column is part of the key, which
+    is also what lets a Timescale hypertable partition on ``source_observed_at`` without
+    losing uniqueness.
+
+    ``source_observed_at`` is when the *source* says the observation happened and is what
+    retention ages on; ``observed_at`` is the ingest clock. Freshness is never stored: a
+    reader derives age and staleness from the source timestamp against its own clock
+    (CONTRACT I9).
+    """
+
+    __tablename__ = "market_events"
+    __table_args__ = (
+        Index("ix_market_events_pair_at", "pair", "source_observed_at"),
+        Index("ix_market_events_chain_venue_at", "chain", "venue", "source_observed_at"),
+    )
+
+    source_name: Mapped[str] = mapped_column(String(120), primary_key=True)
+    pair: Mapped[str] = mapped_column(String(160), primary_key=True)
+    source_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    chain: Mapped[str] = mapped_column(String(40))
+    venue: Mapped[str] = mapped_column(String(40))
+    price: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    size: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    direction: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    units: Mapped[str] = mapped_column(String(32))
+    confidence: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    schema_version: Mapped[int] = mapped_column(Integer)
+
+
+class MarketOutboxRow(Base):
+    """A market observation queued for downstream consumers, in the writing transaction.
+
+    Written with the event row, so a consumer is never told about an observation that was
+    rolled back and a committed observation always has its message. ``published_at`` is the
+    relay's proof of delivery; an unpublished row is never pruned, because dropping it would
+    lose evidence that committed.
+    """
+
+    __tablename__ = "market_outbox"
+    __table_args__ = (
+        Index(
+            "ix_market_outbox_pending",
+            "created_at",
+            postgresql_where=text("published_at IS NULL"),
+            sqlite_where=text("published_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    topic: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class AppendOnlyViolation(RuntimeError):
     """A caller tried to mutate or delete a protection audit row."""
 

@@ -464,6 +464,70 @@ a 403 means the route needs a broader scope (usually `admin`).
 Run `hermes mcp test ezchain` or `openclaw plugins inspect ezchain --json` after a key
 change. Neither command should print the token.
 
+### 12.8 Market data: retention, backup and restore
+
+Normalised market observations live in `market_events` (one row per
+`ezchain_core.MarketEvent`), keyed by the contract's own idempotency identity
+`(source_name, pair, source_observed_at)`. A retried write cannot duplicate an observation.
+`market_outbox` carries one message per newly written observation, committed in the same
+transaction; a relay publishes it and sets `published_at`. The JSONL recording written by
+`services/ingest` stays the replay input — the tables are the query path, not the replay
+source.
+
+**Retention is an operator action, never a side effect of a write.**
+
+```bash
+python -m ezchain_ingest                 # dry run: prints what would be deleted
+python -m ezchain_ingest --apply         # deletes inside one transaction
+```
+
+The windows are `EZCHAIN_RETENTION_RAW_DAYS` (7–30, default 14) and
+`EZCHAIN_RETENTION_CANDLE_1M_DAYS` (30–3650, default 365). A value outside the range is
+refused, not clamped. Pruning ages an event by `source_observed_at` — the source's clock —
+so a late report cannot keep an old observation alive. An unpublished outbox row is never
+deleted: dropping it would lose a delivery for a row that committed. Only `1m` candles are
+truncated by the candle window; coarser timeframes are left to their owner.
+
+On a Postgres where `timescaledb` is installed, revision `0020_market_events` additionally
+converts `market_events` into a hypertable partitioned on `source_observed_at`. That is
+legal because the column is already part of the primary key. An extension that is only
+*installable* is not enough: the revision checks `pg_extension` first, then tries
+`CREATE EXTENSION` in a savepoint. A role that lacks the privilege is not an error — the
+upgrade continues and leaves ordinary tables, exactly as on plain `postgres:16-alpine`
+(what `infra/compose.yaml` ships), where the same guarantees hold. The hypertable
+conversion itself has the same fall-back, so a server that refuses it still upgrades.
+`market_candles` is **not** converted: its surrogate `id` primary key does not contain
+`open_time`, so Timescale would refuse it and rewriting that key is a destructive change
+this revision does not make. Retention for both databases comes from
+`ezchain_ingest.retention`, one validated configuration, not a database policy.
+
+**Backup.** Market evidence is in the same database as everything else, so the existing
+dump covers it:
+
+```bash
+pg_dump -Fc --no-owner -f backups/ezchain-$(date -u +%Y%m%dT%H%M%SZ).dump "$EZCHAIN_DATABASE_URL"
+```
+
+Take the dump before a migration and before an `--apply` retention run. A dump of a
+Timescale deployment includes the hypertable's chunks; plain `pg_dump` is enough because
+nothing here uses Timescale's own compression policies.
+
+**Restore.** Restore into a *scratch* database first and check that it reaches the schema
+head before touching the live one:
+
+```bash
+createdb ezchain_restore_test
+pg_restore --no-owner --clean --if-exists -d ezchain_restore_test backups/<dump>
+EZCHAIN_DATABASE_URL=postgresql+psycopg://.../ezchain_restore_test ezchain-api migrate
+# then confirm the restored row counts match the dump's, e.g.
+psql "$SCRATCH_URL" -c 'SELECT count(*), min(source_observed_at), max(source_observed_at) FROM market_events;'
+```
+
+Do not restore over a live database. Do not edit `alembic_version` to make a restored dump
+"fit" — a restored database below head is upgraded forward, which is what the migrations are
+for. A retention run is not part of a restore: restore the dump, verify, then plan retention
+again rather than assuming a count.
+
 ## 13. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.
