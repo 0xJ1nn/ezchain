@@ -949,6 +949,37 @@ def test_alerts_cover_unknown_marks(
     assert unknown["severity"] == "warning"
 
 
+def test_alerts_cover_future_dated_marks(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    _genesis(session)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="10",
+        price="2",
+        fee="0.3",
+        at=START,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        price="2",
+        observed_at=utcnow() + timedelta(hours=1),
+    )
+
+    alerts = _client(client_for).get("/api/v1/paper/alerts").json()["alerts"]
+    future = next(a for a in alerts if a["code"] == "POSITION_MARK_FUTURE")
+    assert future["id"] == f"mark.future.{CHAIN}.{TOKEN_A}"
+    # Beyond the tolerated skew the read model withholds the mark, so the alert is the
+    # operator's evidence that the source clock is ahead of ours.
+    assert future["severity"] == "warning"
+    assert future["resource"] == f"position:{CHAIN}:{TOKEN_A}"
+
+
 def test_alerts_report_reconciliation_failure(
     client_for: Callable[..., TestClient], session: Session
 ) -> None:

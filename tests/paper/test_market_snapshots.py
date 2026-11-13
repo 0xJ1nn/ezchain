@@ -19,7 +19,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from sqlalchemy import Engine, create_engine, event, select
+from sqlalchemy import Engine, create_engine, event, select, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -123,7 +123,9 @@ def test_older_observation_does_not_replace_the_stored_mark(session: Session) ->
     assert returned.price_usd == Decimal("2000")
 
 
-def test_future_dated_observation_does_not_replace_the_stored_mark(session: Session) -> None:
+def test_future_dated_observation_does_not_replace_the_stored_mark(
+    session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
     current = _now_minus(1)
     market_snapshots.record_snapshot(
         session, make_snapshot(observed_at=current, price=Decimal("2000"))
@@ -136,36 +138,82 @@ def test_future_dated_observation_does_not_replace_the_stored_mark(session: Sess
     )
     session.commit()
 
+    assert returned is None
+    assert "MARK_TIMESTAMP_FUTURE" in caplog.text
     stored = session.scalar(select(MarketSnapshotRow))
     assert stored is not None
     assert stored.price_usd == Decimal("2000")
     assert _aware(stored.observed_at) == _aware(current)
-    assert returned.price_usd == Decimal("2000")
+    # The receiver's clock is stored apart from the source's timestamp.
+    assert stored.received_at is not None
+    assert _aware(stored.received_at) >= _aware(current)
 
 
-def test_future_dated_first_observation_is_stamped_with_the_write_clock(
-    session: Session,
+def test_future_dated_first_observation_is_rejected_and_the_next_correct_one_wins(
+    session: Session, caplog: pytest.LogCaptureFixture
 ) -> None:
     ahead = datetime.now(UTC) + timedelta(hours=1)
+    rejected = market_snapshots.record_snapshot(
+        session, make_snapshot(observed_at=ahead, price=Decimal("9999"))
+    )
+    session.commit()
+
+    assert rejected is None
+    assert "MARK_TIMESTAMP_FUTURE" in caplog.text
+    assert session.scalar(select(MarketSnapshotRow)) is None
+
+    # The rejected report cannot suppress a later correct observation: it is the mark.
+    stored = market_snapshots.record_snapshot(
+        session, make_snapshot(observed_at=datetime.now(UTC), price=Decimal("2001"))
+    )
+    session.commit()
+    assert stored is not None
+    assert stored.price_usd == Decimal("2001")
+    assert _aware(stored.received_at) >= _aware(stored.observed_at)
+
+
+def test_corrected_observation_replaces_a_legacy_far_future_row(session: Session) -> None:
+    """A row already frozen in the future must not reject every later correct write.
+
+    The ordering rule bounds the incoming observation by real time, not by the stored
+    timestamp alone: a bogus far-future ``observed_at`` cannot outrank a correct one
+    forever, or the frozen mark would be permanent.
+    """
+    frozen = datetime.now(UTC) + timedelta(days=365)
+    market_snapshots.record_snapshot(
+        session, make_snapshot(observed_at=_now_minus(1), price=Decimal("2000"))
+    )
+    session.commit()
+    session.execute(update(MarketSnapshotRow).values(observed_at=frozen))
+    session.commit()
+
+    corrected = market_snapshots.record_snapshot(
+        session, make_snapshot(observed_at=datetime.now(UTC), price=Decimal("2001"))
+    )
+    session.commit()
+
+    assert corrected is not None
+    assert corrected.price_usd == Decimal("2001")
+    stored = session.scalar(select(MarketSnapshotRow))
+    assert stored is not None
+    assert stored.price_usd == Decimal("2001")
+    assert _aware(stored.observed_at) <= datetime.now(UTC)
+
+
+def test_received_at_is_the_write_clock_not_the_source_timestamp(session: Session) -> None:
+    observed = _now_minus(30)
     before = datetime.now(UTC)
     market_snapshots.record_snapshot(
-        session, make_snapshot(observed_at=ahead, price=Decimal("2000"))
+        session, make_snapshot(observed_at=observed, price=Decimal("2000"))
     )
     session.commit()
 
     stored = session.scalar(select(MarketSnapshotRow))
     assert stored is not None
-    stamped = _aware(stored.observed_at)
-    assert before - timedelta(seconds=1) <= stamped <= datetime.now(UTC)
-
-    # The clamped mark cannot block a real observation that follows it.
-    market_snapshots.record_snapshot(
-        session, make_snapshot(observed_at=datetime.now(UTC), price=Decimal("2001"))
-    )
-    session.commit()
-    replaced = session.scalar(select(MarketSnapshotRow))
-    assert replaced is not None
-    assert replaced.price_usd == Decimal("2001")
+    assert _aware(stored.observed_at) == _aware(observed)
+    assert stored.received_at is not None
+    assert _aware(stored.received_at) >= before - timedelta(seconds=1)
+    assert _aware(stored.received_at) > _aware(stored.observed_at)
 
 
 def test_concurrent_writers_at_one_key_leave_one_row_and_no_error(tmp_path: Path) -> None:

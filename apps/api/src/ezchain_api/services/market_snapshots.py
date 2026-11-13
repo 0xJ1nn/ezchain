@@ -6,33 +6,35 @@ write is one ``INSERT ... ON CONFLICT DO UPDATE``: a writer that loses the race 
 the winner instead of raising an integrity error that would abort an order or a scan.
 
 The update is conditional on the incoming observation not being older than the stored one,
-so a delayed poll cannot move a mark backwards. An observation dated after the writer's
-clock is a clock fault rather than newer data: it never replaces a stored row, and the
-first observation of a token is stamped with the write clock so it cannot freeze the mark
-for later, real observations.
+so a delayed poll cannot move a mark backwards. An observation dated beyond the tolerated
+clock skew is rejected with ``MARK_TIMESTAMP_FUTURE`` and writes nothing: it never supplies
+a price, never replaces a stored row, and cannot suppress a later correct observation. A
+row already stored beyond that skew is a clock-faulted legacy row: it never outranks an
+accepted report, so a corrected observation replaces it instead of being rejected by a
+bogus timestamp. The receiver's clock is stored separately as ``received_at`` so a skew is
+visible without trusting the source's timestamp.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from ezchain_core import TokenSnapshot, utcnow
+from ezchain_core import MARK_FUTURE_SKEW_SECONDS, TokenSnapshot, utcnow
 
 from ..models import MarketSnapshotRow, new_id
 
 logger = logging.getLogger(__name__)
 
-# How far an observation may run ahead of the writer's clock before its timestamp is
-# treated as a fault. Writers on one host read the same clock, so only real skew exceeds
-# this; a faulted timestamp must not be allowed to outrank later observations.
-FUTURE_SKEW_SECONDS = 5.0
+# Kept as a module name for callers that read the bound here; the value lives in core so
+# the writer, the read model and the risk gate cannot drift apart.
+FUTURE_SKEW_SECONDS = MARK_FUTURE_SKEW_SECONDS
 
 # The columns a newer observation replaces. The row id and the key columns never change.
 _REPLACED_COLUMNS = (
@@ -47,6 +49,7 @@ _REPLACED_COLUMNS = (
     "price_change_h24",
     "source",
     "observed_at",
+    "received_at",
     "raw",
 )
 
@@ -66,7 +69,9 @@ def _aware(value: datetime) -> datetime:
     return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _values(snapshot: TokenSnapshot, observed_at: datetime) -> dict[str, Any]:
+def _values(
+    snapshot: TokenSnapshot, observed_at: datetime, received_at: datetime
+) -> dict[str, Any]:
     token = snapshot.address
     source = snapshot.source
     return {
@@ -84,6 +89,7 @@ def _values(snapshot: TokenSnapshot, observed_at: datetime) -> dict[str, Any]:
         "price_change_h24": snapshot.price_change_h24,
         "source": source.name if source is not None else "unknown",
         "observed_at": observed_at,
+        "received_at": received_at,
         "pair_address": snapshot.pair_address,
         "dex": snapshot.dex,
         "base_token_address": snapshot.base_token_address,
@@ -112,46 +118,60 @@ def _stored(session: Session, chain: str, token: str) -> MarketSnapshotRow:
     ).one()
 
 
-def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow:
+def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow | None:
     """Upsert the latest observation for (chain, token); older events never overwrite.
 
     One statement claims the key, so concurrent writers cannot collide on the unique
     index. Returns the row that is stored afterwards, which is the existing mark when the
-    incoming observation lost on ``observed_at``.
+    incoming observation lost on ``observed_at``. A report dated beyond the tolerated skew
+    is rejected (``MARK_TIMESTAMP_FUTURE``) and writes nothing, so it cannot take a mark
+    and cannot suppress the next correct observation; ``None`` is returned. A stored row
+    that is itself beyond the skew is a clock fault, so it never outranks an accepted
+    report: the corrected observation replaces it.
     """
     now = utcnow()
     source = snapshot.source
     observed = _aware(source.observed_at) if source is not None else now
 
-    values = _values(snapshot, observed)
-    statement = _insert_for(session)
-    conflict_target = ["chain", "token_address"]
-    excluded = statement.excluded
     skew_seconds = (observed - now).total_seconds()
     if skew_seconds > FUTURE_SKEW_SECONDS:
         logger.warning(
-            "market snapshot %s:%s is dated %.1fs after the write clock; "
-            "its timestamp is not used for ordering",
+            "market snapshot %s:%s rejected with MARK_TIMESTAMP_FUTURE: dated %.1fs after "
+            "the write clock (limit %.1fs); source time %s, received %s",
             snapshot.chain,
             snapshot.address,
             skew_seconds,
+            FUTURE_SKEW_SECONDS,
+            observed.isoformat(),
+            now.isoformat(),
         )
-        # Keep an existing mark untouched, and stamp a first observation with the write
-        # clock so the bad timestamp cannot outrank the observations that follow it.
-        values["observed_at"] = now
-        write = statement.values(**values).on_conflict_do_nothing(index_elements=conflict_target)
-    else:
-        identity_set = {
-            column: func.coalesce(getattr(MarketSnapshotRow, column), getattr(excluded, column))
-            for column in _IDENTITY_COLUMNS
-        }
-        write = statement.values(**values).on_conflict_do_update(
-            index_elements=conflict_target,
-            set_={
-                **{column: getattr(excluded, column) for column in _REPLACED_COLUMNS},
-                **identity_set,
-            },
-            where=MarketSnapshotRow.observed_at <= excluded.observed_at,
-        )
+        return None
+
+    values = _values(snapshot, observed, now)
+    statement = _insert_for(session)
+    conflict_target = ["chain", "token_address"]
+    excluded = statement.excluded
+    identity_set = {
+        column: func.coalesce(getattr(MarketSnapshotRow, column), getattr(excluded, column))
+        for column in _IDENTITY_COLUMNS
+    }
+    # The stored timestamp orders observations, but a legacy row already dated beyond the
+    # tolerated skew is not evidence of a newer observation: trusting it would reject
+    # every later correct write and freeze the bogus mark forever. Such a row loses to
+    # any accepted report; a trustworthy row keeps the not-older rule.
+    stored_is_bogus_future = MarketSnapshotRow.observed_at > now + timedelta(
+        seconds=FUTURE_SKEW_SECONDS
+    )
+    write = statement.values(**values).on_conflict_do_update(
+        index_elements=conflict_target,
+        set_={
+            **{column: getattr(excluded, column) for column in _REPLACED_COLUMNS},
+            **identity_set,
+        },
+        where=or_(
+            MarketSnapshotRow.observed_at <= excluded.observed_at,
+            stored_is_bogus_future,
+        ),
+    )
     session.execute(write)
     return _stored(session, snapshot.chain, snapshot.address)

@@ -171,8 +171,8 @@ It returns `201` with the stored order. A risk refusal is also a stored order, w
 `status: "rejected"` and a comma-joined `reason`; it is not an HTTP error. The order row
 is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`,
 `POSITION_LIMIT`, `MAX_OPEN_POSITIONS`, `DAILY_LOSS_LIMIT`, `INSUFFICIENT_CASH`,
-`INSUFFICIENT_POSITION`, `PRICE_UNKNOWN`, `QUOTE_STALE`, `LIQUIDITY_UNKNOWN`,
-`LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
+`INSUFFICIENT_POSITION`, `PRICE_UNKNOWN`, `QUOTE_STALE`, `MARK_TIMESTAMP_FUTURE`,
+`LIQUIDITY_UNKNOWN`, `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
 `NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ARMED`.
 
 An armed operator switch refuses every buy here, whoever places it, before the market read
@@ -186,6 +186,20 @@ The idempotency key is unique. A retry with the same key returns the stored orde
 new key for a new intent. What could not be computed is `null`: `equity_usd` and
 `unrealized_usd` are withheld when any open mark is unknown, and the account payload
 lists the unpriced positions instead of reporting a partial total as complete.
+
+A position's `mark_status` is the server's verdict (`fresh`, `stale`, `unknown` or
+`future`). An observation only modestly ahead of the clock is tolerated as `future`; one
+further ahead than the skew bound reports `unknown` with no age, so a skewed or
+malicious future observation cannot freeze a mark indefinitely. The age is `null`
+whenever the status is `unknown`. An `unknown` status fails closed: `mark_usd`,
+`market_value_usd`, `unrealized_usd` and `source` are `null` too, so no money number is
+ever derived from a mark the server will not vouch for, and the account reports the
+position as unpriced rather than pricing it from a frozen number.
+
+`GET /paper/alerts` carries one code per derived condition, including
+`POSITION_MARK_UNKNOWN`, `POSITION_MARK_STALE`, `POSITION_MARK_FUTURE` (a source clock
+ahead of ours; `warning` beyond the tolerated skew, `info` within it),
+`RECONCILIATION_FAILED`, `ORDERS_REJECTED` and `KILL_SWITCH_ACTIVE`.
 
 `GET /paper/account` and `GET /paper/wallets` are read-only. They never create genesis or
 re-declare a missing wallet: bootstrap happens at boot and on `POST /paper/orders` only, so

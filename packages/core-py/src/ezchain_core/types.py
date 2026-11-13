@@ -33,19 +33,37 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+# How far an observation may run ahead of the reader's clock before it stops being a
+# tolerated skew and becomes a clock fault. One constant for the writer, the reader and
+# the risk gate, so a source cannot be trusted by one surface and faulted by another.
+MARK_FUTURE_SKEW_SECONDS = 5.0
+
+
 @dataclass(frozen=True)
 class SourceRef:
     name: str
     url: str | None
     observed_at: datetime
 
-    def age_seconds(self, now: datetime | None = None) -> float:
-        observed = (
+    def _observed(self) -> datetime:
+        return (
             self.observed_at.astimezone(UTC)
             if self.observed_at.tzinfo is not None
             else self.observed_at.replace(tzinfo=UTC)
         )
-        return max(0.0, ((now or utcnow()) - observed).total_seconds())
+
+    def age_seconds(self, now: datetime | None = None) -> float:
+        return max(0.0, ((now or utcnow()) - self._observed()).total_seconds())
+
+    def future_skew_seconds(self, now: datetime | None = None) -> float:
+        """Seconds this observation runs ahead of the clock; negative when it is past."""
+        return ((self._observed()) - (now or utcnow())).total_seconds()
+
+    def is_future(
+        self, max_skew_seconds: float = MARK_FUTURE_SKEW_SECONDS, now: datetime | None = None
+    ) -> bool:
+        """True when the timestamp is further ahead than the tolerated clock skew."""
+        return self.future_skew_seconds(now) > max_skew_seconds
 
     def is_stale(self, max_age_seconds: float = 60.0, now: datetime | None = None) -> bool:
         return self.age_seconds(now) > max_age_seconds
@@ -303,6 +321,7 @@ RISK_REASON_MESSAGES: dict[str, str] = {
     "PAPER_MARK_LIMIT": "Order size exceeds the paper-mark limit.",
     "PRICE_IMPACT_TOO_HIGH": "Price impact exceeds the configured ceiling.",
     "QUOTE_STALE": "Quote is too old to trust.",
+    "MARK_TIMESTAMP_FUTURE": "Market observation is dated ahead of the clock.",
     "PRICE_UNKNOWN": "Token price is unknown.",
     "LIQUIDITY_UNKNOWN": "Token liquidity is unknown.",
     "LIQUIDITY_TOO_LOW": "Token liquidity is below the minimum.",

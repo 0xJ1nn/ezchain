@@ -376,11 +376,16 @@ class MarketMonitor:
                 continue
             with self._session_factory() as session:
                 try:
-                    market_snapshots.record_snapshot(session, snapshot)
+                    stored = market_snapshots.record_snapshot(session, snapshot)
                     session.commit()
                 except Exception as exc:
                     logger.warning("mark refresh %s:%s failed: %s", chain, token, _error_text(exc))
                     continue
+            if stored is None:
+                logger.warning(
+                    "mark refresh %s:%s rejected with MARK_TIMESTAMP_FUTURE", chain, token
+                )
+                continue
             refreshed += 1
         return refreshed
 
@@ -536,7 +541,7 @@ class MarketMonitor:
                         # One savepoint per row: a row the database refuses costs only
                         # that row, and the rest of the batch still commits.
                         with session.begin_nested():
-                            market_snapshots.record_snapshot(session, snapshot)
+                            stored = market_snapshots.record_snapshot(session, snapshot)
                     except Exception as exc:
                         message = _error_text(exc)
                         failures.append(f"{snapshot.address}: {message}")
@@ -546,6 +551,11 @@ class MarketMonitor:
                             snapshot.address,
                             message,
                         )
+                        continue
+                    if stored is None:
+                        # A far-future report is rejected, not a persisted row; it must
+                        # not make the chain look fresher than its evidence.
+                        failures.append(f"{snapshot.address}: MARK_TIMESTAMP_FUTURE")
                         continue
                     persisted += 1
                 session.commit()

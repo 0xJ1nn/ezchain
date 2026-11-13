@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import CHAINS, AdapterError, DexScreenerClient, NoRoute, QuoteRouter
 from ezchain_core import (
+    MARK_FUTURE_SKEW_SECONDS,
     TRADE_RISK_PROFILES,
     CostPreview,
     LedgerEntry,
@@ -97,6 +98,11 @@ SHARE_QUANTUM = Decimal("0.01")
 # partition of cash, independent of order (CONTRACT I1).
 LEDGER_PRECISION = 60
 SETTLEMENT_CHAIN = "settlement"
+# How far an observation may run ahead of the reader's clock before it stops being a
+# tolerated skew and becomes an unusable (unknown) mark. The bound lives in core so the
+# writer, this read model and the risk gate share one value; a far-future legacy row is
+# reported unknown rather than "future", so it cannot freeze a position's price.
+FUTURE_SKEW_SECONDS = MARK_FUTURE_SKEW_SECONDS
 SETTLEMENT_ASSET = "USD"
 # Deterministic ids keep the genesis wallet stable across a migration, a restart and a
 # second process. A wallet is addressed by its chain, which is unique per asset.
@@ -421,8 +427,12 @@ def _day_start() -> datetime:
 # ---------------------------------------------------------------------------
 
 
-def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow:
-    """Upsert the latest observation for (chain, token); older events never overwrite."""
+def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow | None:
+    """Upsert the latest observation for (chain, token); older events never overwrite.
+
+    A report dated beyond the tolerated skew is rejected (``MARK_TIMESTAMP_FUTURE``) and
+    returns ``None``; it never becomes a mark and never suppresses a later correct one.
+    """
     return market_snapshots.record_snapshot(session, snapshot)
 
 
@@ -477,10 +487,15 @@ def _mark_status(
     if stamp is None:
         return "unknown"
     now = now or utcnow()
-    age = (now - stamp).total_seconds()
-    if age < 0:
+    skew = (stamp - now).total_seconds()
+    # A modestly future-dated observation is tolerated clock skew (``future``); one
+    # further ahead than the skew bound cannot be trusted and reports ``unknown`` so
+    # no surface prints a frozen price as usable. The age is then withheld.
+    if skew > FUTURE_SKEW_SECONDS:
+        return "unknown"
+    if skew > 0:
         return "future"
-    if age > max_age_seconds:
+    if -skew > max_age_seconds:
         return "stale"
     return "fresh"
 
@@ -505,7 +520,21 @@ def _position_views(
         chain, token = _split_position_account(account)
         snapshot = snapshots.get((chain, token))
         mark = snapshot.price_usd if snapshot is not None else None
-        market_value = None if mark is None else quantity * mark
+        # A source describes where a mark came from. A snapshot row can exist with no
+        # price (a failed observation); labelling that row with a source would present
+        # it as priced and leak an observation age to dashboard/positions/reports.
+        source = None if snapshot is None or mark is None else _source_ref(snapshot)
+        status, age_seconds = _mark_freshness(
+            mark, None if source is None else source.to_dict(), max_age_seconds, now
+        )
+        # ``unknown`` fails closed: a mark whose freshness cannot be trusted (a legacy
+        # far-future observation, an unparsable time) prices nothing. Keeping the price
+        # would let equity, composition and unrealized PnL be computed from a frozen
+        # number while the status said the mark is unusable (CONTRACT I3). The source is
+        # not a money number and stays, so the alert feed can still name the clock fault.
+        priced = mark is not None and status != "unknown"
+        mark_usd = mark if priced else None
+        market_value = None if mark_usd is None else quantity * mark_usd
         unrealized = None if market_value is None else market_value - cost
         view = PositionView(
             chain=chain,
@@ -513,24 +542,16 @@ def _position_views(
             symbol=snapshot.symbol if snapshot is not None and snapshot.symbol else token,
             quantity=quantity,
             avg_cost_usd=cost / quantity,
-            mark_usd=mark,
+            mark_usd=mark_usd,
             market_value_usd=market_value,
             unrealized_usd=unrealized,
             realized_usd=replay.realized_by_account.get(account, Decimal(0)),
-            # A source describes where a mark came from. A snapshot row can exist with no
-            # price (a failed observation); labelling that row with a source would present
-            # it as priced and leak an observation age to dashboard/positions/reports.
-            source=None if snapshot is None or mark is None else _source_ref(snapshot),
+            source=source,
+            mark_status=status,
+            mark_age_seconds=age_seconds,
             mode="paper",
         )
-        source = view.source
-        status, age_seconds = _mark_freshness(
-            view.mark_usd,
-            None if source is None else source.to_dict(),
-            max_age_seconds,
-            now,
-        )
-        views.append(replace(view, mark_status=status, mark_age_seconds=age_seconds).to_dict())
+        views.append(view.to_dict())
     views.sort(key=lambda item: (item["chain"], item["token_address"]))
     return views
 

@@ -50,7 +50,7 @@ def destructive_upgrade_operations(source: str) -> list[str]:
 
 
 def test_migration_head_is_the_latest_revision() -> None:
-    assert head_revision() == "0017_ledger_seq_index"
+    assert head_revision() == "0018_market_snapshot_received_at"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:

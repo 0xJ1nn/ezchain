@@ -15,7 +15,16 @@ from dataclasses import dataclass as _dc
 from datetime import UTC
 from decimal import Decimal
 
-from .types import OrderRequest, Quote, RiskReason, Side, SourceRef, TokenSnapshot
+from .types import (
+    MARK_FUTURE_SKEW_SECONDS,
+    OrderRequest,
+    Quote,
+    RiskReason,
+    Side,
+    SourceRef,
+    TokenSnapshot,
+    utcnow,
+)
 
 
 @_dc(frozen=True)
@@ -39,6 +48,8 @@ class RiskLimits:
     max_open_positions: int = 10
     max_daily_loss_usd: Decimal = Decimal("500")
     max_quote_age_seconds: float = 60.0
+    # An observation dated further ahead than this is a clock fault, never fresh evidence.
+    max_future_skew_seconds: float = MARK_FUTURE_SKEW_SECONDS
     min_liquidity_usd: Decimal = Decimal("10000")
     min_pair_age_minutes: int = 10
     paper_mark_max_order_usd: Decimal = Decimal("250")
@@ -213,9 +224,24 @@ def evaluate_order(
 
     # Quote freshness protects both sides: an exit priced from an old quote is not an
     # exit the trader can trust. It is never waived for a reduce-only sell.
+    now = utcnow()
     source = now_source or quote.source
     if source.is_stale(limits.max_quote_age_seconds):
         reasons.append(RiskReason("QUOTE_STALE"))
+    # A timestamp beyond the tolerated skew is a clock fault, not fresh evidence. It is
+    # rejected on its own code so a far-future mark cannot pass the age gate (a negative
+    # age always looks fresh) and cannot price an entry.
+    quote_is_future = source.is_future(limits.max_future_skew_seconds, now)
+    if quote_is_future:
+        reasons.append(
+            RiskReason(
+                "MARK_TIMESTAMP_FUTURE",
+                detail={
+                    "skew_seconds": round(source.future_skew_seconds(now), 3),
+                    "limit_seconds": limits.max_future_skew_seconds,
+                },
+            )
+        )
 
     # The market feed qualifies new risk. A reduce-only exit is priced by its executable
     # sell quote, so an unknown or stale mark, unknown or thin liquidity and a missing
@@ -223,6 +249,22 @@ def evaluate_order(
     if not exit_only:
         if snapshot.price_usd is None:
             reasons.append(RiskReason("PRICE_UNKNOWN"))
+        # The market feed's own timestamp can be a clock fault even when the quote came
+        # from a venue. One reason is enough; the quote check above may have added it.
+        if (
+            not quote_is_future
+            and snapshot.source is not None
+            and snapshot.source.is_future(limits.max_future_skew_seconds, now)
+        ):
+            reasons.append(
+                RiskReason(
+                    "MARK_TIMESTAMP_FUTURE",
+                    detail={
+                        "skew_seconds": round(snapshot.source.future_skew_seconds(now), 3),
+                        "limit_seconds": limits.max_future_skew_seconds,
+                    },
+                )
+            )
         if snapshot.liquidity_usd is None:
             reasons.append(RiskReason("LIQUIDITY_UNKNOWN"))
         elif snapshot.liquidity_usd < limits.min_liquidity_usd:
