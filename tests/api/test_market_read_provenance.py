@@ -23,7 +23,7 @@ from ezchain_api.deps import get_dexscreener, get_market_monitor, get_session
 from ezchain_api.models import MarketSnapshotRow
 from ezchain_api.routers import markets
 from ezchain_api.services.market_reads import provenance, source_ref
-from ezchain_core import MarketRow, SourceRef, TokenSnapshot
+from ezchain_core import MARK_FUTURE_SKEW_SECONDS, MarketRow, SourceRef, TokenSnapshot
 
 BASE = 1_760_000_000
 NOW = datetime.fromtimestamp(BASE + 1_000, tz=UTC)
@@ -73,11 +73,45 @@ def test_a_named_row_source_is_a_contract_source_ref() -> None:
     assert origin == SourceRef("dexscreener", None, NOW)
 
 
-def test_provenance_never_reports_a_negative_age() -> None:
-    source = SourceRef("dexscreener", None, _at(BASE + 60))
+def test_provenance_tolerates_a_modest_future_skew_as_zero_age() -> None:
+    # Inside the skew window the contract tolerates the clock difference (ADR-0036), so
+    # the read model reports a zero age rather than a negative one.
+    source = SourceRef("dexscreener", None, _at(BASE + int(MARK_FUTURE_SKEW_SECONDS)))
     ahead = provenance(source, now=_at(BASE))
     assert ahead.age_seconds == 0
     assert ahead.stale is False
+
+
+def test_provenance_rejects_an_observation_beyond_the_future_skew() -> None:
+    # ADR-0036: an observation dated further ahead than the tolerated skew is an unusable
+    # unknown, not fresh evidence. The read model withholds its age rather than clamping
+    # it to a fresh-looking zero.
+    source = SourceRef("dexscreener", None, _at(BASE + 60))
+    now = _at(BASE)
+    assert source.is_future(MARK_FUTURE_SKEW_SECONDS, now)
+
+    ahead = provenance(source, now=now)
+    assert ahead.source == source
+    assert ahead.age_seconds is None
+    assert ahead.stale is None
+    assert ahead.to_dict() == {
+        "source": source.to_dict(),
+        "age_seconds": None,
+        "stale": None,
+    }
+
+
+def test_provenance_floored_age_and_stale_flag_agree_at_the_threshold() -> None:
+    # The displayed age is int-floored and the flag is derived from the same value, so a
+    # read at 60.9s cannot show 60 while claiming stale (61 > 60).
+    source = SourceRef("dexscreener", None, _at(BASE))
+    just_over = provenance(source, now=_at(BASE) + timedelta(seconds=60.9))
+    assert just_over.age_seconds == 60
+    assert just_over.stale is False
+
+    past = provenance(source, now=_at(BASE) + timedelta(seconds=61))
+    assert past.age_seconds == 61
+    assert past.stale is True
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +309,51 @@ def test_token_read_without_a_source_keeps_age_unknown() -> None:
     assert body["source"] is None
     assert body["age_seconds"] is None
     assert body["stale"] is False
+
+
+def test_a_stored_row_beyond_the_future_skew_has_no_age_and_no_verdict(session: Session) -> None:
+    session.add(
+        _row(
+            token_address="0xfuture",
+            symbol="FUT",
+            observed_at=datetime.now(UTC) + timedelta(seconds=60),
+        )
+    )
+    session.commit()
+
+    body = (
+        _client(session, _settings()).get("/api/v1/markets/stored", params={"chain": "all"}).json()
+    )
+
+    row = body["rows"][0]
+    assert row["source"]["name"] == "dexscreener"
+    assert row["age_seconds"] is None
+    assert row["stale"] is None
+
+
+def test_a_token_beyond_the_future_skew_is_not_presented_as_fresh() -> None:
+    class FutureAdapter:
+        async def get_token(self, chain: str, address: str) -> TokenSnapshot:
+            return TokenSnapshot(
+                chain=chain,
+                address=address,
+                symbol="TKN",
+                name="Token",
+                price_usd=Decimal("1.2"),
+                liquidity_usd=Decimal("1000"),
+                volume_24h_usd=None,
+                price_change_m5=None,
+                price_change_h1=None,
+                price_change_h6=None,
+                price_change_h24=None,
+                source=SourceRef(
+                    "dexscreener", "https://dexscreener.com", datetime.now(UTC) + timedelta(60)
+                ),
+                stale=False,
+            )
+
+    body = _client(None, _settings(), FutureAdapter()).get("/api/v1/tokens/ethereum/0xabc").json()
+
+    assert body["source"]["name"] == "dexscreener"
+    assert body["age_seconds"] is None
+    assert body["stale"] is True

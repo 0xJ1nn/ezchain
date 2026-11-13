@@ -269,14 +269,17 @@ def _token_out(snapshot: TokenSnapshot, now: datetime) -> TokenOut:
 
     The snapshot's ``stale`` flag is what the adapter believed when it answered. The API
     reports the contract's verdict at this read's clock, so an old observation cannot be
-    presented as fresh.
+    presented as fresh. ``TokenOut.stale`` is a boolean, so an unknown verdict behind a
+    known source (a timestamp beyond the tolerated future skew, ADR-0036) reports stale:
+    it must not read as fresh. A token with no source at all keeps the documented ``False``.
     """
     origin = snapshot.source
     freshness = provenance(origin, now=now)
+    stale = bool(freshness.stale) if freshness.stale is not None else origin is not None
     return TokenOut.model_validate(
         {
             **snapshot.to_dict(),
-            "stale": bool(freshness.stale),
+            "stale": stale,
             "age_seconds": freshness.age_seconds,
         }
     )

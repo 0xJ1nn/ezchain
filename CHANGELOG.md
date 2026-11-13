@@ -45,8 +45,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   composes the contract's serialiser. Contract fields are read under the contract's names
   (`pair`, `price`, `size`, `direction`, `units`, `source`, `observed_at`) rather than
   `mint`/`price_sol`/`size_sol`/`side`; `mint` remains in the serialised body as the wire
-  alias. A firehose observation now records and replays through `services/ingest`
-  unchanged, with age derived from the reader's clock.
+  alias. **The serialised snapshot body no longer contains `side`, `price_sol` or
+  `size_sol`; consumers must read `direction`, `price` and `size` instead.** A firehose
+  observation now records and replays through `services/ingest` unchanged, with age derived
+  from the reader's clock.
 
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
   cash now comes from the same Python `Decimal` replay that computes the account's cash,
