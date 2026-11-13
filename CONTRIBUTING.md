@@ -22,7 +22,7 @@ and Chrome for the Playwright smoke test.
 git clone https://github.com/0xJ1nn/ezchain.git
 cd ezchain
 node tools/sync-agent-stubs.mjs
-pnpm install
+bash tools/setup-web.sh
 PYTHON=python3.11 bash tools/setup-python.sh
 createdb ezchain
 cp .env.example .env

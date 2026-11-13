@@ -170,7 +170,7 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 ## Commands
 
 ```bash
-pnpm install
+bash tools/setup-web.sh
 pnpm dev
 bash tools/ci.sh
 pnpm --filter @ezchain/web shots

@@ -6,9 +6,10 @@ cd "$(dirname "$0")/.."
 
 # The gate must be hermetic. A developer running `verify.sh --live` exports the deployment
 # token for the live steps; unit tests assert the unset development default, so remove it
-# (and any signing secret) from the test environment. The caller's environment is not
-# modified: this script runs in a child shell.
-unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET
+# (and any signing secret) from the test environment. PYTHONPATH can point imports at a
+# second checkout, and NODE_ENV=production changes what Next builds and what pnpm installs.
+# The caller's environment is not modified: this script runs in a child shell.
+unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET PYTHONPATH NODE_ENV
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
@@ -81,10 +82,14 @@ if [ -f pnpm-workspace.yaml ]; then
   if [ "$web_gate" -eq 0 ]; then
     echo "web gates skipped: the diff touches no web paths (EZCHAIN_GATE_WEB=always forces them)"
   elif [ ! -d node_modules ]; then
-    echo "not present yet: web gates (node_modules missing — run pnpm install)"
+    echo "not present yet: web gates (node_modules missing — run bash tools/setup-web.sh)"
   else
     command -v pnpm >/dev/null 2>&1 || {
       echo "pnpm is required for the web gate: npm install -g pnpm@9"
+      exit 1
+    }
+    [ -x node_modules/.bin/eslint ] || {
+      echo "web dependencies are incomplete (eslint missing): run bash tools/setup-web.sh"
       exit 1
     }
     pnpm -r lint

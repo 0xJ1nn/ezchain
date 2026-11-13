@@ -6,7 +6,7 @@ viewports, and compare it with the wireframe or the approved visual.
 ## Local workflow
 
 ```bash
-pnpm install
+bash tools/setup-web.sh
 pnpm --filter @ezchain/web test       # Playwright smoke + screenshots
 # parallel worktrees: EZCHAIN_PW_PORT=3300 pnpm --filter @ezchain/web test
 ```
