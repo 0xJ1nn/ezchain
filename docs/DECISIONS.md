@@ -1036,3 +1036,58 @@ constant.
 never use an old number, and the operator sees one alert per outage per process rather than
 one per request. The stale settlement price is visible on the fill and in the order's quote
 evidence, so nothing is hidden.
+
+## ADR-0040 — Custody is the user's; the vault protects keys from everyone else
+
+**Status:** accepted 2026-11-13. Amends the custody plan that named a hardware signer as
+the only path; owner direction of the same day is the source.
+
+**Context:** The custody line had been designed as an operator-only hardware signer: one
+device, one key ring, live execution behind it. The product is user-facing, and users add
+their own keys or link their own wallets. A design where only the operator's device can
+sign cannot serve them, and one that forced a device approval on every order would impose
+friction the owner explicitly rejected: automation, including full automation, is the
+user's choice. What must not move is the engineering invariant — the platform keeps keys
+safe from outsiders, and money still fails closed.
+
+**Options:** (a) operator-held hardware signer only; (b) keys in the server's process
+memory, gated by a per-order confirmation; (c) user-held keys in an encrypted vault the
+server enforces, with a device as one custody option, and automation as a per-user setting.
+
+**Decision:** (c). A key is added at runtime by the user who owns it and is addressed by an
+opaque `KeyHandle` (id, owner, custody tier, chain, public address, public-key SHA-256
+fingerprint). `ezchain_core.vault` owns the contract: a `Vault` signs one prepared
+transaction for one owner's handle and returns a `VaultSignature`; there is no operation
+that returns a key, a seed or a passphrase, and no field to store one. Custody tiers are
+`local_vault` (key encrypted at rest under the user's credential), `hardware` (a device
+approves each signature; one option, not the only one) and `watch` (no key; never signs).
+`services/executor` implements the vendor-agnostic seam `HardwareSignerVault` over a
+`SignerTransport` — USB device, local daemon on a unix socket, remote signer — so no vendor
+SDK enters the tree and the device family is chosen without a dependency. Every non-answer
+is one stable code (`VAULT_UNREACHABLE`, `VAULT_APPROVAL_DENIED`, `VAULT_UNKNOWN_HANDLE`,
+`VAULT_LOCKED`, `VAULT_WATCH_ONLY`, `VAULT_SIGN_FAILED`); another user's handle refuses
+exactly like an unknown one, so a caller cannot probe existence, and a signer that answers
+for a different fingerprint is refused rather than trusted. Automation is a per-user
+`AutomationSetting`: `manual` is EZ-257's approval queue, and `full_auto` cannot be
+constructed without a `RiskDisclosure` at the automation opt-in for that same user. The
+second disclosure point, `key_add`, records what custody of the added key means. The
+product tells the user what they are doing, once, and then does what they asked.
+
+**Consequences:** the key belongs to its user, so the platform's guarantee is against
+outsiders — encryption at rest, the handle boundary, no key in any log, metric, error or
+serialised object, no third-party access — and is not a paternalistic gate on the owner.
+The ledger keeps a fingerprint per fill, never a key, so a fill names the key that signed
+it without exposing it. The pipeline's live gate tightens rather than loosens: a non-paper
+pipeline needs not only a signing boundary but a boundary whose signer carries a signable
+per-user handle, and a bare in-memory signer refuses with `VAULT_BOUNDARY_REQUIRED` before
+the venue. The existing `SIGNING_BOUNDARY_REQUIRED` refusal still stands for a pipeline
+with no boundary at all. Everything the executor already enforced is unchanged: one
+ledger, one execution path, unknown data refuses, the kill switch gates entry only, and
+the signed live gate record still gates a live start.
+
+**Open, for the next vault tasks:** the cipher and KDF for the encrypted store and its
+backup/restore path; the allow-list and per-key policy shape; the master-key source (the
+operator's KMS or sealed file, and how a user's credential wraps their own key); key
+rotation and revocation (EZ-224) and the rotation's fingerprint history; the offline
+known-answer vector and cluster guard (EZ-223); the signing process's socket and per-start
+secret (EZ-222). Each is a design against this decision and needs owner review before live.

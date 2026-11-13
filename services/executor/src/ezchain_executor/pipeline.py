@@ -28,6 +28,9 @@ this file keeps:
   signature it got back against the approved payload and approval it decoded. The signed
   payload's digest then travels through submit and a receipt that does not echo it is never
   journaled. Live refuses an unsigned submit before the venue; paper may run unsigned.
+* Live needs custody, not only a boundary: the signer must carry a signable key handle
+  owned by the user whose order it signs. A bare in-memory signer refuses with
+  ``VAULT_BOUNDARY_REQUIRED`` in live, where the key would be nobody's.
 * Nothing here writes the ledger; the sink does, and only after a confirmed fill.
 """
 
@@ -47,6 +50,7 @@ from ezchain_core import (
     TRANSACTION_DIGEST_MISMATCH,
     TRANSACTION_NOT_APPROVABLE,
     TRANSACTION_SIGN_FAILED,
+    VAULT_BOUNDARY_REQUIRED,
     ApprovedIntent,
     ExecutionResult,
     ExecutionStatus,
@@ -63,6 +67,7 @@ from ezchain_core import (
     SignedTransaction,
     TokenSnapshot,
     TransactionDecodeError,
+    VaultBackedSigner,
     Venue,
     decode_transaction,
     journal_from_fill,
@@ -303,6 +308,11 @@ class ExecutionPipeline:
         if self.signing is None:
             if self.mode != "paper":
                 return _refused_before_submit(intent, order, reason=SIGNING_BOUNDARY_REQUIRED)
+        elif self.mode != "paper" and not _custody_backed(self.signing):
+            # A non-paper pipeline needs a signing boundary that signs with the user's own
+            # handle through the vault seam. An in-memory signer with no handle would spend
+            # real money from a key nobody custodies, so it is refused here.
+            return _refused_before_submit(intent, order, reason=VAULT_BOUNDARY_REQUIRED)
         else:
             signed_result = await self._sign(order)
             if isinstance(signed_result, ExecutionResult):
@@ -664,6 +674,16 @@ def _refused_before_submit(intent: Intent, order: Order, *, reason: str) -> Exec
         quote=order.quote,
         reason=reason,
     )
+
+
+def _custody_backed(boundary: SigningBoundary) -> bool:
+    """True when the boundary signs through a signable per-user key handle.
+
+    A signer that carries no handle signs with a key nobody owns, which is not custody. A
+    watch-only handle cannot sign, so it is not custody either. Both refuse in live.
+    """
+    signer = boundary.signer
+    return isinstance(signer, VaultBackedSigner) and signer.handle.signable
 
 
 def _conflict(intent: Intent) -> ExecutionResult:

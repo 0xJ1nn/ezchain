@@ -7,6 +7,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **Custody is the user's, and the vault keeps keys from everyone else (PAPER).** Keys are
+  added at runtime by the person who owns them, encrypted at rest under that user's
+  credential, and used only for that user's orders. `ezchain_core.vault` owns the contract:
+  a `KeyHandle` (opaque id, owner, custody tier, chain, public address, public-key SHA-256
+  fingerprint) and a `Vault.sign(prepared, handle, owner=...)` that returns a
+  `VaultSignature` and has no operation — and no field — a key, seed or passphrase could
+  travel in. Custody tiers are `local_vault`, `hardware` (a device, one option among
+  several, not the only path) and `watch` (never signs). `services/executor` implements a
+  vendor-agnostic `HardwareSignerVault` over a `SignerTransport`, so a USB device, a local
+  daemon or a remote signer is interchangeable and no vendor SDK is a dependency. Fail
+  closed: an unreachable signer, a declined approval, an unknown handle, another user's
+  handle, a locked signer, a watch-only handle, a device answering for another key or a
+  broken transport each produce no signature and one typed `VAULT_*` code; another user's
+  handle refuses exactly like an unknown one. Automation is a per-user `AutomationSetting`:
+  `manual` is the approval queue and `full_auto` cannot be constructed without the opt-in
+  risk disclosure for that same user, with the key-add disclosure recorded beside it. Live
+  now also requires custody, not just a signing boundary: a pipeline whose mode is not paper
+  refuses a signer with no signable per-user handle (`VAULT_BOUNDARY_REQUIRED`) before the
+  venue. Paper runs unchanged with the fake venue. Recorded as ADR-0040.
 - **The executor signs only the intent that was approved (PAPER).** A venue adapter now
   receives an immutable `ApprovedIntent` (chain, cluster, mint, side, amount, minimum
   output, recipient, program id, idempotency key) and returns bytes; it is not handed the

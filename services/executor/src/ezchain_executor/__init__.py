@@ -9,12 +9,24 @@ from .journal import JournalSink, MemoryJournal
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
 from .pipeline import DedupeStore, ExecutionPipeline, IntentRejected
 from .signing import KeyRing, LocalTransactionSigner, SigningBoundary, SigningRefused
+from .vault import (
+    HardwareSignerVault,
+    SignerApprovalDenied,
+    SignerHandleUnknown,
+    SignerLocked,
+    SignerSignature,
+    SignerTransport,
+    SignerTransportError,
+    SignerUnreachable,
+    VaultTransactionSigner,
+)
 from .venue import FakeVenue, VenueError
 
 __all__ = [
     "DedupeStore",
     "ExecutionPipeline",
     "FakeVenue",
+    "HardwareSignerVault",
     "IntentRejected",
     "JournalSink",
     "KeyRing",
@@ -23,7 +35,15 @@ __all__ = [
     "KillSwitchUnavailable",
     "LocalTransactionSigner",
     "MemoryJournal",
+    "SignerApprovalDenied",
+    "SignerHandleUnknown",
+    "SignerLocked",
+    "SignerSignature",
+    "SignerTransport",
+    "SignerTransportError",
+    "SignerUnreachable",
     "SigningBoundary",
     "SigningRefused",
+    "VaultTransactionSigner",
     "VenueError",
 ]
