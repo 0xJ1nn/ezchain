@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { TopbarKillSwitch } from "@/app/risk/kill-switch";
 import { getKillSwitch } from "@/lib/paper-api";
+import { getExecutionMode } from "@/lib/system-api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -14,6 +15,43 @@ async function TopbarKillSwitchState() {
 			initial={result.ok ? result.data : null}
 			initialError={result.ok ? null : result.error.message}
 		/>
+	);
+}
+
+// The execution mode is the value the API derived, never a literal. A read that fails or
+// answers without one renders UNKNOWN and says why, so the chip cannot claim a mode the
+// deployment might not be in.
+async function TopbarModeChip() {
+	const result = await getExecutionMode();
+	if (!result.ok) {
+		return (
+			<span
+				className="mode unknown"
+				title={`Execution mode unavailable · ${result.error.code}`}
+			>
+				<span className="dot" />
+				UNKNOWN
+			</span>
+		);
+	}
+	const live = result.data === "live";
+	return (
+		<span
+			className={live ? "mode live" : "mode paper"}
+			title={`Execution mode · ${result.data} · derived by the API`}
+		>
+			<span className="dot" />
+			{result.data.toUpperCase()}
+		</span>
+	);
+}
+
+function ModeChipFallback() {
+	return (
+		<span className="mode pending" title="Reading the execution mode from the API">
+			<span className="dot" />
+			…
+		</span>
 	);
 }
 
@@ -42,10 +80,9 @@ export function Topbar() {
 					aria-label="Search markets (symbol, name or address)"
 				/>
 			</form>
-			<span className="mode paper" title="Execution mode">
-				<span className="dot" />
-				PAPER
-			</span>
+			<Suspense fallback={<ModeChipFallback />}>
+				<TopbarModeChip />
+			</Suspense>
 			<span className="source chip" title="Market data source">
 				{fixture ? "⟳ fixture data" : "⟳ live · dexscreener"}
 			</span>

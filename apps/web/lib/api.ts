@@ -480,9 +480,17 @@ export async function getMarkets(query: MarketQuery = {}): Promise<MarketList> {
 	});
 }
 
+/**
+ * The dashboard launches panel is a births window, not an "oldest pair" list: it shows
+ * only pairs born inside this many minutes. A pair whose birth the source omits cannot be
+ * proven to fall inside the window, so the API excludes it instead of assuming one.
+ */
+export const LAUNCH_WINDOW_MINUTES = 24 * 60;
+
 export interface LaunchQuery {
 	chain?: string;
 	limit?: number;
+	maxPairAgeMinutes?: number;
 }
 
 export async function getLaunches(query: LaunchQuery = {}): Promise<LaunchList> {
@@ -497,6 +505,7 @@ export async function getLaunches(query: LaunchQuery = {}): Promise<LaunchList> 
 			chain: query.chain ?? "all",
 			sort: "new",
 			limit: query.limit ?? 5,
+			max_pair_age_minutes: query.maxPairAgeMinutes,
 		},
 	});
 	return {

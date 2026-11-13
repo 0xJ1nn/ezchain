@@ -165,6 +165,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   cancellation. A cancelled call is still not a failure, and a `no route` answer still does
   not count.
 
+- **The dashboard states the launches window and the execution mode it actually has
+  (web).** The launches panel called its column "Age" next to the trending table's age and
+  listed whatever the feed returned, including pairs born days earlier, so the "newest
+  births" heading promised a window the query never applied. It now asks the API for pairs
+  born inside a 24-hour window (`max_pair_age_minutes`, exposed as `LAUNCH_WINDOW_MINUTES`),
+  labels the column "Pair age", and uses the pair-age formatter that marks a newborn pair.
+  Pairs whose birth the source omits are excluded, not assumed newborn, and an empty window
+  says so instead of being backfilled. The topbar mode chip was literal `PAPER`; it now
+  reads the server-derived mode from `/healthz` (`mode.execution`) the way the kill-switch
+  store reads its state, and renders UNKNOWN with the reason when the read fails or the
+  payload carries no recognised mode — it never falls back to a guess. The equity KPI
+  value no longer breaks mid-number at desktop widths (it takes a wider share of the band
+  and does not wrap; the wrap breakpoints still apply).
+
 - **The MCP server refuses writes without a verified scoped credential, from every entry
   point.** The deployment token is an admin principal, so an agent must never run with it.
   The startup probe already refused it, but the guard lived in the CLI: a server

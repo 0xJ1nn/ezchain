@@ -84,7 +84,8 @@ test("launches renders fixture births feed with honest unknowns and Trade links"
 
 	// Safety/dev/lp unknowns are badges, never zero or a pass.
 	await expect(table.getByText("unknown", { exact: true }).first()).toBeVisible();
-	await expect(page.getByText("PAPER", { exact: true }).first()).toBeVisible();
+	// The page's own paper claim, not the sidebar rail's hidden abbreviation.
+	await expect(page.locator("main").getByText("PAPER", { exact: true }).first()).toBeVisible();
 
 	// Trade per row links to the token quote panel route.
 	const trades = table.getByRole("link", { name: "Trade" });

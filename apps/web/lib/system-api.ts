@@ -25,6 +25,8 @@ export interface ServiceHealth {
 
 export interface Liveness {
 	status: string;
+	/** The mode the API derived (ADR-0035). Absent on an older or partial answer. */
+	mode?: { execution?: string; live_available?: boolean; live_blocked_reason?: string | null };
 }
 
 export interface Readiness {
@@ -122,6 +124,35 @@ export async function getLiveness(): Promise<SystemResult<Liveness>> {
 		};
 	}
 	return capture(() => readJson<Liveness>("/healthz", []));
+}
+
+// The execution mode is derived by the API, never by this client (ADR-0035). `/healthz`
+// is the public read that carries it, so the shell reads the same value a probe would.
+// A refusal or a payload without a recognised mode is an error, not a default: the chip
+// must be able to say it does not know.
+export type ExecutionMode = "paper" | "live";
+
+export async function getExecutionMode(): Promise<SystemResult<ExecutionMode>> {
+	const current = mode();
+	if (current === "fixture") {
+		return {
+			ok: false,
+			mode: current,
+			error: { code: "FIXTURE_NOT_PROBED", message: FIXTURE_MESSAGE },
+		};
+	}
+	return capture(async () => {
+		const liveness = await readJson<Liveness>("/healthz", []);
+		const execution = liveness.mode?.execution;
+		if (execution !== "paper" && execution !== "live") {
+			throw new Error(
+				`MODE_NOT_REPORTED: /healthz did not report a recognised execution mode (got ${String(
+					execution ?? "nothing",
+				)})`,
+			);
+		}
+		return execution;
+	});
 }
 
 export async function getServiceHealth(): Promise<SystemResult<ServiceHealth>> {

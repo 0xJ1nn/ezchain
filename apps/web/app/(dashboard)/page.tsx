@@ -7,7 +7,7 @@ import {
 	getPaperLimits,
 	getPaperOrders,
 } from "@/lib/account-api";
-import { asApiError, getChains, getLaunches, getMarkets } from "@/lib/api";
+import { asApiError, getChains, getLaunches, getMarkets, LAUNCH_WINDOW_MINUTES } from "@/lib/api";
 import {
 	ageLabel,
 	chainInitial,
@@ -17,6 +17,7 @@ import {
 	formatUsd,
 	formatUsdPrice,
 	initials,
+	pairAgeLabel,
 	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
@@ -58,6 +59,11 @@ function money(value: string | null | undefined, signed = false) {
 	return signed && amount > 0 ? `+${formatUsd(String(amount))}` : formatUsd(String(amount));
 }
 
+// The window is the query the panel sends, so the copy cannot drift from it.
+function windowLabel(minutes: number) {
+	return minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+}
+
 function markCountLabel(count: number) {
 	return `${count} open mark${count === 1 ? "" : "s"} unknown`;
 }
@@ -75,7 +81,7 @@ export default async function DashboardPage({
 			getMarkets({ limit: 5, sort: "trending" })
 				.then((list) => ({ ok: true as const, list }))
 				.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
-			getLaunches({ limit: 3 })
+			getLaunches({ limit: 3, maxPairAgeMinutes: LAUNCH_WINDOW_MINUTES })
 				.then((list) => ({ ok: true as const, list }))
 				.catch((error: unknown) => ({ ok: false as const, error: asApiError(error) })),
 			getChains()
@@ -158,11 +164,20 @@ export default async function DashboardPage({
 				</div>
 				<div className="grid cols-2">
 					<div>
-						<div className="strong mb-8">Launches</div>
+						<div className="between mb-8">
+							<div className="strong">Launches</div>
+							<div className="small muted">
+								born in the last {windowLabel(LAUNCH_WINDOW_MINUTES)} · pair age
+							</div>
+						</div>
 						{!launchesOutcome.ok ? (
 							<div className="note">{failure(launchesOutcome)}</div>
 						) : launchRows.length === 0 ? (
-							<div className="note">No births in the fixture sample for this view.</div>
+							<div className="note">
+								No pair was born inside the {windowLabel(LAUNCH_WINDOW_MINUTES)} window.
+								Empty is not zero: the feed is reported empty rather than padded with
+								older pairs.
+							</div>
 						) : (
 							<div className="table-wrap">
 								<table className="table compact">
@@ -170,7 +185,7 @@ export default async function DashboardPage({
 										<tr>
 											<th>Token</th>
 											<th>Chain</th>
-											<th className="num">Age</th>
+											<th className="num">Pair age</th>
 											<th>Curve progress</th>
 											<th>Trade</th>
 										</tr>
@@ -195,7 +210,7 @@ export default async function DashboardPage({
 														{labelFor(row.chain)}
 													</span>
 												</td>
-												<td className="num mono">{ageLabel(row.pair_created_at)}</td>
+												<td className="num mono">{pairAgeLabel(row.pair_created_at)}</td>
 												<td>
 													{row.curve_progress_pct === null ? (
 														<span className="small muted mono">—</span>
@@ -359,12 +374,7 @@ export default async function DashboardPage({
 							: `equity withheld · ${markCountLabel(unpricedCount)}`
 						: "unavailable"
 				}
-				action={
-					<>
-						<SectionBadge live={live} />
-						<Badge tone="ghost">PAPER</Badge>
-					</>
-				}
+				action={<SectionBadge live={live} />}
 				footer={
 					<div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
 						<span>
