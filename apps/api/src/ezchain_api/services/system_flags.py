@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,8 +27,9 @@ KILL_SWITCH_KEY = "engine_kill_switch"
 # every caller; the strategy level is the narrower level the engine already enforces on
 # strategy-attributed intents. ``scope`` reports the widest level in force so a client
 # that only understands one value never under-reports the block.
-KILL_SWITCH_SCOPE = "global"
-KILL_SWITCH_SCOPES = ("global", "strategy")
+KillSwitchScope = Literal["global", "strategy"]
+KILL_SWITCH_SCOPE: KillSwitchScope = "global"
+KILL_SWITCH_SCOPES: tuple[KillSwitchScope, ...] = ("global", "strategy")
 
 
 @dataclass(frozen=True)

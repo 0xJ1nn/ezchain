@@ -14,6 +14,7 @@ from ezchain_api.config import Settings
 from ezchain_api.db import Base
 from ezchain_api.models import SystemFlagRow
 from ezchain_api.routers import system
+from ezchain_api.schemas import KillSwitchOut
 from ezchain_api.services import system_flags
 from ezchain_api.services.system_flags import (
     KILL_SWITCH_KEY,
@@ -170,3 +171,10 @@ def test_seed_recovers_when_another_process_wins_the_insert(
             assert read_kill_switch(fresh, settings).reason == "winner"
     finally:
         eng.dispose()
+
+
+def test_schema_scopes_track_the_system_flags_source() -> None:
+    """The schema must not keep a second copy of the scopes list."""
+    schema = KillSwitchOut(active=True)
+
+    assert list(schema.scopes) == list(system_flags.KILL_SWITCH_SCOPES)

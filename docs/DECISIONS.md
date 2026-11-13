@@ -877,8 +877,11 @@ widest level in force) and `scopes: ["global", "strategy"]` (both levels the fla
 **Consequences:** a switch armed by an operator from now on stops entries from every
 client, which is the behaviour the UI already described; clients that read the old
 `scope: "strategy"` value must treat the widest level as armed. Two reason codes reach
-observability: `KILL_SWITCH_ARMED` on the rejected order row and `KILL_SWITCH_ACTIVE` on a
-strategy hold. A refused order still persists its rejected order row, so the attempt stays
+observability, and they are distinct on purpose: `KILL_SWITCH_ARMED` is the refusal code on
+the rejected order row, while `KILL_SWITCH_ACTIVE` stays on the engine's hold and the
+`account_read` alert (`account_read.py:461`) because the run log and the stress readers
+already key on that exact code; collapsing both into one string would break those readers.
+A refused order still persists its rejected order row, so the attempt stays
 replayable, but it writes no fill and no journal entry and never reaches a venue. The
 stored `value.scope` of an existing row is ignored on read, so no migration is needed and
 the next write records the new scope. The switch still never sells, closes or marks a

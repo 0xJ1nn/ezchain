@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .services.system_flags import KILL_SWITCH_SCOPES
+
 
 class ErrorBody(BaseModel):
     code: str
@@ -572,11 +574,6 @@ class ReconciliationOut(BaseModel):
     totals: ReconciliationTotalsOut
 
 
-def _both_switch_scopes() -> list[Literal["global", "strategy"]]:
-    """One persisted flag governs both levels, so both are reported whenever it is read."""
-    return ["global", "strategy"]
-
-
 class KillSwitchOut(BaseModel):
     """One flag, two levels: global applies to every caller, strategy to strategy intents."""
 
@@ -584,7 +581,9 @@ class KillSwitchOut(BaseModel):
     reason: str | None = None
     updated_at: str | None = None
     scope: Literal["global"] = "global"
-    scopes: list[Literal["global", "strategy"]] = Field(default_factory=_both_switch_scopes)
+    scopes: list[Literal["global", "strategy"]] = Field(
+        default_factory=lambda: list(KILL_SWITCH_SCOPES)
+    )
 
 
 class KillSwitchIn(BaseModel):
