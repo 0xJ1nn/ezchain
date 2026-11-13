@@ -31,6 +31,13 @@ from .ledger import (
     replay_position,
     sell_entries,
 )
+from .market import (
+    DEFAULT_STALENESS_SECONDS,
+    MARKET_EVENT_SCHEMA_VERSION,
+    Direction,
+    MarketEvent,
+    MarketEventError,
+)
 from .money import DEFAULT_SLIPPAGE_BPS, CostPreview, bps_fee, preview_cost
 from .protection import (
     ArmEvaluation,
@@ -79,10 +86,15 @@ __all__ = [
     "ArmParams",
     "Candle",
     "CostPreview",
+<<<<<<< HEAD
     "DEFAULT_SLIPPAGE_BPS",
     "ExecutionResult",
     "ExecutionStatus",
     "Fill",
+=======
+    "DEFAULT_STALENESS_SECONDS",
+    "Direction",
+>>>>>>> dea073e (feat(market): add one normalized MarketEvent contract with replay)
     "GateCheck",
     "GateEvidence",
     "GateResult",
@@ -90,6 +102,9 @@ __all__ = [
     "Intent",
     "Journal",
     "LedgerEntry",
+    "MARKET_EVENT_SCHEMA_VERSION",
+    "MarketEvent",
+    "MarketEventError",
     "MarkStatus",
     "MarketRow",
     "MARK_FUTURE_SKEW_SECONDS",

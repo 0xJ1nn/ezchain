@@ -1,6 +1,7 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+<<<<<<< HEAD
 src = [
     "packages/core-py/src",
     "packages/adapters/src",
@@ -10,6 +11,9 @@ src = [
     "services/engine/src",
     "services/executor/src",
 ]
+=======
+src = ["packages/core-py/src", "packages/adapters/src", "packages/sdk-py/src", "apps/api/src", "apps/mcp/src", "services/engine/src", "services/ingest/src"]
+>>>>>>> dea073e (feat(market): add one normalized MarketEvent contract with replay)
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -19,10 +23,10 @@ ignore = ["B008"]  # FastAPI uses Depends()/Query() in argument defaults by desi
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
-mypy_path = "packages/core-py/src:packages/adapters/src:packages/sdk-py/src:apps/api/src:apps/mcp/src:services/engine/src:services/executor/src"
+mypy_path = "packages/core-py/src:packages/adapters/src:packages/sdk-py/src:apps/api/src:apps/mcp/src:services/engine/src:services/executor/src:services/ingest/src"
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "packages", "apps/api", "services/engine"]
+testpaths = ["tests", "packages", "apps/api", "services/engine", "services/ingest"]
 python_files = ["test_*.py"]
