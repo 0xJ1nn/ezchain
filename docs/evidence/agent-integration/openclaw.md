@@ -7,7 +7,7 @@ Environment: OpenClaw **2026.10.6 (fe06181)** on Node 26.12.1, isolated profile
 ## Bundle install
 
 ```
-openclaw --profile eztest plugins install /home/jin95/Projects/ezchain/integrations/openclaw \
+openclaw --profile eztest plugins install /path/to/ezchain/integrations/openclaw \
   --force --accept-capabilities
 ```
 
@@ -15,7 +15,7 @@ Observed:
 
 ```
 WARNING - Installing plugin from local path: …/integrations/openclaw
-Installing to /home/jin95/.openclaw-eztest/extensions/ezchain…
+Installing to ~/.openclaw-eztest/extensions/ezchain…
 Installed plugin: ezchain
 Saved for the next Gateway start.
 ```

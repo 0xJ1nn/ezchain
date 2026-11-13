@@ -126,5 +126,5 @@ Paper results are labelled `PAPER`. Do not promote this stack to live money unti
 - a supervised Docker deploy, backup/restore drill and 24h soak have passed;
 - the docs and `docs/CONTRACT.md` claims have been re-reviewed.
 
-Until then, "production ready" means **safe to run as a self-hosted paper workstation**,
+Until then, production readiness means **safe to run as a self-hosted paper workstation**,
 not "safe to trade real funds".

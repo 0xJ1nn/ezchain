@@ -524,9 +524,9 @@ hopeful.
 **Date:** 2026-10-22 · **Status:** Accepted (maintainer instruction: "makes paper and real
 trades flawlessly", 2026-10-22)
 
-**Context:** the paper stack is production-ready; traders need the same pipeline to move
-real funds. Keys are the highest-value asset (SECURITY.md §1) and four previous bots lost
-trust by mixing keys, strategy code and accounting in one process.
+**Context:** the paper stack runs the full paper pipeline end to end; traders need the
+same pipeline to move real funds. Keys are the highest-value asset (SECURITY.md §1) and
+four previous bots lost trust by mixing keys, strategy code and accounting in one process.
 
 **Decision:** implement [LIVE-EXECUTION.md](LIVE-EXECUTION.md): a separate
 `services/executor` process is the only key holder (Argon2id + AES-256-GCM vault, keys

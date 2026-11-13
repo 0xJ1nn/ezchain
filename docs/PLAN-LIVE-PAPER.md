@@ -149,7 +149,7 @@ values and token quantities use `NUMERIC(38,18)`. No floats cross a money path.
   data gates (price, liquidity, route, freshness) still apply.
 - Any unknown/missing field → `DENY` with a reason code; unknown is never zero.
 
-## Execution hardening (P0.6)
+## Execution hardening
 
 - **Reconciliation is a read model.** `GET /paper/reconciliation` derives everything
   from persisted `ledger_entries`, `paper_fills` and `paper_orders`: per-group
@@ -228,21 +228,21 @@ service and the same risk policy.
 
 ## Workstreams and file ownership
 
-| WS | Owner | Owns | Must not touch |
+| Area | Part | Owns | Must not touch |
 |---|---|---|---|
-| P0.0 | lead | `pyproject.toml`, `.env.example`, `apps/api` app/config/db bootstrap, `apps/web/next.config.ts`, docs, CI | feature modules |
-| P0.1 | swarm A | `packages/adapters/**`, adapter tests | API routes, DB models, web |
-| P0.2 | swarm B | `packages/core-py/**`, paper service/repositories, ledger tests | adapters, engine, web |
-| P0.3 | swarm C | `services/engine/**`, strategy evaluator tests | API routes, adapters, web |
-| P0.4 | swarm D | live markets/token web surfaces, `lib/api.ts`, e2e | paper/strategy UI, shell |
-| P0.5 | swarm E | paper ticket/positions/strategies web surfaces, e2e | markets/token pages, shell |
+| Foundation | platform | `pyproject.toml`, `.env.example`, `apps/api` app/config/db bootstrap, `apps/web/next.config.ts`, docs, CI | feature modules |
+| Market data | data | `packages/adapters/**`, adapter tests | API routes, DB models, web |
+| Paper ledger | ledger | `packages/core-py/**`, paper service/repositories, ledger tests | adapters, engine, web |
+| Strategy engine | engine | `services/engine/**`, strategy evaluator tests | API routes, adapters, web |
+| Live markets UI | web | live markets/token web surfaces, `lib/api.ts`, e2e | paper/strategy UI, shell |
+| Paper UI | web | paper ticket/positions/strategies web surfaces, e2e | markets/token pages, shell |
 
-Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.css`,
+Shared files are platform-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.css`,
 `lib/format.ts`, `docs/**`, `pyproject.toml`.
 
 ## Phases
 
-### P0.0 — Foundation (lead)
+### Foundation
 
 - [x] `pyproject.toml`, Python 3.11 venv, dependency lock note, `.env.example`.
 - [x] Postgres schema bootstrap + Alembic baseline.
@@ -254,7 +254,7 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 - [x] ADR-0020 (paper mark for non-Solana), ADR-0021 (inline engine in P0).
 - [x] Epic issue + workstream issues + this plan.
 
-### P0.1 — Live multi-chain data (swarm A)
+### Live multi-chain data
 
 - [x] DexScreener client: profiles, boosts, takeovers, token batch, search, pairs.
 - [x] 25-chain registry with DexScreener ids; unknown chain → 404.
@@ -264,7 +264,7 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 - [x] Fixture recordings + `respx` tests.
 - [x] Adapter contract tests.
 
-### P0.2 — Paper ledger + order service (swarm B)
+### Paper ledger and order service
 
 - [x] SQLAlchemy models: ledger entries, paper orders, fills, positions view.
 - [x] Genesis account and balance/position replay.
@@ -274,7 +274,7 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 - [x] Property tests: ledger sums to zero, no negative cash/position, replay stable.
 - [x] Restart test.
 
-### P0.3 — Strategy engine (swarm C)
+### Strategy engine
 
 - [x] Strategy model + CRUD service (API routes owned by lead or B).
 - [x] Evaluator for momentum/dip/DCA/threshold.
@@ -283,7 +283,7 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 - [x] Manual run-now endpoint/service.
 - [x] Tests: each kind, cooldown, stop-loss, take-profit, paused, repeated run.
 
-### P0.4 — Web live browsing (swarm D)
+### Web live browsing
 
 - [x] `lib/api.ts` typed client, no silent fallback.
 - [x] Markets page: live rows, chain filter, search, sort, source/age, error/empty/stale.
@@ -292,7 +292,7 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 - [x] Playwright against `DATA_MODE=fixture`; screenshots at 1440/390.
 - [x] Update fixture banner logic: live mode says `LIVE`; fixture mode says `FIXTURE`.
 
-### P0.5 — Web paper + strategies (swarm E)
+### Web paper and strategies
 
 - [x] Paper account card on dashboard and positions.
 - [x] Buy/sell ticket on token page (amount USD, quote preview, confirm, idempotency key).
@@ -302,7 +302,7 @@ Shared files are lead-owned: `apps/web/components/ui.tsx`, `shell.tsx`, `app/ui.
 - [x] Playwright e2e for buy → position → sell; strategy create → run.
 - [x] Screenshots at 1440/390.
 
-### P0.6 — Integration and hardening (lead + reviewers)
+### Integration and hardening
 
 - [x] Continuous all-chain market observation: bounded scan, persisted snapshots,
       `/markets/overview` and `/markets/stored`, fail-closed `no_data`/`stale`/`error`.
