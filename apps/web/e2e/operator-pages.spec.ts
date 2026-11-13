@@ -63,13 +63,13 @@ test("the kill switch arms with a reason and shows the persisted response", asyn
 
 	await page.goto("/risk");
 	await expect(page.getByRole("heading", { name: "Risk", level: 1 })).toBeVisible();
-	await expect(page.getByText("RELEASED", { exact: true })).toBeVisible();
+	await expect(page.locator("#main").getByText("RELEASED", { exact: true })).toBeVisible();
 
 	await page.getByRole("button", { name: "Arm kill switch" }).click();
 	await page.getByLabel("Reason for the operator log").fill("e2e arm: verify control");
 	await page.getByRole("button", { name: "Confirm arm" }).click();
 
-	await expect(page.getByText("ARMED", { exact: true })).toBeVisible();
+	await expect(page.locator("#main").getByText("ARMED", { exact: true })).toBeVisible();
 	await expect(page.getByRole("status")).toContainText("Armed");
 	expect(posted).toEqual({ active: true, reason: "e2e arm: verify control" });
 });
@@ -103,8 +103,8 @@ test("a rejected kill-switch mutation keeps the previous state and shows the API
 	await expect(page.getByRole("alert").filter({ hasText: "MUTATION_FORBIDDEN" })).toContainText(
 		"MUTATION_FORBIDDEN: mutation token rejected",
 	);
-	await expect(page.getByText("RELEASED", { exact: true })).toBeVisible();
-	await expect(page.getByText("ARMED", { exact: true })).toHaveCount(0);
+	await expect(page.locator("#main").getByText("RELEASED", { exact: true })).toBeVisible();
+	await expect(page.locator("#main").getByText("ARMED", { exact: true })).toHaveCount(0);
 });
 
 test("the ledger shows truthful empty and error states", async ({ page }) => {
