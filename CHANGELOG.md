@@ -21,6 +21,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   refused and never journaled. A pipeline in a mode other than paper refuses an unsigned
   submit (`SIGNING_BOUNDARY_REQUIRED`) before the venue is called. The signer and key ring
   stay in `services/executor`; the fake venue is the signing boundary for tests.
+- **A self-hosting guide for a server the operator owns.** `docs/SELF-HOSTING.md` covers
+  server sizing, the one-command installer and its verify-before-extract flow, firewall
+  and TLS placement, the PAPER-only stack, where the generated secrets live, rerun and
+  upgrade behaviour, backup and restore, and the shared-origin trust model. It states
+  plainly that the project never holds, sees or signs with trading keys, that nobody
+  should give anyone access to a server holding keys, and that live mode and its key path
+  are not available yet.
 
 - **One execution pipeline from intent to journal (PAPER).** `services/executor` now owns
   the single `Intent → RiskDecision → Quote → Order → Fill → Journal` path against a venue

@@ -50,7 +50,9 @@ the host.
 
 It does **not** create, read or write trading key material. No wallet, mnemonic, signing
 key or vault file is touched; those stay with the operator or the vault. The script has
-no telemetry and phones home to nobody. Its only outbound requests are the Docker package
+no telemetry and phones home to nobody. Its outbound requests are the distribution
+mirrors for Docker and its helper packages (only when Docker is missing), the GitHub API
+when no version is named, and the release download;
 repository (when Docker is missing) and the release URL.
 
 ## Options

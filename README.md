@@ -332,9 +332,11 @@ uncomment the `/docs*` and `/openapi.json` handlers in `infra/Caddyfile`, or run
 and web locally with `tools/dev.sh`.
 
 Operational detail — services, networks, backups, migration and rollback — is in
-[docs/INFRA.md](docs/INFRA.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md). Services that do
-not exist yet (Redis, NATS, executor, ingest, a standalone engine) are recorded in
-`infra/compose.blueprint.yaml` and are not part of this stack.
+[docs/INFRA.md](docs/INFRA.md) and [docs/RUNBOOK.md](docs/RUNBOOK.md). To run it on a
+server you own, use the one-command installer described in
+[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md). Services that do not exist yet (Redis, NATS,
+executor, ingest, a standalone engine) are recorded in `infra/compose.blueprint.yaml` and
+are not part of this stack.
 
 ## Contributing
 

@@ -9,6 +9,11 @@ are published yet. Services that do not exist are recorded separately in
 The rule is unchanged: nothing is decorative. A service belongs in `compose.yaml` only
 when code in this repository uses it, it has a health signal and a resource budget.
 
+The supported path for a server you own is the one-command installer in
+[tools/install/install.sh](../tools/install/install.sh); [docs/SELF-HOSTING.md](SELF-HOSTING.md)
+covers sizing, install, secrets, TLS and backup. This file is the contract that installer
+drives.
+
 ## 0. Runnable today vs blueprint
 
 | Area | State |
