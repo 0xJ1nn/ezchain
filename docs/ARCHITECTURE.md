@@ -129,13 +129,19 @@ example.)
 
 ### 4.1 Market data
 
-`ingest` connects to RPC/WS/REST per source → normalizes into `MarketEvent`
-(`chain, venue, pair, price, liquidity, volume, fees, source, observed_at, units`) →
-publishes to NATS `market.*` → engine consumes; API serves snapshots; candles are
-materialized into Timescale hypertables.
+`ingest` connects to RPC/WS/REST per source → normalizes into the one
+`ezchain_core.MarketEvent` (`chain, venue, pair, price, size, direction, units,
+confidence, source, source timestamp, observed_at`) → publishes to NATS `market.*` →
+engine consumes; API serves snapshots; candles are materialized into Timescale
+hypertables.
 
 Rules: every event declares units and freshness; a late event is flagged, not silently
 reordered; duplicate `(source, pair, observed_at)` is idempotent.
+
+`MarketEvent` is the only market-event type: adapters write their own wire parsing but
+normalise into it, and `services/ingest` records through its one serialiser. Age and
+staleness are derived from the reader's clock, never stored, so a recorded JSONL file
+replays to identical derived state (contract I9).
 
 **P0 inline observation.** `apps/api` also runs a bounded market monitor
 (`EZCHAIN_MARKET_SCAN_INLINE`, default on) so the platform knows what it can see even when

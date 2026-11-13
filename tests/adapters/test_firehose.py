@@ -2,6 +2,10 @@
 
 All inputs are the committed trimmed fixture (``firehose_sample.json``) replayed
 through the same decode path. No test reaches the network, signs, or trades.
+
+The adapter emits the one core ``MarketEvent``; ``FirehoseEvent`` only adds this
+wire's own extras on top of it, so these tests assert the contract's field names
+and its serialiser, not an adapter-local shape.
 """
 
 from __future__ import annotations
@@ -9,12 +13,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
+import ezchain_core
 from ezchain_adapters.firehose import (
     DEFAULT_STALE_BUDGET_SECONDS,
     SOURCE_NAME,
     SOURCE_URL,
+    FirehoseEvent,
     FirehoseFeed,
     MarketEvent,
     normalize_firehose_event,
@@ -51,9 +58,11 @@ def test_fixture_replays_to_contract_events(load_fixture: Callable[[str], Any]) 
     ]
     mint = raw[0]["mint"]
     for event in events:
-        assert isinstance(event, MarketEvent)
+        assert isinstance(event, FirehoseEvent)
+        # The observation is the one core contract, not an adapter-local type.
+        assert isinstance(event.event, MarketEvent)
         assert event.chain == "solana"
-        assert event.mint == mint
+        assert event.pair == mint
         assert event.source.name == SOURCE_NAME
         assert event.source.url == SOURCE_URL
         assert event.source.observed_at == event.observed_at
@@ -69,6 +78,30 @@ def test_fixture_replays_to_contract_events(load_fixture: Callable[[str], Any]) 
         assert body["age_seconds"] == event.age_seconds(NOW)
         assert body["observed_at"] == event.observed_at.isoformat()
         assert body["chain"] == "solana"
+        # One serialiser: the wire body is the contract's body plus extras.
+        contract_body = event.event.to_dict(NOW)
+        assert {key: body[key] for key in contract_body} == contract_body
+        assert body["kind"] == event.kind
+
+
+def test_the_contract_itself_replays_and_is_the_one_market_event() -> None:
+    """The adapter exports the core type; nothing shadows it with a second one."""
+    assert MarketEvent is ezchain_core.MarketEvent
+    raw = {
+        "kind": "trade",
+        "mint": "Mint1111111111111111111111111111111111111111",
+        "timestamp": BASE,
+        "is_buy": True,
+        "sol": 1,
+        "price_sol": 2,
+    }
+    event = normalize_firehose_event(raw)
+    assert event is not None
+    # The contract round-trips on its own serialiser, and freshness is derived.
+    contract_body = event.event.to_dict(NOW)
+    assert MarketEvent.from_dict(contract_body) == event.event
+    assert "age_seconds" not in event.event.to_dict()
+    assert "stale" not in event.event.to_dict()
 
 
 def test_create_maps_metadata_and_derives_price(
@@ -78,11 +111,11 @@ def test_create_maps_metadata_and_derives_price(
     event = normalize_firehose_event(raw[0])
     assert event is not None
     assert event.kind == "create"
-    assert event.side is None
+    assert event.direction is None
     assert event.symbol == "WHACKADON"
     assert event.name == "Whack-A-Don"
     assert event.creator is not None
-    assert event.price_sol == Decimal("30.0") / Decimal("1073000000000.0")
+    assert event.price == Decimal("30.0") / Decimal("1073000000000.0")
 
 
 def test_trades_map_side_size_and_venue(load_fixture: Callable[[str], Any]) -> None:
@@ -91,15 +124,15 @@ def test_trades_map_side_size_and_venue(load_fixture: Callable[[str], Any]) -> N
     sell = normalize_firehose_event(raw[2])
     amm = normalize_firehose_event(raw[4])
     assert buy and sell and amm
-    assert (buy.side, sell.side) == ("buy", "sell")
-    assert buy.price_sol == Decimal("2.793e-08")
-    assert buy.size_sol == Decimal("1.5")
+    assert (buy.direction, sell.direction) == ("buy", "sell")
+    assert buy.price == Decimal("2.793e-08")
+    assert buy.size == Decimal("1.5")
     assert buy.size_tokens == Decimal("53694315.0")
-    assert sell.size_sol == Decimal("0.5")
+    assert sell.size == Decimal("0.5")
     assert buy.venue == "pumpfun"
     assert amm.venue == "pumpswap"
     assert amm.pool == "PoolPDA1111111111111111111111111111111111111111"
-    assert amm.size_sol == Decimal("0.75")
+    assert amm.size == Decimal("0.75")
 
 
 def test_complete_has_no_side_or_price(load_fixture: Callable[[str], Any]) -> None:
@@ -107,9 +140,9 @@ def test_complete_has_no_side_or_price(load_fixture: Callable[[str], Any]) -> No
     event = normalize_firehose_event(raw[3])
     assert event is not None
     assert event.kind == "complete"
-    assert event.side is None
-    assert event.price_sol is None
-    assert event.size_sol is None
+    assert event.direction is None
+    assert event.price is None
+    assert event.size is None
 
 
 def test_unknown_timestamp_fails_closed(
@@ -147,7 +180,7 @@ def test_unknown_price_stays_none_never_zero(
     for bad in (None, "NaN", "Infinity", "oops", 0, -1):
         event = normalize_firehose_event({**raw, "price_sol": bad})
         assert event is not None
-        assert event.price_sol is None
+        assert event.price is None
 
 
 def test_stale_feed_degrades_reads_and_alerts_once(
@@ -211,7 +244,10 @@ def test_snapshot_then_deltas_for_api_surface(
     assert snap["source"]["name"] == SOURCE_NAME
     assert snap["stale"] is False
     assert len(snap["recent"]) == 2
-    assert {row["mint"] for row in snap["coins"]} == {raw[0]["mint"]}
+    assert {row["pair"] for row in snap["coins"]} == {raw[0]["mint"]}
+    # Snapshot rows carry the contract's source and a read-time age.
+    assert snap["recent"][0]["source"]["name"] == SOURCE_NAME
+    assert isinstance(snap["recent"][0]["age_seconds"], float)
 
 
 async def test_async_stream_yields_snapshot_then_delta(
@@ -257,6 +293,30 @@ def test_reconnect_and_reject_counters_are_visible(
     assert health["rejected"] == 1
     assert health["reconnects"] == 1
     assert health["decoded_ratio"] == 0.5
+
+
+def test_contract_observation_survives_the_ingest_recorder(
+    load_fixture: Callable[[str], Any], tmp_path: Path
+) -> None:
+    """A firehose observation records and replays as the one core contract."""
+    from ezchain_ingest import ReplayHarness, read_events, write_events
+
+    raw = load_fixture("firehose_sample.json")
+    feed = FirehoseFeed()
+    events = feed.replay([raw[0], raw[1], raw[1]])
+    # The replay harness sees contract events, not the wire wrapper.
+    assert all(isinstance(event.event, ezchain_core.MarketEvent) for event in events)
+    path = tmp_path / "firehose.jsonl"
+    assert write_events(path, [event.event for event in events]) == 2
+    recorded = read_events(path)
+    assert [event.pair for event in recorded] == [raw[0]["mint"], raw[1]["mint"]]
+    assert recorded[1].direction == "buy"
+    now = _at(BASE + 60)
+    first = ReplayHarness(path).derive(now)
+    second = ReplayHarness(path).derive(now)
+    assert first == second
+    # A recorded file carries no freshness verdict; the reader derives it.
+    assert "stale" not in path.read_text(encoding="utf-8")
 
 
 def test_adapter_is_read_only() -> None:
