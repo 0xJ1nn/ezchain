@@ -15,7 +15,8 @@ surface plus paper-only mutations to MCP agents. The **executor** implements the
 and appends ledger rows directly, and remains the caller of record for paper orders; its
 delegation to the executor pipeline is tracked separately. Key custody, signing and live
 broadcast are still not built, and live execution is disabled on every chain.
-Timescale/tick retention is deferred. This document is the contract every later PR
+Timescale conversion and retention for market observations exist now; a NATS relay and
+continuous aggregates do not. This document is the contract every later PR
 implements; deviations require an ADR.
 
 ## 1. Shape
@@ -136,17 +137,21 @@ engine consumes; API serves snapshots; candles are materialized into Timescale
 hypertables.
 
 Rules: every event declares units and freshness; a late event is flagged, not silently
-reordered; duplicate `(source, pair, observed_at)` is idempotent.
+reordered; duplicate `(source name, pair, source timestamp)` is idempotent, in the replay
+and in the table's primary key.
 
 `MarketEvent` is the only market-event type: adapters write their own wire parsing but
 normalise into it, and `services/ingest` records through its one serialiser. Age and
 staleness are derived from the reader's clock, never stored, so a recorded JSONL file
-replays to identical derived state (contract I9). The API's market read models
-(`/api/v1/markets` rows, `/api/v1/markets/stored` rows and the token header) apply the same
-rule through `services/market_reads.provenance`: `source` is the row's `SourceRef`,
-`age_seconds` is that timestamp against the read clock, and `stale` is the contract's
-verdict. A row with no usable source reports all three as unknown rather than a zero age,
-and an adapter's own freshness flag never decides what the API serves.
+replays to identical derived state (contract I9). The JSONL recording stays the replay
+input; `ezchain_ingest.store` writes the same normalised event to `market_events` (the
+query path) and appends one `market_outbox` row in the same transaction, so a consumer is
+never told about a write that rolled back. Reads return `MarketEvent` values, so the API's
+market read models (`/api/v1/markets` rows, `/api/v1/markets/stored` rows and the token
+header) apply the same rule through `services/market_reads.provenance`: `source` is the
+row's `SourceRef`, `age_seconds` is that timestamp against the read clock, and `stale` is
+the contract's verdict. A row with no usable source reports all three as unknown rather
+than a zero age, and an adapter's own freshness flag never decides what the API serves.
 
 **P0 inline observation.** `apps/api` also runs a bounded market monitor
 (`EZCHAIN_MARKET_SCAN_INLINE`, default on) so the platform knows what it can see even when
@@ -260,16 +265,27 @@ Stale mark → label, not a stale number presented as live.
 ## 5. Persistence
 
 - **Postgres 16** is the only source of truth.
+- **`market_events`** is the query path for normalised observations: one row per
+  `ezchain_core.MarketEvent`, primary key `(source_name, pair, source_observed_at)` — the
+  contract's own idempotency identity, so a retried write cannot duplicate an observation.
+  The JSONL recording stays the replay input; these rows are what a read model queries.
 - **`market_candles`** holds closed OHLCV bars now (`chain, token_address, pool_address,
   timeframe, open_time, ohlcv, source, fetched_at`, unique on
   `(chain, token_address, timeframe, open_time)`). It is a plain table for the PAPER slice;
-  moving it to the Timescale hypertable above is a later, forward-only migration.
+  moving it to the Timescale hypertable above is a later, forward-only migration. Revision
+  `0020_market_events` does not convert it: its surrogate `id` key does not contain
+  `open_time`, which Timescale requires for a hypertable.
 - **`backtests`** stores immutable graph replays (`id, strategy_id nullable, request,
   result, created_at`). `strategy_id` is an opaque historical string, not a foreign key:
   deleting a strategy never deletes its measurements. The API reads it; only the API
   writes it.
 - **TimescaleDB** hypertables for ticks/candles with retention (raw 7–30 d, 1m 1 y).
-- **Outbox** table written in the same tx as domain state; a relay publishes to NATS.
+  `market_events` is converted when the server offers the extension and stays an ordinary
+  table when it does not (the shipped `postgres:16-alpine`), because a fresh database must
+  be creatable from `main` (CONTRACT I8). The windows themselves live in
+  `ezchain_ingest.retention` and are applied by an operator prune, not a database policy.
+- **Outbox** table (`market_outbox`) written in the same tx as domain state; a relay
+  publishes to NATS. An unpublished row is never pruned.
 - **NATS JetStream** for fan-out, durable consumers, dead-letter queue; not a database.
 - **Redis** only for cache, rate limits and ephemeral locks. Loss of Redis never loses money.
 - **S3/MinIO** for backtest artifacts, model files, exports; content-addressed.

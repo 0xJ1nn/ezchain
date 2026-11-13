@@ -34,6 +34,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   executor instance cannot sign user B's order with user A's key (`CUSTODY_OWNER_MISMATCH`),
   and `VaultTransactionSigner` no longer takes a caller-asserted `owner`. Paper runs
   unchanged with the fake venue. Recorded as ADR-0040.
+- **Market observations persist to Postgres, with retention and an outbox (GH-26).**
+  Revision `0020_market_events` adds `market_events` and `market_outbox`, forward-only and
+  additive. `market_events` is one row per `ezchain_core.MarketEvent` keyed by the contract's
+  own idempotency identity `(source_name, pair, source_observed_at)` — the triple replay
+  dedupes on — so a retried write cannot duplicate an observation, and
+  `ezchain_ingest.store` returns the same `MarketEvent` values a read model already knows
+  how to age. One `market_outbox` row is appended in the same transaction, so a consumer is
+  never told about a write that rolled back; an unpublished row is never pruned.
+  `ezchain_ingest.retention` holds the two windows in one validated place (raw 7–30 days,
+  1-minute candles a year) and prunes them through `python -m ezchain_ingest`, a dry run by
+  default. The JSONL recording stays the replay input. When the server offers
+  `timescaledb`, `market_events` is additionally converted to a hypertable partitioned on
+  its source timestamp; on the shipped plain `postgres:16-alpine` the tables are ordinary
+  and every guarantee above still holds. Retention, backup and restore are documented in
+  `docs/RUNBOOK.md` §12.8.
 - **The executor signs only the intent that was approved (PAPER).** A venue adapter now
   receives an immutable `ApprovedIntent` (chain, cluster, mint, side, amount, minimum
   output, recipient, program id, idempotency key) and returns bytes; it is not handed the
