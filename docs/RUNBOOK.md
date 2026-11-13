@@ -214,8 +214,11 @@ PY
 docker compose -f infra/compose.yaml logs --tail=100 api
 ```
 
-- `/healthz` is liveness. A 200 means the API process is serving HTTP. It must not be
-  used to decide whether the database is ready.
+- `/healthz` is liveness plus the server-derived execution mode (`mode.execution`,
+  `live_available`, `live_blocked_reason`). A 200 means the API process is serving HTTP.
+  It never reads the database, so it must not be used to decide whether the database is
+  ready. A refused live start reports `paper`, and the public reason omits the gate
+  record's path.
 - `/readyz` is readiness. A non-200 means the API cannot serve paper traffic (usually
   Postgres is down or migrations have not run). Check
   `docker compose -f infra/compose.yaml ps postgres` and the `migrate` logs.
@@ -349,7 +352,7 @@ alembic -c apps/api/alembic.ini upgrade head
 
 | Endpoint | Question | Failure |
 |---|---|---|
-| `/healthz` | is the process alive? | always 200; no DB |
+| `/healthz` | is the process alive, and what is the server-derived mode? | always 200; no DB; reports `paper` when a live start is refused |
 | `/readyz` | can it serve writes with the right schema? | 503 with JSON when DB is down, schema missing or not at head |
 | `/health` | legacy compatibility probe | 503 when DB is down; includes scheduler/monitor flags |
 | `/metrics` | Prometheus text | 200; `ezchain_up 0` when DB is unreachable |
@@ -385,7 +388,7 @@ is still allowed, so this only affects browser CSRF attempts and misconfigured o
 
 | Endpoint | Class | Rule |
 |---|---|---|
-| `/healthz` | public-safe | Liveness only; never reads the database. |
+| `/healthz` | public-safe | Liveness and the derived execution mode; never reads the database, never returns the gate record's path. |
 | `/readyz` | public-safe | Database and migration status; no ledger data. |
 | `/health` | operator | Loopback, or `Authorization: Bearer $EZCHAIN_API_TOKEN`. |
 | `/metrics` | operator | Loopback, or `Authorization: Bearer $EZCHAIN_API_TOKEN`. |

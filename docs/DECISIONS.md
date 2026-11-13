@@ -886,3 +886,33 @@ replayable, but it writes no fill and no journal entry and never reaches a venue
 stored `value.scope` of an existing row is ignored on read, so no migration is needed and
 the next write records the new scope. The switch still never sells, closes or marks a
 position.
+## ADR-0035 — The execution mode is server-derived; live requires a signed gate record
+
+**Status:** accepted 2026-11-13.
+
+**Context:** the mode existed as a configuration literal, three read surfaces repeated their own
+`paper` value, and `EZCHAIN_EXECUTION_MODE=live` failed with one sentence that never mentioned the
+record an owner must produce. A client could not force a mode, but nothing proved it, and nothing
+tied a live start to a specific build.
+
+**Decision:** one function, `ezchain_api.mode.derive_execution_mode`, decides the mode from
+settings only; no request field or header participates. `/healthz`, `/api/v1/agent/capabilities`,
+`/api/v1/agent/state` and the strategy readiness document all report its result, so a probe and an
+agent cannot disagree.
+
+A live start requires a gate record signed with `EZCHAIN_LIVE_GATE_KEY` (HMAC-SHA256) and bound to
+the deployed `EZCHAIN_BUILD_HASH`. The record is JSON with `schema_version`, `build_hash`,
+`build_fingerprint`, `checklist_version`, `approver`, `approved_at` and `signature`; the signature
+covers every other field in canonical form. `build_fingerprint` is the digest of the API version and
+`EZCHAIN_BUILD_HASH`, so attesting it binds the record to the exact build that will serve it. The
+record path is `EZCHAIN_LIVE_GATE_RECORD`. `Settings` verifies it during construction, so an
+unsigned, tampered, wrong-build, wrong-fingerprint or placeholder-build start refuses before the
+process serves. Every refusal names the record path and the field at fault, never a traceback.
+
+**Consequences:** the key-holding executor is still unshipped, so a verified record currently ends
+in a refusal that says so; enabling live is one constant in `mode.py`, and the gate stays in force.
+Possession of `EZCHAIN_LIVE_GATE_KEY` is equivalent to approval, so it belongs with the owner and
+rotating it invalidates every outstanding record — the intended fail-closed direction. The mode is
+now safe to show on a public probe because a refused live start reports paper, not the requested
+value, and the public reason omits the record's path (the boot refusal and the log keep it). A
+signed record must be regenerated for each deployed build hash.

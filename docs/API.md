@@ -88,7 +88,7 @@ operator action.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| GET | `/healthz` | public | Process liveness; does not touch the database |
+| GET | `/healthz` | public | Process liveness and the server-derived execution mode; does not touch the database |
 | GET | `/readyz` | public | Database reachability and Alembic head |
 | GET | `/health` | public | Database, data mode and scheduler flags |
 | GET | `/metrics` | public | Prometheus text; keep it on loopback |

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ezchain_core import GateEvidence, GateThresholds, evaluate_gate, utcnow
 
 from ..config import Settings
+from ..mode import mode_status
 from ..models import BacktestRow, PaperOrderRow, StrategyRow
 from . import reconciliation
 
@@ -71,11 +72,12 @@ def live_readiness(
             require_backtest=settings.paper_gate_require_backtest,
         ),
     )
+    mode = mode_status(settings)
     return {
         "strategy_id": strategy.id,
-        "mode": "paper",
-        "live_available": False,
-        "live_blocked_reason": "the live executor is not shipped; promotion cannot execute",
+        "mode": mode["execution"],
+        "live_available": mode["live_available"],
+        "live_blocked_reason": mode["live_blocked_reason"],
         **result.to_dict(),
     }
 
