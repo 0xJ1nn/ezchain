@@ -8,18 +8,20 @@ the winner instead of raising an integrity error that would abort an order or a 
 The update is conditional on the incoming observation not being older than the stored one,
 so a delayed poll cannot move a mark backwards. An observation dated beyond the tolerated
 clock skew is rejected with ``MARK_TIMESTAMP_FUTURE`` and writes nothing: it never supplies
-a price, never replaces a stored row, and cannot suppress a later correct observation. The
-receiver's clock is stored separately as ``received_at`` so a skew is visible without
-trusting the source's timestamp.
+a price, never replaces a stored row, and cannot suppress a later correct observation. A
+row already stored beyond that skew is a clock-faulted legacy row: it never outranks an
+accepted report, so a corrected observation replaces it instead of being rejected by a
+bogus timestamp. The receiver's clock is stored separately as ``received_at`` so a skew is
+visible without trusting the source's timestamp.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -123,7 +125,9 @@ def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshot
     index. Returns the row that is stored afterwards, which is the existing mark when the
     incoming observation lost on ``observed_at``. A report dated beyond the tolerated skew
     is rejected (``MARK_TIMESTAMP_FUTURE``) and writes nothing, so it cannot take a mark
-    and cannot suppress the next correct observation; ``None`` is returned.
+    and cannot suppress the next correct observation; ``None`` is returned. A stored row
+    that is itself beyond the skew is a clock fault, so it never outranks an accepted
+    report: the corrected observation replaces it.
     """
     now = utcnow()
     source = snapshot.source
@@ -151,13 +155,23 @@ def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshot
         column: func.coalesce(getattr(MarketSnapshotRow, column), getattr(excluded, column))
         for column in _IDENTITY_COLUMNS
     }
+    # The stored timestamp orders observations, but a legacy row already dated beyond the
+    # tolerated skew is not evidence of a newer observation: trusting it would reject
+    # every later correct write and freeze the bogus mark forever. Such a row loses to
+    # any accepted report; a trustworthy row keeps the not-older rule.
+    stored_is_bogus_future = MarketSnapshotRow.observed_at > now + timedelta(
+        seconds=FUTURE_SKEW_SECONDS
+    )
     write = statement.values(**values).on_conflict_do_update(
         index_elements=conflict_target,
         set_={
             **{column: getattr(excluded, column) for column in _REPLACED_COLUMNS},
             **identity_set,
         },
-        where=MarketSnapshotRow.observed_at <= excluded.observed_at,
+        where=or_(
+            MarketSnapshotRow.observed_at <= excluded.observed_at,
+            stored_is_bogus_future,
+        ),
     )
     session.execute(write)
     return _stored(session, snapshot.chain, snapshot.address)

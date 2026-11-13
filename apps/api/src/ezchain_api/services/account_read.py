@@ -325,6 +325,31 @@ def _mark_alerts(
         stamp = _aware(datetime.fromisoformat(observed) if isinstance(observed, str) else None)
         resource = f"position:{chain}:{token}"
         created = None if stamp is None else stamp.isoformat()
+        # A future-dated source is reported first: beyond the tolerated skew the read
+        # model withholds the mark, so a ``mark_usd is None`` check before this would
+        # hide the clock fault behind a generic unknown. Either way the operator sees
+        # the source clock disagreeing with ours.
+        if stamp is not None and (now - stamp).total_seconds() < 0:
+            ahead = int(-(now - stamp).total_seconds())
+            beyond = ahead > paper.FUTURE_SKEW_SECONDS
+            alerts.append(
+                _alert(
+                    f"mark.future.{chain}.{token}",
+                    "POSITION_MARK_FUTURE",
+                    "warning" if beyond else "info",
+                    "Position mark is dated in the future",
+                    f"{view['symbol']} on {chain} was observed {ahead}s ahead of the "
+                    f"clock (tolerated skew {paper.FUTURE_SKEW_SECONDS:g}s); "
+                    + (
+                        "the mark is unknown to the order gate."
+                        if beyond
+                        else "the mark is labelled future, never fresh."
+                    ),
+                    as_of,
+                    resource,
+                )
+            )
+            continue
         if view["mark_usd"] is None:
             alerts.append(
                 _alert(
@@ -353,29 +378,6 @@ def _mark_alerts(
             )
             continue
         age = (now - stamp).total_seconds()
-        if age < 0:
-            # A future-dated mark is not a fresh one: within the tolerated skew it is a
-            # ``future`` status, beyond it the read model withholds the mark. Either way
-            # the operator sees the source clock disagreeing with ours.
-            beyond = (-age) > paper.FUTURE_SKEW_SECONDS
-            alerts.append(
-                _alert(
-                    f"mark.future.{chain}.{token}",
-                    "POSITION_MARK_FUTURE",
-                    "warning" if beyond else "info",
-                    "Position mark is dated in the future",
-                    f"{view['symbol']} on {chain} was observed {int(-age)}s ahead of the "
-                    f"clock (tolerated skew {paper.FUTURE_SKEW_SECONDS:g}s); "
-                    + (
-                        "the mark is unknown to the order gate."
-                        if beyond
-                        else "the mark is labelled future, never fresh."
-                    ),
-                    as_of,
-                    resource,
-                )
-            )
-            continue
         if age > settings.max_quote_age_seconds:
             alerts.append(
                 _alert(

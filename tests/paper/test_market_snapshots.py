@@ -19,7 +19,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from sqlalchemy import Engine, create_engine, event, select
+from sqlalchemy import Engine, create_engine, event, select, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -170,6 +170,34 @@ def test_future_dated_first_observation_is_rejected_and_the_next_correct_one_win
     assert stored is not None
     assert stored.price_usd == Decimal("2001")
     assert _aware(stored.received_at) >= _aware(stored.observed_at)
+
+
+def test_corrected_observation_replaces_a_legacy_far_future_row(session: Session) -> None:
+    """A row already frozen in the future must not reject every later correct write.
+
+    The ordering rule bounds the incoming observation by real time, not by the stored
+    timestamp alone: a bogus far-future ``observed_at`` cannot outrank a correct one
+    forever, or the frozen mark would be permanent.
+    """
+    frozen = datetime.now(UTC) + timedelta(days=365)
+    market_snapshots.record_snapshot(
+        session, make_snapshot(observed_at=_now_minus(1), price=Decimal("2000"))
+    )
+    session.commit()
+    session.execute(update(MarketSnapshotRow).values(observed_at=frozen))
+    session.commit()
+
+    corrected = market_snapshots.record_snapshot(
+        session, make_snapshot(observed_at=datetime.now(UTC), price=Decimal("2001"))
+    )
+    session.commit()
+
+    assert corrected is not None
+    assert corrected.price_usd == Decimal("2001")
+    stored = session.scalar(select(MarketSnapshotRow))
+    assert stored is not None
+    assert stored.price_usd == Decimal("2001")
+    assert _aware(stored.observed_at) <= datetime.now(UTC)
 
 
 def test_received_at_is_the_write_clock_not_the_source_timestamp(session: Session) -> None:
