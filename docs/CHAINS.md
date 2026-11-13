@@ -212,6 +212,8 @@ takes the first rung that answers **and** can also sell the size it just bought.
 | Blast, Fantom, Moonbeam, Aptos, Tron, NEAR, Cosmos Hub | `paper_mark` | — | no keyless executable quote; ADR-0020 cap applies |
 
 Provider guard rails, all per instance: token bucket at the documented rate, 10 s response
-cache, and a 60 s circuit breaker opened by 5xx/530/HTML-WAF, not by a `no route` answer.
+cache, and a 60 s circuit breaker opened by 5xx/530/HTML-WAF and by an attempt deadline the
+router owns (a host that hangs instead of erroring), not by a `no route` answer. A call
+cancelled for any other reason releases its half-open probe without counting a failure.
 When every rung is down the order fails closed with `NO_ROUTE`; an executable chain never
 silently falls back to a mark.

@@ -24,7 +24,7 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
-from typing import Any, ClassVar, Protocol, cast
+from typing import Any, ClassVar, Protocol, cast, runtime_checkable
 
 import httpx
 
@@ -161,6 +161,13 @@ class QuoteProvider(Protocol):
     async def quote(self, request: QuoteRequest) -> Quote: ...
 
 
+@runtime_checkable
+class TimeoutAwareProvider(Protocol):
+    """A provider whose breaker can be told that a caller-owned deadline elapsed."""
+
+    def record_timeout(self) -> None: ...
+
+
 class HttpQuoteProvider(JsonApiClient):
     """JSON quote provider with the shared cache, bucket and a 60 s circuit breaker."""
 
@@ -206,6 +213,15 @@ class HttpQuoteProvider(JsonApiClient):
     def supports(self, chain: ChainMeta) -> bool:
         return chain.id in self.CHAINS
 
+    def record_timeout(self) -> None:
+        """A deadline the caller owns elapsed: the provider is hanging, so count it.
+
+        The router cancels this call when its attempt budget runs out. Cancellation
+        reaches ``quote`` as such — a fact about the attempt, not a verdict on the
+        host — so only the side that owns the timeout can say an attempt was hanging.
+        """
+        self._breaker.record_failure()
+
     async def quote(self, request: QuoteRequest) -> Quote:
         if self._breaker.is_open():
             raise UpstreamError(f"{self.label} circuit open", detail="breaker")
@@ -228,6 +244,16 @@ class HttpQuoteProvider(JsonApiClient):
 
     async def _quote(self, request: QuoteRequest) -> Quote:
         raise NotImplementedError
+
+
+def _record_timeout(provider: QuoteProvider) -> None:
+    """Count the router's own elapsed deadline against the provider's breaker.
+
+    Only a provider that owns a circuit breaker is told; a provider without one (a bare
+    test fake) has no failure count to move.
+    """
+    if isinstance(provider, TimeoutAwareProvider):
+        provider.record_timeout()
 
 
 def stable_asset(request: QuoteRequest) -> QuoteAsset:
@@ -316,6 +342,10 @@ class QuoteRouter:
                 with attempt_deadline_scope(timeout):
                     quote = await asyncio.wait_for(provider.quote(request), timeout=timeout)
             except TimeoutError:
+                # This deadline is the router's, and it elapsed because the venue did not
+                # answer: the provider is hanging, so the circuit must count it. The
+                # cancelled call only released its half-open permit, which is not a verdict.
+                _record_timeout(provider)
                 failures.append(f"{kind}:TIMEOUT")
                 continue
             except (ProviderBudgetExhausted, ProviderKeyUnavailable):
@@ -340,6 +370,7 @@ class QuoteRouter:
                             self._has_exit(provider, request, quote), timeout=timeout
                         )
                 except TimeoutError:
+                    _record_timeout(provider)
                     failures.append(f"{kind}:EXIT_TIMEOUT")
                     continue
                 if not exit_ok:

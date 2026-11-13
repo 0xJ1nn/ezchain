@@ -15,6 +15,8 @@ import httpx
 import pytest
 
 from ezchain_adapters import (
+    CircuitBreaker,
+    HttpQuoteProvider,
     JupiterClient,
     NoRoute,
     NotFound,
@@ -351,6 +353,81 @@ async def test_exit_timeout_fails_closed_with_exit_timeout(monkeypatch) -> None:
         )
     assert "EXIT_TIMEOUT" in (caught.value.detail or "")
     assert caught.value.code == "NO_ROUTE"
+
+
+class HangingHttpProvider(HttpQuoteProvider):
+    """A real HTTP quote provider whose quote coroutine never answers."""
+
+    kind = "kyberswap"
+    label = "TestVenue"
+    base_url = "https://quotes.invalid"
+    cache_ttl_seconds = 10.0
+    rate_per_second = 1000.0
+    burst = 1000
+    CHAINS = frozenset({"base"})
+
+    def __init__(self, *, clock: Any, breaker: CircuitBreaker) -> None:
+        super().__init__(clock=clock, breaker=breaker)
+        self.calls: list[QuoteRequest] = []
+
+    async def _quote(self, request: QuoteRequest) -> Quote:
+        self.calls.append(request)
+        await asyncio.sleep(1)
+        return make_quote(request, kind=self.kind)
+
+
+async def test_router_timeout_counts_as_a_breaker_failure(monkeypatch, clock) -> None:
+    """A timeout the router owns is the provider hanging, so it must open the circuit.
+
+    ``wait_for`` cancels the provider coroutine; its cancellation handler released the
+    half-open permit without recording anything, so a host that hangs instead of
+    erroring left the breaker closed and every order paid the full attempt wait again.
+    """
+    from ezchain_adapters import quotes as quotes_module
+
+    monkeypatch.setattr(quotes_module, "PROVIDER_ATTEMPT_SECONDS", 0.01)
+    monkeypatch.setattr(quotes_module, "QUOTE_DEADLINE_SECONDS", 0.05)
+    breaker = CircuitBreaker(cooldown_seconds=60.0, clock=clock)
+    provider = HangingHttpProvider(clock=clock, breaker=breaker)
+    with pytest.raises(NoRoute) as caught:
+        await router(provider).quote(
+            chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+    assert "TIMEOUT" in (caught.value.detail or "")
+    assert breaker.consecutive_failures == 1
+    assert breaker.state == "open"
+    # The next order is refused without paying the same wait again.
+    with pytest.raises(NoRoute):
+        await router(provider).quote(
+            chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+    assert len(provider.calls) == 1
+
+
+class HangingExitHttpProvider(HangingHttpProvider):
+    """Answers a buy immediately, then hangs on the mandatory full-size sell check."""
+
+    async def _quote(self, request: QuoteRequest) -> Quote:
+        self.calls.append(request)
+        if request.side == "buy":
+            return make_quote(request, kind=self.kind)
+        await asyncio.sleep(1)
+        return make_quote(request, kind=self.kind)
+
+
+async def test_exit_timeout_counts_as_a_breaker_failure(monkeypatch, clock) -> None:
+    from ezchain_adapters import quotes as quotes_module
+
+    monkeypatch.setattr(quotes_module, "PROVIDER_ATTEMPT_SECONDS", 0.01)
+    monkeypatch.setattr(quotes_module, "QUOTE_DEADLINE_SECONDS", 0.05)
+    breaker = CircuitBreaker(cooldown_seconds=60.0, clock=clock)
+    provider = HangingExitHttpProvider(clock=clock, breaker=breaker)
+    with pytest.raises(NoRoute) as caught:
+        await router(provider).quote(
+            chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+        )
+    assert "EXIT_TIMEOUT" in (caught.value.detail or "")
+    assert breaker.state == "open"
 
 
 SOLANA_MINT = "BudgetDeadlineMint1111111111111111111111111"
