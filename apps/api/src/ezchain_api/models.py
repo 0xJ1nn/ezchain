@@ -343,6 +343,10 @@ class MarketSnapshotRow(Base):
     price_change_h24: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     source: Mapped[str] = mapped_column(String(40))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    # When this process received the observation, kept apart from the source's own
+    # ``observed_at`` so a skewed report is auditable without trusting its clock. Null on
+    # rows written before the column existed; freshness reads the source timestamp.
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Pair identity carried over from the observation. Null when the source did not
     # report it; never inferred from the symbol or the token address.
     pair_address: Mapped[str | None] = mapped_column(String(160), nullable=True)

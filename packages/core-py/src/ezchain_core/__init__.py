@@ -45,6 +45,7 @@ from .risk import (
 )
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
 from .types import (
+    MARK_FUTURE_SKEW_SECONDS,
     Candle,
     MarketRow,
     MarkStatus,
@@ -75,6 +76,7 @@ __all__ = [
     "GateThresholds",
     "LedgerEntry",
     "MarketRow",
+    "MARK_FUTURE_SKEW_SECONDS",
     "ProtectionArm",
     "ProtectionProfile",
     "ProtectionValidationError",

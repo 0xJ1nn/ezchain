@@ -15,13 +15,22 @@ import pytest
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from ezchain_api.config import Settings
 from ezchain_api.models import LedgerEntryRow, MarketSnapshotRow
 from ezchain_api.services import paper
 from ezchain_api.services.market_snapshots import record_snapshot
 from ezchain_core import utcnow
 from ezchain_core.ledger import buy_entries, cash_account
 
-from .conftest import CHAIN, TOKEN, make_snapshot
+from .conftest import (
+    CHAIN,
+    TOKEN,
+    FakeDexScreener,
+    FakeJupiter,
+    make_request,
+    make_snapshot,
+    place,
+)
 
 STARTING_CASH = Decimal("10000")
 
@@ -99,3 +108,23 @@ def test_an_observation_far_in_the_future_reports_unknown(session: Session) -> N
 
     assert row["mark_status"] == "unknown"
     assert row["mark_age_seconds"] is None
+
+
+def test_an_order_priced_off_a_far_future_mark_is_rejected(
+    session: Session, settings: Settings
+) -> None:
+    """A future-dated mark fails closed: it can never price a new entry."""
+    future = utcnow() + timedelta(hours=1)
+    dex = FakeDexScreener(make_snapshot(observed_at=future))
+    order = place(
+        session,
+        settings,
+        dex,
+        FakeJupiter(),
+        make_request(amount_usd="100", key="future-mark-order"),
+    )
+
+    assert order.status == "rejected"
+    assert "MARK_TIMESTAMP_FUTURE" in (order.reason or "")
+    codes = {reason["code"] for reason in (order.reasons or [])}
+    assert "MARK_TIMESTAMP_FUTURE" in codes

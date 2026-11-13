@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import CHAINS, AdapterError, DexScreenerClient, NoRoute, QuoteRouter
 from ezchain_core import (
+    MARK_FUTURE_SKEW_SECONDS,
     TRADE_RISK_PROFILES,
     CostPreview,
     LedgerEntry,
@@ -98,11 +99,10 @@ SHARE_QUANTUM = Decimal("0.01")
 LEDGER_PRECISION = 60
 SETTLEMENT_CHAIN = "settlement"
 # How far an observation may run ahead of the reader's clock before it stops being a
-# tolerated skew and becomes an unusable (unknown) mark. Mirrors the write-side bound in
-# ``market_snapshots`` so a reader never treats a frozen, far-future observation as
-# usable. A small allowance covers real clock skew between hosts; beyond it the mark is
-# unknown rather than "future", so it cannot freeze a position's price indefinitely.
-FUTURE_SKEW_SECONDS = 5.0
+# tolerated skew and becomes an unusable (unknown) mark. The bound lives in core so the
+# writer, this read model and the risk gate share one value; a far-future legacy row is
+# reported unknown rather than "future", so it cannot freeze a position's price.
+FUTURE_SKEW_SECONDS = MARK_FUTURE_SKEW_SECONDS
 # Aliases for callers/tests that name the bound differently.
 MARK_FUTURE_SKEW_SECONDS = FUTURE_SKEW_SECONDS
 CLOCK_SKEW_SECONDS = FUTURE_SKEW_SECONDS
@@ -431,8 +431,12 @@ def _day_start() -> datetime:
 # ---------------------------------------------------------------------------
 
 
-def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow:
-    """Upsert the latest observation for (chain, token); older events never overwrite."""
+def record_snapshot(session: Session, snapshot: TokenSnapshot) -> MarketSnapshotRow | None:
+    """Upsert the latest observation for (chain, token); older events never overwrite.
+
+    A report dated beyond the tolerated skew is rejected (``MARK_TIMESTAMP_FUTURE``) and
+    returns ``None``; it never becomes a mark and never suppresses a later correct one.
+    """
     return market_snapshots.record_snapshot(session, snapshot)
 
 
@@ -487,15 +491,15 @@ def _mark_status(
     if stamp is None:
         return "unknown"
     now = now or utcnow()
-    age = (now - stamp).total_seconds()
+    skew = (stamp - now).total_seconds()
     # A modestly future-dated observation is tolerated clock skew (``future``); one
     # further ahead than the skew bound cannot be trusted and reports ``unknown`` so
     # no surface prints a frozen price as usable. The age is then withheld.
-    if age < -FUTURE_SKEW_SECONDS:
+    if skew > FUTURE_SKEW_SECONDS:
         return "unknown"
-    if age < 0:
+    if skew > 0:
         return "future"
-    if age > max_age_seconds:
+    if -skew > max_age_seconds:
         return "stale"
     return "fresh"
 
