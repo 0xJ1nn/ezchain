@@ -933,3 +933,37 @@ accepted observation and a corrected write replaces it. On the read side a mark 
 is `unknown` prices nothing: no mark value, no market value, no unrealized PnL, and the
 account reports incomplete. The four-value vocabulary (`fresh`/`stale`/`unknown`/`future`)
 is unchanged and the rule is computed once on the server in `_mark_status`.
+
+## ADR-0037 — An order records the principal that placed it, decided on the server
+
+**Status:** accepted 2026-11-13.
+
+**Context:** the ledger could say what was bought and at what price but not who placed the
+order. A person at the order ticket, a strategy firing from the engine and an agent key
+calling the MCP tool all produced identical rows, so an incident review could not separate
+an operator's manual trade from automation, and `paper_orders.strategy_id` only covered the
+engine's own orders.
+
+**Decision:** `paper_orders` and `ledger_entries` gain nullable `actor_kind` and `actor_id`.
+`kind` is `human` (the deployment token, addressed by its subject), `agent` (a scoped key,
+addressed by its key id) or `strategy` (the engine, addressed by the strategy id); a row
+with no kind reads as `unknown`. The actor is resolved once, inside the single execution
+path: `place_order` takes the API edge's resolved principal and derives strategy attribution
+from `strategy_id`, which only the engine sets because the manual and MCP routes refuse the
+field. It is stamped on the order and copied onto every leg of its journal group, so the
+journal attributes itself without a join. `POST /paper/orders` refuses an `actor` field
+outright, so a client cannot claim an identity, and an idempotency replay keeps the original
+actor instead of adopting the replayer's.
+
+A caller that cannot be named — the development process with no token, a direct service call
+in a test, a row written before this revision — is `unknown`, never a plausible guess.
+`actor_kind` is null only for those legacy rows; the read model maps it to `unknown`, and
+nothing backfills it.
+
+**Consequences:** migration 0019 is additive and forward-only; no existing row is rewritten
+and no actor is invented for one. The agent key id, not its subject, is the address because a
+key is revocable and reissuable: past orders keep naming the credential that placed them even
+after the key is retired. The web ledger page does not render the actor yet — the API carries
+it and the UI is a separate change (tracked follow-up). Because the value comes from
+`request.state.principal`, a route that places orders without the auth middleware resolving
+a principal records `unknown` rather than borrowing another field's value.

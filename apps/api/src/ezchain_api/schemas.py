@@ -315,10 +315,12 @@ class PaperOrderIn(BaseModel):
     """A manual paper order.
 
     Deliberately has no ``strategy_id``: strategy attribution is internal to the engine,
-    which reaches the order service through ``KillSwitchExecutor``. Unknown fields are
-    refused (``422``, with the field named in ``loc``), so a hand-written request can
-    neither claim strategy attribution nor have a misspelt limit silently dropped. The
-    refusal happens before the quote or any journal write.
+    which reaches the order service through ``KillSwitchExecutor``. It also has no
+    ``actor``: the placing principal is resolved from the authenticated caller and a body
+    that tries to supply it is refused. Unknown fields are refused (``422``, with the
+    field named in ``loc``), so a hand-written request can neither claim strategy or
+    principal attribution nor have a misspelt limit silently dropped. The refusal happens
+    before the quote or any journal write.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -394,6 +396,19 @@ class RiskReasonOut(BaseModel):
     detail: Any = None
 
 
+class ActorOut(BaseModel):
+    """Who placed an order, as the server recorded it.
+
+    ``kind`` is ``human`` (the deployment operator), ``agent`` (a scoped key), ``strategy``
+    (the engine) or ``unknown``. ``id`` addresses that kind: the operator subject, the agent
+    key id, or the strategy id. It is null exactly when the kind is unknown, which is what a
+    row written before the actor was recorded reports. A client can never supply this.
+    """
+
+    kind: str
+    id: str | None = None
+
+
 class OrderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -406,6 +421,7 @@ class OrderOut(BaseModel):
     reason: str | None = None
     reasons: list[RiskReasonOut] = Field(default_factory=list)
     quote_kind: str | None = None
+    actor: ActorOut = Field(default_factory=lambda: ActorOut(kind="unknown"))
     created_at: str
     filled_at: str | None = None
 

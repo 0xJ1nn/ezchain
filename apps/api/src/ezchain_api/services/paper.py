@@ -62,6 +62,7 @@ from ezchain_core.ledger import (
 )
 from ezchain_core.types import RISK_REASON_MESSAGES
 
+from ..actor import ACTOR_STRATEGY, ACTOR_UNKNOWN, UNKNOWN_ACTOR, OrderActor
 from ..config import Settings, get_settings
 from ..models import (
     LedgerEntryRow,
@@ -86,6 +87,21 @@ _ORDER_CREATED: contextvars.ContextVar[bool] = contextvars.ContextVar(
 def last_created() -> bool:
     """Whether the most recent place_order call created a new order."""
     return _ORDER_CREATED.get()
+
+
+def resolve_actor(payload: OrderRequest, actor: OrderActor | None) -> OrderActor:
+    """The placing principal for one order, from facts the server holds.
+
+    Strategy attribution wins: the engine is the only caller that sets ``strategy_id`` (the
+    manual and MCP routes refuse the field), so an order that carries one was placed by
+    that strategy no matter what a caller passed. Otherwise the API edge supplies the
+    authenticated principal, and a caller with no principal is recorded as unknown.
+    """
+    if payload.strategy_id is not None:
+        return OrderActor(ACTOR_STRATEGY, payload.strategy_id)
+    if actor is None or actor.kind == ACTOR_UNKNOWN:
+        return UNKNOWN_ACTOR
+    return actor
 
 
 POSITION_PREFIX = "position:"
@@ -1104,7 +1120,9 @@ def _replay_existing(
     return existing
 
 
-def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | None:
+def _claim_order(
+    session: Session, payload: OrderRequest, actor: OrderActor
+) -> PaperOrderRow | None:
     """Insert the order row to claim the idempotency key. None means another won."""
     order = PaperOrderRow(
         id=new_id(),
@@ -1116,6 +1134,8 @@ def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | Non
         amount_usd=payload.amount_usd,
         status="pending",
         strategy_id=payload.strategy_id,
+        actor_kind=actor.kind,
+        actor_id=actor.id,
         created_at=utcnow(),
     )
     session.add(order)
@@ -1127,9 +1147,11 @@ def _claim_order(session: Session, payload: OrderRequest) -> PaperOrderRow | Non
     return order
 
 
-def _claim_or_existing(session: Session, payload: OrderRequest) -> tuple[PaperOrderRow, bool]:
+def _claim_or_existing(
+    session: Session, payload: OrderRequest, actor: OrderActor
+) -> tuple[PaperOrderRow, bool]:
     """Return (order, created). ``created`` is False when the key already existed."""
-    order = _claim_order(session, payload)
+    order = _claim_order(session, payload, actor)
     if order is not None:
         _ORDER_CREATED.set(True)
         return order, True
@@ -1170,9 +1192,11 @@ def _reject_new(
     snapshot: TokenSnapshot | None = None,
     quote_json: dict[str, Any] | None = None,
     reasons: Any = None,
+    *,
+    actor: OrderActor = UNKNOWN_ACTOR,
 ) -> PaperOrderRow:
     """Persist a rejection before a quote exists (insufficient position, no exit route)."""
-    order, created = _claim_or_existing(session, payload)
+    order, created = _claim_or_existing(session, payload, actor)
     if not created:
         return order
     if snapshot is not None:
@@ -1195,13 +1219,14 @@ def _reject_after_quote(
     settings: Settings,
     reduce_only: bool = False,
     reasons: Any = None,
+    actor: OrderActor = UNKNOWN_ACTOR,
 ) -> PaperOrderRow:
     """Persist a rejection that has a quote, so the refused size stays replayable.
 
     The recorded preview is this order's (the intent's), never a strategy's: the order
     row carries the quote and the cost sheet computed before the refusal.
     """
-    order, created = _claim_or_existing(session, payload)
+    order, created = _claim_or_existing(session, payload, actor)
     if not created:
         return order
     record_snapshot(session, snapshot)
@@ -1278,6 +1303,8 @@ async def place_order(
     settings: Settings,
     dexscreener: DexScreenerClient,
     quotes: QuoteRouter,
+    *,
+    actor: OrderActor | None = None,
 ) -> PaperOrderRow:
     """Place a paper order: quote, risk, fill and journal in one transaction.
 
@@ -1288,7 +1315,13 @@ async def place_order(
     so the guard holds across API processes. A sell whose quoted quantity is no longer
     held is rejected ``POSITION_CHANGED`` rather than resized against a stale quote: the
     trader retries with a fresh, executable size.
+
+    ``actor`` is the authenticated principal the API edge resolved. It is never a request
+    field: the service decides the recorded actor from ``strategy_id`` and this parameter
+    alone, so a caller that omits it writes ``unknown`` instead of a guessed name. The
+    actor is stamped on the order row and on every leg of its journal group.
     """
+    placed_by = resolve_actor(payload, actor)
     _ORDER_CREATED.set(True)
     ensure_genesis(session, settings.paper_starting_cash_usd)
     existing = _find_order(session, payload.idempotency_key)
@@ -1298,9 +1331,9 @@ async def place_order(
     # Integrity before any network call. The API schema already refuses these; an
     # internal caller that skips the edge still gets a typed rejection, not a quote.
     if payload.side not in ("buy", "sell"):
-        return _reject_new(session, payload, "INVALID_SIDE")
+        return _reject_new(session, payload, "INVALID_SIDE", actor=placed_by)
     if payload.amount_usd <= 0:
-        return _reject_new(session, payload, "INVALID_AMOUNT")
+        return _reject_new(session, payload, "INVALID_AMOUNT", actor=placed_by)
 
     # The operator switch is the broadest gate and it is not scoped by attribution: a REST
     # order, an MCP tool and the web ticket carry no strategy id, so an armed switch must
@@ -1309,7 +1342,7 @@ async def place_order(
     # protection arms -- still settle while the switch is armed. The refusal happens
     # before the market read and the quote, so it touches no venue and journals nothing.
     if payload.side == "buy" and read_kill_switch(session, settings).active:
-        return _reject_new(session, payload, "KILL_SWITCH_ARMED")
+        return _reject_new(session, payload, "KILL_SWITCH_ARMED", actor=placed_by)
 
     # Settlement routing is an entry gate. A buy must settle to a wallet that exists for
     # its chain and declares the ledger asset, so a refusal names the chain and the asset
@@ -1326,7 +1359,13 @@ async def place_order(
             detail: dict[str, Any] = {"chain": payload.chain}
             if wallet is not None:
                 detail["asset"] = wallet.asset
-            return _reject_new(session, payload, code, reasons=(RiskReason(code, detail=detail),))
+            return _reject_new(
+                session,
+                payload,
+                code,
+                reasons=(RiskReason(code, detail=detail),),
+                actor=placed_by,
+            )
         # The id survives the rollback before the quote network call; the ORM instance need not.
         settlement_wallet_id = wallet.id
     else:
@@ -1341,7 +1380,7 @@ async def place_order(
         try:
             trade_profile_from_settings(settings, requested_profile)
         except ValueError:
-            return _reject_new(session, payload, "PROFILE_UNKNOWN")
+            return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
 
     if payload.side == "buy" and settings.trade_risk_profile is not None:
         profile = (
@@ -1350,12 +1389,12 @@ async def place_order(
             else None
         )
         if profile is None:
-            return _reject_new(session, payload, "PROFILE_UNKNOWN")
+            return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
         # Minimum size and (absolute) maximum size apply before any quote.
         if payload.amount_usd < profile.min_order_usd:
-            return _reject_new(session, payload, "SIZE_BELOW_MIN")
+            return _reject_new(session, payload, "SIZE_BELOW_MIN", actor=placed_by)
         if payload.amount_usd > profile.max_order_usd:
-            return _reject_new(session, payload, "SIZE_ABOVE_MAX")
+            return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
         # Percent of equity, fail-closed on unknown marks.
         replay = _replay(_ledger_rows(session))
         snapshots = _snapshot_index(session)
@@ -1372,10 +1411,10 @@ async def place_order(
                 break
             equity = equity + qty * mark
         if not equity_known:
-            return _reject_new(session, payload, "EQUITY_UNKNOWN")
+            return _reject_new(session, payload, "EQUITY_UNKNOWN", actor=placed_by)
         cap = equity * profile.max_order_pct_of_equity
         if payload.amount_usd > cap:
-            return _reject_new(session, payload, "SIZE_ABOVE_MAX")
+            return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
         # Per-token cap including the proposed order.
         existing_value = Decimal(0)
         held_qty, held_cost = replay.positions.get(
@@ -1386,7 +1425,7 @@ async def place_order(
         if mark is not None:
             existing_value = held_qty * mark
         if existing_value + payload.amount_usd > profile.per_token_cap_usd:
-            return _reject_new(session, payload, "POSITION_LIMIT")
+            return _reject_new(session, payload, "POSITION_LIMIT", actor=placed_by)
 
     account = position_account(payload.chain, payload.token_address)
     held_qty = Decimal(0)
@@ -1404,12 +1443,18 @@ async def place_order(
 
     if payload.side == "sell":
         if held_qty <= 0:
-            return _reject_new(session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot)
+            return _reject_new(
+                session, payload, "INSUFFICIENT_POSITION", snapshot=snapshot, actor=placed_by
+            )
         quantity = _sell_quantity(payload, snapshot, held_qty)
         if quantity is None:
-            return _reject_new(session, payload, "PRICE_UNKNOWN", snapshot=snapshot)
+            return _reject_new(
+                session, payload, "PRICE_UNKNOWN", snapshot=snapshot, actor=placed_by
+            )
         if quantity <= 0:
-            return _reject_new(session, payload, "INVALID_AMOUNT", snapshot=snapshot)
+            return _reject_new(
+                session, payload, "INVALID_AMOUNT", snapshot=snapshot, actor=placed_by
+            )
         # Sell providers size by quantity. The USD figure is a metadata hint only and is
         # absent when the market mark is; it never decides the exit's size.
         quote_amount_usd = (
@@ -1439,6 +1484,7 @@ async def place_order(
                     reduce_only=reduce_only,
                     error=exc,
                 ),
+                actor=placed_by,
             )
     else:
         quote = await quotes.quote(
@@ -1472,6 +1518,7 @@ async def place_order(
                     quote=quote,
                     settings=settings,
                     reduce_only=exit_only,
+                    actor=placed_by,
                 )
             # Never fill a quantity that another writer already spent. A smaller quote is
             # fine (the position grew); a larger quote is stale and must be re-priced.
@@ -1484,6 +1531,7 @@ async def place_order(
                     quote=quote,
                     settings=settings,
                     reduce_only=exit_only,
+                    actor=placed_by,
                 )
             fill_quantity = min(quote.amount_in, held_qty)
             notional = (
@@ -1495,7 +1543,7 @@ async def place_order(
             fill_quantity = quote.amount_out
             notional = quote.amount_in
 
-        order, created = _claim_or_existing(session, payload)
+        order, created = _claim_or_existing(session, payload, placed_by)
         if not created:
             return order
         record_snapshot(session, snapshot)
@@ -1579,6 +1627,8 @@ async def place_order(
                 # no wallet id.
                 if row["account"] == cash_account():
                     row["wallet_id"] = SETTLEMENT_WALLET_ID
+                row["actor_kind"] = placed_by.kind
+                row["actor_id"] = placed_by.id
                 session.add(LedgerEntryRow(**row))
         if payload.side == "buy":
             entries = buy_entries(
@@ -1627,6 +1677,10 @@ async def place_order(
             row = entry.to_row(order.id, created_at=stamp)
             if row["account"] == cash_account():
                 row["wallet_id"] = settlement_wallet_id
+            # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
+            # learns who placed the order, without joining back to ``paper_orders``.
+            row["actor_kind"] = placed_by.kind
+            row["actor_id"] = placed_by.id
             session.add(LedgerEntryRow(**row))
 
         order.status = "filled"

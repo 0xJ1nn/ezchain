@@ -197,6 +197,27 @@ is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`
 `LIQUIDITY_UNKNOWN`, `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
 `NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ARMED`.
 
+Every order, including a rejected one, carries an `actor` object recording who placed it.
+The server sets it from the authenticated caller and never from the request body: `actor`
+is a refused field on `POST /paper/orders` (`422`), so a client cannot claim an identity.
+
+```json
+{"actor": {"kind": "agent", "id": "3f6c…"}}
+```
+
+`kind` is `human` for the deployment token (addressed by its subject), `agent` for a
+scoped agent key (addressed by the key id, so revoking and reissuing a key leaves past
+orders attributed), or `strategy` for an order the engine placed (addressed by the
+strategy id). `id` is `null` exactly when `kind` is `unknown`, which is what a row written
+before the actor was recorded reports — it is never derived from another column after the
+fact. A development process with no token has no caller, so its orders are `unknown`.
+
+The same actor is copied onto every leg of the order's journal group, so
+`GET /paper/ledger` and the ledger CSV report `actor_kind` and `actor_id` per entry
+without joining back to the order. The genesis journal is `unknown`. A replay of an
+idempotency key returns the original order and its original actor; a later caller cannot
+re-attribute it.
+
 An armed operator switch refuses every buy here, whoever places it, before the market read
 and the quote; the rejected order row is the record of the attempt. Sells are not refused
 by the switch: an exit can only reduce risk, so reduce-only sells still settle.
@@ -242,6 +263,11 @@ and `equity:genesis`). The no-risk funding top-up is cash: its `cash:USD` leg ca
 settlement wallet id because the shortfall is booked as settlement capital, while its
 `funding:USD` contra leg carries none. A `null` is not backfilled: on a legacy cash row it means the row predates wallet
 attribution, and the replay reports that cash in the settlement wallet.
+
+Every ledger entry also reports `actor_kind` and `actor_id`, the principal that placed the
+order its group belongs to. They are copied onto the legs when written and are `unknown`
+with a `null` id for the genesis journal and for rows written before the actor was
+recorded; a null is never attributed after the fact.
 
 ### Strategies
 
