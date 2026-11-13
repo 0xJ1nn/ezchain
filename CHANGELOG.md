@@ -24,6 +24,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `GET /api/v1/paper/approvals` and its approve/reject POSTs, `GET/PUT /api/v1/paper/automation`; the MCP order
   tool returns `approval_id` and `approval_status`, and `ezchain_list_approvals` /
   `ezchain_get_automation` expose the queue read-only. Migration `0021_approvals` is additive, sitting on `0020_market_events`.
+- **The ops alerts read real state (GH-27).** `/metrics` now emits the four families
+  `infra/prometheus/alerts.yml` alerts on, each sampled from live state on the scrape:
+  `ezchain_source_freshness_seconds` (newest persisted observation per `source` and
+  `source_class`, classified by the same `FreshnessPolicy` the order gate applies, with the
+  matching `ezchain_source_freshness_budget_seconds`), `ezchain_breaker_state` per
+  `provider` (0 closed, 1 half-open, 2 open, read from the live `CircuitBreaker`),
+  `ezchain_queue_depth` (waiting callers on the bounded provider budgets and unpublished
+  `market_outbox` rows), and `ezchain_ledger_drift_entries` (failing reconciliation checks).
+  The alerts file names exactly these metrics and labels, and gains `SourceStale` (age past
+  the class's own budget), `CircuitBreakerOpen`, `CircuitBreakerHalfOpenTooLong`,
+  `QueueDepthHigh`, `LedgerDrift`, plus an `absent(...)` guard per family so a metric that
+  stops being emitted raises a warning instead of leaving a green board. Because the four
+  families read the database, an unreachable database omits them and reports `ezchain_up 0`
+  rather than a confident zero. `/metrics` stays loopback-only.
+
 - **Custody is the user's, and the vault keeps keys from everyone else (PAPER).** Keys are
   added at runtime by the person who owns them, encrypted at rest under that user's
   credential, and used only for that user's orders. `ezchain_core.vault` owns the contract:

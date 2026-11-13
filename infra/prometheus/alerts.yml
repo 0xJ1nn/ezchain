@@ -1,14 +1,20 @@
 # Alerts for the PAPER stack.
 #
-# Every expression below is backed by a signal that exists in this stack:
-#   up                            Prometheus scrape target (built in)
-#   ezchain_up                    API self-reported health gauge
-#   ezchain_http_requests_total   API HTTP request counter
-#   ezchain_paper_orders_total    API paper order counter
+# Every expression below is backed by a signal that exists in this stack, and every
+# metric named here is emitted by apps/api/.../observability.py and sampled by
+# apps/api/.../services/ops_signals.py from live state:
+#   up                                   Prometheus scrape target (built in)
+#   ezchain_up                           API self-reported health gauge
+#   ezchain_http_requests_total          API HTTP request counter
+#   ezchain_paper_orders_total           API paper order counter
+#   ezchain_source_freshness_seconds     newest observation age per source/source_class
+#   ezchain_source_freshness_budget_seconds  configured freshness budget per class
+#   ezchain_breaker_state                breaker state per provider (0 closed, 1 half-open, 2 open)
+#   ezchain_queue_depth                  bounded queue depth (queue="provider:<kind>"|"market_outbox")
+#   ezchain_ledger_drift_entries         failing reconciliation checks
 #
-# Executor, queue-depth, breaker, source-freshness, ledger-drift and backup alerts
-# were removed: those services/metrics do not exist, so those rules could never
-# fire. Add them back with the deployable that exposes the metric, not before.
+# A family that stops being emitted is caught by its own `absent(...)` guard below.
+# Never add an alert before the deployable that exposes its metric.
 
 groups:
   - name: paper-api
@@ -55,3 +61,97 @@ groups:
           summary: "More than 20 paper orders in 5 minutes"
           description: "Unusual order burst; review strategies and consider the kill switch."
           runbook: "docs/RUNBOOK.md#101-paper-strategy-switch-implemented-p0"
+
+  - name: source-freshness
+    rules:
+      - alert: SourceStale
+        # The age is compared with the class's own budget, so a mark (60 s) and a candle
+        # (300 s) fire at the right threshold. `NaN` is an age the process cannot
+        # establish (a future-dated or unreadable observation) and never matches.
+        expr: |
+          ezchain_source_freshness_seconds
+            > on(source_class) group_left
+          ezchain_source_freshness_budget_seconds
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Market source {{ $labels.source }} is stale ({{ $labels.source_class }})"
+          description: "The newest {{ $labels.source_class }} observation from {{ $labels.source }} is older than its freshness budget; reads from it are refused."
+          runbook: "docs/RUNBOOK.md#3-chain-degraded--stale-source"
+
+      - alert: SourceFreshnessMetricsMissing
+        expr: absent(ezchain_source_freshness_seconds)
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Source freshness metric is absent"
+          description: "The API scrape target is up but does not expose ezchain_source_freshness_seconds."
+
+  - name: provider-health
+    rules:
+      - alert: CircuitBreakerOpen
+        expr: ezchain_breaker_state{state="open"} > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Circuit breaker open for {{ $labels.provider }}"
+          description: "{{ $labels.provider }} is failing; calls are refused until the cooldown elapses and a half-open probe succeeds."
+          runbook: "docs/RUNBOOK.md#4-quote-mismatch-expired-quote-or-route-failure"
+
+      - alert: CircuitBreakerHalfOpenTooLong
+        # A breaker stuck half-open means every probe is failing.
+        expr: ezchain_breaker_state{state="half_open"} == 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Circuit breaker stuck half-open for {{ $labels.provider }}"
+          description: "Probes keep failing; the provider is not recovering on its own."
+          runbook: "docs/RUNBOOK.md#4-quote-mismatch-expired-quote-or-route-failure"
+
+      - alert: ProviderHealthMetricsMissing
+        expr: absent(ezchain_breaker_state)
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Breaker state metric is absent"
+          description: "The API scrape target is up but does not expose ezchain_breaker_state."
+
+  - name: queues
+    rules:
+      - alert: QueueDepthHigh
+        # Provider budget queues are bounded at max_queue (4 for Jupiter); the market
+        # outbox is the relay's backlog, where 100 unpublished rows is a stuck relay.
+        expr: ezchain_queue_depth > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Queue {{ $labels.queue }} depth {{ $value }}; a consumer is lagging"
+          description: "Rows or callers are waiting on {{ $labels.queue }}; ingest is outpacing its consumer."
+          runbook: "docs/RUNBOOK.md#12-paper-stack-operations-implemented"
+
+      - alert: QueueDepthMetricsMissing
+        expr: absent(ezchain_queue_depth)
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Queue depth metric is absent"
+          description: "The API scrape target is up but does not expose ezchain_queue_depth."
+
+  - name: money-path
+    rules:
+      - alert: LedgerDrift
+        expr: ezchain_ledger_drift_entries > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Ledger drift detected ({{ $value }} failing checks)"
+          description: "Reconciliation reports failing checks; inspect /api/v1/paper/reconciliation and pause trading."
+          runbook: "docs/RUNBOOK.md#1-ledger-drift"
+
+      - alert: LedgerDriftMetricsMissing
+        expr: absent(ezchain_ledger_drift_entries)
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Ledger drift metric is absent"
+          description: "The API scrape target is up but does not expose ezchain_ledger_drift_entries."

@@ -347,6 +347,13 @@ a sanitized `/config/public` projection.
   correlation key.
 - Prometheus metrics: intent rate, decision latency, quote latency, fill ratio, slippage
   realised vs quoted, ledger drift gauge, queue depth, source freshness, breaker state.
+  The four operational families are emitted by `apps/api` on `/metrics` from live state
+  (`services/ops_signals.py`): `ezchain_source_freshness_seconds` and
+  `ezchain_source_freshness_budget_seconds` per `source`/`source_class`,
+  `ezchain_breaker_state` per `provider` (0 closed, 1 half-open, 2 open),
+  `ezchain_queue_depth` per bounded queue, and `ezchain_ledger_drift_entries` from the
+  reconciliation checks. `/metrics` stays loopback-only; the product's ops surface reads
+  the same state, not a second dashboard.
 - Structured JSON logs, redacted by key-pattern allowlist.
 - Audit log table (append-only) for config, keys, wallets, manual orders, kill switch.
 - Ops page in the product mirrors those signals; Grafana is optional.

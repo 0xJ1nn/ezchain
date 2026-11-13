@@ -133,6 +133,11 @@ class _Budget:
         self._waiting = 0
         self._lock = asyncio.Lock()
 
+    @property
+    def waiting(self) -> int:
+        """Callers queued for a slot right now."""
+        return self._waiting
+
     def _deadline(self) -> float:
         """The last clock value this acquisition may wait until.
 
@@ -197,6 +202,20 @@ class ProviderBudgetManager:
         if budget is None:
             raise ValueError(f"no request budget is configured for {provider!r}")
         return budget.limit
+
+    def waiting(self, provider: str) -> int:
+        """Callers currently queued for one provider's budget.
+
+        This is the queue depth the ops surface reports: a caller that entered
+        :meth:`_Budget.acquire` and has not yet been served or refused. Unknown providers
+        are zero, not an invented series.
+        """
+        budget = self._limits.get(provider)
+        return 0 if budget is None else budget.waiting
+
+    def depths(self) -> dict[str, int]:
+        """Queued callers per configured provider, for the ops snapshot."""
+        return {provider: budget.waiting for provider, budget in self._limits.items()}
 
     async def acquire(self, provider: str) -> None:
         """Wait for a slot, or raise :class:`ProviderBudgetExhausted`."""
