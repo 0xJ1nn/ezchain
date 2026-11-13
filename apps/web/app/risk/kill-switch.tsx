@@ -9,6 +9,26 @@ import {
 	type KillSwitchState,
 } from "@/lib/paper-api";
 
+// Both controls read the same persisted flag. The server snapshot is the first paint;
+// a mutation from either control publishes the response here so the other one on the
+// page shows the same state without a reload. Nothing is written on the server.
+type KillSwitchListener = (state: KillSwitchState) => void;
+
+const killSwitchListeners = new Set<KillSwitchListener>();
+
+function publishKillSwitch(state: KillSwitchState) {
+	for (const listener of killSwitchListeners) listener(state);
+}
+
+function useKillSwitchEvents(apply: KillSwitchListener) {
+	useEffect(() => {
+		killSwitchListeners.add(apply);
+		return () => {
+			killSwitchListeners.delete(apply);
+		};
+	}, [apply]);
+}
+
 export function KillSwitchControl({
 	initial,
 	initialError,
@@ -22,6 +42,8 @@ export function KillSwitchControl({
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+
+	useKillSwitchEvents(setState);
 
 	const active = state?.active === true;
 	const next = !active;
@@ -50,6 +72,7 @@ export function KillSwitchControl({
 		try {
 			const updated = await setKillSwitch(next, reason.trim());
 			setState(updated);
+			publishKillSwitch(updated);
 			setAsking(false);
 			setReason("");
 			setNotice(
@@ -191,10 +214,19 @@ export function TopbarKillSwitch({
 	const field = useRef<HTMLTextAreaElement | null>(null);
 	const titleId = useId();
 
+	useKillSwitchEvents(setState);
+
 	const active = state?.active === true;
 	const next = !active;
 	const label = state ? (active ? "ARMED" : "RELEASED") : "UNKNOWN";
-	const scopes = state?.scopes?.length ? state.scopes.join(" and ") : "global and strategy";
+	// Scopes come from the response, never from the shape of the build. Without a state
+	// the control names no scope and promises no action.
+	const scopes = state?.scopes?.length ? state.scopes.join(" and ") : null;
+	const description = state
+		? `Kill switch: ${label}${scopes ? ` (${scopes})` : ""} — press k to ${
+				next ? "arm" : "release"
+			}`
+		: "Kill switch: UNKNOWN — the API did not return the persisted state; press k for details";
 
 	function begin() {
 		setAsking(true);
@@ -221,9 +253,13 @@ export function TopbarKillSwitch({
 		try {
 			const updated = await setKillSwitch(next, reason.trim());
 			setState(updated);
+			publishKillSwitch(updated);
 			setAsking(false);
 			setReason("");
-			setNotice(`${updated.active ? "Armed" : "Released"} · ${scopes}`);
+			const levels = updated.scopes?.length
+				? updated.scopes.join(" and ")
+				: "levels not reported by the API";
+			setNotice(`${updated.active ? "Armed" : "Released"} · ${levels}`);
 		} catch (caught) {
 			const apiError = caught instanceof PaperApiError ? caught : null;
 			setError(
@@ -282,10 +318,8 @@ export function TopbarKillSwitch({
 				aria-haspopup="dialog"
 				aria-expanded={asking}
 				aria-controls={asking ? titleId : undefined}
-				aria-label={`Kill switch: ${label} — ${scopes}`}
-				title={`Kill switch: ${label} (${scopes}) — press k to ${
-					next ? "arm" : "release"
-				}`}
+				aria-label={`Kill switch: ${label}${scopes ? ` — ${scopes}` : ""}`}
+				title={description}
 				onClick={() => (asking ? cancel() : begin())}
 			>
 				<span className="kill-label" data-testid="topbar-kill-label">
@@ -314,7 +348,9 @@ export function TopbarKillSwitch({
 								{next
 									? "New risk-increasing orders are refused by the API with KILL_SWITCH_ARMED. Exits and reduce-only sells still settle."
 									: "Releasing lets new entries through again. The API requires a reason."}{" "}
-								Applies at the {scopes} levels.
+								{scopes
+									? `Applies at the ${scopes} levels.`
+									: "The API did not report which levels this flag governs."}
 							</p>
 							<div className="field mt-12">
 								<label htmlFor="topbar-kill-reason">Reason for the operator log</label>

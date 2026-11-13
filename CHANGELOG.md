@@ -7,6 +7,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **The topbar kill switch follows the persisted state instead of the page snapshot
+  (web).** The shell read the flag once when a page rendered, so arming or releasing
+  from the Risk page left the topbar showing the state it had loaded with, and the two
+  controls could disagree. Both controls now read the same client store: the mutation
+  response from either one updates the other in place, with no reload. The confirmation
+  names the scopes the API returned after the change, and when the API returns no state
+  the launcher says UNKNOWN, names no scope and promises no action it cannot know.
+
 - **Paper wallet balances are exact and `GET /paper/wallets` only reads (PAPER).** Wallet
   cash now comes from the same Python `Decimal` replay that computes the account's cash,
   bucketed per wallet in one pass, instead of a SQL `SUM` over the cash account. SQLite
