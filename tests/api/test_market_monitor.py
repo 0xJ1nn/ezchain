@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
-from ezchain_adapters import CHAINS, ChainCoverage, DexScreenerClient
+from ezchain_adapters import CHAINS, ChainCoverage, DexScreenerClient, UpstreamError
 from ezchain_adapters.dexscreener import BASE
 from ezchain_adapters.ratelimit import TokenBucket
 from ezchain_api.config import Settings
@@ -531,6 +531,81 @@ async def test_successful_scan_stays_within_upstream_call_budget(
     assert token_route.call_count <= len(CHAINS)
     assert upstream_calls <= 30
     assert result.attempted == tuple(chain.id for chain in CHAINS)
+
+
+class BlockingSource(FakeSource):
+    """Blocks inside discovery until released, so a running scan can be cancelled."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.block = True
+
+    async def discover_markets(
+        self,
+        *,
+        chain: str | None = None,
+        query: str | None = None,
+        sort: str = "trending",
+        limit: int = 50,
+    ) -> tuple[list[MarketRow], SourceRef, list[ChainCoverage] | None]:
+        if self.block:
+            self.calls.append((chain or "all", limit))
+            self.started.set()
+            await self.release.wait()
+            raise AssertionError("a blocking scan must be cancelled, not completed")
+        return await super().discover_markets(chain=chain, query=query, sort=sort, limit=limit)
+
+
+class ManualClock:
+    """A monotonic clock the test advances by hand."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+async def test_cancelled_scan_releases_the_half_open_permit(
+    session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    """A cancelled probe must release the half-open permit the scan consumed.
+
+    ``_scan`` takes the one permit through ``is_open()`` before discovery and records
+    an outcome only on a completed call. A scan cancelled while probing (shutdown, a
+    superseded manual scan) left ``probe_in_flight`` set for ever, so every later scan
+    was rejected as "circuit open" until the process restarted.
+    """
+    clock = ManualClock()
+    source = BlockingSource()
+    monitor = MarketMonitor(session_factory, source, settings, monotonic=clock)
+    for _ in range(settings.market_provider_failure_threshold):
+        monitor.breaker.record_failure()
+    clock.advance(settings.market_provider_cooldown_seconds + 1)
+    assert monitor.breaker.state == "half_open"
+
+    task = asyncio.create_task(monitor.run_once())
+    await asyncio.wait_for(source.started.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert monitor.breaker.state == "half_open"
+    # If the permit leaked, this scan is rejected as "circuit open" and never probes.
+    source.block = False
+    source.rows["ethereum"] = [make_row()]
+    try:
+        result = await monitor.run_once()
+    except UpstreamError as exc:
+        pytest.fail(f"a cancelled probe wedged the breaker: {exc}")
+
+    assert result.persisted == 1
+    assert "circuit open" not in result.errors.values()
 
 
 async def test_run_forever_stops_gracefully(

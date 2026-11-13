@@ -270,6 +270,14 @@ class MarketMonitor:
             started = self._monotonic()
             try:
                 return await self._scan()
+            except asyncio.CancelledError:
+                # ``_scan`` takes the one half-open permit before probing and records an
+                # outcome only when the probe completes. A cancelled scan (shutdown, a
+                # superseded manual scan) is not a verdict on the provider, so release
+                # the permit; otherwise it is held for ever and every later scan is
+                # rejected as "circuit open" until the process restarts.
+                self._breaker.reset_probe()
+                raise
             finally:
                 self._last_scan_duration_seconds = max(0.0, self._monotonic() - started)
                 self._scanning = False

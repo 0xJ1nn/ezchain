@@ -109,6 +109,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **A quote timeout counts against the provider's breaker, and a cancelled market scan
+  releases its half-open permit.** The router's attempt deadline cancels the inner quote,
+  which reaches the provider as cancellation; the breaker recorded no failure for it, so a
+  provider that hangs instead of erroring never opened and every order paid the full wait
+  again. The router now tells the provider when a deadline it owns elapses
+  (`record_timeout`), for both the entry quote and the mandatory full-size exit, and the
+  circuit opens as it does for a 5xx. The market monitor's scans take the one half-open
+  permit before probing and record an outcome only when the probe completes, so a scan
+  cancelled mid-probe (shutdown, a superseded manual scan) held the permit for ever and
+  every later scan was rejected as `circuit open`; `run_once` now releases the permit on
+  cancellation. A cancelled call is still not a failure, and a `no route` answer still does
+  not count.
+
 - **The MCP server refuses writes without a verified scoped credential, from every entry
   point.** The deployment token is an admin principal, so an agent must never run with it.
   The startup probe already refused it, but the guard lived in the CLI: a server
