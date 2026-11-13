@@ -11,13 +11,18 @@
 # part of this stack. They do not exist as deployables yet; see
 # infra/compose.blueprint.yaml and docs/INFRA.md.
 #
-# Start:
+# Start (one command on a server you own):
+#   tools/install/install.sh --version <tag>
+# The installer fetches a checksum-verified release, generates the secrets on the host
+# and starts this stack. For a manual run:
 #   cp infra/.env.example infra/.env
 #   # set POSTGRES_PASSWORD and EZCHAIN_API_TOKEN in infra/.env
 #   docker compose -f infra/compose.yaml up --build -d
 #
 # The API and Postgres are never published to the host. Browser traffic enters through
-# Caddy on EZCHAIN_PORT (default 8080).
+# Caddy on EZCHAIN_PORT (default 8080). Caddy publishes only the product UI and the two
+# public probes (/healthz, /readyz); /metrics, /health, /docs, /redoc and /openapi.json
+# answer 404 at the edge and are reachable only on the Docker network.
 
 name: ezchain
 
@@ -39,6 +44,9 @@ x-api-env: &api-env
   EZCHAIN_AUTH_ENABLED: "true"
   EZCHAIN_API_TOKEN: "${EZCHAIN_API_TOKEN:?set EZCHAIN_API_TOKEN in infra/.env (at least 32 characters)}"
   EZCHAIN_DATA_MODE: "${EZCHAIN_DATA_MODE:-live}"
+  # Server-derived. Paper is the only mode this stack starts; live additionally needs
+  # a signed gate record and the not-yet-built executor (ADR-0035).
+  EZCHAIN_EXECUTION_MODE: "${EZCHAIN_EXECUTION_MODE:-paper}"
   EZCHAIN_ENGINE_INLINE: "${EZCHAIN_ENGINE_INLINE:-true}"
   EZCHAIN_ENGINE_INTERVAL_SECONDS: "${EZCHAIN_ENGINE_INTERVAL_SECONDS:-30}"
   EZCHAIN_MARKET_SCAN_INLINE: "${EZCHAIN_MARKET_SCAN_INLINE:-true}"
@@ -155,7 +163,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=30d"
     ports:
-      - "${EZCHAIN_BIND:-127.0.0.1}:9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -186,7 +194,7 @@ services:
       - grafanadata:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "${EZCHAIN_BIND:-127.0.0.1}:3001:3000"
+      - "127.0.0.1:3001:3000"
     healthcheck:
       <<: *health
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
