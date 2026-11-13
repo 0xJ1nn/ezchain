@@ -9,6 +9,11 @@ this file keeps:
 * Fail closed on money. A missing snapshot or stale quote refuses both sides at the
   re-risk stage; a missing or malformed quote, or an unknown risk verdict, produces no
   order. Entry-only gates never block a reduce-only exit.
+* The kill switch is read before any venue contact, again after the quote, and once more
+  between the pre-submit position re-bound and the signature, so an arm lands within the
+  same intent rather than on the next one. Every read gates new entries only: a sell is
+  bounded by the held position and cannot open a short, so an armed switch refuses the
+  buy and still settles a reduce-only exit. An unreadable switch refuses a new entry.
 * The order is priced by the quote only when the quote's size is the risk-approved size;
   the journal is built from the venue's receipt, never from either.
 * Idempotency is bound to the payload: the same key with a different order is a typed
@@ -245,8 +250,9 @@ class ExecutionPipeline:
         if not decision.allowed:
             return _denied(intent, decision)
 
-        # 3. The kill switch is read after risk and before the venue, so an armed switch
-        # cannot look like a venue rejection and the venue is never contacted.
+        # 3. A buy's kill switch is read after risk and before the venue, so an armed
+        # switch cannot look like a venue rejection and the venue is never contacted for
+        # new risk. An exit is not gated here: it only reduces the held position.
         blocked = self._kill_switch_denial(intent, decision)
         if blocked is not None:
             return blocked
@@ -257,8 +263,8 @@ class ExecutionPipeline:
             return quoted
         quote = quoted
 
-        # 4.5 Re-read the switch after the venue round-trip: arming while the quote was in
-        # flight must refuse the submit, not only the next intent.
+        # 4.5 Re-read the switch for a buy after the venue round-trip: arming while the
+        # quote was in flight must refuse the submit, not only the next intent.
         blocked = self._kill_switch_denial(intent, decision, quote=quote)
         if blocked is not None:
             return blocked
@@ -302,6 +308,15 @@ class ExecutionPipeline:
             if isinstance(signed_result, ExecutionResult):
                 return signed_result
             signed = signed_result
+
+        # 6.8 The last gate for a buy is the submit boundary: an arm that landed during
+        # the signing await above must refuse without the signed transaction reaching the
+        # venue. Nothing awaits between this read and the submit call, so no stage can
+        # outlive it. An exit is not recalled here: it only reduces the position and must
+        # still settle.
+        blocked = self._kill_switch_denial(intent, quote_decision, quote=quote)
+        if blocked is not None:
+            return blocked
 
         # 7. Fill from the venue receipt. A signature this process produced must come
         # back with the same payload digest, or the receipt is not for our transaction.
@@ -428,7 +443,15 @@ class ExecutionPipeline:
         *,
         quote: Quote | None = None,
     ) -> ExecutionResult | None:
-        """A fresh switch read: ``None`` when execution may proceed."""
+        """A fresh switch read: ``None`` when execution may proceed.
+
+        The switch halts new risk, never an exit. A sell is bounded by the held position
+        and cannot open a short, so every read is buy-only: an entry is refused and a
+        reduce-only exit still settles. An unreadable switch also only refuses an entry;
+        it must not trap funds.
+        """
+        if intent.side != "buy":
+            return None
         try:
             self.kill_switch.check()
         except KillSwitchUnavailable:

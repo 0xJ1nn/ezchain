@@ -20,6 +20,7 @@ from ezchain_api.services.system_flags import (
     KILL_SWITCH_KEY,
     read_kill_switch,
     seed_kill_switch,
+    set_kill_switch,
 )
 from ezchain_core import utcnow
 
@@ -178,3 +179,54 @@ def test_schema_scopes_track_the_system_flags_source() -> None:
     schema = KillSwitchOut(active=True)
 
     assert list(schema.scopes) == list(system_flags.KILL_SWITCH_SCOPES)
+
+
+def test_a_read_never_serves_a_released_state_cached_before_arming(tmp_path: Path) -> None:
+    """The flag is a row read, not an identity-map value.
+
+    The reader keeps the released row strongly referenced, so the weak identity map
+    cannot forget it and a plain ``session.get`` would keep returning it. While another
+    process arms the switch, the next read must still issue a SELECT and observe the arm;
+    serving the cached instance would keep obeying the released state for the life of the
+    session, the stale state the one-tick rule forbids.
+    """
+    url = f"sqlite+pysqlite:///{tmp_path / 'flag-fresh.db'}"
+    reader_engine = create_engine(url)
+    writer_engine = create_engine(url)
+    Base.metadata.create_all(writer_engine)
+    settings = Settings(environment="test", database_url=url, engine_kill_switch=False)
+    reader_maker = sessionmaker(bind=reader_engine, expire_on_commit=False)
+    writer_maker = sessionmaker(bind=writer_engine, expire_on_commit=False)
+
+    selects: list[str] = []
+
+    @event.listens_for(reader_engine, "before_cursor_execute")
+    def _record_flag_select(
+        conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: Any
+    ) -> None:
+        if "system_flags" in statement and statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
+    try:
+        with writer_maker() as writer:
+            set_kill_switch(writer, active=False, reason=None)
+        with reader_maker() as reader:
+            # Hold the released row strongly before reading it: the identity map alone is
+            # weak, and a collected row would be re-queried for the wrong reason.
+            cached = reader.get(SystemFlagRow, KILL_SWITCH_KEY)
+            assert cached is not None and cached.value["active"] is False
+            assert read_kill_switch(reader, settings).active is False
+            # End the read transaction so the other connection can commit; the row stays
+            # in this session's identity map because expire_on_commit is false.
+            reader.commit()
+            with writer_maker() as writer:
+                set_kill_switch(writer, active=True, reason="armed mid-flight")
+            before = len(selects)
+            assert read_kill_switch(reader, settings).active is True
+            assert cached.value["active"] is True  # the cached instance was refreshed
+            # The second read crossed the process boundary: exactly one fresh SELECT, not
+            # an identity-map hit that would still serve the released state.
+            assert len(selects) == before + 1
+    finally:
+        reader_engine.dispose()
+        writer_engine.dispose()
