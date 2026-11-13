@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..models import PaperFillRow, PaperOrderRow, StrategyRow
 from . import pnl
 
@@ -47,7 +48,12 @@ def strategy_performance(
     if strategy is None:
         return None
 
-    marks = pnl.mark_index(session)
+    now = datetime.now(UTC)
+    marks = pnl.mark_index(
+        session,
+        max_age_seconds=get_settings().max_mark_age_seconds,
+        now=now,
+    )
     group_ids = _owned_group_ids(session, strategy_id)
     projection = pnl.project(
         pnl.ledger_lines(session),
@@ -69,7 +75,7 @@ def strategy_performance(
         marks=pnl.prices(marks),
         group_ids=group_ids,
         window=window,
-        now=datetime.now(UTC),
+        now=now,
     )
     curve = [{"t": p["t"], "pnl_usd": p["realized_pnl_usd"]} for p in series["realized_pnl_series"]]
 

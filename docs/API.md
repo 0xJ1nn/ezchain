@@ -259,6 +259,13 @@ number, and `GET /paper/alerts` needs it to name the source an alert is about. A
 whose row never had an observation reports `source: null`; a stale or unknown mark that
 does have one keeps it.
 
+`GET /paper/performance` and `GET /paper/attribution` apply that same policy. A mark the
+account read refuses prices nothing on these surfaces either: `mark_usd`,
+`market_value_usd`, `unrealized_usd`/`unrealized_pnl_usd` and `equity_usd` are `null`, the
+row is reported as incomplete, and the equity series carries a `null` point for the gap
+rather than interpolating or carrying the last known value forward. A mark is never
+fresh on one read and stale on another.
+
 `GET /paper/alerts` carries one code per derived condition, including
 `POSITION_MARK_UNKNOWN`, `POSITION_MARK_STALE`, `POSITION_MARK_FUTURE` (a source clock
 ahead of ours; `warning` beyond the tolerated skew, `info` within it),

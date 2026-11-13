@@ -73,7 +73,7 @@ from ..models import (
     PaperWalletRow,
     new_id,
 )
-from . import market_snapshots
+from . import market_snapshots, pnl
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -489,32 +489,21 @@ def _mark_freshness(
 def _mark_status(
     mark_usd: Any, source: Any, max_age_seconds: float, now: datetime | None = None
 ) -> MarkStatus:
-    """Typed freshness of one mark, separate from any quote's freshness."""
-    if mark_usd is None:
-        return "unknown"
-    if not isinstance(source, dict):
-        return "unknown"
-    observed_raw = source.get("observed_at")
-    if not isinstance(observed_raw, str):
-        return "unknown"
-    try:
-        stamp = _aware(datetime.fromisoformat(observed_raw))
-    except ValueError:
-        return "unknown"
-    if stamp is None:
-        return "unknown"
-    now = now or utcnow()
-    skew = (stamp - now).total_seconds()
-    # A modestly future-dated observation is tolerated clock skew (``future``); one
-    # further ahead than the skew bound cannot be trusted and reports ``unknown`` so
-    # no surface prints a frozen price as usable. The age is then withheld.
-    if skew > FUTURE_SKEW_SECONDS:
-        return "unknown"
-    if skew > 0:
-        return "future"
-    if -skew > max_age_seconds:
-        return "stale"
-    return "fresh"
+    """Typed freshness of one mark, separate from any quote's freshness.
+
+    The classification lives in :func:`ezchain_api.services.pnl.mark_status` so the
+    order gate, the account read and the performance/attribution reads cannot drift
+    into different verdicts for the same observation.
+    """
+    observed: datetime | None = None
+    if isinstance(source, dict):
+        observed_raw = source.get("observed_at")
+        if isinstance(observed_raw, str):
+            try:
+                observed = _aware(datetime.fromisoformat(observed_raw))
+            except ValueError:
+                observed = None
+    return pnl.mark_status(mark_usd, observed, max_age_seconds=max_age_seconds, now=now)
 
 
 def _mark_can_price(

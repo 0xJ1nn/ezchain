@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from ezchain_core import utcnow
 
 from ..actor import ACTOR_UNKNOWN
-from ..config import Settings
+from ..config import Settings, get_settings
 from ..models import LedgerEntryRow, PaperFillRow, PaperOrderRow
 from . import paper, pnl, reconciliation
 from .system_flags import read_kill_switch
@@ -178,12 +178,20 @@ def _daily_realized(
 
 def _ledger_view(
     session: Session,
-) -> tuple[pnl.Projection, list[PaperFillRow], list[_TokenBook]]:
-    """The account view: every ledger group through the shared projector."""
-    marks = pnl.mark_index(session)
+    *,
+    max_age_seconds: float | None = None,
+    now: datetime | None = None,
+) -> tuple[pnl.Projection, list[PaperFillRow], list[_TokenBook], dict[pnl.TokenKey, pnl.Mark]]:
+    """The account view: every ledger group through the shared projector.
+
+    ``max_age_seconds`` applies the account read's freshness policy to the marks, so a
+    stale or unknown mark prices nothing here either (CONTRACT I3). The marks are
+    returned so the caller can project the same table without a second read.
+    """
+    marks = pnl.mark_index(session, max_age_seconds=max_age_seconds, now=now)
     projection = pnl.project(pnl.ledger_lines(session), marks=pnl.prices(marks))
     fills = list(session.scalars(select(PaperFillRow).order_by(PaperFillRow.created_at)))
-    return projection, fills, _token_books(projection, marks, fills)
+    return projection, fills, _token_books(projection, marks, fills), marks
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +201,8 @@ def _ledger_view(
 
 def performance(session: Session, *, window: Any = None) -> dict[str, Any]:
     now = utcnow()
-    projection, fills, books = _ledger_view(session)
-    marks = pnl.mark_index(session)
+    max_age = get_settings().max_mark_age_seconds
+    projection, fills, books, marks = _ledger_view(session, max_age_seconds=max_age, now=now)
     series = pnl.performance_series(
         pnl.ledger_lines(session),
         marks=pnl.prices(marks),
@@ -237,7 +245,10 @@ def performance(session: Session, *, window: Any = None) -> dict[str, Any]:
 
 
 def attribution(session: Session) -> list[dict[str, Any]]:
-    _, _, books = _ledger_view(session)
+    now = utcnow()
+    _, _, books, _ = _ledger_view(
+        session, max_age_seconds=get_settings().max_mark_age_seconds, now=now
+    )
     total_abs = sum((abs(book.realized_usd) for book in books), ZERO)
     rows: list[dict[str, Any]] = []
     for book in books:
