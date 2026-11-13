@@ -9,6 +9,7 @@ unknown, and unknown fails closed.
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
 import httpx
@@ -86,6 +87,25 @@ def test_invalid_credential_fails_closed(calls: list[httpx.Request]) -> None:
     assert credential.may_write is False
 
 
+def test_a_403_that_is_not_the_scope_denial_fails_closed(calls: list[httpx.Request]) -> None:
+    """Only the typed scope denial opens writes.
+
+    A bare 403 is any refusal the deployment might grow: the web proxy's
+    ``CROSS_ORIGIN_DENIED``, a WAF rule, a future guard. Classifying on the status alone
+    would read each of them as "this key is scoped", so the error code is what counts.
+    """
+    credential = inspect_credential(_client(403, calls=calls, code="CROSS_ORIGIN_DENIED"), "x")
+
+    assert credential.status == "unverified"
+    assert credential.may_write is False
+
+
+def test_an_unknown_403_reason_is_unverified_for_every_code(calls: list[httpx.Request]) -> None:
+    for code in ("CROSS_ORIGIN_DENIED", "WAF_BLOCKED", "API_ERROR"):
+        credential = inspect_credential(_client(403, calls=calls, code=code), "x")
+        assert credential.status == "unverified", code
+
+
 def test_unreachable_api_fails_closed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
@@ -129,7 +149,7 @@ def test_refused_server_hides_writes_and_explains_why(calls: list[httpx.Request]
 
 def test_the_admin_surface_has_no_agent_tool(calls: list[httpx.Request]) -> None:
     """Arming, releasing and reloading are admin routes; a scoped key cannot call them."""
-    server = McpServer(_admin_client(calls), allow_writes=True)
+    server = McpServer(_admin_client(calls), allow_writes=True, credential=Credential("scoped"))
     listed = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
     assert listed is not None
 
@@ -155,8 +175,64 @@ class _ProbeClient:
             raise self.error
         return [{"id": "k1"}]
 
+    def post(self, path: str, json: Any = None) -> Any:
+        raise AssertionError("a read-only server must never POST")
+
     def close(self) -> None:
         self.closed = True
+
+
+def _write_names(server: McpServer) -> set[str]:
+    listed = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert listed is not None
+    return {tool["name"] for tool in listed["result"]["tools"]}
+
+
+@pytest.mark.parametrize(
+    "credential",
+    [
+        None,
+        Credential("admin"),
+        Credential("missing", "no credential was supplied"),
+        Credential("unverified", "403 CROSS_ORIGIN_DENIED: refused"),
+    ],
+)
+def test_the_server_itself_refuses_writes_without_a_verified_scope(
+    credential: Credential | None,
+) -> None:
+    """The guard lives in the server, so every entry point inherits it.
+
+    The CLI probes before it starts, but nothing stops a caller from constructing
+    ``McpServer`` and setting the flag directly. Without a credential the module verified
+    as scoped, the write tools stay off and a write call is refused, not executed.
+    """
+    server = McpServer(_ProbeClient(), allow_writes=True, credential=credential)
+
+    assert server.allow_writes is False
+    assert "ezchain_place_paper_order" not in _write_names(server)
+
+    called = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "ezchain_place_paper_order", "arguments": {}},
+        }
+    )
+    assert called is not None
+    assert called["result"]["isError"] is True
+    body = json.loads(called["result"]["content"][0]["text"])
+    assert body["code"] == "WRITES_DISABLED"
+    assert "writes refused" in body["message"]
+    assert "writes are disabled" in server.instructions.lower()
+
+
+def test_a_verified_scoped_credential_opens_writes() -> None:
+    server = McpServer(_ProbeClient(), allow_writes=True, credential=Credential("scoped"))
+
+    assert server.allow_writes is True
+    assert "ezchain_place_paper_order" in _write_names(server)
+    assert "writes are disabled" not in server.instructions.lower()
 
 
 def _fake_server(seen: dict[str, Any], handle: Any = None) -> Any:

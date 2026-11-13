@@ -270,6 +270,19 @@ def test_operational_classification_is_explicit(protected_settings: Settings) ->
         assert requires_auth("GET", path, protected_settings) is False
 
 
+def test_the_agent_key_route_requires_admin_even_to_read() -> None:
+    """The MCP credential probe depends on this classification.
+
+    ``ezchain-mcp`` probes ``GET /api/v1/agent/keys`` to tell a scoped agent key (403
+    ``FORBIDDEN``) from an admin principal (200). If a read on that route stopped needing
+    ``admin``, a scoped key would get 200 and be misread as the deployment token, so the
+    pair of facts the probe rests on is pinned here.
+    """
+    for path in ("/api/v1/agent/keys", "/api/v1/agent/keys/key-1"):
+        assert required_scope("GET", path) == "admin"
+        assert required_scope("POST", path) == "admin"
+
+
 def test_every_root_route_is_classified() -> None:
     app = create_app()
     root = {

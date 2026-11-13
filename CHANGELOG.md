@@ -23,6 +23,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **The MCP server refuses writes without a verified scoped credential, from every entry
+  point.** The deployment token is an admin principal, so an agent must never run with it.
+  The startup probe already refused it, but the guard lived in the CLI: a server
+  constructed directly, in a test or another host, could still open the write surface.
+  `McpServer` now derives `allow_writes` from a credential it verified itself, so a
+  directly-constructed server without one is read-only, and a named write tool returns
+  `WRITES_DISABLED` with the operator instructions instead of running. The probe also
+  classifies on the typed error code now: only `403 FORBIDDEN` means "authenticated,
+  lacks admin", so a bare `403` — the web proxy's `CROSS_ORIGIN_DENIED`, a WAF rule — no
+  longer opens writes for the deployment token.
+
 - **An armed kill switch refuses every new entry, whoever places it (PAPER).** The order
   service checked the switch only for strategy-attributed orders, so a buy placed through
   the REST route, the MCP server or the web ticket — none of which carries a strategy —

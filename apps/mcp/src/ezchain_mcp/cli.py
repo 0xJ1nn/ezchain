@@ -9,7 +9,7 @@ import sys
 from typing import Any
 
 from .client import EzchainClient
-from .credentials import inspect_credential, refusal_message
+from .credentials import Credential, inspect_credential, refusal_message
 from .server import SERVER_VERSION, McpServer
 
 
@@ -54,29 +54,29 @@ def resolve_write_access(
     client: EzchainClient,
     token: str | None,
     requested: bool,
-) -> tuple[bool, str | None]:
-    """Open the write surface only for a scoped credential.
+) -> Credential:
+    """Verify the credential once, at startup.
 
-    Returns the flag the server runs with and, when writes were requested but refused,
-    the explanation to print and to hand the agent in ``initialize``.
+    The server re-checks the returned credential itself, so a caller cannot bypass this
+    probe by constructing ``McpServer`` directly.
     """
     if not requested:
-        return False, None
-    credential = inspect_credential(client, token)
-    if credential.may_write:
-        return True, None
-    return False, refusal_message(credential)
+        return Credential("missing", "writes were not requested")
+    return inspect_credential(client, token)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     client = EzchainClient(args.api_url, args.token)
-    allow_writes, write_refusal = resolve_write_access(
-        client, args.token, bool(args.allow_writes) and not args.read_only
-    )
+    requested = bool(args.allow_writes) and not args.read_only
+    credential = resolve_write_access(client, args.token, requested)
+    allow_writes = credential.may_write
+    write_refusal = None if allow_writes or not requested else refusal_message(credential)
     if write_refusal is not None:
         print(f"ezchain-mcp: {write_refusal}", file=sys.stderr)
-    server = McpServer(client, allow_writes=allow_writes, write_refusal=write_refusal)
+    server = McpServer(
+        client, allow_writes=allow_writes, credential=credential, write_refusal=write_refusal
+    )
     try:
         for line in sys.stdin:
             line = line.strip()

@@ -6,8 +6,11 @@ operate through it, so the write surface opens only for a scoped, revocable key.
 
 There is no scope-discovery route on the API. The cheapest honest probe is the admin-only
 ``GET /api/v1/agent/keys`` read: the deployment token and any ``admin`` key get 200, a
-``read``/``trade`` key gets 403, and a revoked or invalid key gets 401. Only that 403
-opens writes; a missing credential, an unreachable API or any other status fails closed.
+``read``/``trade`` key gets 403 ``FORBIDDEN``, and a revoked or invalid key gets 401. Only
+that named denial opens writes: a bare 403 is any refusal a deployment might grow (the web
+proxy's ``CROSS_ORIGIN_DENIED``, a WAF rule, a future guard), so the status alone is not
+evidence of a scope. A missing credential, an unreachable API, another code or any other
+status fails closed.
 """
 
 from __future__ import annotations
@@ -18,6 +21,10 @@ from typing import Literal
 from .client import ApiError, EzchainClient
 
 ADMIN_PROBE_PATH = "/api/v1/agent/keys"
+
+# The one error code that means "authenticated, but lacks the admin scope". Every other
+# refusal is opaque: the status alone is not evidence that this is a scoped agent key.
+SCOPE_DENIED_CODE = "FORBIDDEN"
 
 # The one command an operator runs to replace the deployment token with a scoped key.
 SCOPED_KEY_HELP = (
@@ -50,7 +57,7 @@ def inspect_credential(client: EzchainClient, token: str | None) -> Credential:
     try:
         client.get(ADMIN_PROBE_PATH)
     except ApiError as exc:
-        if exc.status == 403:
+        if exc.status == 403 and exc.code == SCOPE_DENIED_CODE:
             return Credential("scoped")
         return Credential("unverified", f"{exc.status} {exc.code}: {exc.message}")
     return Credential("admin", "the credential carries the admin scope")
@@ -75,6 +82,7 @@ def refusal_message(credential: Credential) -> str:
 __all__ = [
     "ADMIN_PROBE_PATH",
     "SCOPED_KEY_HELP",
+    "SCOPE_DENIED_CODE",
     "Credential",
     "CredentialStatus",
     "inspect_credential",

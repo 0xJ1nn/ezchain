@@ -10,13 +10,14 @@ import json
 from typing import Any
 
 from .client import ApiError, EzchainClient
+from .credentials import Credential, refusal_message
 from .resources import (
     RESOURCE_TEMPLATES,
     ResourceError,
     list_resources,
     read_resource,
 )
-from .tools import tool_by_name
+from .tools import WRITE_TOOLS, tool_by_name
 
 PROTOCOL_VERSION = "2025-11-25"
 SERVER_NAME = "ezchain"
@@ -79,20 +80,35 @@ class McpServer:
         client: EzchainClient,
         *,
         allow_writes: bool = False,
+        credential: Credential | None = None,
         write_refusal: str | None = None,
         name: str = SERVER_NAME,
         version: str = SERVER_VERSION,
     ) -> None:
         self.client = client
-        self.allow_writes = allow_writes
-        self.write_refusal = write_refusal
+        # The guard lives here, not in the entry point: a write surface opens only when
+        # the caller asked for it *and* this server holds a credential the module verified
+        # as scoped. A directly-constructed server has no such credential and stays
+        # read-only, whatever its caller does with the flag.
+        self.credential = credential
+        verified = credential is not None and credential.may_write
+        self.allow_writes = allow_writes and verified
+        if self.allow_writes:
+            self.write_refusal = None
+        elif allow_writes:
+            self.write_refusal = write_refusal or refusal_message(
+                credential or Credential("unverified", "no verified scoped credential")
+            )
+        else:
+            self.write_refusal = write_refusal
         self.name = name
         self.version = version
-        self._tools = tool_by_name(allow_writes)
+        self._tools = tool_by_name(self.allow_writes)
+        self._write_names = {tool.name for tool in WRITE_TOOLS}
         self.instructions = (
             INSTRUCTIONS
-            if write_refusal is None
-            else f"{INSTRUCTIONS}\n\nWrites are disabled: {write_refusal}"
+            if self.write_refusal is None
+            else f"{INSTRUCTIONS}\n\nWrites are disabled: {self.write_refusal}"
         )
 
     # -- protocol ---------------------------------------------------------
@@ -173,6 +189,11 @@ class McpServer:
             raise JsonRpcError(-32602, "tool name is required")
         tool = self._tools.get(name)
         if tool is None:
+            if name in self._write_names:
+                return _tool_error(
+                    "WRITES_DISABLED",
+                    self.write_refusal or "writes refused: this server is read-only",
+                )
             raise JsonRpcError(-32602, f"unknown tool: {name}")
         arguments = params.get("arguments", {})
         if arguments is None:
