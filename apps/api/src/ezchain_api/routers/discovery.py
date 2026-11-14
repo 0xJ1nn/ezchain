@@ -157,7 +157,7 @@ async def new_pairs(
 
     now = datetime.now(UTC)
     min_pair_age_seconds = settings.min_pair_age_minutes * 60
-    # No safety provider exists in this build (ADR-0046), so the read model's default check
+    # No safety provider exists in this build (ADR-0047), so the read model's default check
     # is the adapter's own SAFETY_UNKNOWN and no row can be marked tradeable.
     ranking = rank_new_pairs(
         rows,

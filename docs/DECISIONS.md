@@ -1511,7 +1511,7 @@ asynchronous on-chain verification service with drift alerts and quarantine, and
 forensic audit command remain open under GH-155; there is no withdrawal or transfer
 journal in this slice at all, so hardening one is not deferred work but a missing path.
 The replay, balance and seal primitives the others need are now in core.
-## ADR-0046 — The new-pairs feed lists a token as tradeable only with positive safety evidence
+## ADR-0047 — The new-pairs feed lists a token as tradeable only with positive safety evidence
 
 **Date:** 2026-11-14 · **Status:** Accepted
 

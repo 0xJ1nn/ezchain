@@ -141,7 +141,7 @@ ladder, so it cannot claim a provider the chain does not use.
 Mixed-unit hazards are rejected at the boundary (`docs/DOMAIN-MODEL.md` §2). A token with
 unknown decimals is not tradeable.
 
-### 4.1 New-pairs discovery (ADR-0046)
+### 4.1 New-pairs discovery (ADR-0047)
 
 `GET /api/v1/discovery/new-pairs?chain=&limit=` is the Launches feed. It is a read model
 over the same keyless DexScreener discovery pass the market monitor uses — no new table, no
