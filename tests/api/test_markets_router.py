@@ -126,9 +126,7 @@ def test_single_chain_browse_is_per_chain_sort_not_global() -> None:
     )
     client = client_for(adapter)
 
-    body = client.get(
-        "/api/v1/markets", params={"chain": "ethereum", "sort": "trending"}
-    ).json()
+    body = client.get("/api/v1/markets", params={"chain": "ethereum", "sort": "trending"}).json()
 
     # Ranking is within the selected chain. Calling it global would claim an all-chain
     # ordering that no single-chain read produced.

@@ -7,7 +7,7 @@ honest matrix of what is actually verified. This document defines all three.
 
 ```python
 class ChainAdapter(Protocol):
-    chain: ChainMeta          # id, family, native_asset, decimals, finality, explorer
+    chain: ChainMeta  # id, family, native_asset, decimals, finality, explorer
     capabilities: Capabilities
 
     async def validate_address(self, address: str) -> AddressInfo: ...
@@ -31,7 +31,7 @@ class Capabilities:
     native_transfer: bool
     token_transfer: bool
     swap: bool
-    limit_order: bool          # native or via venue adapter
+    limit_order: bool  # native or via venue adapter
     gasless: bool
     mempool: bool
     reorg_depth: int
@@ -39,7 +39,7 @@ class Capabilities:
     address_formats: tuple[str, ...]
     token_standards: tuple[str, ...]
     event_streams: tuple[str, ...]
-    rent: bool                 # account rent / storage deposits
+    rent: bool  # account rent / storage deposits
     simulation: bool
 ```
 

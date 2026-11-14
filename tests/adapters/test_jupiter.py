@@ -156,9 +156,7 @@ async def test_a_missing_key_uses_lite_without_the_header(
 async def test_quote_calls_wait_for_the_provider_budget(
     clock: Any, fast_limiter: Any, load_fixture: Callable[[str], Any]
 ) -> None:
-    respx.get(TOKEN_SEARCH).mock(
-        return_value=httpx.Response(200, json=_token_search(BONK, 5))
-    )
+    respx.get(TOKEN_SEARCH).mock(return_value=httpx.Response(200, json=_token_search(BONK, 5)))
     respx.get(QUOTE).mock(
         return_value=httpx.Response(200, json=load_fixture("jupiter_quote_buy.json"))
     )

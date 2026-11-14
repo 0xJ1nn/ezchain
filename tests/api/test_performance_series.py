@@ -6,8 +6,16 @@ from decimal import Decimal
 from ezchain_api.services import pnl
 
 
-def _line(group_id: str, account: str, amount: str, usd: str, at: datetime, seq: int) -> pnl.LedgerLine:
-    return pnl.LedgerLine(group_id=group_id, account=account, amount=Decimal(amount), usd_value=Decimal(usd), created_at=at)
+def _line(
+    group_id: str, account: str, amount: str, usd: str, at: datetime, seq: int
+) -> pnl.LedgerLine:
+    return pnl.LedgerLine(
+        group_id=group_id,
+        account=account,
+        amount=Decimal(amount),
+        usd_value=Decimal(usd),
+        created_at=at,
+    )
 
 
 def test_series_preserves_ledger_order_when_observed_times_are_out_of_order() -> None:

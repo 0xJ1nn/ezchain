@@ -33,7 +33,11 @@ def test_api_keys_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     # The Postgres-only baseline cannot run on SQLite; seed the table 0007 alters.
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
-        connection.execute(text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"))
+        connection.execute(
+            text(
+                "CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"
+            )
+        )
     command.stamp(config, "0007_strategy_plugins")
     command.upgrade(config, "head")
     try:

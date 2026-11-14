@@ -753,9 +753,7 @@ async def markets(
         coverage=None
         if coverage is None
         else [MarketCoverageOut.model_validate(item.to_dict()) for item in coverage],
-        ordered_by="chain_round_robin"
-        if semantics == "per_chain_round_robin"
-        else semantics,
+        ordered_by="chain_round_robin" if semantics == "per_chain_round_robin" else semantics,
         sort=sort,
         sort_semantics=semantics,
         offset=start,

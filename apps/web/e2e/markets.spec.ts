@@ -128,6 +128,14 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(page.getByText(/Nothing matched .*zzzz/)).toBeVisible();
 	await expect(page.getByRole("link", { name: "Reset filters" }).first()).toBeVisible();
 
+	// A registry chain without sample seeds was never asked: its empty page is unknown,
+	// not an empty result. The fixture coverage carries `no_seeds` for it.
+	await page.goto("/markets?chain=arbitrum");
+	await expect(page.getByText("NO_SEEDS", { exact: true })).toBeVisible();
+	await expect(page.getByText(/This chain has no discovery seeds configured/)).toBeVisible();
+	await expect(page.getByText(/population is unknown — not an empty result/)).toBeVisible();
+	await expect(page.getByText("EMPTY_RESULT")).toHaveCount(0);
+
 	// API failures print the reason code; they never fall back to fixtures.
 	await page.goto("/markets?chain=nope");
 	await expect(page.getByText("CHAIN_NOT_FOUND")).toBeVisible();

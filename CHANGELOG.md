@@ -265,7 +265,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `per_chain_round_robin`, a feed-wide search is `global_sort`, and a single-chain read is
   `per_chain_sort`; the markets page badge/footer and the dashboard trending strip say so
   instead of calling a within-chain ranking global. Coverage also exposes `timeout` in the
-  API shape instead of failing serialization.
+  API shape instead of failing serialization. The markets empty state branches on that
+  coverage: a chain with no discovery seeds is labelled NO_SEEDS and says nothing was
+  requested (unknown, not an empty result), while a genuine empty feed keeps EMPTY_RESULT.
+  A `timeout` coverage entry is recorded as a failed attempt with its own "all-chain probe
+  timed out" reason, so the overview reports error instead of a successful empty `no_data`.
 - **The risk dashboard reads a mark's freshness from the server, not from a 60s rule
   (GH-115).** `/risk` re-derived stale/fresh from `source.observed_at` with a client-side
   `STALE_AFTER_SECONDS = 60`, while the API ages the mark with the configured

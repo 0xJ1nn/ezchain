@@ -70,8 +70,6 @@ def test_provider_keys_upgrades_a_sqlite_database(tmp_path: Path) -> None:
                 connection.execute(INSERT_KEY, {"id": "second", "revoked_at": None})
         # A retired row may share the pair, so history is kept.
         with engine.begin() as connection:
-            connection.execute(
-                INSERT_KEY, {"id": "retired", "revoked_at": "2026-01-01 00:00:00"}
-            )
+            connection.execute(INSERT_KEY, {"id": "retired", "revoked_at": "2026-01-01 00:00:00"})
     finally:
         engine.dispose()

@@ -336,7 +336,9 @@ class MarketMonitor:
                 coverage, discovered, started, attempted, rows_by_chain, errors
             )
             successful_chains.update(
-                item.chain for item in coverage if item.reason not in ("error", "no_seeds")
+                item.chain
+                for item in coverage
+                if item.reason not in ("error", "no_seeds", "timeout")
             )
         else:
             # The all-chain pass raised or returned no coverage: this process cannot know
@@ -443,6 +445,14 @@ class MarketMonitor:
             state.last_attempt_at = started
             if item.reason == "error":
                 message = "all-chain probe failed"
+                failed_chains.add(item.chain)
+                state.rows = 0
+                state.last_error = message
+                errors[item.chain] = message
+            elif item.reason == "timeout":
+                # A timeout is a failed observation, not an empty one. Keep its own reason
+                # so the overview can tell a timed-out chain from a genuinely empty feed.
+                message = "all-chain probe timed out"
                 failed_chains.add(item.chain)
                 state.rows = 0
                 state.last_error = message
