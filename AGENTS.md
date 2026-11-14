@@ -91,7 +91,7 @@ approval.
 | `apps/api` | HTTP/WS edge, auth, validation, read models | order execution, accounting math |
 | `apps/mcp` | agent ingress: MCP tools and resources for a scoped key | admin operations, database access, money logic |
 | `services/engine` | strategy runtime, automation scheduler | signing, direct DB writes outside repositories |
-| `services/agent-runtime` | one model loop, model clients, budgets, its own session trace | money code, key material, platform database writes, admin scope, strategy code |
+| `services/agent-runtime` | one model loop, model clients, budgets, its own session trace — decided, not built (ADR-0042) | money code, key material, platform database writes, admin scope, strategy code |
 | `services/executor` | signing, broadcast, fill confirmation | strategy decisions, UI data |
 | `services/ingest` | chain/market data acquisition, normalization | trading decisions |
 | `packages/core-py` | domain types, money, ledger, risk policy | I/O, HTTP, framework code |

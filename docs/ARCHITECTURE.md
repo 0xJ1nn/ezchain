@@ -100,7 +100,7 @@ apps/
 integrations/              # Hermes/OpenClaw packs (skill + MCP registration)
 services/
   engine/                  # strategy host, automation scheduler, signal router
-  agent-runtime/           # built-in agent loop: MCP client, model clients, budgets, trace (ADR-0042)
+  agent-runtime/           # built-in agent loop: MCP client, model clients, budgets, trace — decided, not built (ADR-0042)
   executor/                # pipeline (intent -> journal), vault, signer, broadcaster, confirmer
   ingest/                  # sources/{chain,venue,cex,social}, normalizers, candles
 packages/
@@ -116,15 +116,17 @@ design/                    # wireframe + brief (source of truth for visuals)
 infra/                     # compose, Caddy, Prometheus, Grafana
 ```
 
-Enforced boundaries (import-linter):
+Import boundaries, documented here and to be enforced by import linter contracts:
 
 - `core_py` imports nothing from `apps/`, `services/`, `adapters/`, `sdk_py`.
 - `apps/api` never imports `services/executor`; only the executor HTTP client.
 - `adapters/*` import `core_py` and their chain SDK; never another adapter.
 - `sdk_py` imports no platform code at all; it is a standalone Apache-2.0 package.
 - `services/engine` never touches key material or signing libraries.
-- `services/agent-runtime` imports no platform code; its only egress is `apps/mcp` over
-  stdio with a scoped key (ADR-0042).
+- `services/agent-runtime`, when built, imports no platform code; its only egress is
+  `apps/mcp` over stdio with a scoped key (ADR-0042). Neither the service nor an
+  import-linter contract exists yet, so this boundary is held by review rather than by a
+  check.
 
 Module size budget: ≤ 800 LOC per module, ≤ 400 LOC per file outside generated code. A
 module that needs more is two bounded contexts. (v3's 697 KB `service.py` is the counter-

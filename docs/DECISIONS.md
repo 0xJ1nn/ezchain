@@ -1181,13 +1181,14 @@ rolls its transaction back before the refusal is written.
 **Context:** the agent surface today is the MCP server in `apps/mcp`; the process that calls
 it belongs to the user. The product's own agent is the next piece to build — one loop, a
 model, the platform's tools, a panel and a headless command — and an owner may instead bring
-an external agent over the Agent Client Protocol. All of that is untrusted code driving
-money-adjacent tools: a model turns market text and tool output into the next call, so its
-input is attacker-influenced by construction. Hosting that loop inside the API or the engine,
-or letting it open the database, would put model output next to the ledger, the keys and the
-admin surface. The other side of the boundary is already decided: custody is the user's
-(ADR-0040), automation is a per-user `manual`/`full_auto` choice (ADR-0041), and the platform
-has one execution path (invariant I2).
+an external agent over the Agent Client Protocol, a path that is planned and not built. All
+of that is untrusted code driving money-adjacent tools: a model turns market text and tool
+output into the next call, so its input is attacker-influenced by construction. Hosting that
+loop inside the API or the engine, or letting it open the database, would put model output
+next to the ledger, the keys and the admin surface. The other side of the boundary is
+already decided: custody is the user's (ADR-0040), automation is a per-user
+`manual`/`full_auto` choice (ADR-0041), and the platform has one execution path (invariant
+I2).
 
 **Options:** (a) host the loop inside `apps/api` or `services/engine`, beside the order
 service and the database; (b) a separate `services/agent-runtime` whose only egress is a
@@ -1226,7 +1227,7 @@ the deployment token.
 | May | May not |
 |---|---|
 | Read state, markets, account, positions, orders, fills, ledger, reconciliation, strategies, plugins, backtests and readiness | Place a live order, choose an execution mode or reach the executor |
-| Propose a paper order, create or change a strategy record, pause or resume a strategy, run a strategy or backtest | Approve or reject its own proposal, change the automation tier or supply the consent |
+| Propose a paper order, create, change or delete a strategy record (`trade` scope; `ezchain_delete_strategy` is destructive and keeps order history), pause or resume a strategy, run a strategy or backtest | Approve or reject its own proposal, change the automation tier or supply the consent |
 | Read the approval queue and its own tier | Arm or release the kill switch, reload plugins, mint or revoke keys |
 | — | Read or write key material, the vault or a key handle |
 
@@ -1253,13 +1254,18 @@ executor, and the runtime holds none. The one platform credential the runtime ho
 scoped agent key — an API bearer token, not a signing key — and it never enters a prompt, a
 tool argument, the trace or the model context.
 
-**The audit trail.** The runtime writes one append-only trace per session in its own store,
-never in the platform database: session, step, prompt hash, model id, tool, arguments, result
-summary, latency, tokens, cost and approval id, redacted on write and replayable against the
-recorded results. The platform keeps the money record it already had: the order row and every
-journal leg carry the agent principal (ADR-0037); `order_approvals` carries the server's own
-risk evidence and `decided_by`; the vault audits each signature against the approval digest;
-the kill switch records who armed it. The two records join on approval id, order id and the
+**The audit trail.** The runtime will write one append-only trace per session in its own
+store, never in the platform database: session, step, prompt hash, model id, tool, arguments,
+result summary, latency, tokens, cost and approval id, redacted on write and replayable
+against the recorded results. That store belongs to a service that is decided, not built: the
+runtime-side audit log is planned, not built, and the platform holds no trace today. The
+platform keeps the money record it already had: the order row and every journal leg carry
+the agent principal (ADR-0037); `order_approvals` carries the server's own risk evidence and
+`decided_by`; the executor's pipeline decodes the transaction bytes and compares every bound
+field with the approved intent and its digest before any signer is called (ADR-0038).
+**Attribution of switch changes — not yet implemented.** The kill-switch row stores only its
+active flag, reason and update time, and `set_kill_switch` takes no principal, so who armed
+it is a required future capability. The two records join on approval id, order id and the
 acting key id, and neither substitutes for the other. Every money number an answer states is
 read from a tool result, never computed by the model.
 
@@ -1272,8 +1278,11 @@ explains the money. The MCP tool surface becomes the runtime's security boundary
 tools and their annotations are reviewed with that in mind and no admin tool is ever added.
 The runtime must mint one key per session owner rather than share a key, and an unreachable
 MCP server fails closed — there is no fallback direct-API path. The import boundary is
-enforced: `services/agent-runtime` imports no `ezchain_core`, `ezchain_api`,
-`ezchain_engine` or `ezchain_executor`, and a test holds it. Provider-credential rotation
-is the runtime operator's job, not the platform's. A panel and a headless command are two
-entry points to the same loop and the same approval path, and the BYO-agent adapter
-inherits this boundary rather than defining a second one.
+documented: `services/agent-runtime` must import no `ezchain_core`, `ezchain_api`,
+`ezchain_engine` or `ezchain_executor`, and nothing else under `services/` may import it. Its
+mechanical enforcement — an import-linter contract and service isolation — is planned work;
+neither the service nor the lint configuration exists yet, so the boundary is held by review
+until both land. Provider-credential rotation is the runtime operator's job, not the
+platform's. A panel and a headless command are two entry points to the same loop and the
+same approval path, and the BYO-agent adapter inherits this boundary rather than defining a
+second one.
