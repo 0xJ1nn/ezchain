@@ -465,6 +465,11 @@ async def evaluate_strategy(
                 strategy.id, now, interval, action=decision.action, amount_usd=decision.amount_usd
             ),
             strategy_id=strategy.id,
+            # The strategy's own trade-policy profile, resolved by the order gate exactly
+            # as a person's order is. Null inherits the deployment default, so a strategy
+            # without an override keeps today's behaviour, and an override can never be a
+            # second resolver: the same minimum, maximum and percent-of-equity gates apply.
+            risk_profile=strategy.risk_profile,
         )
         try:
             order_id = await order_executor.place_order(request)

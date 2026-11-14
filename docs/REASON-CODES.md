@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 254 codes across 17 categories, 6 layers.
+**Scale:** 259 codes across 17 categories, 6 layers.
 
 ---
 
@@ -93,13 +93,14 @@ or a process-local refusal).
 | `INVALID_FILTER` | api | 422 | no | warning | A query filter is not a valid value for its field. |
 | `INVALID_PRECONDITION` | api | 400 | no | warning | The If-Match header is not an integer arm version. |
 
-### Risk gate and order refusals (32)
+### Risk gate and order refusals (33)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
 | `INVALID_SIDE` | core | — | no | warning | The order side is neither buy nor sell. |
 | `INVALID_AMOUNT` | core | — | no | warning | The order amount is zero or negative. |
 | `ORDER_LIMIT` | core | — | no | warning | The order exceeds the per-order cap. |
+| `PROFILE_LOOSENS_STRATEGY` | api | 409 | no | warning | An order asked for a risk profile looser than the one its strategy is pinned to, so the strategy's bound would not apply. |
 | `SIZE_BELOW_MIN` | core | — | no | warning | The order is under the profile's minimum ticket. |
 | `SIZE_ABOVE_MAX` | core | — | no | warning | The order is over the profile's maximum ticket. |
 | `EQUITY_UNKNOWN` | core | — | no | warning | Equity could not be read, so percentage caps cannot be sized. |
@@ -201,7 +202,7 @@ or a process-local refusal).
 | `KILL_SWITCH_ARMED` | api | — | no | warning | The kill switch is armed; new risk-increasing orders are refused, exits settle. |
 | `KILL_SWITCH_UNAVAILABLE` | executor | — | yes | critical | The switch state could not be read, so execution fails closed. |
 
-### Strategy parameters (7)
+### Strategy parameters (11)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -212,6 +213,10 @@ or a process-local refusal).
 | `STRATEGY_LOOKBACK_UNSUPPORTED` | core | 422 | no | warning | The lookback is not in the supported set. |
 | `STRATEGY_GRAPH_INVALID` | core | 422 | no | warning | A graph strategy's document is missing or invalid. |
 | `STRATEGY_KIND_UNSUPPORTED` | core | 422 | no | warning | The strategy kind is not one this build supports. |
+| `POLICY_FIELD_UNKNOWN` | core | 422 | no | warning | A caller asked for one field of a trade profile by a name the registry does not declare. |
+| `POLICY_INVALID` | api | 422 | no | warning | A stored or requested policy contradicts itself: a bound sits below the size it is supposed to allow. |
+| `RISK_ACK_REQUIRED` | api | 409 | no | warning | Changing a strategy to a profile that loosens a bound governing the owner's own funds needs an explicit acknowledgement. |
+| `TRADE_POLICY_UPDATED` | api | — | no | info | A strategy's risk profile changed; the run log records the previous and the new value. |
 
 ### Strategy graph (21)
 

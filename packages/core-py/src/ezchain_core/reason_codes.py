@@ -2317,6 +2317,55 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "Backtest not found.",
         http_status=404,
     ),
+    # ---------------------------------------------------- core: trade policy and profiles
+    _S(
+        "POLICY_FIELD_UNKNOWN",
+        "strategy",
+        "core",
+        "ezchain_core/trade_policy.py",
+        "A caller asked for one field of a trade profile by a name the registry does not declare.",
+        "That trade-policy field does not exist.",
+        http_status=422,
+    ),
+    _S(
+        "POLICY_INVALID",
+        "strategy",
+        "api",
+        "ezchain_api/services/trade_policy.py",
+        "A stored or requested policy contradicts itself: a bound sits below the size it "
+        "is supposed to allow.",
+        "This trade policy is internally inconsistent.",
+        http_status=422,
+    ),
+    _S(
+        "RISK_ACK_REQUIRED",
+        "strategy",
+        "api",
+        "ezchain_api/services/trade_policy.py",
+        "Changing a strategy to a profile that loosens a bound governing the owner's own "
+        "funds needs an explicit acknowledgement.",
+        "Confirm the looser risk limit before saving it.",
+        http_status=409,
+    ),
+    _S(
+        "PROFILE_LOOSENS_STRATEGY",
+        "risk",
+        "api",
+        "ezchain_api/services/paper.py",
+        "An order asked for a risk profile looser than the one its strategy is pinned to, "
+        "so the strategy's bound would not apply.",
+        "This order is looser than the strategy's risk profile.",
+        http_status=409,
+    ),
+    _S(
+        "TRADE_POLICY_UPDATED",
+        "strategy",
+        "api",
+        "ezchain_api/services/trade_policy.py",
+        "A strategy's risk profile changed; the run log records the previous and the new value.",
+        "Trade policy updated.",
+        severity="info",
+    ),
 )
 
 REASON_CODES: Final[dict[str, ReasonSpec]] = {spec.code: spec for spec in _SPECS}

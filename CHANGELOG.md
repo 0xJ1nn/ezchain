@@ -24,6 +24,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   [RUNBOOK §8](docs/RUNBOOK.md#8-restore-drill--disaster-recovery) is the procedure, with a
   table for what to do when a restore comes back short; [INFRA §7](docs/INFRA.md#7-storage-backup-and-restore)
   is the deployment contract. Docker Compose was not exercised (no daemon on this host).
+- **Trade policy has one surface, and a strategy may carry its own profile (PAPER).**
+  `GET /api/v1/trade-policy` serves the five sizing fields the order gate reads
+  (`min_order_usd`, `max_order_usd`, `max_order_pct_of_equity`, `per_token_cap_usd`,
+  `max_slippage_bps`) with each value, range and description, the three `low`/`mid`/`high`
+  profiles, the active profile, and every strategy's effective policy. The values come
+  from the same `TRADE_RISK_PROFILES` registry and are checked by the same
+  `size_reasons` helper the order gate calls, so the page cannot show a limit the gate
+  would not apply. `GET /api/v1/trade-policy/preview` returns the server's sizing verdict
+  for one proposed buy, including the lower of the absolute and percent-of-equity caps
+  (`effective_max_usd`) and the stable codes `SIZE_BELOW_MIN`, `SIZE_ABOVE_MAX` and
+  `EQUITY_UNKNOWN`. `PUT /api/v1/trade-policy/strategies/{id}` sets or clears a
+  per-strategy profile; null inherits the deployment default, the engine passes the
+  strategy's profile into the same `OrderRequest` the order gate resolves, and a change
+  that loosens a fund-affecting limit is refused as `RISK_ACK_REQUIRED` unless the caller
+  acknowledges it. Every write appends a `TRADE_POLICY_UPDATED` entry to the strategy's
+  run log. The new `/settings/trade-policy` page renders the profiles and fields with
+  their range and description, shows each strategy's effective profile and any sizing the
+  profile would refuse, discloses a loosening inline, and shows the server's verdict
+  (never a browser-calculated one). Migration `0023_strategy_risk_profile` adds one
+  nullable `strategies.risk_profile` column and is additive.
 - **Agent orders wait for a person, per user (PAPER).** Automation is now a per-user
   setting: `manual` (the default) holds every agent order in a durable approval queue,
   and `full_auto` executes it with no approval. `full_auto` requires acknowledging a
@@ -188,6 +208,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   profile neither silently widens the preset nor shrinks a ceiling above it.
   `GET /paper/limits` resolves `max_order_usd` through the same function, so the number
   the UI shows is the one the order gate enforces.
+
+- **A strategy's profile is enforced, not advisory (api).** The order gate read the
+  requested profile from the payload only, so an order naming a strategy pinned to `low`
+  could still be placed at `high` through the route or a direct `paper.place_order` call.
+  Precedence is now decided once, in `paper.resolve_order_profile`: the strategy row's
+  profile is the bound, a per-order `risk_profile` may only tighten it, and
+  `settings.trade_risk_profile` is the default when neither names one. A looser per-order
+  profile on an entry is refused as `PROFILE_LOOSENS_STRATEGY` (a stored rejection on the
+  order row, not an HTTP error); a sell is exempt because the bound is an entry gate. A
+  strategy with no profile still follows the deployment settings.
+
+- **Opting into a profile is measured against the deployment ceiling (api).** A change was
+  compared to "no profile", which read as the fewest gates, so a strategy with no profile
+  could take `high` ($250) over a deployment capped at $100 per order with no
+  acknowledgement. The loosening test now compares the enforced per-order ceiling, with
+  `None` meaning the deployment's own `max_order_usd`, so a profile that admits a larger
+  order needs `RISK_ACK_REQUIRED`. Every other profile field only adds a gate (a minimum, a
+  percent-of-equity ceiling, a per-token cap), and `max_position_usd` /
+  `max_price_impact_pct` keep applying beside a profile, so neither is widened by one. The
+  `TRADE_POLICY_UPDATED` audit entry now records the stored override before and after, both
+  effective profiles, the principal and whether the loosening was acknowledged. The
+  settings page mirrors the same rule and asks for the acknowledgement when it cannot prove
+  a change only tightens.
 
 - **A page offset is bounded (api).** `GET /paper/orders`, `GET /paper/fills` and
   `GET /paper/ledger` accept `offset` up to 10000; a larger value is `422`. The newest

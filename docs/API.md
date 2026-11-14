@@ -214,7 +214,8 @@ is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`
 `INSUFFICIENT_POSITION`, `PRICE_UNKNOWN`, `QUOTE_STALE`, `SNAPSHOT_STALE`,
 `MARK_TIMESTAMP_FUTURE`,
 `LIQUIDITY_UNKNOWN`, `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
-`NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ARMED`.
+`NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH`, `PROFILE_LOOSENS_STRATEGY` and
+`KILL_SWITCH_ARMED`.
 
 An order may name a risk profile (`risk_profile`, also spelled `trade_risk_profile` or
 `profile`): any of `low`/`mid`/`high` is accepted, the deployment profile is only the
@@ -222,6 +223,22 @@ default, and an unknown name is a stored `PROFILE_UNKNOWN` rejection. The profil
 own order ceiling — `high` is $250 — and the profile's percent-of-equity, per-token and
 slippage policy applies with it. `GET /paper/limits` reports that same effective ceiling in
 `max_order_usd`, so the displayed limit is the one the gate enforces.
+
+**Profile precedence, decided once.** The gate resolves exactly one profile per order
+(`paper.resolve_order_profile`), in this order:
+
+1. **The strategy's pinned profile** is the bound. When the order names a `strategy_id`
+   whose row carries a profile, that profile applies — the request cannot replace it.
+2. **A per-order `risk_profile` may only tighten it.** A profile tighter than the
+   strategy's (or the same one) is accepted. A looser one is refused as a stored
+   `PROFILE_LOOSENS_STRATEGY` rejection on an entry, so a strategy pinned to `low` can
+   never be placed at `high` through the route or through a direct `paper.place_order`
+   call. A sell is exempt: the bound is an entry gate and never traps an exit.
+3. **`settings.trade_risk_profile`** is the default when neither names a profile. A
+   strategy with no profile therefore follows the deployment settings, exactly as before.
+
+The strategy row is read server-side, so attribution and policy come from the same fact:
+the caller supplies neither the bound nor the actor.
 
 The history reads (`/paper/orders`, `/paper/fills`, `/paper/ledger`) accept `offset`
 alongside `limit` so history older than the newest page stays reachable. `offset` is
@@ -349,20 +366,22 @@ order, and nothing is asked twice:
 2. The kill switch, **entry-only**, before the market read: `KILL_SWITCH_ARMED` /
    `KILL_SWITCH_UNAVAILABLE` for a buy; a sell is never refused.
 3. The settlement wallet, entry-only: `WALLET_UNKNOWN` / `SETTLEMENT_ASSET_UNKNOWN`.
-4. The market read and the quote. A stale mark refuses an entry with `SNAPSHOT_STALE`; a
+4. The trade-policy profile, resolved once from the strategy row and the request
+   (`resolve_order_profile`): `PROFILE_UNKNOWN` / `PROFILE_LOOSENS_STRATEGY`.
+5. The market read and the quote. A stale mark refuses an entry with `SNAPSHOT_STALE`; a
    reduce-only exit sizes from the held quantity and still settles.
-5. Inside the fill window: the kill switch is re-read (again entry-only), then the position
+6. Inside the fill window: the kill switch is re-read (again entry-only), then the position
    replay and the quote-size checks.
-6. The risk decision.
-7. The **automation tier / approval queue**: an agent order, and a strategy order whose
+7. The risk decision.
+8. The **automation tier / approval queue**: an agent order, and a strategy order whose
    strategy an agent created (or whose provenance is unknown), is stored as
    `pending_approval` and queued under `manual` — nothing is journaled; an unreadable
    queue refuses `APPROVAL_STATE_UNREADABLE`, and an unconsented `full_auto` refuses
    `AUTOMATION_CONSENT_REQUIRED`. A strategy a person created is not gated.
-8. Fill and journal.
+9. Fill and journal.
 
-Approving re-enters the same function with the stored intent, so steps 2–6 and 8 run again
-(the trade keeps its original id and key) and step 7 is skipped because a person already
+Approving re-enters the same function with the stored intent, so steps 2–7 and 9 run again
+(the trade keeps its original id and key) and step 8 is skipped because a person already
 decided. Consent is therefore asked in exactly one place — the `PUT /paper/automation`
 acknowledgement — and is never re-asked at placement. The executor's live-path
 `AUTOMATION_CONSENT_REQUIRED` validates the same `AutomationSetting` for an unattended run,
@@ -450,6 +469,47 @@ is `422` with `STRATEGY_PARAM_TYPE`, `STRATEGY_PARAM_RANGE`, `STRATEGY_PARAM_MIS
 cycle even for a paused strategy (and even inside the strategy's interval) and leaves the
 strategy paused: the pause gates automatic scheduling only. Resuming separately is what
 re-enables the scheduler.
+
+### Trade policy
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/trade-policy` | read | Profiles, their sizing fields, and each strategy's effective policy |
+| GET | `/api/v1/trade-policy/preview?amount_usd=&equity_usd=&profile=` | read | Server sizing verdict for one proposed buy |
+| PUT | `/api/v1/trade-policy/strategies/{strategy_id}` | trade | Set or clear a strategy's profile override |
+
+The read model serves the five sizing fields the order gate reads — `min_order_usd`,
+`max_order_usd`, `max_order_pct_of_equity`, `per_token_cap_usd` and `max_slippage_bps` —
+with each value, range and description, plus the three `low`/`mid`/`high` profiles. The
+values come from the same registry the gate applies, and the preview runs the gate's own
+sizing resolver, so a verdict here is the verdict the order receives. Preview reasons are
+`SIZE_BELOW_MIN`, `SIZE_ABOVE_MAX` and `EQUITY_UNKNOWN`; an unknown profile is
+`PROFILE_UNKNOWN`.
+
+A strategy may carry its own profile. `risk_profile: null` (or an empty PUT) inherits the
+deployment default. A change that loosens a fund-affecting limit is refused as
+`RISK_ACK_REQUIRED` unless the body carries `acknowledge_risk: true`, and every accepted
+change appends a `TRADE_POLICY_UPDATED` entry to the strategy's run log. The entry records
+the stored override before and after, the effective profile each resolved to, the
+principal that made the change (`actor`) and whether the loosening was acknowledged
+(`acknowledged`), so the run log is the whole decision.
+
+The loosening test compares the enforced per-order ceiling, not profile names. With no
+profile stored, the *before* side is the deployment's own `max_order_usd`, because a
+strategy with no profile is already bounded by it. So on a deployment capped at $100 per
+order, opting into `high` ($250) is a loosening and needs the acknowledgement; opting into
+`low` ($50) or `mid` ($100) only adds gates and does not. Clearing an override is measured
+the same way: it needs the acknowledgement when the deployment ceiling admits a larger
+order than the profile being removed (for example clearing `high` on the default $1000
+deployment ceiling), and not otherwise. Every other profile field only adds a gate — a
+minimum size, a percent-of-equity ceiling and a per-token cap do not exist without a
+profile, and `max_position_usd` / `max_price_impact_pct` keep applying beside one — so none
+of them can be widened by a profile.
+
+The engine passes the strategy's profile into the same `OrderRequest` the gate resolves,
+and the gate also reads the strategy row itself, so a strategy cannot silently exceed the
+profile's caps: a looser per-order profile is refused, never honoured (see **Profile
+precedence** under paper orders).
 
 ### Graph and backtests
 

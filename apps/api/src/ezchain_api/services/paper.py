@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 from ezchain_adapters import CHAINS, AdapterError, DexScreenerClient, NoRoute, QuoteRouter
 from ezchain_core import (
     MARK_FUTURE_SKEW_SECONDS,
+    PROFILE_RANK,
     TRADE_RISK_PROFILES,
     CostPreview,
     FreshnessPolicy,
@@ -1004,14 +1005,67 @@ def fills(session: Session, limit: int = 50, offset: int = 0) -> list[PaperFillR
 # ---------------------------------------------------------------------------
 
 
+class ProfileLoosensStrategy(ValueError):
+    """A per-order profile asks for more risk than the strategy that placed the order."""
+
+    def __init__(self, requested: str | None, pinned: str) -> None:
+        super().__init__(f"order profile {requested!r} loosens the strategy's {pinned!r}")
+        self.requested = requested
+        self.pinned = pinned
+
+
+def resolve_order_profile(
+    session: Session,
+    payload: OrderRequest,
+    settings: Settings,
+) -> str | None:
+    """The one profile that shapes this order, resolved once from the strategy row.
+
+    Precedence, and nothing else: a strategy's own profile is the floor on risk for its
+    orders, a per-order request may only *tighten* it, and the deployment profile
+    (``settings.trade_risk_profile``) is the default when neither names one.
+
+    So for an order that names a strategy with a profile:
+
+    * no request profile — the strategy's profile applies (never the deployment default);
+    * the same or a tighter profile — that tighter profile applies;
+    * a looser profile — refused with ``PROFILE_LOOSENS_STRATEGY`` for an entry. A sell is
+      exempt because the floor is an entry gate: an exit may not be trapped by it.
+
+    A strategy with no profile inherits the deployment default exactly as before, and so
+    does an order naming a ``strategy_id`` whose row no longer exists. An unknown name,
+    requested or pinned, raises ``PROFILE_UNKNOWN`` and never falls back silently.
+    """
+    requested = payload.risk_profile
+    if requested is not None and requested not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    pinned: str | None = None
+    if payload.strategy_id is not None:
+        strategy = session.get(StrategyRow, payload.strategy_id)
+        if strategy is not None:
+            pinned = strategy.risk_profile
+    if pinned is not None and pinned not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    if pinned is None:
+        return requested if requested is not None else settings.trade_risk_profile
+    if requested is None:
+        return pinned
+    if PROFILE_RANK.get(requested, 0) > PROFILE_RANK.get(pinned, 0):
+        if payload.side == "buy":
+            raise ProfileLoosensStrategy(requested, pinned)
+        return pinned
+    return requested
+
+
 def trade_profile_from_settings(
     settings: Settings, requested: str | None = None
 ) -> TradeRiskProfile | None:
     """The profile that shapes one order.
 
-    A requested profile is the owner's own risk choice, so any defined profile is
-    accepted; the deployment profile is only the default when the request names none.
-    An unknown name stays a typed rejection and never falls back silently.
+    ``requested`` is the already-resolved name from :func:`resolve_order_profile`, so the
+    strategy row's bound has been applied before this point. The deployment profile is
+    only the default when that resolution names none. An unknown name stays a typed
+    rejection and never falls back silently.
     """
     name = requested if requested is not None else settings.trade_risk_profile
     if name is None:
@@ -1544,14 +1598,29 @@ async def place_order(
             wallet.id if wallet is not None and wallet_reason is None else SETTLEMENT_WALLET_ID
         )
 
-    # Profile selection is the owner's risk choice: any defined profile applies to this
-    # order, and the deployment profile is only the default when the request names none.
+    # Profile selection is resolved once, from the strategy row and the request together:
+    # a strategy's own profile is the floor on risk for its orders, a per-order profile may
+    # only tighten it, and the deployment profile is the default when neither names one.
+    # See ``resolve_order_profile`` for the precedence and ``docs/API.md`` for the same.
     # An unknown name is a typed rejection and never falls back silently.
-    requested_profile = payload.risk_profile
     try:
-        profile = trade_profile_from_settings(settings, requested_profile)
+        requested_profile = resolve_order_profile(session, payload, settings)
+    except ProfileLoosensStrategy as exc:
+        return _reject_new(
+            session,
+            payload,
+            "PROFILE_LOOSENS_STRATEGY",
+            reasons=(
+                RiskReason(
+                    "PROFILE_LOOSENS_STRATEGY",
+                    detail={"requested": exc.requested, "strategy": exc.pinned},
+                ),
+            ),
+            actor=placed_by,
+        )
     except ValueError:
         return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
+    profile = trade_profile_from_settings(settings, requested_profile)
 
     if payload.side == "buy" and profile is not None:
         limits = limits_from_settings(settings, requested_profile)

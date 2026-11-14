@@ -227,22 +227,26 @@ persists the reason code of the first gate that refused it.
 2. The kill switch, **entry-only**, before the market read (`KILL_SWITCH_ARMED` /
    `KILL_SWITCH_UNAVAILABLE`); a sell is never refused.
 3. The settlement wallet, entry-only (`WALLET_UNKNOWN` / `SETTLEMENT_ASSET_UNKNOWN`).
-4. The market read and the quote; a stale mark refuses an entry (`SNAPSHOT_STALE`), a
+4. The trade-policy profile, resolved once from the strategy row and the request
+   (`resolve_order_profile`): `PROFILE_UNKNOWN` for an undefined name,
+   `PROFILE_LOOSENS_STRATEGY` when an entry asks for a looser profile than its strategy
+   is pinned to (a sell is exempt).
+5. The market read and the quote; a stale mark refuses an entry (`SNAPSHOT_STALE`), a
    reduce-only exit sizes from the held quantity and still settles.
-5. Inside the fill window: the kill switch is re-read (entry-only), then the position
+6. Inside the fill window: the kill switch is re-read (entry-only), then the position
    replay and the quote-size checks.
-6. The risk decision.
-7. The automation tier / approval queue: an agent order, and a strategy order whose
+7. The risk decision.
+8. The automation tier / approval queue: an agent order, and a strategy order whose
    strategy an agent created (or whose provenance is unknown), is stored as
    `pending_approval` and queued with the server's own evidence under `manual` — nothing
    is journaled; an unreadable queue refuses `APPROVAL_STATE_UNREADABLE`, and a
    `full_auto` whose consent record is missing refuses `AUTOMATION_CONSENT_REQUIRED`.
    The tier belongs to the ordering principal's owner, not the workspace. A strategy a
    person created is not gated.
-8. Fill and journal.
+9. Fill and journal.
 
-A person's approval re-enters the same function with the stored intent, so steps 2–6 and 8
-run again (the trade keeps its id and idempotency key) and step 7 is skipped. Consent for
+A person's approval re-enters the same function with the stored intent, so steps 2–7 and 9
+run again (the trade keeps its id and idempotency key) and step 8 is skipped. Consent for
 `full_auto` is asked once, at `PUT /api/v1/paper/automation`; it is never re-asked at
 placement. The executor's live path refuses an unattended intent whose
 `AutomationSetting` still requires approval with `AUTOMATION_CONSENT_REQUIRED`, so a

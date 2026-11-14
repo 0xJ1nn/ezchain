@@ -303,6 +303,11 @@ class StrategyRow(Base):
     plugin_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     plugin_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    # The trade profile this strategy's orders carry. Null inherits the deployment default,
+    # so a strategy written before this column keeps exactly its current behaviour. The
+    # profile is a per-strategy override of the same policy the order gate applies; it is
+    # never a second resolver.
+    risk_profile: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # The principal that created the strategy, on the server. An order the engine places
     # for this strategy is attributed to the strategy, but its automation tier belongs to
     # the principal that wrote it: a strategy an agent created is an agent's automation.

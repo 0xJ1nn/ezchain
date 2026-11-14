@@ -51,6 +51,7 @@ def add_strategy(session_factory: sessionmaker[Session]) -> Callable[..., str]:
         chain: str = "solana",
         token_address: str = "So11111111111111111111111111111111111111112",
         token_symbol: str = "TEST",
+        risk_profile: str | None = None,
     ) -> str:
         with session_factory() as session:
             row = StrategyRow(
@@ -62,6 +63,7 @@ def add_strategy(session_factory: sessionmaker[Session]) -> Callable[..., str]:
                 params=params or {},
                 status=status,
                 last_run_at=last_run_at,
+                risk_profile=risk_profile,
             )
             session.add(row)
             session.commit()
