@@ -57,31 +57,57 @@ session.
 
 | Operation | Contract |
 |---|---|
-| `TraceSink.append` | the interface's only member: no update, no delete, no rewrite |
-| `MemoryTraceLog.append/read/sessions` | the same contract without a filesystem |
-| `FileTraceLog.append/read/sessions/path_for` | one file per session, opened `"a"` to write and read back |
+| `TraceSink.append` / `.key` | the interface's members: no update, no delete, no rewrite |
+| `MemoryTraceLog.append/read/sessions/key` | the same contract without a filesystem; `read` returns a deep copy |
+| `FileTraceLog.append/read/sessions/path_for/key` | one file per session, created `O_EXCL`, appended under an exclusive `flock` |
 
 Each event records the session start (prompt hash, model id), every turn (tokens, cost,
 latency), every tool call (name, arguments digest, result status and digest, latency, refusal
 code), every budget debit (session and day), every kill-switch observation, and the terminal
 outcome with its typed reason, spend and approval id. Rules that hold by construction:
 
-- **Append only.** A store refuses an event that does not continue the chain, and a session id
-  with events already on disk cannot be started a second time.
-- **Tamper evidence.** An event's digest is the SHA-256 of `canonical(record)`: one JSON
-  object with sorted keys over a validated JSON-native type domain. A float or a `Decimal`
-  is refused rather than guessed at, so `1` and `"1"` cannot collide and no delimiter exists
-  to smuggle a field boundary across (the lesson of the ledger seal review). `verify_events`
-  stops at the first mutated, reordered, dropped or duplicated event and names the index and
-  the reason.
-- **Replay.** `replay(events)` verifies the chain and rebuilds a `SessionSummary` — state,
-  reason, turns, tool calls, tool errors, tokens, cost, numbers — from the events alone.
-  `summarize(outcome)` reads the same summary off the live outcome, and the tests assert the
-  two are equal for a completed session, a budget stop, a kill-switch stop, an approval stop,
-  a tool error and a model failure.
-- **Redaction.** Credential-shaped strings are replaced in every field on write, tool
-  arguments and results are stored as digests rather than text, and the prompt is stored as
-  a hash. The agent key appears in neither.
+- **Append only.** A store refuses an event that does not continue the chain, the file is
+  created `O_EXCL` so one process creates a session, and the read-last-then-append step runs
+  under an exclusive `flock`, so a session id with events on disk cannot be started a second
+  time and two concurrent writers cannot both append step 1.
+- **Tamper evidence — with a key, and only with a key.** An event's digest is taken over
+  `canonical(record)`: one JSON object with sorted keys over a validated JSON-native type
+  domain. A float, a `Decimal` or a tuple is refused rather than guessed at, so `1` and `"1"`
+  cannot collide and no delimiter exists to smuggle a field boundary across (the lesson of
+  the ledger seal review). The digest is `hmac-sha256:<hex>` when the store holds a key, and
+  a bare SHA-256 when it does not.
+  - A **keyed** store (`EZCHAIN_TRACE_KEY`, `FileTraceLog(root, key_path=...)`, or a key
+    handed in directly, from outside the trace directory) is evidence: somebody holding the
+    files but not the key cannot alter, reorder, drop or insert an event, cannot truncate the
+    tail and forge a terminal outcome, and cannot rewrite the chain from GENESIS.
+    `verify_events` refuses a keyed trace without its key and an unkeyed one when a key is
+    given, so a rewrite cannot shed the keyed prefix and pass.
+  - An **unkeyed** store is the default and is explicitly weaker: a checksum chain. It
+    detects a corrupted or carelessly edited file and proves nothing about authorship —
+    anyone who can write the file can rewrite all of it, or cut the tail and append a forged
+    `outcome`, and verification passes. Do not describe such a trace as tamper-evident.
+  - **Truncation** is caught by an anchor, not by the key: persist `anchor_of(events)` (session,
+    event count, head digest) outside the trace directory and pass it to `verify_events` or
+    `replay`. `replay` also refuses a trace with no terminal outcome, so a plain truncation is
+    incomplete rather than clean. Neither mode notarises time.
+- **Verification is integrity, not completeness.** `verify_events` checks the events it is
+  handed: an empty sequence and any prefix of a real trace verify clean, which is why
+  completeness is `replay`'s job.
+- **Replay.** `replay(events, key=..., anchor=...)` verifies the chain and rebuilds a
+  `SessionSummary` — state, reason, turns, tool calls, tool errors, tokens, cost, numbers —
+  from the events alone. `summarize(outcome)` reads the same summary off the live outcome, and
+  the tests assert the two are equal for a completed session, a budget stop, a kill-switch
+  stop, an approval stop, a tool error and a model failure.
+- **Redaction.** Known credential shapes (agent keys, provider keys, GitHub/GitLab/npm tokens,
+  AWS key ids and secret assignments, Slack tokens, JWTs, `x-api-key`, `?token=`, bearer
+  headers) are replaced in every field value and every field name on write; tool arguments and
+  results are stored as digests rather than text, and the prompt is stored as a hash. It is a
+  known-shape filter, not a secret detector, and the last test drives a secret through the
+  transport-failure detail to prove `[redacted]` is what lands on disk.
+- **A failed trace stops the session.** A turn is debited in the trace before the budget is
+  charged, so a trace failure bills nothing it did not record; the file then ends on a
+  dangling prefix with no outcome, which `replay` refuses as `TraceIncomplete` rather than
+  reporting a half-recorded session.
 
 **Testing seam.** `ModelClient` and `McpToolbox` are protocols. The suite supplies a
 scripted model and a fake MCP server; it makes no network call and needs no provider key.

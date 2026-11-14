@@ -12,7 +12,11 @@ equity cannot differ from the account read model.
 Every session writes one append-only trace through the injected
 :class:`~.trace.TraceSink`: each turn, each tool call, each budget debit, each kill-switch
 observation and the terminal outcome. A trace that cannot be written stops the session —
-an unaudited run is not one this runtime is allowed to make.
+an unaudited run is not one this runtime is allowed to make. A turn is debited in the trace
+before it is charged to the budget, so a trace failure never bills a turn it did not record.
+The session does then end on whatever prefix it managed to write: a trace which stops before
+its outcome is a dangling, unreplayable prefix (``replay`` raises
+:class:`~.trace.TraceIncomplete`), not a finished session with a partial record.
 """
 
 from __future__ import annotations
@@ -201,17 +205,25 @@ class AgentLoop:
                 latency_ms=elapsed(),
             )
             turn_index += 1
-            budget.consume(
-                turns=1,
-                tokens=turn.usage.total_tokens,
-                cost_usd=turn.usage.cost_usd,
-            )
+            # The debit is written before the budget is charged, and it records the totals the
+            # charge produces. If the trace cannot take the debit the session stops and the day
+            # is not billed for a turn the audit trail never saw; the reverse order would charge
+            # the day and leave a file whose last event is a TURN, which replay refuses.
+            session_after = budget.used
+            session_after.add(turns=1, tokens=turn.usage.total_tokens, cost_usd=turn.usage.cost_usd)
+            daily_after = budget.daily_used
+            daily_after.add(turns=1, tokens=turn.usage.total_tokens, cost_usd=turn.usage.cost_usd)
             recorder.budget_debit(
                 turns=1,
                 tokens=turn.usage.total_tokens,
                 cost_usd=turn.usage.cost_usd,
-                session=budget.used,
-                daily=budget.daily_used,
+                session=session_after,
+                daily=daily_after,
+            )
+            budget.consume(
+                turns=1,
+                tokens=turn.usage.total_tokens,
+                cost_usd=turn.usage.cost_usd,
             )
             # The gate above ran before this turn was paid for, so a turn that crosses a
             # limit is only visible here. Refusing now keeps a budget overrun from

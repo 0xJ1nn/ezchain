@@ -71,6 +71,16 @@ def test_a_float_is_refused_because_it_has_no_canonical_form() -> None:
         _event(tool="x", arguments_digest="d", status="ok", cost=0.1)
 
 
+def test_a_tuple_is_refused_rather_than_rendered_as_a_list() -> None:
+    """``canonical`` is injective as written: a tuple would make ``[]`` mean two things."""
+    with pytest.raises(TraceEncodingError, match="tuple"):
+        canonical({"a": (1, 2)})
+    with pytest.raises(TraceEncodingError, match="tuple"):
+        _event(tool="x", arguments_digest="d", status="ok", tags=("a", "b"))
+    with pytest.raises(TraceEncodingError, match="tuple"):
+        digest_json({"tags": ("a", "b")})
+
+
 def test_tool_data_with_a_delimiter_cannot_share_a_digest() -> None:
     left = {"symbol": "ETH|USDC", "amount": "250"}
     right = {"symbol": "ETH", "amount": "USDC|250"}
@@ -235,3 +245,37 @@ def test_a_line_with_an_extra_field_is_refused_by_the_store(tmp_path: Path) -> N
 
     with pytest.raises(TraceStoreError):
         store.read(session_id)
+
+
+def test_an_event_that_no_longer_encodes_fails_as_a_broken_chain_naming_its_index(
+    tmp_path: Path,
+) -> None:
+    """A field mutated to a float is a verification failure, not an escaping encoding error."""
+    store, session_id = _record(tmp_path)
+    events = store.read(session_id)
+    mutated = TraceEvent(
+        session_id=events[2].session_id,
+        sequence=events[2].sequence,
+        kind=events[2].kind,
+        at=events[2].at,
+        fields={**events[2].fields, "latency_ms": 1.5},
+        previous_hash=events[2].previous_hash,
+        digest=events[2].digest,
+    )
+
+    with pytest.raises(TraceChainBroken) as caught:
+        verify_events((*events[:2], mutated, *events[3:]))
+    assert caught.value.index == 2
+    assert caught.value.reason == "encoding"
+    assert "float" in str(caught.value)
+
+
+def test_an_empty_sequence_verifies_and_a_prefix_verifies(tmp_path: Path) -> None:
+    """Completeness is replay's job: verification only answers for what it was handed."""
+    store, session_id = _record(tmp_path)
+    events = store.read(session_id)
+
+    assert verify_events(()) is None
+    assert verify_events(events[:1]) is None
+    assert verify_events(events[:5]) is None
+    assert verify_events(events) is None

@@ -63,6 +63,7 @@ FORBIDDEN_IMPORTS = {
 FORBIDDEN_CALLS = {"eval", "exec", "compile", "__import__", "system", "popen"}
 
 PACKAGE = Path(__file__).resolve().parents[2] / "services" / "agent-runtime" / "src"
+TRACE_PACKAGE = PACKAGE / "ezchain_agent_runtime" / "trace"
 
 
 def test_the_surface_is_exactly_the_servers_list_in_order() -> None:
@@ -147,10 +148,10 @@ def _imported_names(source: str) -> set[str]:
 
 
 def test_the_package_imports_no_shell_url_or_filesystem_module() -> None:
-    # The trace store is the one module allowed a filesystem import: it writes one append-only
-    # file per session and reads nothing else. Every module that can reach a tool decision
-    # stays clean, and the trace's own surface is pinned in test_trace_append_only.
-    sources = [source for source in PACKAGE.rglob("*.py") if source.name != "trace.py"]
+    # The trace package is the one part of the runtime allowed a filesystem import: it writes one
+    # append-only file per session and reads nothing else. Every module that can reach a tool
+    # decision stays clean, and the trace's own surface is pinned in test_trace_append_only.
+    sources = [source for source in PACKAGE.rglob("*.py") if TRACE_PACKAGE not in source.parents]
     assert sources
     for source in sources:
         names = _imported_names(source.read_text())
@@ -160,10 +161,12 @@ def test_the_package_imports_no_shell_url_or_filesystem_module() -> None:
 def test_only_the_trace_store_reaches_the_filesystem() -> None:
     for source in PACKAGE.rglob("*.py"):
         names = _imported_names(source.read_text())
-        if source.name == "trace.py":
-            assert "pathlib" in names
+        if TRACE_PACKAGE in source.parents:
+            assert names.isdisjoint({"http", "socket", "subprocess", "ctypes"}), source.name
         else:
             assert names.isdisjoint({"os", "pathlib", "tempfile"}), f"{source.name} imports {names}"
+    assert (TRACE_PACKAGE / "store.py").is_file()
+    assert "pathlib" in _imported_names((TRACE_PACKAGE / "store.py").read_text())
 
 
 def test_the_package_calls_no_dynamic_code_primitive() -> None:
