@@ -66,6 +66,7 @@ def _out(row: StrategyRow) -> StrategyOut:
         plugin_id=row.plugin_id,
         plugin_version=row.plugin_version,
         status=row.status,
+        risk_profile=row.risk_profile,
         last_run_at=_dt(row.last_run_at),
         created_at=_dt(row.created_at) or "",
     )

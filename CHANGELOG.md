@@ -24,6 +24,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   [RUNBOOK §8](docs/RUNBOOK.md#8-restore-drill--disaster-recovery) is the procedure, with a
   table for what to do when a restore comes back short; [INFRA §7](docs/INFRA.md#7-storage-backup-and-restore)
   is the deployment contract. Docker Compose was not exercised (no daemon on this host).
+- **Trade policy has one surface, and a strategy may carry its own profile (PAPER).**
+  `GET /api/v1/trade-policy` serves the five sizing fields the order gate reads
+  (`min_order_usd`, `max_order_usd`, `max_order_pct_of_equity`, `per_token_cap_usd`,
+  `max_slippage_bps`) with each value, range and description, the three `low`/`mid`/`high`
+  profiles, the active profile, and every strategy's effective policy. The values come
+  from the same `TRADE_RISK_PROFILES` registry and are checked by the same
+  `size_reasons` helper the order gate calls, so the page cannot show a limit the gate
+  would not apply. `GET /api/v1/trade-policy/preview` returns the server's sizing verdict
+  for one proposed buy, including the lower of the absolute and percent-of-equity caps
+  (`effective_max_usd`) and the stable codes `SIZE_BELOW_MIN`, `SIZE_ABOVE_MAX` and
+  `EQUITY_UNKNOWN`. `PUT /api/v1/trade-policy/strategies/{id}` sets or clears a
+  per-strategy profile; null inherits the deployment default, the engine passes the
+  strategy's profile into the same `OrderRequest` the order gate resolves, and a change
+  that loosens a fund-affecting limit is refused as `RISK_ACK_REQUIRED` unless the caller
+  acknowledges it. Every write appends a `TRADE_POLICY_UPDATED` entry to the strategy's
+  run log. The new `/settings/trade-policy` page renders the profiles and fields with
+  their range and description, shows each strategy's effective profile and any sizing the
+  profile would refuse, discloses a loosening inline, and shows the server's verdict
+  (never a browser-calculated one). Migration `0023_strategy_risk_profile` adds one
+  nullable `strategies.risk_profile` column and is additive.
 - **Agent orders wait for a person, per user (PAPER).** Automation is now a per-user
   setting: `manual` (the default) holds every agent order in a durable approval queue,
   and `full_auto` executes it with no approval. `full_auto` requires acknowledging a

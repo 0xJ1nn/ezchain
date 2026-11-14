@@ -78,6 +78,7 @@ from .risk import (
     RiskProfile,
     TradeRiskProfile,
     evaluate_order,
+    size_reasons,
 )
 from .signing import (
     BINDING_REASONS,
@@ -111,6 +112,20 @@ from .signing import (
     verify_signed_transaction,
 )
 from .strategy import StrategyDecision, StrategySpec, evaluate_strategy
+from .trade_policy import (
+    POLICY_FIELD_KEYS,
+    POLICY_FIELDS,
+    PROFILE_ORDER,
+    PolicyError,
+    PolicyLimits,
+    SizingPreview,
+    limits_for,
+    preview_size,
+    profile_document,
+    profile_fields,
+    profile_for,
+    validate_registry,
+)
 from .types import (
     MARK_FUTURE_SKEW_SECONDS,
     Candle,
@@ -241,6 +256,12 @@ __all__ = [
     "SourceRef",
     "StrategyDecision",
     "StrategySpec",
+    "POLICY_FIELDS",
+    "POLICY_FIELD_KEYS",
+    "PROFILE_ORDER",
+    "PolicyError",
+    "PolicyLimits",
+    "SizingPreview",
     "TRADE_PROFILES",
     "TRADE_RISK_PROFILES",
     "TRANSACTION_AMOUNT_MISMATCH",
@@ -289,6 +310,13 @@ __all__ = [
     "evaluate_arm",
     "evaluate_gate",
     "evaluate_order",
+    "limits_for",
+    "preview_size",
+    "profile_document",
+    "profile_fields",
+    "profile_for",
+    "size_reasons",
+    "validate_registry",
     "evaluate_strategy",
     "EXECUTION_STAGES",
     "fee_account",

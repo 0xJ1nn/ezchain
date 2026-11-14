@@ -94,6 +94,48 @@ TRADE_PROFILES = TRADE_RISK_PROFILES
 PROFILES = TRADE_RISK_PROFILES
 
 
+def size_reasons(
+    amount_usd: Decimal,
+    limits: RiskLimits,
+    equity_usd: Decimal | None,
+) -> list[RiskReason]:
+    """The sizing gate for a new risk, shared by the order gate and the policy preview.
+
+    A minimum, an absolute maximum and a percent-of-equity maximum are the three bounds
+    the issue's example names. They are checked here once so the trade-policy preview
+    cannot disagree with the order it previews. An unknown equity is a refusal, never a
+    silent skip: a size cannot be proven inside a cap it was never compared with.
+    """
+    reasons: list[RiskReason] = []
+    if limits.min_order_usd > 0 and amount_usd < limits.min_order_usd:
+        reasons.append(
+            RiskReason(
+                "SIZE_BELOW_MIN",
+                detail={"limit": limits.min_order_usd, "value": amount_usd},
+            )
+        )
+    if limits.max_order_pct_of_equity is not None and limits.max_order_pct_of_equity > 0:
+        if equity_usd is None:
+            reasons.append(RiskReason("EQUITY_UNKNOWN"))
+        else:
+            cap = equity_usd * limits.max_order_pct_of_equity
+            if amount_usd > cap:
+                reasons.append(
+                    RiskReason(
+                        "SIZE_ABOVE_MAX",
+                        detail={"limit": cap, "value": amount_usd},
+                    )
+                )
+    if amount_usd > limits.max_order_usd:
+        reasons.append(
+            RiskReason(
+                "SIZE_ABOVE_MAX",
+                detail={"limit": limits.max_order_usd, "value": amount_usd},
+            )
+        )
+    return reasons
+
+
 def evaluate_order(
     *,
     request: OrderRequest,
@@ -146,41 +188,7 @@ def evaluate_order(
         )
     # Trade policy (profile) limits. These are entry-only: a reduce-only exit is exempt.
     if request.side == "buy":
-        if limits.min_order_usd > 0 and request.amount_usd < limits.min_order_usd:
-            reasons.append(
-                RiskReason(
-                    "SIZE_BELOW_MIN",
-                    detail={"limit": limits.min_order_usd, "value": request.amount_usd},
-                )
-            )
-        if request.amount_usd > limits.max_order_usd and False:
-            pass
-        if request.amount_usd > limits.max_order_usd:
-            # Already covered by ORDER_LIMIT above; trade-policy alias for profile max.
-            pass
-        if request.amount_usd > limits.max_order_usd:
-            pass
-        # Percent of equity.
-        if limits.max_order_pct_of_equity is not None and limits.max_order_pct_of_equity > 0:
-            if equity_usd is None:
-                reasons.append(RiskReason("EQUITY_UNKNOWN"))
-            else:
-                cap = equity_usd * limits.max_order_pct_of_equity
-                if request.amount_usd > cap:
-                    reasons.append(
-                        RiskReason(
-                            "SIZE_ABOVE_MAX",
-                            detail={"limit": cap, "value": request.amount_usd},
-                        )
-                    )
-        # Max order (profile) alias.
-        if request.amount_usd > limits.max_order_usd:
-            reasons.append(
-                RiskReason(
-                    "SIZE_ABOVE_MAX",
-                    detail={"limit": limits.max_order_usd, "value": request.amount_usd},
-                )
-            )
+        reasons.extend(size_reasons(request.amount_usd, limits, equity_usd))
         # Per-token exposure including proposed order.
         if limits.per_token_cap_usd is not None and limits.per_token_cap_usd > 0:
             if current_position_value_usd + request.amount_usd > limits.per_token_cap_usd:

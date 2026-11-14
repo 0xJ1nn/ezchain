@@ -792,6 +792,8 @@ class StrategyOut(BaseModel):
     plugin_id: str | None = None
     plugin_version: str | None = None
     status: str
+    # A per-strategy trade-policy override. Null inherits the deployment default.
+    risk_profile: str | None = None
     last_run_at: str | None = None
     created_at: str
 

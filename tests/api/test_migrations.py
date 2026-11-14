@@ -50,7 +50,7 @@ def destructive_upgrade_operations(source: str) -> list[str]:
 
 
 def test_migration_head_is_the_latest_revision() -> None:
-    assert head_revision() == "0022_strategy_creator"
+    assert head_revision() == "0023_strategy_risk_profile"
 
 
 def test_upgrade_bodies_are_forward_only() -> None:

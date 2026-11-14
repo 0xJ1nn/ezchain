@@ -451,6 +451,29 @@ cycle even for a paused strategy (and even inside the strategy's interval) and l
 strategy paused: the pause gates automatic scheduling only. Resuming separately is what
 re-enables the scheduler.
 
+### Trade policy
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/trade-policy` | read | Profiles, their sizing fields, and each strategy's effective policy |
+| GET | `/api/v1/trade-policy/preview?amount_usd=&equity_usd=&profile=` | read | Server sizing verdict for one proposed buy |
+| PUT | `/api/v1/trade-policy/strategies/{strategy_id}` | trade | Set or clear a strategy's profile override |
+
+The read model serves the five sizing fields the order gate reads — `min_order_usd`,
+`max_order_usd`, `max_order_pct_of_equity`, `per_token_cap_usd` and `max_slippage_bps` —
+with each value, range and description, plus the three `low`/`mid`/`high` profiles. The
+values come from the same registry the gate applies, and the preview runs the gate's own
+sizing resolver, so a verdict here is the verdict the order receives. Preview reasons are
+`SIZE_BELOW_MIN`, `SIZE_ABOVE_MAX` and `EQUITY_UNKNOWN`; an unknown profile is
+`PROFILE_UNKNOWN`.
+
+A strategy may carry its own profile. `risk_profile: null` (or an empty PUT) inherits the
+deployment default. A change that loosens a fund-affecting limit is refused as
+`RISK_ACK_REQUIRED` unless the body carries `acknowledge_risk: true`, and every accepted
+change appends a `TRADE_POLICY_UPDATED` entry to the strategy's run log. The engine passes
+the strategy's profile into the same `OrderRequest` the gate resolves, so a strategy
+cannot silently exceed the profile's caps.
+
 ### Graph and backtests
 
 | Method | Path | Auth | Purpose |
