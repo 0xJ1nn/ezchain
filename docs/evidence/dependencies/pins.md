@@ -1,13 +1,14 @@
 # Dependency pins — measured evidence
 
-Measured 2026-11-14 on branch `security/dependency-pins`, base
-`36c2135` (`origin/main`). Every result below is the output of the command shown
-with it. Where a command could not run, the reason is recorded instead of a result.
+Measured 2026-11-14 on branch `security/dependency-pins`, base `598d526`
+(`origin/main`). Every result below is the output of the command shown with it.
+Where a command could not run, the reason is recorded instead of a result.
 
 Environment: macOS 26 (Darwin arm64), CPython 3.11.18, Node v26.13.0, pnpm 9.15.9,
 pip 26.3, pip-tools 7.6.2, pip-audit 2.10.1 (installed into a throwaway venv, not
 into the project venv). There is no Docker daemon on this host (`docker` is not on
-`PATH`), so the image build is not part of this evidence.
+`PATH`), so the image build is not part of this evidence; the digests in §7 were
+resolved over the registry HTTP API instead.
 
 ## 1. The committed locks
 
@@ -41,8 +42,16 @@ echo $?
 # 0
 ```
 
-This is step 6 of `tools/ci.sh` and runs on every change. A bumped range in
-`requirements.txt` that its pin does not satisfy exits 1 with the pin and the range named.
+This is step 6 of `tools/ci.sh` and runs on every change. It checks six things that need
+no network and no resolver: each lock is exact and hashed; each declared range is satisfied
+by its pin; the runtime pins are the dev pins at the same versions; every Node resolution
+carries `integrity`; every package pyproject's third-party requirement is pinned (or named
+with a reason in `tools/pins/unpinned.txt`); and every Dockerfile base image is a digest
+with its tag comment. Each failure path is a test:
+`tests/install/test_dependency_pins.py` builds a synthetic checkout and asserts that a
+bumped constraint, an unhashed pin, a range in a lock, a drifted runtime pin, a bare
+`FROM`, a digest without its tag comment, a declared dependency with no pin, and a URL
+requirement with no written reason each exit 1.
 
 ## 3. Reproduction, full install
 
@@ -56,10 +65,11 @@ This is step 6 of `tools/ci.sh` and runs on every change. A bumped range in
 # pins: ok (31 pinned, 31 installed from requirements-runtime.lock)
 ```
 
-`--full` creates a venv, installs with `--require-hashes`, runs `pip freeze`, and compares
-both directions: a pin with no installed distribution and an installed distribution with no
-pin are both drift. It then imports `fastapi`, `pydantic`, `sqlalchemy` and `yaml` from the
-fresh interpreter, so a lock that installs but cannot import is still a failure.
+`--full` creates a venv, installs with `--require-hashes --no-cache-dir`, runs `pip freeze`,
+and compares both directions: a pin with no installed distribution and an installed
+distribution with no pin are both drift. It then imports `fastapi`, `pydantic`, `sqlalchemy`
+and `yaml` from the fresh interpreter, so a lock that installs but cannot import is still a
+failure.
 
 ## 4. Reproduction, offline
 
@@ -67,27 +77,29 @@ Two wheelhouses were filled from the locks on this host, then installed with
 `--no-index` into a fresh venv:
 
 ```bash
-python3.11 -m pip download --require-hashes -r requirements.lock        -d /tmp/wh-dev
-python3.11 -m pip download --require-hashes -r requirements-runtime.lock -d /tmp/wh-rt
+python3.11 -m pip download --require-hashes -r requirements.lock        -d /tmp/wh-dev219
+python3.11 -m pip download --require-hashes -r requirements-runtime.lock -d /tmp/wh-rt219
 
-EZCHAIN_WHEELHOUSE=/tmp/wh-dev PYTHON=.venv/bin/python bash tools/pins/install.sh --full --offline
+EZCHAIN_WHEELHOUSE=/tmp/wh-dev219 PYTHON=.venv/bin/python bash tools/pins/install.sh --full --offline
 # pins: ok (43 pinned, 43 installed from requirements.lock)
 
-EZCHAIN_WHEELHOUSE=/tmp/wh-rt PYTHON=.venv/bin/python bash tools/pins/install.sh --full --runtime --offline
+EZCHAIN_WHEELHOUSE=/tmp/wh-rt219 PYTHON=.venv/bin/python bash tools/pins/install.sh --full --runtime --offline
 # pins: ok (31 pinned, 31 installed from requirements-runtime.lock)
 ```
 
-Wheelhouse digests (sorted file list, `shasum -a 256` of each, hashed as one stream):
+Wheelhouse digests (`cd DIR && ls | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256`):
 
 | Wheelhouse | Files | Size | Digest |
 |---|---|---|---|
-| `/tmp/wh-dev` | 43 | 39 MB | `4207b4ec31dcc1b2c7adbcf675cff380b3a7fc4ad68ed288f4924190b2181e49` |
-| `/tmp/wh-rt` | 31 | 13 MB | `2e1b1cb2cc4684bea8393a283e36c9d6e62887521a11cabe971944c021250ce1` |
+| `/tmp/wh-dev219` | 43 | 39 MB | `09f10e9399407ccde7f5f067e1be8d894cb79031321ec078fbb3bb719bec9f38` |
+| `/tmp/wh-rt219` | 31 | 13 MB | `cda654205b8511f624e3fe081d3ab12a827868eb4f97e0fde40f5cd343292bb1` |
 
 Honest limit: these wheelhouses were produced on this machine in the same session from the
 same lock. A cold clone with a wheelhouse built elsewhere is a different claim and was not
 run. The wheelhouses are not committed (39 MB of wheels is not repository content); the
-command above reproduces them.
+command above reproduces them. The digests also move if the index serves a newer build of
+the same version's wheel — they identify this run, not the pins; the pins are identified by
+the hash lines inside the locks.
 
 ## 5. Advisory audit
 
@@ -95,9 +107,9 @@ Python, against the live advisory service (pip-audit's default PyPI source), thr
 script that makes the verdict a gate rather than a report:
 
 ```bash
-/tmp/auditvenv/bin/python -m pip_audit --version
+/tmp/auditvenv219/bin/python -m pip_audit --version
 # pip-audit 2.10.1
-.venv/bin/python tools/audit_pins.py --python --python-executable /tmp/auditvenv/bin/python
+.venv/bin/python tools/audit_pins.py --python --python-executable /tmp/auditvenv219/bin/python
 # audit: ok — no unallowlisted advisory for the Python locks
 echo $?
 # 0
@@ -108,22 +120,19 @@ Node, against the npm registry:
 ```bash
 .venv/bin/python tools/audit_pins.py --node
 # audit: ok — no unallowlisted advisory for pnpm-lock.yaml
+echo $?
+# 0
 ```
 
-Third-party confirmation of the same locks, run directly for a second opinion:
-
-```bash
-/tmp/auditvenv/bin/python -m pip_audit -r requirements-runtime.lock --progress-spinner off
-# No known vulnerabilities found
-/tmp/auditvenv/bin/python -m pip_audit -r requirements.lock --progress-spinner off
-# No known vulnerabilities found
-/tmp/auditvenv/bin/python -m pip_audit -r requirements-keyring.lock --progress-spinner off
-# No known vulnerabilities found
-```
+Last audited: **2026-11-14**, against the advisory data those two services served on that
+date. That is the whole claim. No advisory was consulted before that date, and nothing here
+asserts anything about a vulnerability published after it.
 
 The audit's failure path was proven, not assumed: judging a saved report for
-`jinja2==2.11.2` exits 1 and names six advisories, and an allowlist entry without a reason
-is refused. Both are tests in `tests/install/test_dependency_pins.py`.
+`jinja2==2.11.2` exits 1 and names the advisory and the version that fixes it, an allowlist
+entry without a reason is refused, an unreadable report exits 2, and a Python interpreter
+without `pip-audit` exits 2. All four are tests in
+`tests/install/test_dependency_pins.py`.
 
 One advisory was found and fixed rather than allowlisted. Before this change
 `pnpm-lock.yaml` resolved `postcss` 8.4.31 (a transitive pin inside `next@15.5.28`) and
@@ -141,11 +150,54 @@ after `pnpm install --lockfile-only` and a frozen reinstall, `pnpm audit` report
 advisories and `pnpm --filter @ezchain/web build` still succeeds. `next` itself is unchanged
 at 15.5.28.
 
+Re-run on this branch, after the override:
+
+```bash
+CI=true pnpm install --frozen-lockfile
+# Lockfile is up to date, resolution step is skipped
+# Done in 576ms using pnpm v9.15.9
+grep -c 'postcss@8.5.33' pnpm-lock.yaml
+# 2          (the resolution and its snapshot entry; no 8.4.31 remains)
+pnpm --filter @ezchain/web build
+# …builds all routes; exit 0
+```
+
 The audit needs a network. On a machine without one, `tools/audit_pins.py --python` exits 2
 and says "not run — this is not a pass"; a saved report can still be judged offline with
 `--report`.
 
-## 6. What is unverified
+## 6. Base-image digests
+
+Resolved 2026-11-14 by asking the registry for the tag's manifest list and reading the
+`Docker-Content-Digest` response header. This is the same object `docker buildx imagetools
+inspect` prints, fetched over HTTP because there is no Docker CLI on this host:
+
+```bash
+TOKEN=$(curl -sS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/python:pull" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+curl -sSI -H "Authorization: Bearer $TOKEN" \
+  -H 'Accept: application/vnd.oci.image.index.v1+json' \
+  https://registry-1.docker.io/v2/library/python/manifests/3.11-slim \
+  | grep -i docker-content-digest
+# docker-content-digest: sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+```
+
+| Dockerfile | Tag | Digest | Media type | Children |
+|---|---|---|---|---|
+| `apps/api/Dockerfile` (both stages) | `python:3.11-slim` | `sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535` | OCI image index | 8 platforms (+ 8 attestations) |
+| `apps/web/Dockerfile` (both stages) | `node:22-alpine` | `sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a` | OCI image index | 5 platforms (+ 5 attestations) |
+
+The digest is the index, not a per-platform child, so each line builds on amd64 and arm64
+without editing. Fetching the index back **by digest** returned the same media type and the
+same child count, which is the whole check that the digest is well-formed and still served:
+the digest was not merely copied from a header. What was **not** done: no image was pulled
+and no build ran, so the digests are resolved, not proven to assemble a working image.
+
+`tools/check_pins.py --fast` refuses a `FROM` without a digest, a digest with no
+`repo:tag -> sha256:<digest>` comment in the same file, and treats `FROM <stage>` as a stage
+reference rather than an image.
+
+## 7. What is unverified
 
 - **The API image build.** `apps/api/Dockerfile` now installs
   `requirements-runtime.lock --require-hashes`; no Docker daemon exists on this host, so the
@@ -153,9 +205,42 @@ and says "not run — this is not a pass"; a saved report can still be judged of
 - **Linux wheels.** Hashes for Linux wheels are in the locks (they come from the index) but
   no Linux install was performed here.
 - **`pumpfun-firehose`.** The ingest package's optional `firehose` extra points at a git tag
-  (`v0.5.0`, commit `98ccda5`), which cannot carry a hash. It is absent from all three
-  locks; installing it needs a network and the tag to exist. Not pinned by this change.
+  (`v0.5.0`), which cannot carry a hash. It is absent from all three locks; installing it
+  needs a network and the tag to exist. This is the one dependency that could not be pinned,
+  so it is named per package in `tools/pins/unpinned.txt` with its reason and the checker
+  refuses any other such gap. No version is invented for it.
 - **`keyring`.** Its lock is generated and audited, but nothing in this repository installs
   it; no runtime path was exercised.
 - **A cold clone.** See §4.
 - **SBOM and image scanning.** Out of scope for this change and not claimed.
+
+## 8. The tests
+
+```bash
+env -u PYTHONPATH PYTHONPATH="$PWD:…" .venv/bin/pytest -q
+# 2099 passed, 20 skipped, 1 warning in 212.49s (0:03:32)
+
+env -u PYTHONPATH PYTHONPATH="$PWD:…" .venv/bin/pytest tests -q -k "pin or depend or lock or audit"
+# 80 passed, 2 skipped, 2037 deselected
+
+.venv/bin/ruff check packages apps services   # All checks passed (the paths tools/ci.sh uses)
+.venv/bin/ruff format --check packages apps services tools
+# 195 files already formatted
+.venv/bin/mypy --strict tools/check_pins.py tools/audit_pins.py
+# Success: no issues found in 2 source files
+```
+
+The two skips in the focused run are not passes, so each was replaced by a command whose
+exit code is recorded above:
+
+- `tests/install/test_dependency_pins.py:415` — `pip-audit is not installed here`. The
+  project venv has no `pip-audit`, by design (§2 of DEPENDENCIES); §5 ran the real audit
+  from a throwaway venv and recorded exit 0.
+- `tests/ingest/test_firehose_source.py:24` — the module `importorskip`s `pumpfire.health`,
+  which is the optional `firehose` extra that this change documents as unpinnable. Its
+  absence is the gap named in §7, not a hidden failure.
+
+`ruff check tools/` reports eight pre-existing `UP017` (`datetime.timezone.utc` →
+`datetime.UTC`) hits in `tools/model_router.py`, which this change does not touch and which
+the gate does not lint: `tools/ci.sh` runs ruff on `packages apps services`. Fixing them is
+not part of this item and was left alone rather than folded into a dependency commit.

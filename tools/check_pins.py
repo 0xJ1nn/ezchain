@@ -479,6 +479,7 @@ def full(root: Path, lock_name: str, wheelhouse_dir: Path | None) -> int:
             "pip",
             "install",
             "--require-hashes",
+            "--no-cache-dir",
             "--disable-pip-version-check",
             "--quiet",
             "-r",
