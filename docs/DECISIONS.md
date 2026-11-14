@@ -1333,3 +1333,73 @@ which no Python code emits; either the route gains that code or the test is corr
 the taxonomy will not list a code nothing emits. A generated TypeScript table could replace
 the web's string keys once a shared types package exists; today the web renders the API
 message unchanged, which the registry now makes safe.
+
+## ADR-0044 — An agent spends from a capped bucket measured on the ledger
+
+**Date:** 2026-11-14 · **Status:** Accepted
+
+**Context:** ADR-0037 made every order attributable and ADR-0041 gated an agent's order
+behind a person. Neither bounds the *money*: an agent with `full_auto`, or a person who
+approves a proposal, can still reach the whole paper account. The owner's requirement is
+that cash set aside for one agent is all that agent can ever deploy, per agent rather than
+per workspace, so one runaway or compromised key cannot drain the account and one agent's
+spending cannot starve another of its own allowance.
+
+**Options:** (a) move cash into a second ledger account per agent; (b) keep a
+`deployed_usd` balance column on a bucket row; (c) attribute the existing `cash:USD` legs
+to a bucket and replay the deployment from them.
+
+**Decision:** (c). `agent_buckets` holds one row per agent with `cap_usd` and the owner who
+set it; `ledger_entries.bucket_id` attributes a cash leg to a bucket. What the agent has
+deployed is `-(sum of cash legs attributed to its bucket)` — a replay, never a stored
+number, so the bucket cannot drift from the journal and no write can grant room by editing
+a balance. The gateway is `ezchain_core.bucket.check_bucket`, pure arithmetic, and the order
+path calls it twice: before the market read on the requested notional, and inside the fill
+window on the worst case (quoted notional plus the fill fee). Both are entry-only.
+
+**Attribution follows the position, never the caller.** A cash leg carries the bucket that
+owns the position it settles, so a leg is attributed by *what* traded, not by *who* placed
+the order. That is the whole point: an agent's bucket is its own capital, and money that
+belongs to a person's position is not the agent's to spend. Concretely, with `B` the bucket
+that owns the position (or, for an entry, the bucket that will own it):
+
+- an entry buys with `B`'s bucket and records its cash outflow against `B`;
+- an exit of a position `B` owns credits `B`, whether the exit was placed by `B`'s agent, by
+  another agent, by a person, or by a protection-arm exit whose actor is unknown;
+- a sell of a position **no** bucket owns (a person's) debits no bucket, even when an agent
+  placed it, and a buy into such a position is refused by the bucket gate, not attributed
+  to the caller.
+
+Attributing by the placing actor instead would be a cap escape in both directions: an agent
+could sell a person's $500 position, drive its own deployment to `-500`, and buy $900 of
+notional from the room a short position invented; and a person exiting an agent's position
+would leave the agent's deployment at the cap, refusing every re-entry forever. The
+position's bucket therefore always receives the exit proceeds.
+
+**Consequences:** the invariant is one line — net cash deployed by one bucket never exceeds
+the cap. The cap is per agent, keyed on the agent key id; an agent-created strategy resolves
+to its creator's bucket, so wrapping the automation in a strategy does not escape the cap,
+and a person's order (or a person-created strategy) draws from no bucket. An uncapped agent
+has no row at all, which is the unchanged behaviour: it is not a zero cap and never invents
+a limit. Exceeding the cap refuses with `AGENT_BUCKET_EXCEEDED`, carrying the cap, the
+deployment, the available room and the worst case in dollars. Because the gate is
+entry-only, lowering a cap below what is deployed stops new entries and never traps a
+position: every exit still settles and returns cash to the position's bucket, which is what
+brings the deployment back inside the cap (the reduce-only rule, ADR-0039). Approval is not
+a bypass — approving re-enters `place_order`, so the bucket gate runs again on the
+authoritative replay and a cap lowered after a proposal refuses the execution.
+
+Only a person, and only the agent's own owner, may set a cap; an agent key may read buckets
+and is refused `AGENT_BUCKET_REQUIRES_PERSON` on any write, which makes an agent raising its
+own cap impossible. A cap can only be set for an agent id that already exists (a minted
+`api_keys` row), so nobody can pre-set a cap — least of all a zero one — on a key that has
+not been minted yet and refuse the real owner once it is. A bucket state that cannot be read
+refuses `AGENT_BUCKET_UNREADABLE` rather than being read as unlimited (CONTRACT I3).
+
+Migration `0024_agent_buckets` is additive and forward-only: nothing is backfilled and a leg
+written before it has no bucket. `cap_usd` is stored in an exact form on every backend — the
+money columns are `NUMERIC(38, 8)` on Postgres and a fixed-width `TEXT` on SQLite, because
+SQLite has no decimal type and maps `NUMERIC` to `REAL`, which silently rounds a 17-digit
+value. The registration, not the backend, decides the type. The two routes are
+`GET /api/v1/agent/buckets` and `PUT /api/v1/agent/buckets/{agent_id}`. The GUI follows the
+settings policy in a later change; the API and this document are the documented shape.

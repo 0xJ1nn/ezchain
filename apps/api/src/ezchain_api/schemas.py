@@ -578,6 +578,47 @@ class AutomationOut(BaseModel):
     agent_orders: Literal["wait_for_a_person", "execute_automatically"]
 
 
+class AgentBucketCapIn(BaseModel):
+    """Set one agent's cap. The cap is the most net cash that agent may deploy.
+
+    Nothing else is settable: the bucket has no balance to write, because its deployment
+    is the ledger's. An unknown field is refused (``422``), so a caller cannot smuggle a
+    balance or a different agent id into the body — the agent id is in the path.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cap_usd: Decimal = Field(ge=0)
+
+
+class AgentBucketOut(BaseModel):
+    """One agent's bucket: the cap its owner set and what the ledger says it deployed.
+
+    ``deployed_usd`` is the net cash this agent's journal legs moved, and
+    ``available_usd`` is what is left of the cap (null when the cap is null, which no
+    stored row produces). A deployment above the cap is a legitimate state after a
+    lowering: it refuses new entries and never traps an exit.
+    """
+
+    agent_id: str
+    cap_usd: str | None = None
+    deployed_usd: str
+    available_usd: str | None = None
+    capped: bool = True
+    owner: str | None = None
+    updated_at: str | None = None
+    updated_by: ActorOut | None = None
+    mode: str = "paper"
+
+
+class AgentBucketsOut(BaseModel):
+    """Every agent whose owner set a cap. An uncapped agent is absent, not a zero row."""
+
+    mode: str = "paper"
+    as_of: str
+    buckets: list[AgentBucketOut]
+
+
 class PositionOut(BaseModel):
     """One open position, with the server's own verdict on its mark's freshness.
 

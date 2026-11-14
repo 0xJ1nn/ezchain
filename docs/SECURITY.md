@@ -55,6 +55,13 @@ automation opt-in, then does what they asked.
   rule. With no matching `AutomationSetting` the run refuses with
   `AUTOMATION_CONSENT_REQUIRED` before an order exists, so an automation path cannot skip
   the opt-in by leaving the setting unconfigured.
+- An agent's money is bounded separately from its approval: the agent may deploy only the
+  net cash its owner capped for it (`agent_buckets.cap_usd`), and what it has deployed is
+  replayed from the ledger's attributed cash legs, not stored. An order past the cap
+  refuses `AGENT_BUCKET_EXCEEDED` before a quote. Only the agent's owner, and only a person,
+  may move that cap; an agent key is `AGENT_BUCKET_REQUIRES_PERSON`, so a compromised key
+  cannot widen its own boundary, and the cap is per key so one compromised agent cannot
+  drain an account the others share.
 
 ## 2. Authentication and authorization
 

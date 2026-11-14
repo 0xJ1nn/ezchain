@@ -25,6 +25,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   see [docs/evidence/compose-drill/README.md](docs/evidence/compose-drill/README.md) and
   [RUNBOOK §12.9](docs/RUNBOOK.md#129-compose-drill).
 
+- **An agent spends from a capped ledger bucket (PAPER).** An agent key's orders now draw
+  only from the cash its owner set aside for that agent, and the cap is **per agent**
+  (keyed on the key id), not per workspace. The bucket is not a balance: `agent_buckets`
+  holds the cap and `ledger_entries.bucket_id` attributes cash legs, so what an agent has
+  deployed is `-(sum of attributed cash legs)` replayed from the journal. An order that
+  would take the deployment past the cap is refused `AGENT_BUCKET_EXCEEDED` **before the
+  market read and the quote**, with the cap, deployment, available room and worst case in
+  dollars on the reason. The gate is entry-only: lowering a cap below what is deployed
+  stops new buys and never refuses a sell, because a cap may not trap a position — the exit
+  returns cash and brings the deployment back inside it. The fill fee counts as deployment.
+  An agent-created strategy resolves to its creator's bucket, so wrapping automation in a
+  strategy does not escape the cap; a person's order draws from no bucket. An agent with no
+  cap has no bucket limit, which is the unchanged behaviour. Only a person, and only the
+  agent's own owner, may set a cap — an agent key is `403 AGENT_BUCKET_REQUIRES_PERSON` —
+  and an unreadable bucket state refuses `AGENT_BUCKET_UNREADABLE` rather than reading as
+  unlimited. Approval is not a bypass: approving re-enters `place_order`, so the bucket gate
+  runs again. New routes: `GET /api/v1/agent/buckets`, `GET /api/v1/agent/buckets/{agent_id}`
+  and `PUT /api/v1/agent/buckets/{agent_id}`. Migration `0024_agent_buckets` is additive,
+  sitting on `0022_strategy_creator`; nothing is backfilled.
 - **A tested backup: scripted, idempotent, and restored with a measured recovery time
   (PAPER).** `python -m tools.ops` adds `backup`, `restore`, `verify`, `rehearse` and
   `drop`. A backup writes the `pg_dump` and a manifest that records the dump's SHA-256 plus

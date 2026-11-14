@@ -157,6 +157,20 @@ queue and `ezchain_get_automation` reports the tier. An agent cannot approve its
 has opted into `full_auto` with the recorded risk acknowledgement gets the old behaviour:
 the order fills and the two approval fields are null.
 
+### The agent's bucket bounds the money, not only the approval
+
+Approval decides whether an order may run unattended; the bucket decides how much of the
+account it can ever reach. An agent key's orders draw only from the cash its owner set
+aside for that agent, capped per agent (keyed on the key id, not the workspace). An order
+that would take the deployment past the cap is refused `AGENT_BUCKET_EXCEEDED` before the
+quote, with the cap, the deployment, the remaining room and the worst case in dollars.
+`GET /api/v1/agent/buckets` reports the cap and the ledger-derived deployment; a person sets
+it with `PUT /api/v1/agent/buckets/{agent_id}`, and an agent key attempting that is
+`403 AGENT_BUCKET_REQUIRES_PERSON`. An agent whose owner set no cap is unbounded by the
+bucket and governed by the account's other gates. The gate is entry-only: a cap lowered
+below what is deployed stops new buys and never traps an exit, so returned cash is what
+brings the deployment back inside it.
+
 ## 4. Scoped agent keys
 
 Mint one key per agent or user with the deployment admin token:

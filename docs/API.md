@@ -191,6 +191,9 @@ its source, age, stale state and reason; it never draws a fabricated line.
 | POST | `/api/v1/paper/approvals/{approval_id}/reject` | trade | Reject the stored order with a reason |
 | GET | `/api/v1/paper/automation` | read | This user's automation tier and disclosure |
 | PUT | `/api/v1/paper/automation` | trade | Switch the tier; `full_auto` needs the acknowledgement |
+| GET | `/api/v1/agent/buckets` | read | Every capped agent with its cap and ledger-derived deployment |
+| GET | `/api/v1/agent/buckets/{agent_id}` | read | One agent's bucket |
+| PUT | `/api/v1/agent/buckets/{agent_id}` | trade | Set an agent's cap; only its owner, only a person |
 | GET | `/api/v1/paper/export/orders.csv` | read | CSV export |
 | GET | `/api/v1/paper/export/fills.csv` | read | CSV export |
 | GET | `/api/v1/paper/export/ledger.csv` | read | CSV export |
@@ -216,6 +219,8 @@ is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`
 `LIQUIDITY_UNKNOWN`, `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
 `NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH`, `PROFILE_LOOSENS_STRATEGY` and
 `KILL_SWITCH_ARMED`.
+`NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH`, `KILL_SWITCH_ARMED` and
+`AGENT_BUCKET_EXCEEDED`.
 
 An order may name a risk profile (`risk_profile`, also spelled `trade_risk_profile` or
 `profile`): any of `low`/`mid`/`high` is accepted, the deployment profile is only the
@@ -359,6 +364,57 @@ An armed operator switch refuses every buy here, whoever places it, before the m
 and the quote; the rejected order row is the record of the attempt. Sells are not refused
 by the switch: an exit can only reduce risk, so reduce-only sells still settle.
 
+### An agent spends from its own capped bucket
+
+An agent key's orders draw only from the cash its owner set aside for that agent. The cap
+is **per agent**, keyed on the agent key id, not per workspace: one agent's spending never
+consumes another agent's room.
+
+`GET /api/v1/agent/buckets` returns every agent whose owner set a cap; an agent with no cap
+is absent, which means "no bucket limit", not "a zero cap". `GET /api/v1/agent/buckets/{agent_id}`
+returns one, `404 AGENT_BUCKET_UNKNOWN` when the agent has none.
+
+```json
+{
+  "agent_id": "3f6c…",
+  "cap_usd": "250",
+  "deployed_usd": "100",
+  "available_usd": "150",
+  "capped": true,
+  "owner": "alice",
+  "updated_at": "2026-11-14T10:00:00+00:00",
+  "updated_by": {"kind": "human", "id": "deployment"},
+  "mode": "paper"
+}
+```
+
+`deployed_usd` is not stored: it is the net cash the agent's journal legs moved, replayed
+from the append-only ledger (CONTRACT I1). `available_usd` is the cap minus that figure.
+
+`PUT /api/v1/agent/buckets/{agent_id}` takes `{"cap_usd": "250"}`; it is the only settable
+field, so a body cannot carry a balance or a different agent id. Only a person may set a
+cap, and only the agent's own owner (the `api_keys.subject` the key was minted for). An
+agent key is refused `403 AGENT_BUCKET_REQUIRES_PERSON`, which is how an agent raising its
+own cap is made impossible; a negative or absurd cap is `422 AGENT_BUCKET_CAP_INVALID`.
+
+An order that would take the deployment past the cap is a stored rejection with
+`AGENT_BUCKET_EXCEEDED`, refused **before the market read and the quote**. Its `reasons[0].detail`
+carries the arithmetic in dollars:
+
+```json
+{"agent_id": "3f6c…", "cap_usd": "250", "deployed_usd": "200", "available_usd": "50",
+ "requested_usd": "75", "fee_usd": "0", "worst_case_usd": "75"}
+```
+
+The gate is **entry-only**. Lowering a cap below what is already deployed refuses new buys
+and never refuses a sell: an exit must still settle, because a cap that trapped a position
+would be a worse failure than the overspend it prevents. The exit returns cash, which
+brings the deployment back inside the cap. The fill fee counts as deployment, so the
+in-window check uses notional plus fee as the worst case. Approving a queued agent order
+re-enters the same path, so a cap lowered after the proposal refuses the execution. A
+bucket state that cannot be read refuses `AGENT_BUCKET_UNREADABLE` rather than reading as
+unlimited.
+
 **The one gate order for a paper order.** Every gate is a gate *on* `place_order`, in this
 order, and nothing is asked twice:
 
@@ -372,6 +428,13 @@ order, and nothing is asked twice:
    reduce-only exit sizes from the held quantity and still settles.
 6. Inside the fill window: the kill switch is re-read (again entry-only), then the position
    replay and the quote-size checks.
+4. The agent's bucket, **entry-only**, before the market read: `AGENT_BUCKET_EXCEEDED` /
+   `AGENT_BUCKET_UNREADABLE` for a buy; a sell is never refused.
+5. The market read and the quote. A stale mark refuses an entry with `SNAPSHOT_STALE`; a
+   reduce-only exit sizes from the held quantity and still settles.
+6. Inside the fill window: the kill switch is re-read (again entry-only), then the bucket is
+   re-checked at the quoted notional plus fee, then the position replay and the quote-size
+   checks.
 7. The risk decision.
 8. The **automation tier / approval queue**: an agent order, and a strategy order whose
    strategy an agent created (or whose provenance is unknown), is stored as

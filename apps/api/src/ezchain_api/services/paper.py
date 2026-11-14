@@ -83,7 +83,7 @@ from ..models import (
     StrategyRow,
     new_id,
 )
-from . import approvals, market_snapshots, pnl
+from . import approvals, buckets, market_snapshots, pnl
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -386,6 +386,10 @@ class Replay:
     # Cash per settlement wallet, bucketed in the same pass as ``cash``. A row without
     # an attribution (written before wallets existed) belongs to the genesis wallet.
     wallet_cash: dict[str, Decimal]
+    # Cash per agent bucket, bucketed in the same pass. A cash leg with no bucket
+    # attribution belongs to no bucket: only an agent's attributed legs move its
+    # deployment, and a person's cash is never charged to an agent.
+    bucket_cash: dict[str, Decimal]
 
 
 def group_position_delta(rows: list[LedgerEntryRow]) -> Decimal:
@@ -426,6 +430,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
     """
     cash = Decimal(0)
     wallet_cash: dict[str, Decimal] = {}
+    bucket_cash: dict[str, Decimal] = {}
     groups: dict[str, list[LedgerEntryRow]] = {}
     position_entries: dict[str, list[LedgerEntry]] = {}
 
@@ -436,6 +441,10 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
                 cash += row.usd_value
                 wallet = row.wallet_id or SETTLEMENT_WALLET_ID
                 wallet_cash[wallet] = wallet_cash.get(wallet, Decimal(0)) + row.usd_value
+                if row.bucket_id is not None:
+                    bucket_cash[row.bucket_id] = (
+                        bucket_cash.get(row.bucket_id, Decimal(0)) + row.usd_value
+                    )
             groups.setdefault(row.group_id, []).append(row)
             if row.account.startswith(POSITION_PREFIX):
                 position_entries.setdefault(row.account, []).append(_domain_entry(row))
@@ -466,6 +475,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
         positions=positions,
         realized_by_account=realized_by_account,
         wallet_cash=wallet_cash,
+        bucket_cash=bucket_cash,
     )
 
 
@@ -1598,6 +1608,40 @@ async def place_order(
             wallet.id if wallet is not None and wallet_reason is None else SETTLEMENT_WALLET_ID
         )
 
+    # An agent's bucket is an entry gate. The cap bounds the net cash the agent may
+    # deploy, replayed from the journal; an order that would take the deployment past it
+    # is refused before the market read and the quote, so it touches no venue and journals
+    # nothing. It is entry-only by design: refusing a sell here would let a lowered cap
+    # trap a position, and an exit that returns cash is exactly what brings the deployment
+    # back inside the cap. The check's evidence names the worst case in dollars.
+    #
+    # Resolving the bucket is fail-closed for an entry and never for an exit: a strategy
+    # lookup that cannot be read refuses a buy rather than silently drawing from no bucket,
+    # while a sell still settles with its returned cash left unattributed. That direction is
+    # the safe one — an unattributed return keeps the deployment high, so the cap stays
+    # tight, and a position is never trapped by a failed read (CONTRACT I3, ADR-0039).
+    try:
+        bucket_key = buckets.agent_bucket_key(session, placed_by)
+    except Exception:  # noqa: BLE001 - an unreadable bucket must refuse the entry
+        if payload.side == "buy":
+            return _reject_new(
+                session,
+                payload,
+                "AGENT_BUCKET_UNREADABLE",
+                reasons=(RiskReason("AGENT_BUCKET_UNREADABLE"),),
+                actor=placed_by,
+            )
+        bucket_key = None
+    if payload.side == "buy" and bucket_key is not None:
+        refusal = buckets.check(
+            session,
+            bucket_key,
+            _replay(_ledger_rows(session)).bucket_cash.get(bucket_key, Decimal(0)),
+            payload.amount_usd,
+        )
+        if refusal is not None:
+            return _reject_new(session, payload, refusal.code, reasons=(refusal,), actor=placed_by)
+
     # Profile selection is resolved once, from the strategy row and the request together:
     # a strategy's own profile is the floor on risk for its orders, a per-order profile may
     # only tighten it, and the deployment profile is the default when neither names one.
@@ -1890,6 +1934,23 @@ async def place_order(
                 session, order, ",".join(str(r) for r in reasons), reasons=reasons
             )
 
+        # The bucket gate ran before the quote; this is the same gate on the authoritative
+        # replay inside the fill window, now priced at the worst case (the quoted notional
+        # plus the fill fee). It is entry-only for the same reason, and a person approving
+        # a stored agent order re-enters here, so an approval cannot outrun the cap.
+        if payload.side == "buy" and bucket_key is not None:
+            refusal = buckets.check(
+                session,
+                bucket_key,
+                replay.bucket_cash.get(bucket_key, Decimal(0)),
+                notional,
+                fee_usd=fee,
+            )
+            if refusal is not None:
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                return _mark_rejected(session, order, refusal.code, reasons=(refusal,))
+
         # An automated order stops here unless its user has a consented full-auto tier:
         # risk has run, the quote and its cost sheet are on the order, and the server's
         # verdict is recorded as evidence for the person. Nothing is journaled. This is a
@@ -1953,6 +2014,9 @@ async def place_order(
                 # no wallet id.
                 if row["account"] == cash_account():
                     row["wallet_id"] = SETTLEMENT_WALLET_ID
+                    # Funded cash is deployed on this agent's behalf, so it counts against
+                    # the bucket exactly like settlement cash does.
+                    row["bucket_id"] = bucket_key
                 row["actor_kind"] = placed_by.kind
                 row["actor_id"] = placed_by.id
                 session.add(LedgerEntryRow(**row))
@@ -2003,6 +2067,11 @@ async def place_order(
             row = entry.to_row(order.id, created_at=stamp)
             if row["account"] == cash_account():
                 row["wallet_id"] = settlement_wallet_id
+                # A cash leg an agent's order wrote is attributed to that agent's bucket.
+                # Only cash moves the deployment; a position or fee leg names none, so the
+                # replay charges the bucket for what left the account and credits it for
+                # what an exit returned.
+                row["bucket_id"] = bucket_key
             # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
             # learns who placed the order, without joining back to ``paper_orders``.
             row["actor_kind"] = placed_by.kind

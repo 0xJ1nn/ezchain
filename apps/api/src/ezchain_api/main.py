@@ -41,6 +41,7 @@ from .routers import (
     agent,
     approvals,
     backtests,
+    buckets,
     graph,
     markets,
     paper,
@@ -239,6 +240,7 @@ def create_app() -> FastAPI:
     app.include_router(backtests.router)
     app.include_router(plugins.router)
     app.include_router(agent.router)
+    app.include_router(buckets.router)
     app.include_router(protection.router)
     app.include_router(provider_keys.router)
     app.include_router(trade_policy.router)

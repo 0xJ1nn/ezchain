@@ -62,6 +62,7 @@ EXPECTED_PROTECTED_ROUTES = (
     ("POST", "/api/v1/strategies"),
     ("POST", "/api/v1/strategies/{strategy_id}/run"),
     ("POST", "/api/v1/system/kill-switch"),
+    ("PUT", "/api/v1/agent/buckets/{agent_id}"),
     ("PUT", "/api/v1/paper/automation"),
     ("PUT", "/api/v1/trade-policy/strategies/{strategy_id}"),
 )

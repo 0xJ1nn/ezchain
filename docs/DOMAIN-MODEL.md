@@ -190,6 +190,11 @@ not pretend the position is flat or that the last quote is executable.
   manual); `quarantined` requires an explicit owner action to leave.
 - Automation: `draft → active ⇄ paused → archived`; each run: `pending → running →
   succeeded | skipped | failed` with a reason.
+- Agent bucket: no lifecycle. `agent_buckets` holds `agent_id` (the agent key id), the
+  `owner` who set it and `cap_usd`; `ledger_entries.bucket_id` attributes cash legs. Its
+  *deployment* is `-(sum of attributed cash legs)`, replayed, never a stored balance. An
+  agent with no row has no cap; a deployment above the cap is a valid state after a
+  lowering and refuses only new entries.
 
 ## 5. Ledger model
 

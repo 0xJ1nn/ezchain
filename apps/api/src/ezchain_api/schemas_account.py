@@ -28,6 +28,10 @@ class LedgerEntryOut(BaseModel):
     ``actor_kind`` and ``actor_id`` name the principal that placed the order this group
     belongs to, copied onto each leg when it was written. A row written before the actor
     was recorded reports ``unknown`` with a null id; that is never derived afterwards.
+
+    ``bucket_id`` names the agent bucket a cash leg was drawn from or returned to. It is
+    null on a non-cash leg, a person's order, and every row that predates buckets. The
+    bucket's deployment is a replay of the rows that name it, never a stored balance.
     """
 
     id: str
@@ -39,6 +43,7 @@ class LedgerEntryOut(BaseModel):
     usd_value: str
     kind: str
     wallet_id: str | None = None
+    bucket_id: str | None = None
     actor_kind: str = "unknown"
     actor_id: str | None = None
     created_at: str
