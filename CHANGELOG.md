@@ -273,6 +273,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `AUTOMATION_CONSENT_REQUIRED` rather than being read as `manual`; and the queue-health
   probe rolls back a failed read so the typed `APPROVAL_STATE_UNREADABLE` refusal can
   still commit.
+- **The dashboard risk card names the operator switch instead of calling it all risk
+  (GH-132).** The card reported "Risk OPEN/HALTED · kill switch · strategy scope", while
+  the risk page says an armed switch still lets exits settle and never touches a position.
+  A reader could take "Risk OPEN" as "all new risk is allowed". The KPI is now "Kill
+  switch" with the persisted state and the levels the API reports, and the risk panel
+  shows one row per reported level (`global`, `strategy`) with what that level gates: the
+  global level refuses every new entry before a quote, the strategy level holds
+  strategy-attributed intents with `KILL_SWITCH_ACTIVE`. The card states that manual paper
+  orders are entries, so a manual paper buy is refused while armed, and links to the risk
+  page's "what it does not do" explanation. Both surfaces read the level names and the
+  gating sentences from one module (`lib/kill-switch-copy.ts`), and the card follows the
+  shell's kill-switch store, so arming from the topbar moves it without a reload. A read
+  that returns no state renders UNKNOWN, and a read without `scopes` names no level
+  instead of guessing both.
 
 - **A quote timeout counts against the provider's breaker, and a cancelled market scan
   releases its half-open permit.** The router's attempt deadline cancels the inner quote,

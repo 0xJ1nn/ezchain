@@ -74,6 +74,37 @@ test("the kill switch arms with a reason and shows the persisted response", asyn
 	expect(posted).toEqual({ active: true, reason: "e2e arm: verify control" });
 });
 
+// The dashboard card and this page describe one flag. Both must name the levels the API
+// reported and say what each gates, and both must separate arming from the exits that
+// still settle — otherwise the two surfaces tell a reader two different stories.
+test("the risk page states the same switch scope wording as the dashboard", async ({ page }) => {
+	await page.goto("/risk");
+
+	const panel = page
+		.locator("section.panel")
+		.filter({ has: page.getByRole("heading", { name: "Kill switch" }) });
+	await expect(panel).toBeVisible();
+	await expect(panel).toContainText("global and strategy");
+	await expect(panel).toContainText("every new entry");
+	await expect(panel).toContainText("strategy-attributed intents");
+	await expect(panel).toContainText("Manual paper orders are entries");
+	await expect(panel).toContainText("KILL_SWITCH_ARMED");
+	await expect(panel).toContainText("KILL_SWITCH_ACTIVE");
+	await expect(panel).toContainText("reduce-only sells still settle");
+	// The old page named exposure and drawdown under the same heading. It does not claim a
+	// deployment-wide risk verdict, so "Risk OPEN/HALTED" has no home here either.
+	await expect(panel.getByText("HALTED", { exact: true })).toHaveCount(0);
+
+	const dashboard = await page.context().newPage();
+	await dashboard.goto("/");
+	const card = dashboard.getByTestId("dashboard-kill-switch");
+	await expect(card).toContainText("global and strategy levels");
+	await expect(card).toContainText("every new entry");
+	await expect(card).toContainText("strategy-attributed intents");
+	await expect(card).toContainText("Manual paper orders are entries");
+	await dashboard.close();
+});
+
 test("a rejected kill-switch mutation keeps the previous state and shows the API reason", async ({
 	page,
 }) => {
