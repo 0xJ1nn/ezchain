@@ -22,7 +22,7 @@ import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ezchain_adapters import DexScreenerClient, normalize_pair, snapshot_from_pairs
+from ezchain_adapters import ChainCoverage, DexScreenerClient, normalize_pair, snapshot_from_pairs
 from ezchain_adapters.dexscreener import BASE as DEXSCREENER_BASE
 from ezchain_adapters.dexscreener import SAFETY_UNKNOWN
 from ezchain_adapters.ratelimit import TokenBucket
@@ -47,8 +47,9 @@ def _fresh_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class FakeDiscovery:
-    def __init__(self, rows: list[MarketRow]) -> None:
+    def __init__(self, rows: list[MarketRow], coverage: list[ChainCoverage] | None = None) -> None:
         self.rows = rows
+        self.coverage = coverage
         self.source = SourceRef("dexscreener", "https://dexscreener.com", NOW)
         self.calls: list[dict[str, Any]] = []
 
@@ -59,9 +60,9 @@ class FakeDiscovery:
         query: str | None = None,
         sort: str = "trending",
         limit: int = 50,
-    ) -> tuple[list[MarketRow], SourceRef, None]:
+    ) -> tuple[list[MarketRow], SourceRef, list[ChainCoverage] | None]:
         self.calls.append({"chain": chain, "query": query, "sort": sort, "limit": limit})
-        return self.rows, self.source, None
+        return self.rows, self.source, self.coverage
 
 
 def make_row(
@@ -158,7 +159,7 @@ def test_a_row_with_unknown_safety_is_never_tradeable() -> None:
     body = get(client_for(FakeDiscovery(rows)), limit=50)
 
     assert body["rows"], "the fixture rows are young and liquid enough to be listed"
-    assert body["tradeable_rows"] == 0
+    assert body["tradeable_on_page"] == 0
     for row in body["rows"]:
         assert row["tradeable"] is False
         assert row["safety"]["status"] == "unknown"
@@ -212,7 +213,7 @@ def test_the_real_adapter_marks_no_row_tradeable() -> None:
     body = get(client_for(adapter), limit=50)
 
     assert body["rows"], "the recorded pairs are old enough and liquid enough to be listed"
-    assert body["tradeable_rows"] == 0
+    assert body["tradeable_on_page"] == 0
     assert {row["safety"]["status"] for row in body["rows"]} == {"unknown"}
     assert {row["safety"]["reason"] for row in body["rows"]} == {"SAFETY_NOT_IMPLEMENTED"}
     assert not any(row["tradeable"] for row in body["rows"])
@@ -250,6 +251,140 @@ def test_a_token_with_two_pools_appears_once_keeping_the_deepest() -> None:
     assert body["coverage"]["candidates"] == 3
     assert body["coverage"]["deduped"] == 2
     assert body["coverage"]["dropped"]["duplicate_token"] == 1
+
+
+def test_two_solana_mints_differing_only_in_case_are_two_tokens() -> None:
+    """base58 case is meaning: folding it merges two distinct mints into one row.
+
+    The registry's own USDC mint is ``EPjFWdd5…``; its lowercase spelling is not that token,
+    and both are liquid enough to be listed, so both must reach the table.
+    """
+    rows = [
+        make_row(
+            "USDC",
+            chain="solana",
+            token="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            pair="pair-upper",
+            liquidity="50000",
+        ),
+        make_row(
+            "usdc",
+            chain="solana",
+            token="epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v",
+            pair="pair-lower",
+            liquidity="20000",
+        ),
+    ]
+
+    body = get(client_for(FakeDiscovery(rows)))
+
+    assert [row["pair_address"] for row in body["rows"]] == ["pair-upper", "pair-lower"]
+    assert {row["token_address"] for row in body["rows"]} == {
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v",
+    }
+    assert body["coverage"]["deduped"] == 2
+    assert "duplicate_token" not in body["coverage"]["dropped"]
+
+
+def test_two_evm_spellings_of_one_address_are_one_token() -> None:
+    """EVM hex has no case: the checksummed and lowercase spellings are the same token."""
+    rows = [
+        make_row(
+            "USDC",
+            chain="ethereum",
+            token="0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            pair="pair-checksummed",
+            liquidity="50000",
+        ),
+        make_row(
+            "USDC",
+            chain="ethereum",
+            token="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            pair="pair-lower",
+            liquidity="1000",
+        ),
+    ]
+
+    body = get(client_for(FakeDiscovery(rows)))
+
+    assert [row["pair_address"] for row in body["rows"]] == ["pair-checksummed"]
+    assert body["coverage"]["deduped"] == 1
+    assert body["coverage"]["dropped"]["duplicate_token"] == 1
+
+
+def test_a_below_floor_pool_never_represents_a_token_that_has_another_pool() -> None:
+    """The dedupe keeps the pool the floor can judge, not merely a pool with a number.
+
+    Ranking a known $50 pool above a deeper pool whose liquidity is unknown let the shallow
+    row win the dedupe, the floor filter then dropped it, and the token vanished in *both*
+    spellings: the row was gone and the count said ``below_liquidity_floor``, naming a fact
+    that belonged to one pool rather than to the token. Now the token keeps its unmeasured
+    pool as its one row, and that row is counted under ``unknown_liquidity`` — "nobody
+    measured this", which is true, instead of "this was measured thin", which is not. The
+    row itself still does not reach the table: unknown liquidity is fail-closed. Order must
+    not matter, so the same two rows are probed in both orders.
+    """
+    rows = [
+        make_row("THIN", chain="solana", pair="pair-thin", liquidity="50"),
+        make_row("THIN", chain="solana", pair="pair-unmeasured", liquidity=None),
+    ]
+
+    for ordered in (rows, list(reversed(rows))):
+        body = get(client_for(FakeDiscovery(ordered)))
+
+        assert body["coverage"]["candidates"] == 2
+        assert body["coverage"]["deduped"] == 1
+        assert body["coverage"]["dropped"] == {
+            "duplicate_token": 1,
+            "unknown_liquidity": 1,
+        }
+        assert body["rows"] == []
+        assert body["reason"] == "NO_QUALIFIED_MOVERS"
+
+
+def test_a_pool_that_clears_the_floor_represents_a_token_with_a_deeper_unknown_pool() -> None:
+    """Depth does not outrank a number that was actually measured: the known pool is kept."""
+    rows = [
+        make_row("AAA", pair="pair-unmeasured", liquidity=None),
+        make_row("AAA", pair="pair-listed", liquidity="25000"),
+    ]
+
+    body = get(client_for(FakeDiscovery(rows)))
+
+    assert [row["pair_address"] for row in body["rows"]] == ["pair-listed"]
+    assert body["coverage"]["dropped"] == {"duplicate_token": 1}
+
+
+def test_every_emitted_drop_reason_is_declared() -> None:
+    """``DROP_REASONS`` is only useful if it is enforced.
+
+    The probe produces all nine buckets through the real ranking pass, so a reason added to
+    or removed from the declared tuple without the pass changing — or the reverse — fails
+    here instead of reaching the wire as an undeclared string.
+    """
+    from typing import get_args
+
+    from ezchain_api.services.discovery import DROP_REASONS, DropReason
+
+    rows = [
+        make_row("EMPTY", token=""),
+        make_row("DUP", pair="pair-dup-a", liquidity="20000"),
+        make_row("DUP", pair="pair-dup-b", liquidity="30000"),
+        make_row("FUTURE", observed=NOW + timedelta(minutes=5)),
+        make_row("STALE", observed=NOW - timedelta(minutes=30)),
+        make_row("AGELESS", pair_created_at=None),
+        make_row("YOUNG", pair_created_at=NOW - timedelta(minutes=2)),
+        make_row("OLD", pair_created_at=NOW - timedelta(days=9)),
+        make_row("NOBOOK", liquidity=None),
+        make_row("THIN", liquidity="50"),
+    ]
+
+    body = get(client_for(FakeDiscovery(rows)), limit=50)
+
+    assert set(body["coverage"]["dropped"]) == set(DROP_REASONS)
+    assert DROP_REASONS == get_args(DropReason)
+    assert len(set(DROP_REASONS)) == len(DROP_REASONS)
 
 
 def test_each_dropped_row_is_counted_under_its_own_reason() -> None:
@@ -313,7 +448,7 @@ def test_an_empty_read_returns_a_reason_not_a_row() -> None:
     assert body["total"] == 0
     assert body["coverage"]["candidates"] == 0
     assert body["coverage"]["deduped"] == 0
-    assert body["tradeable_rows"] == 0
+    assert body["tradeable_on_page"] == 0
 
 
 def test_a_read_whose_rows_all_fail_returns_a_reason_not_a_row() -> None:
@@ -336,6 +471,48 @@ def test_the_page_is_cut_by_limit_and_the_cut_is_reported() -> None:
     assert body["total"] == 7
     assert body["truncated"] is True
     assert body["coverage"]["truncated"] is True
+
+
+def test_a_failing_chain_is_visible_in_coverage_not_only_as_an_empty_feed() -> None:
+    """``NO_MARKET_ROWS`` alone cannot tell "the source failed" from "nothing was new".
+
+    The adapter swallows a per-chain exception and answers with ``error`` in that chain's
+    coverage, so an all-chain provider outage produces zero rows and no exception here. The
+    pass therefore carries the per-chain coverage through: a reader sees ``error`` for the
+    chain that failed and ``no_seeds`` for the chain nobody asked, which is not the same fact
+    as a chain that answered and had no new pairs.
+    """
+    coverage = [
+        ChainCoverage("base", 3, 0, "error"),
+        ChainCoverage("optimism", 1, 0, "timeout"),
+        ChainCoverage("solana", 0, 0, "no_seeds"),
+        ChainCoverage("ethereum", 2, 0, "no_pairs"),
+    ]
+
+    body = get(client_for(FakeDiscovery([], coverage=coverage)))
+
+    assert body["rows"] == []
+    assert body["reason"] == "NO_MARKET_ROWS"
+    chains = {item["chain"]: item for item in body["coverage"]["chains"]}
+    assert chains["base"]["reason"] == "error"
+    assert chains["base"]["returned"] == 0
+    assert chains["optimism"]["reason"] == "timeout"
+    assert chains["solana"]["reason"] == "no_seeds"
+    assert chains["ethereum"]["reason"] == "no_pairs"
+    assert {item["reason"] for item in body["coverage"]["chains"]} == {
+        "error",
+        "timeout",
+        "no_seeds",
+        "no_pairs",
+    }
+
+
+def test_a_pass_with_no_per_chain_claim_reports_no_coverage() -> None:
+    """A global search makes no per-chain census, so coverage is null rather than all-clear."""
+    body = get(client_for(FakeDiscovery([make_row("AAA")], coverage=None)))
+
+    assert body["coverage"]["chains"] is None
+    assert [row["symbol"] for row in body["rows"]] == ["AAA"]
 
 
 def test_the_read_is_bounded_and_newest_first() -> None:

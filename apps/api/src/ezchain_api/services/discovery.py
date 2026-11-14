@@ -6,9 +6,10 @@ young enough to be interesting, and had nowhere to put safety evidence. This mod
 read model that replaces it, and it is deliberately narrow:
 
 * the candidates are one bounded discovery read;
-* the read is deduplicated to exactly one row per ``(chain, base_token)``, keeping the
-  deepest pool, because a token's market is its deepest pool and a second pool would
-  otherwise duplicate the row;
+* the read is deduplicated to exactly one row per ``(chain, base_token)`` — a second pool
+  would otherwise duplicate the row — keeping the pool that can reach the table. The address
+  is folded to one case only where its case carries no meaning, EVM hex, and compared
+  exactly on SVM, whose base58 mints are case-sensitive;
 * a row is dropped, and counted under its own reason, when its mark is stale or dated
   ahead of the clock, when its pair age is unknown, younger than the listing floor or
   older than the feed window, or when its liquidity is unknown or under its floor;
@@ -34,8 +35,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
+from ezchain_adapters import get_chain
 from ezchain_adapters.dexscreener import SAFETY_UNKNOWN
 from ezchain_core import MarketRow
 
@@ -58,8 +60,10 @@ REASON_NO_QUALIFIED_MOVERS = "NO_QUALIFIED_MOVERS"
 
 #: Why rows did not reach the table. These are coverage counters, not reason codes: each
 #: dropped row is counted under the first reason that applies to it, and unknown keeps its
-#: own bucket so it is never counted as a zero that failed a filter.
-DROP_REASONS = (
+#: own bucket so it is never counted as a zero that failed a filter. The alias is the
+#: contract: ``Ranking.excluded`` only accepts a declared reason, so emitting an undeclared
+#: one is a type error rather than a string that quietly reaches the wire.
+DropReason = Literal[
     "unknown_token",
     "duplicate_token",
     "pair_age_unknown",
@@ -69,7 +73,8 @@ DROP_REASONS = (
     "mark_stale",
     "unknown_liquidity",
     "below_liquidity_floor",
-)
+]
+DROP_REASONS: tuple[DropReason, ...] = get_args(DropReason)
 
 
 #: The unit of one displayed number. Declared here so the read model and the schema cannot
@@ -153,7 +158,7 @@ class Ranking:
     candidates: int = 0
     deduped: int = 0
 
-    def excluded(self, reason: str) -> None:
+    def excluded(self, reason: DropReason) -> None:
         self.exclusions[reason] = self.exclusions.get(reason, 0) + 1
 
 
@@ -161,14 +166,52 @@ def _aware(value: datetime) -> datetime:
     return value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _preference(row: MarketRow, observed: datetime) -> tuple[Any, ...]:
+def _token_key(row: MarketRow) -> str:
+    """The dedupe key of a pool's token: chain plus address, case-folded only when allowed.
+
+    An EVM address is hex, so two spellings are one token and folding them is safe. An SVM
+    address is base58, where case carries meaning — ``EPjFWdd5…`` and ``epjfwdd5…`` are two
+    different mints — so the address is compared exactly and neither can swallow the other.
+    """
+    chain = row.chain.strip().lower()
+    address = row.base_token.strip()
+    meta = get_chain(chain)
+    if meta is not None and meta.evm_chain_id is not None:
+        address = address.lower()
+    return f"{chain}:{address}"
+
+
+def _liquidity_tier(row: MarketRow, min_liquidity_usd: Decimal) -> int:
+    """How fit this pool's own liquidity is to represent its token, best last.
+
+    ``2`` clears the floor and can reach the table, ``1`` is unknown, ``0`` is known to be
+    under the floor. Unknown outranks a *disproven* pool because unknown is not zero: a pool
+    nobody could measure may well be deep, while a pool measured under the floor can never be
+    the token's market. A pool that clears the floor outranks both, because only it survives.
+    """
+    if row.liquidity_usd is None:
+        return 1
+    return 2 if row.liquidity_usd >= min_liquidity_usd else 0
+
+
+def _preference(
+    row: MarketRow, observed: datetime, *, min_liquidity_usd: Decimal
+) -> tuple[Any, ...]:
     """How two pools of one token compare.
 
-    The deepest known pool wins, because that pool is the token's market. A known volume
-    beats an unknown one and the freshest observation breaks the remaining tie. Unknown is
-    never treated as zero: an unknown value only loses to a known one.
+    The pool that can reach the table wins, so a $50 pool no longer beats a deep pool whose
+    liquidity is unknown — that shallow row won the dedupe, the floor filter then dropped it,
+    and the token vanished with a ``below_liquidity_floor`` count nobody could act on. A
+    token whose every pool is unknown still keeps its deepest row and is counted under
+    ``unknown_liquidity``, which says "nobody measured this", not "this was measured thin".
+
+    Inside each tier the original order stands: known liquidity beats unknown, the deepest
+    known pool wins, a known volume beats an unknown one, and the freshest observation
+    breaks the remaining tie. Unknown is never treated as zero: an unknown value only loses
+    to a known one.
     """
     return (
+        _liquidity_tier(row, min_liquidity_usd),
         row.liquidity_usd is not None,
         row.liquidity_usd if row.liquidity_usd is not None else Decimal(0),
         row.volume_24h_usd is not None,
@@ -201,8 +244,8 @@ def rank_new_pairs(
             ranking.excluded("unknown_token")
             continue
         observed = _aware(row.source.observed_at)
-        key = _preference(row, observed)
-        token = f"{row.chain.strip().lower()}:{row.base_token.strip().lower()}"
+        key = _preference(row, observed, min_liquidity_usd=min_liquidity_usd)
+        token = _token_key(row)
         current = best.get(token)
         if current is None:
             best[token] = (key, row)

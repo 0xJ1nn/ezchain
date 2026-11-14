@@ -1163,12 +1163,17 @@ class DiscoveryCoverageOut(BaseModel):
 
     ``candidates`` is every row read, ``deduped`` is how many tokens remained, and
     ``dropped`` counts each rejection under the first reason that applied to it.
+    ``chains`` is the adapter's per-chain coverage, carried through unchanged: a chain with
+    ``reason == "error"`` or ``"no_seeds"`` means the source failed or was never asked, which
+    is not the same fact as a chain that answered and had nothing new. ``None`` means the
+    pass made no per-chain claim (a global search), never "every chain was fine".
     """
 
     candidates: int = 0
     deduped: int = 0
     dropped: dict[str, int] = Field(default_factory=dict)
     truncated: bool = False
+    chains: list[MarketCoverageOut] | None = None
 
 
 class DiscoveryAppliedOut(BaseModel):
@@ -1193,9 +1198,10 @@ class DiscoveryAppliedOut(BaseModel):
 class NewPairsOut(BaseModel):
     """The new-pairs read model: a bounded, deduplicated, safety-evidenced feed.
 
-    An empty ``rows`` list carries a ``reason`` code. ``tradeable_rows`` is the count of
-    rows with positive safety evidence, which is zero in this build; a client must render
-    the per-row ``safety`` rather than inferring from that count alone.
+    An empty ``rows`` list carries a ``reason`` code. ``tradeable_on_page`` counts the rows
+    of *this page* with positive safety evidence — ``total`` counts the population — which is
+    zero in this build; a client must render the per-row ``safety`` rather than inferring
+    from that count alone.
     """
 
     chain: str
@@ -1205,7 +1211,7 @@ class NewPairsOut(BaseModel):
     limit: int = 20
     truncated: bool = False
     reason: str | None = None
-    tradeable_rows: int = 0
+    tradeable_on_page: int = 0
     coverage: DiscoveryCoverageOut
     applied: DiscoveryAppliedOut
     source: SourceOut

@@ -1529,11 +1529,29 @@ means no new risk, and I12 says claim only what was measured.
 bounded discovery pass, with an explicit safety-evidence field that defaults to unknown.
 
 **Decision:** (c). `ezchain_api/services/discovery.py` is one pure ranking pass over
-`MarketRow`s: dedupe to one row per `(chain, base_token)` keeping the deepest pool, drop and
-count stale / future / unknown-age / too-young / too-old / unknown-liquidity / below-floor
-rows under their own reasons, then rank newest pair first and deepest pool second. The
-router at `GET /api/v1/discovery/new-pairs` reports coverage (candidates, deduped,
-per-reason drops, truncated), the bounds it applied, the source and the read clock.
+`MarketRow`s: dedupe to one row per `(chain, base_token)` keeping the pool that can reach the
+table, drop and count stale / future / unknown-age / too-young / too-old / unknown-liquidity /
+below-floor rows under their own reasons, then rank newest pair first and deepest pool
+second. The router at `GET /api/v1/discovery/new-pairs` reports coverage (candidates,
+deduped, per-reason drops, truncated, and the adapter's per-chain coverage), the bounds it
+applied, the source and the read clock.
+
+Two dedupe rules are load-bearing. The token address is case-folded only where its case
+carries no meaning: an EVM address is hex, so a checksummed and a lowercase spelling are one
+token, while an SVM address is base58, where `EPjFWdd5…` and `epjfwdd5…` are two different
+mints and folding them would silently delete one from the feed. And the pool kept is the one
+the floor can judge, not merely the one with a number: ranking pure depth let a $50 pool beat
+a deep pool whose liquidity was unknown, the shallow row then won the dedupe, the floor
+filter dropped it, and the token vanished with a `below_liquidity_floor` count naming the
+wrong fact. A token whose every pool is unknown keeps its row and is counted under
+`unknown_liquidity`, which says "nobody measured this" rather than "this was measured thin";
+the row still does not reach the table, because unknown liquidity is fail-closed.
+
+Coverage is carried, not discarded. The adapter swallows a per-chain exception and reports
+`error` in that chain's coverage, so an all-chain provider outage produces zero rows and no
+`AdapterError`; without the per-chain list a reader could not tell "the source failed" from
+"there was nothing new". `coverage.chains` is `null` when the pass made no per-chain claim (a
+global search), never a silent all-clear.
 
 Safety is a parameter of the pass, not a field of the row: `SafetyCheck` returns a
 `SafetyEvidence`, and a row is `tradeable` only when `status == "verified"`. The only check

@@ -152,14 +152,19 @@ migration, no ingestion.
 - **One pass, bounded:** at most 200 candidate rows are read (`sort=new`), ranked, and cut
   at the requested `limit` (≤ 50). Every response echoes its bounds under `applied`.
 - **One row per token:** the read is deduplicated on `(chain, base_token)`, keeping the
-  deepest-liquidity pool. A second pool of the same token never appears.
+  deepest pool that can reach the table. A second pool of the same token never appears. The
+  address is case-folded only on EVM, where hex has no case; SVM base58 mints are compared
+  exactly, because `EPjFWdd5…` and `epjfwdd5…` are different tokens.
 - **Floors:** a row is dropped, and counted under its own reason, when its mark is older
   than the mark budget or dated ahead of the clock, when its pair age is unknown, younger
   than `min_pair_age_minutes`, or older than the seven-day feed window, or when its
   liquidity is unknown or below `min_liquidity_usd`. The seven-day window is a module
   constant in `ezchain_api/services/discovery.py`; a `Settings` field for it is the
   follow-up. `coverage.dropped` carries the per-reason counts and `coverage.truncated`
-  says the page was cut rather than the population ending.
+  says the page was cut rather than the population ending. `coverage.chains` carries the
+  adapter's own per-chain coverage (`pairs`, `no_pairs`, `no_seeds`, `error`, `timeout`),
+  so a provider outage reads as `error` and not as an empty feed; it is `null` when no
+  per-chain census was made.
 - **Ranking:** newest pair first, deepest pool second; the pair address makes the order
   total, so the same read always renders the same table.
 - **Provenance:** every displayed number carries the source it came from and the age of

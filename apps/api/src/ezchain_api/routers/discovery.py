@@ -7,7 +7,8 @@ rules the response makes:
 * every displayed number carries the source it came from and the age of that observation;
   an unknown value is ``null`` with ``known: false``, never a zero;
 * every dropped row is counted under its own reason, so a reader can see why the feed is
-  short instead of guessing;
+  short instead of guessing, and the adapter's per-chain coverage is carried through so "the
+  source failed" is never flattened into "there was nothing new";
 * ``truncated`` says the page was cut by ``limit`` rather than the population ending;
 * a row is ``tradeable`` only with positive safety evidence, and this build has none, so
   every row is listed with ``safety.status == "unknown"`` and a reason.
@@ -34,6 +35,7 @@ from ..schemas import (
     DiscoveryMetricOut,
     DiscoveryNewPairOut,
     DiscoverySafetyOut,
+    MarketCoverageOut,
     NewPairsOut,
     SourceOut,
 )
@@ -147,7 +149,7 @@ async def new_pairs(
         )
 
     try:
-        rows, source, _coverage = await adapter.discover_markets(
+        rows, source, coverage = await adapter.discover_markets(
             chain=chain, sort="new", limit=DISCOVERY_CANDIDATE_ROWS
         )
     except AdapterError as exc:
@@ -185,12 +187,19 @@ async def new_pairs(
         limit=limit,
         truncated=len(ranking.rows) > len(selected),
         reason=reason,
-        tradeable_rows=sum(1 for pair in selected if pair.tradeable),
+        tradeable_on_page=sum(1 for pair in selected if pair.tradeable),
         coverage=DiscoveryCoverageOut(
             candidates=ranking.candidates,
             deduped=ranking.deduped,
             dropped=dict(ranking.exclusions),
             truncated=len(ranking.rows) > len(selected),
+            # Carried through rather than defaulted: a chain with ``error`` or ``no_seeds``
+            # means the source failed or was never asked, which is not "no new pairs".
+            chains=(
+                None
+                if coverage is None
+                else [MarketCoverageOut.model_validate(item.to_dict()) for item in coverage]
+            ),
         ),
         applied=DiscoveryAppliedOut(
             chain=chain,
