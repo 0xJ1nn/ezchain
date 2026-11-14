@@ -141,7 +141,41 @@ ladder, so it cannot claim a provider the chain does not use.
 Mixed-unit hazards are rejected at the boundary (`docs/DOMAIN-MODEL.md` §2). A token with
 unknown decimals is not tradeable.
 
-### 4.1 Discovery coverage (measured 2026-10-22)
+### 4.1 New-pairs discovery (ADR-0046)
+
+`GET /api/v1/discovery/new-pairs?chain=&limit=` is the Launches feed. It is a read model
+over the same keyless DexScreener discovery pass the market monitor uses — no new table, no
+migration, no ingestion.
+
+- **Source and ToS posture:** the keyless public DexScreener API, the same source and terms
+  already recorded for the markets feed (§7). No key, no scraping, no second provider.
+- **One pass, bounded:** at most 200 candidate rows are read (`sort=new`), ranked, and cut
+  at the requested `limit` (≤ 50). Every response echoes its bounds under `applied`.
+- **One row per token:** the read is deduplicated on `(chain, base_token)`, keeping the
+  deepest-liquidity pool. A second pool of the same token never appears.
+- **Floors:** a row is dropped, and counted under its own reason, when its mark is older
+  than the mark budget or dated ahead of the clock, when its pair age is unknown, younger
+  than `min_pair_age_minutes`, or older than the seven-day feed window, or when its
+  liquidity is unknown or below `min_liquidity_usd`. The seven-day window is a module
+  constant in `ezchain_api/services/discovery.py`; a `Settings` field for it is the
+  follow-up. `coverage.dropped` carries the per-reason counts and `coverage.truncated`
+  says the page was cut rather than the population ending.
+- **Ranking:** newest pair first, deepest pool second; the pair address makes the order
+  total, so the same read always renders the same table.
+- **Provenance:** every displayed number carries the source it came from and the age of
+  that observation. An unknown value is `null` with `known: false`, never a zero.
+- **Fail-closed safety:** a row is `tradeable` only with *positive* safety evidence
+  (`safety.status == "verified"`). No safety source exists in this build — the DexScreener
+  adapter returns `SAFETY_UNKNOWN` — so **with the real adapter no row is ever tradeable**,
+  and every row carries `safety: {status: "unknown", reason: "SAFETY_NOT_IMPLEMENTED",
+  checked_at: null}` plus a `not_tradeable_reason`. Missing evidence is unknown, never a
+  pass; the UI must not render a Trade action from this feed until a safety check exists.
+- **Empty is a reason:** an empty read returns an empty list with a reason code
+  (`NO_MARKET_ROWS` when nothing was returned, `NO_QUALIFIED_MOVERS` when every row was
+  dropped), never a filler row.
+
+
+### 4.2 Discovery coverage (measured 2026-10-22)
 
 `/api/v1/markets?chain=all` fans out one token lookup per registered chain because
 `/latest/dex/tokens` caps each response at 30 **pairs**, not 30 addresses. Seeds are
