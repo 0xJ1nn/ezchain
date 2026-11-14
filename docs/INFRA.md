@@ -22,6 +22,7 @@ drives.
 | Alembic baseline and `ezchain-api migrate` | runnable and verified against a fresh Postgres database |
 | `/healthz`, `/readyz`, `/metrics`, JSON request logs | runnable |
 | Docker Compose, Caddy edge, images, Prometheus/Grafana | **verified** on 2026-10-22 (Docker 29.9.2 / Compose v5.6.1): image build + `compose up` succeeded, all services healthy, migration at head. See [docs/evidence/p0-production/docker-up.md](evidence/p0-production/docker-up.md) |
+| Compose drill at the current head (`0022_strategy_creator`) | **not run in a container**: the authoring host has no Docker daemon. The daemon-free structure/chain phase passed, and the application phases were replayed on a host Postgres. See [docs/evidence/compose-drill/README.md](evidence/compose-drill/README.md) |
 
 The Compose/Caddy files and YAML are reviewed statically and the app-side contracts
 (`/healthz`, `/readyz`, `/metrics`, migrations, auth, `/api/[...path]`) are tested. The first
@@ -285,3 +286,10 @@ GitHub Actions is not available on this account. The mandatory local gate is
 `bash tools/ci.sh` (agent stubs, design tokens, wireframe, links, secret scan, and runtime
 gates when the toolchains are installed). Image builds are not part of that gate; they
 require a Docker runtime. Compose and Prometheus files are YAML-validated by the operator.
+
+The Compose drill is opt-in for the same reason: `EZCHAIN_GATE_DRILL` defaults to `off`.
+`static` runs the daemon-free structure and migration-chain checks; `run` runs the whole
+drill and needs a Docker daemon. The script is `tools/ops/drill.sh`, and a host without a
+daemon gets exit `2` (refused) rather than a green step — see
+[§12.9](RUNBOOK.md#129-compose-drill) and
+[the evidence pack](evidence/compose-drill/README.md).

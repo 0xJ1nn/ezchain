@@ -649,6 +649,35 @@ Do not restore over a live database. Do not edit `alembic_version` to make a res
 for. A retention run is not part of a restore: restore the dump, verify, then plan retention
 again rather than assuming a count.
 
+### 12.9 Compose drill
+
+`tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts the stack under an
+isolated Compose project and proves it at the migration head of *this* checkout:
+
+```bash
+bash tools/ops/drill.sh --static-only   # compose structure + Alembic chain, no daemon
+bash tools/ops/drill.sh                 # the whole drill; needs a Docker daemon
+bash tools/ops/drill.sh --keep          # leave the project up; prints the down -v command
+```
+
+Phases: `static` → `preflight` → `up` → `ready` → `migrate` → `paper` → `restart` →
+`backup` → `teardown`. `ready` requires `/readyz` to report `migration: head` at the
+revision in this checkout, so a stack that comes up on an older schema fails rather than
+passing. `migrate` requires the one-shot container to have exited `0`. `paper` places a
+buy through the edge, replays it by idempotency key and requires the same order id and a
+reconciliation of `ok: true`. `restart` restarts the API and requires cash and the open
+position count to be unchanged. `backup` dumps the database, restores it into the
+`ezchain_scratch_drill` database inside the stack and requires the same ledger row count.
+
+Exit codes: `0` every phase passed, `1` a phase failed (the project is still removed),
+`2` the drill refused to start — no Docker CLI, no daemon, an `infra/.env` without real
+secrets, or a `compose config` rejection. **`2` is not a pass**: on a host without Docker
+the default invocation refuses, and `--static-only` is the honest mode.
+
+The gate takes it only on request: `EZCHAIN_GATE_DRILL=static` or `=run`, default `off`.
+The evidence for the current head, and what was skipped for the missing daemon, is in
+[`docs/evidence/compose-drill/README.md`](evidence/compose-drill/README.md).
+
 ## 13. PAPER stress harness
 
 Use this before a paper demo or after changing the order, ledger, market or strategy path.

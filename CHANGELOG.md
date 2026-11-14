@@ -7,6 +7,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **A Compose drill that proves the stack at the current migration head (PAPER).**
+  `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts
+  `infra/compose.yaml` under an isolated project, then requires `/readyz` to report
+  `migration: head` at the revision in this checkout, the one-shot `migrate` container to
+  exit `0`, one paper buy through the edge to fill and replay to the same order id with a
+  reconciliation of `ok: true`, cash and positions to be unchanged across an API restart,
+  and a dump restored into a scratch database to reproduce the ledger row count. It tears
+  the project down afterwards, including on failure. Exit codes: `0` passed, `1` a phase
+  failed, `2` refused to start — no Docker CLI or daemon, an `infra/.env` without real
+  secrets, or a rejected `compose config`. A refusal is never a pass, so a host without a
+  daemon gets `2` from the default invocation; `--static-only` validates the compose
+  structure and the Alembic chain (one head, no branch point) without one. The gate takes
+  it only on request (`EZCHAIN_GATE_DRILL=static|run`, default `off`). Recorded at head
+  `0022_strategy_creator`: the daemon-free phase passed, the Compose phases were skipped
+  for the missing daemon and the application phases were replayed on a host Postgres —
+  see [docs/evidence/compose-drill/README.md](docs/evidence/compose-drill/README.md) and
+  [RUNBOOK §12.9](docs/RUNBOOK.md#129-compose-drill).
+
 - **A tested backup: scripted, idempotent, and restored with a measured recovery time
   (PAPER).** `python -m tools.ops` adds `backup`, `restore`, `verify`, `rehearse` and
   `drop`. A backup writes the `pg_dump` and a manifest that records the dump's SHA-256 plus
