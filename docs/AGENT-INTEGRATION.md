@@ -363,3 +363,28 @@ the engine.
   substitutes for the other.
 
 The full decision, options and consequences are in [DECISIONS.md](DECISIONS.md) (ADR-0042).
+
+### Model providers
+
+The concrete `ModelClient` implementations are `services/harness` (see its `README.md`): an
+Anthropic Messages client and an OpenAI-compatible chat-completions client, both behind an
+injected transport so the suite exercises the whole mapping with no key and no socket.
+
+- **Pinned model.** The model id is a constructor argument on the client and on the session
+  record, never an environment read inside the call. A session built on one id sends that id
+  on every turn and records it on every turn, even if the environment changes mid-session; a
+  client refuses a record pinned to a different id, so the id that is billed and the id in the
+  record cannot diverge. `EZCHAIN_AGENT_MODEL` only chooses the id for a *new* session.
+- **Key from the environment only.** There is no key parameter on any client. The variable is
+  read per call (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), the value lives only long enough to
+  build one request header, and it is never in a log line, the session record or a rendered
+  page: the record is redacted on the way out and the client logs through the same redactor. A
+  provider that echoes the key inside an error body still produces a redacted error.
+- **One call, no retry.** A timeout, a transport failure or an HTTP error raises; the client
+  never retries, backs off or replays. The loop turns that into a failed session
+  (`MODEL_FAILED`) instead of asking the model again, which is what keeps a turn whose tool
+  calls already ran — including a money-moving one — from executing them a second time. A test
+  runs the real client inside the real loop and pins both halves: the tool ran once, and the
+  session ended failed with a reason.
+- **Cost from the operator's rate.** No price table ships in the code; `ModelPricing` is a
+  required argument and each answered turn is priced with it into the session record.

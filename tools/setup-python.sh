@@ -56,7 +56,8 @@ fi
   -e services/engine \
   -e services/executor \
   -e services/ingest \
-  -e services/agent-runtime
+  -e services/agent-runtime \
+  -e services/harness
 
 .venv/bin/python tools/check_pins.py --fast
 
