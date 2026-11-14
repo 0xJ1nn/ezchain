@@ -1286,3 +1286,50 @@ until both land. Provider-credential rotation is the runtime operator's job, not
 platform's. A panel and a headless command are two entry points to the same loop and the
 same approval path, and the BYO-agent adapter inherits this boundary rather than defining a
 second one.
+
+## ADR-0043 — One reason-code taxonomy, one home, checked both ways
+
+**Status:** accepted 2026-11-14. Implements the vocabulary half of GH-28.
+
+**Context:** A failure that can block or move money had a code, but the code lived wherever
+it was raised. `SNAPSHOT_STALE` existed as a private constant in `freshness.py`, a literal in
+`risk.py` and a dict key in `types.py`; `KILL_SWITCH_ACTIVE` had six independent definitions
+across core, the executor, the engine and the API. `MISSING_RISK_INPUTS` was emitted by the
+execution path and had no message at all, so it rendered as its own name. The web app
+rendered codes it could not enumerate, and nothing failed when a new code appeared: the
+documentation drifted silently, which is the failure mode the codebase already fixed once
+for kill-switch scopes.
+
+**Options:** (a) document the codes by hand and review the doc; (b) make each module own an
+enum and generate the doc from a merge; (c) put the whole vocabulary in one module that
+every layer imports, and let one contract test police it in both directions.
+
+**Decision:** (c). `ezchain_core.reason_codes` holds one frozen `ReasonSpec` per code —
+string, category, emitting layer, source module, operator summary, display message, HTTP
+status, retryable flag, severity — and `REASON_CODES` is the registry. The older registries
+are derived, not copied: `RISK_REASON_MESSAGES`, `VAULT_REASONS` and `BINDING_REASONS` are
+built from it, so a message or a membership test has one source. `docs/REASON-CODES.md`
+enumerates every code and is checked against the registry by `tests/test_reason_codes.py`,
+which scans the AST for every shape this project emits a code through and fails when a code
+is emitted without a row, when a row names a code nothing emits, when a row is missing from
+the document, or when the document lists a code the registry does not define. The scan is
+syntactic rather than a grep, so a renamed variable cannot hide a code and a comment cannot
+invent one.
+
+**Consequences:** a code string and its meaning are permanent; a message may be corrected
+within a release, and callers compare on `code`. Two codes that look like duplicates stay
+distinct where they name different facts: `KILL_SWITCH_ARMED` is the order-row refusal and
+`KILL_SWITCH_ACTIVE` stays on the engine hold and the account alert, because the run log and
+the stress readers already key on it; `NO_ROUTE`, `NO_SELL_ROUTE` and `EXIT_NO_ROUTE` name
+the request, the token and the position respectively. `ExecutionStatus` and a reason code
+are deliberately not merged: the stage says how far the pipeline got, the code says why it
+stopped. Adding a code is additive and cheap (one row, one table row, one test run); reusing
+or renaming one is now a test failure rather than a silent divergence. The refusal
+behaviour itself is unchanged: this ADR moves where the vocabulary lives, not what any
+refusal does.
+
+**Open, tracked elsewhere:** the web kill-switch e2e test asserts `KILL_SWITCH_REASON_REQUIRED`,
+which no Python code emits; either the route gains that code or the test is corrected, and
+the taxonomy will not list a code nothing emits. A generated TypeScript table could replace
+the web's string keys once a shared types package exists; today the web renders the API
+message unchanged, which the registry now makes safe.

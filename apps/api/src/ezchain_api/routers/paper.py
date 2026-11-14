@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 from ezchain_core import OrderRequest
-from ezchain_core.types import RISK_REASON_MESSAGES
+from ezchain_core.reason_codes import RISK_REASON_MESSAGES
 
 from ..actor import ACTOR_UNKNOWN, from_principal
 from ..config import Settings, get_settings

@@ -41,14 +41,23 @@ Status codes:
 | 200 | Read or evaluation result |
 | 201 | Order, strategy, backtest, arm, profile or key created |
 | 204 | Delete or revoke succeeded |
+| 400 | An unreadable cursor or a malformed `If-Match` precondition |
 | 401 | Missing or invalid bearer token; `UNAUTHORIZED` |
 | 403 | Principal lacks the route's scope; `FORBIDDEN` |
 | 404 | Unknown chain, token, strategy, plugin, backtest, arm or profile |
 | 409 | A route refused the current state, or no executable sell route |
 | 422 | Invalid body, parameter, graph, strategy parameters or protection rules |
 | 429 | An upstream provider rate-limited the request |
+| 500 | The strategy run completed but its log row could not be written |
 | 502 | An upstream provider failed or was unreachable |
 | 503 | The paper order executor is not wired |
+
+Every code in this table, and every code that only appears as a stored `reason`, is
+enumerated with its meaning, source module, HTTP status, retryability and severity in
+[REASON-CODES.md](REASON-CODES.md). That document is hand-maintained and test-checked
+against every emission site in one module, `ezchain_core.reason_codes`, and a contract
+test fails the build when a code is emitted without a row there. Compare on `code`, never
+on `message`.
 
 ## Authentication and scopes
 

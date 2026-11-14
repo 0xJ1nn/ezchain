@@ -23,6 +23,18 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
+from .reason_codes import (
+    AUTOMATION_CONSENT_REQUIRED,
+    CUSTODY_OWNER_MISMATCH,
+    VAULT_APPROVAL_DENIED,
+    VAULT_BOUNDARY_REQUIRED,
+    VAULT_LOCKED,
+    VAULT_REASONS,
+    VAULT_SIGN_FAILED,
+    VAULT_UNKNOWN_HANDLE,
+    VAULT_UNREACHABLE,
+    VAULT_WATCH_ONLY,
+)
 from .signing import ApprovedIntent, PreparedTransaction, SignedTransaction
 
 # The custody tiers a user may choose. ``hardware`` is one option, not the only path: a
@@ -50,37 +62,13 @@ DISCLOSURE_KEY_ADD = "key_add"
 DISCLOSURE_AUTOMATION_OPT_IN = "automation_opt_in"
 DISCLOSURE_POINTS: tuple[str, ...] = (DISCLOSURE_KEY_ADD, DISCLOSURE_AUTOMATION_OPT_IN)
 
-# One code per reason a signature was not produced. An unknown handle and another user's
-# handle answer alike, so a caller cannot use the refusal to learn which handles exist.
-VAULT_UNREACHABLE = "VAULT_UNREACHABLE"
-VAULT_APPROVAL_DENIED = "VAULT_APPROVAL_DENIED"
-VAULT_UNKNOWN_HANDLE = "VAULT_UNKNOWN_HANDLE"
-VAULT_LOCKED = "VAULT_LOCKED"
-VAULT_WATCH_ONLY = "VAULT_WATCH_ONLY"
-VAULT_SIGN_FAILED = "VAULT_SIGN_FAILED"
-# A non-paper pipeline needs the vault seam for the user's own handle.
-VAULT_BOUNDARY_REQUIRED = "VAULT_BOUNDARY_REQUIRED"
-
-VAULT_REASONS: tuple[str, ...] = (
-    VAULT_UNREACHABLE,
-    VAULT_APPROVAL_DENIED,
-    VAULT_UNKNOWN_HANDLE,
-    VAULT_LOCKED,
-    VAULT_WATCH_ONLY,
-    VAULT_SIGN_FAILED,
-    VAULT_BOUNDARY_REQUIRED,
-)
-
-# The order's principal and the handle's owner are two different facts, and only the
-# pipeline can compare them: the signer is handed an approval, not the caller's assertion.
-# A mismatch is its own code so an execution layer cannot sign one user's order with
-# another user's key and call it an unknown handle afterwards.
-CUSTODY_OWNER_MISMATCH = "CUSTODY_OWNER_MISMATCH"
-
-# An unattended run needs the consent record for the same user and automation. The setting
-# refuses at construction without its disclosure; the execution path refuses an automation
-# run it has no setting for, so no order leaves without that consent.
-AUTOMATION_CONSENT_REQUIRED = "AUTOMATION_CONSENT_REQUIRED"
+# One code per reason a signature was not produced comes from the one taxonomy
+# (:mod:`ezchain_core.reason_codes`). An unknown handle and another user's handle answer
+# alike, so a caller cannot use the refusal to learn which handles exist. Two codes live
+# there beside the vault family: ``CUSTODY_OWNER_MISMATCH`` is the pipeline's principal
+# comparison (a signer holds an approval, not the caller's assertion, so a mismatch must not
+# degrade to an unknown handle afterwards), and ``AUTOMATION_CONSENT_REQUIRED`` refuses an
+# unattended run that has no consent record for that user and automation.
 
 # Ed25519 is 64 bytes and a DER-encoded secp256k1 signature is at most 72; anything beyond
 # this is not a signature for a transaction this project builds.
