@@ -165,6 +165,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   cancellation. A cancelled call is still not a failure, and a `no route` answer still does
   not count.
 
+- **The dashboard states the launches window and the execution mode it actually has
+  (web).** The launches panel called its column "Age" next to the trending table's age and
+  listed whatever the feed returned, including pairs born days earlier, so the "newest
+  births" heading promised a window the query never applied. It now asks the API for pairs
+  born inside a 24-hour window (`max_pair_age_minutes`, exposed as `LAUNCH_WINDOW_MINUTES`),
+  labels the column "Pair age", and uses the pair-age formatter that marks a newborn pair.
+  Pairs whose birth the source omits are excluded, not assumed newborn, and an empty window
+  says so instead of being backfilled. The topbar mode chip was literal `PAPER`; it now
+  reads the server-derived mode from `/healthz` (`mode.execution`) the way the kill-switch
+  store reads its state, and renders UNKNOWN with the reason when the read fails or the
+  payload carries no recognised mode — it never falls back to a guess. The equity KPI
+  value no longer breaks mid-number at desktop widths (it takes a wider share of the band
+  and does not wrap; the wrap breakpoints still apply).
+
+- **Every mode claim on the dashboard comes from the one server read, and the equity tile
+  is proven contained at phone widths (web).** The previous pass left the page deriving
+  its mode badges from the data-source mode rather than the execution mode, so the equity
+  composition could badge PAPER while the topbar chip said UNKNOWN, and its action row
+  still rendered a literal PAPER beside FIXTURE. The page now reads the execution mode
+  once, through the same `getExecutionMode` the chip uses, and every badge, the Mode KPI,
+  the strip footer and the prose that names a mode render that value: UNKNOWN with the
+  reason when the read fails or the API reports no mode, and no hardcoded mode display
+  string anywhere on the page. The equity value is now proven contained rather than
+  assumed: at 1440, 1200, 390 and 360 the glyph rect must sit inside its tile and the tile
+  inside the band, measured on rects — the old `scrollWidth == clientWidth` check could
+  never fail on a `nowrap` node. That proof found a real clip: the hero's unbounded
+  `min-width: max-content` pushed its tile past the band, whose `overflow: hidden` cut the
+  digits off, so the minimum is now capped at the band's width and the phone breakpoint
+  scales the hero type to fit. The `UNKNOWN` chip case is gated on `EZCHAIN_WEB_MODE=live`
+  like its sibling, so a fixture run no longer fails on an assertion it cannot satisfy.
+
 - **The MCP server refuses writes without a verified scoped credential, from every entry
   point.** The deployment token is an admin principal, so an agent must never run with it.
   The startup probe already refused it, but the guard lived in the CLI: a server

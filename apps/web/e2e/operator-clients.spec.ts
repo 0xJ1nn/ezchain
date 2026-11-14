@@ -7,7 +7,7 @@ import {
 	getReconciliation,
 	setKillSwitch,
 } from "../lib/paper-api";
-import { getLiveness } from "../lib/system-api";
+import { getExecutionMode, getLiveness } from "../lib/system-api";
 
 interface Seen {
 	method: string;
@@ -18,6 +18,10 @@ interface Seen {
 let server: Server;
 let seen: Seen[] = [];
 let port = 0;
+// The healthz answer is per test: the execution-mode cases switch it between a derived
+// mode, a payload that omits one and an upstream failure.
+let modeReply: unknown = { status: "ok" };
+let modeStatus = 200;
 
 async function readBody(request: IncomingMessage): Promise<string> {
 	const chunks: Buffer[] = [];
@@ -80,7 +84,8 @@ test.beforeAll(async () => {
 			return;
 		}
 		if (url === "/healthz") {
-			response.end(JSON.stringify({ status: "ok" }));
+			response.statusCode = modeStatus;
+			response.end(JSON.stringify(modeReply));
 			return;
 		}
 		response.statusCode = 404;
@@ -99,6 +104,8 @@ test.afterAll(async () => {
 
 test.beforeEach(() => {
 	seen = [];
+	modeReply = { status: "ok" };
+	modeStatus = 200;
 });
 
 async function withMode<T>(mode: "fixture" | "live", run: () => Promise<T>): Promise<T> {
@@ -171,5 +178,64 @@ test("liveness reads the API root, not the proxied /api path", async () => {
 		if (!liveness.ok) return;
 		expect(liveness.data.status).toBe("ok");
 		expect(seen[0]?.url).toBe("/healthz");
+	});
+});
+
+// the execution mode is server-derived (ADR-0035), so the shell reads it and
+// never states one. A read that fails or answers without a mode is unknown, not PAPER.
+test("the execution mode comes from the API health read", async () => {
+	await withMode("live", async () => {
+		modeReply = { status: "ok", mode: { execution: "paper", live_available: false } };
+		const result = await getExecutionMode();
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data).toBe("paper");
+		expect(seen.at(-1)?.url).toBe("/healthz");
+	});
+
+	await withMode("live", async () => {
+		modeReply = { status: "ok", mode: { execution: "live", live_available: true } };
+		const result = await getExecutionMode();
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data).toBe("live");
+	});
+});
+
+test("the execution mode is unknown when the API fails or omits it", async () => {
+	await withMode("live", async () => {
+		modeReply = { detail: { code: "DB_DOWN", message: "health is down" } };
+		modeStatus = 503;
+		const result = await getExecutionMode();
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("DB_DOWN");
+	});
+
+	await withMode("live", async () => {
+		modeStatus = 200;
+		modeReply = { status: "ok" };
+		const result = await getExecutionMode();
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("MODE_NOT_REPORTED");
+	});
+
+	await withMode("live", async () => {
+		modeStatus = 200;
+		modeReply = { status: "ok", mode: { execution: "turbo" } };
+		const result = await getExecutionMode();
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("MODE_NOT_REPORTED");
+	});
+});
+
+test("fixture mode never invents an execution mode", async () => {
+	await withMode("fixture", async () => {
+		const result = await getExecutionMode();
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.error.code).toBe("FIXTURE_NOT_PROBED");
 	});
 });

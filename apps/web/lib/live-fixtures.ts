@@ -536,9 +536,16 @@ export function fixtureLaunches(query: LaunchQuery = {}): LaunchList {
 	const chain = query.chain ?? "all";
 	checkChain(chain);
 	const limit = Math.min(100, Math.max(1, query.limit ?? 5));
+	const maxAge = query.maxPairAgeMinutes ?? null;
 	const now = Date.now();
 	const source = fixtureSource(now, 4);
+	// The window filter mirrors `/v1/markets`: a pair whose birth is unknown cannot be
+	// proven to be inside it, so it is excluded rather than treated as newborn.
 	const rows = SEEDS.filter((seed) => chain === "all" || seed.chain === chain)
+		.filter((seed) => {
+			if (maxAge === null) return true;
+			return seed.created_minutes_ago !== null && seed.created_minutes_ago <= maxAge;
+		})
 		.map((seed) => ({
 			seed,
 			created: seed.created_minutes_ago,
