@@ -585,6 +585,38 @@ def positions(session: Session, *, max_age_seconds: float | None = None) -> list
     return _position_views(replay, snapshots, max_age_seconds=max_age_seconds)
 
 
+def _risk_equity(
+    replay: Replay,
+    snapshots: dict[tuple[str, str], MarketSnapshotRow],
+    *,
+    max_age_seconds: float,
+    now: datetime | None = None,
+) -> Decimal | None:
+    """The equity a risk gate sizes against, or ``None`` when any held mark is unusable.
+
+    The order gate must not disagree with the account read about the same mark: a stale
+    or unknown mark prices nothing here either, so it *withholds* the equity instead of
+    feeding an old number to percent-of-equity and per-token sizing (CONTRACT I3). The
+    incompleteness is information for the caller's entry gates; it never refuses an exit.
+    """
+    now = now or utcnow()
+    equity = replay.cash
+    for account, (quantity, _cost) in replay.positions.items():
+        if quantity <= 0:
+            continue
+        chain, token = _split_position_account(account)
+        snapshot = snapshots.get((chain, token))
+        mark = snapshot.price_usd if snapshot is not None else None
+        source = None if snapshot is None or mark is None else _source_ref(snapshot)
+        status, _age = _mark_freshness(
+            mark, None if source is None else source.to_dict(), max_age_seconds, now
+        )
+        if mark is None or status in ("stale", "unknown"):
+            return None
+        equity += quantity * mark
+    return equity
+
+
 def _share_pct(value: Decimal, equity: Decimal) -> str | None:
     """A row's share of equity, computed only when the equity total is usable."""
     if equity <= 0:
@@ -1428,22 +1460,15 @@ async def place_order(
             return _reject_new(session, payload, "SIZE_BELOW_MIN", actor=placed_by)
         if payload.amount_usd > profile.max_order_usd:
             return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
-        # Percent of equity, fail-closed on unknown marks.
+        # Percent of equity, fail-closed on unknown marks. The sum is priced by the same
+        # freshness policy as the account read: a stale or unknown mark on any held token
+        # withholds the equity, so an entry is never sized against an old price.
         replay = _replay(_ledger_rows(session))
         snapshots = _snapshot_index(session)
-        equity: Decimal = replay.cash
-        equity_known = True
-        for account_pos, (qty, _cost) in replay.positions.items():
-            if qty <= 0:
-                continue
-            chain, token = _split_position_account(account_pos)
-            snap = snapshots.get((chain, token))
-            mark = snap.price_usd if snap is not None else None
-            if mark is None:
-                equity_known = False
-                break
-            equity = equity + qty * mark
-        if not equity_known:
+        equity = _risk_equity(
+            replay, snapshots, max_age_seconds=float(settings.max_mark_age_seconds)
+        )
+        if equity is None:
             return _reject_new(session, payload, "EQUITY_UNKNOWN", actor=placed_by)
         cap = equity * profile.max_order_pct_of_equity
         if payload.amount_usd > cap:
@@ -1660,19 +1685,15 @@ async def place_order(
             strategy_id=payload.strategy_id,
             reduce_only=exit_only,
         )
-        _equity = replay.cash
-        _equity_known = True
-        for _acct, (_qty, _cost) in replay.positions.items():
-            if _qty <= 0:
-                continue
-            _ch, _tok = _split_position_account(_acct)
-            _snap = _snapshot_index(session).get((_ch, _tok))
-            _mark = _snap.price_usd if _snap is not None else None
-            if _mark is None:
-                _equity_known = False
-                break
-            _equity += _qty * _mark
-        equity_for_risk = _equity if _equity_known else None
+        # The equity the risk gate sizes against is priced under the account read's own
+        # freshness policy (``_risk_equity``): a stale or unknown mark on another held
+        # token withholds it, so no entry is sized from an old number. ``evaluate_order``
+        # only consults equity for a buy, so an exit is never blocked by this.
+        equity_for_risk = _risk_equity(
+            replay,
+            _snapshot_index(session),
+            max_age_seconds=float(settings.max_mark_age_seconds),
+        )
 
         allowed, reasons = evaluate_order(
             request=request,
