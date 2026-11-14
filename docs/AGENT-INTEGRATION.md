@@ -315,10 +315,11 @@ ezCHAIN's own agent is a separate service, `services/agent-runtime` (ADR-0042). 
 loop is built: one model seam, the platform's MCP tools, per-session and per-day budgets for
 turns, tokens and cost, the six-state session lifecycle, the kill-switch stop and
 sourced-number answers. Not built yet: the stdio transport that spawns `ezchain-mcp` (the
-loop takes a toolbox seam), the append-only session trace, the panel and the headless
-command. The Agent Client Protocol path is planned with no implementation. The panel and the
-headless command are the loop's two eventual entry points, and an external agent over the
-Agent Client Protocol would use the same boundary. The panel is additionally blocked on the
+loop takes a toolbox seam), the append-only session trace and the panel. The headless
+command is built (§9.1): it drives the same loop with the same approval path and prints each
+step. The Agent Client Protocol path is planned with no implementation. The panel and the
+headless command are the loop's two entry points, and an external agent over the Agent
+Client Protocol would use the same boundary. The panel is additionally blocked on the
 owner's design export: `design/` is the source of truth for visuals, and no agent-panel
 design has been exported yet. The runtime is not part of the API, the engine or the
 executor, and no strategy code runs in it — strategies stay external SDK packages hosted by
@@ -362,6 +363,56 @@ the engine.
   Attribution of kill-switch changes is not implemented: the switch row holds only its
   state, reason and update time. They join on approval id, order id and key id, and neither
   substitutes for the other.
+
+## 9.1 The headless command
+
+`services/harness` is the loop's terminal entry point. `ezchain-harness` runs **one**
+session on the real `AgentLoop` — the same class, budgets, kill switch and approval path the
+panel drives — and prints each step to stdout as it happens. It implements no loop and keeps
+no second copy of the approval rule: a result that comes back `pending_approval` moves the
+session inside the loop, and the command only reports it.
+
+```bash
+ezchain-harness --model my_provider:build_client --toolbox my_mcp:build_toolbox \
+  --prompt "Read the account and summarise paper equity."
+```
+
+Both seams are `module:attribute` factories returning a `ModelClient` and an `McpToolbox`, so
+the command carries no provider SDK of its own; a factory that cannot build its client is
+reported as unusable configuration because no session started. `--prompt` reads stdin when
+omitted, and the six budget flags default to the runtime's own numbers: 8 turns, 10 000
+tokens and $1 per session; 50 turns, 100 000 tokens and $10 per day for the agent.
+
+| Exit | Meaning |
+|---|---|
+| `0` | completed — the loop reached `done` with a sourced answer |
+| `1` | failed — `MODEL_FAILED`, `MCP_UNREACHABLE`, `UNSOURCED_NUMBER`, `NUMBER_MISMATCH`, … |
+| `2` | usage — a bad flag, an unimportable factory or an empty prompt |
+| `3` | stopped — the kill switch or a budget |
+| `4` | awaiting approval — a person must decide the order |
+
+Only `0` is success. A stopped or failed session never exits `0`, and a session waiting for
+a person does not either.
+
+The trace is one prefixed line per step, in the order the loop takes it:
+
+```
+ezchain-harness: session 0f7c…
+ezchain-harness: tools 4: ezchain_get_account, ezchain_get_state, …
+ezchain-harness: turn 1
+ezchain-harness: call ezchain_get_account {}
+ezchain-harness: result ezchain_get_account ok as_of="…", cash="1000.00", equity="1000.00"
+ezchain-harness: turn 2
+ezchain-harness: answer Read from the account.
+ezchain-harness: number equity 1000.00 (source ezchain_get_account.equity, age 3s)
+ezchain-harness: end COMPLETED state=done tools=1 turns=2 tokens=0 cost_usd=0.00
+```
+
+`session`, `tools`, `turn`, `call`, `result`, `answer`, `number` and `end` are the whole
+vocabulary. Each `result` is one bounded line (arguments sorted, value truncated), so a
+large payload cannot drown the trace, and `end` is rendered from the `SessionOutcome`: the
+typed `StopReason`, the next state, the number of recorded tool results, and the turns,
+tokens and cost spent. A stop carries its detail on that line.
 
 The full decision, options and consequences are in [DECISIONS.md](DECISIONS.md) (ADR-0042).
 

@@ -101,6 +101,7 @@ integrations/              # Hermes/OpenClaw packs (skill + MCP registration)
 services/
   engine/                  # strategy host, automation scheduler, signal router
   agent-runtime/           # built-in agent loop: MCP tool surface, model seam, budgets, lifecycle (ADR-0042)
+  harness/                 # headless command: runs one agent-runtime session, prints its trace
   executor/                # pipeline (intent -> journal), vault, signer, broadcaster, confirmer
   ingest/                  # sources/{chain,venue,cex,social}, normalizers, candles
 packages/
@@ -126,6 +127,9 @@ Import boundaries, documented here and to be enforced by import linter contracts
 - `services/agent-runtime` imports no platform code; its only egress is `apps/mcp` over
   stdio with a scoped key (ADR-0042). The loop exists; the stdio transport, the import-linter
   contract and service isolation are planned, so the boundary is held by review for now.
+- `services/harness` is the loop's terminal entry point: it imports `ezchain_agent_runtime`
+  and nothing else from the platform, builds the real `AgentLoop`, and reports its outcome
+  as an exit code. The panel is the other entry point and uses the same loop.
 
 Module size budget: ≤ 800 LOC per module, ≤ 400 LOC per file outside generated code. A
 module that needs more is two bounded contexts. (v3's 697 KB `service.py` is the counter-
