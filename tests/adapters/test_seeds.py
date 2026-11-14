@@ -9,6 +9,7 @@ from ezchain_adapters.registry import BY_ID
 from ezchain_adapters.seeds import SEED_TOKENS, seed_addresses
 
 REQUIRED_CHAINS = {
+    "solana",
     "ethereum",
     "base",
     "arbitrum",
@@ -42,6 +43,23 @@ def test_seed_chains_exist_in_the_registry() -> None:
 
 def test_every_required_chain_has_a_seed() -> None:
     assert REQUIRED_CHAINS <= set(SEED_TOKENS)
+
+
+def test_every_registered_chain_has_a_seed() -> None:
+    # Solana used to be the one advertised chain without seeds, so ``chain=all`` relied
+    # on promotional hints for it. Discovery coverage is only claimed for chains the
+    # adapter can actually ask the provider about.
+    assert set(SEED_TOKENS) == set(BY_ID)
+
+
+def test_solana_carries_the_canonical_mints() -> None:
+    addresses = {address.lower() for address in SEED_TOKENS["solana"]}
+    assert {
+        "so11111111111111111111111111111111111111112",  # wrapped SOL
+        "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v",  # USDC
+        "dezxaz8z7pnrnrjjz3wxborgixca6xjnb7yab1ppb263",  # BONK
+        "jupyiwryjfskupiha7hker8vutaefosybkedznsdvcn",  # JUP
+    } <= addresses
 
 
 @pytest.mark.parametrize("chain", sorted(SEED_TOKENS))

@@ -679,7 +679,11 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 	});
 
 	const semantics: MarketSortSemantics =
-		chain === "all" && !search ? "per_chain_round_robin" : "global_sort";
+		chain === "all"
+			? search
+				? "global_sort"
+				: "per_chain_round_robin"
+			: "per_chain_sort";
 	const ordered =
 		semantics === "per_chain_round_robin"
 			? roundRobin(
@@ -700,11 +704,18 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 			: (chain === "all" ? CHAIN_REGISTRY : CHAIN_REGISTRY.filter((item) => item.id === chain)).map(
 					(item) => {
 						const returned = discovered.filter((row) => row.chain === item.id).length;
+						const requested = SEEDS.filter((seed) => seed.chain === item.id).length;
 						return {
 							chain: item.id,
-							requested: SEEDS.filter((seed) => seed.chain === item.id).length,
+							requested,
 							returned,
-							reason: returned > 0 ? ("pairs" as const) : ("no_pairs" as const),
+							// A chain with no fixture seeds was never asked: unknown, not empty.
+							reason:
+								returned > 0
+									? ("pairs" as const)
+									: requested > 0
+										? ("no_pairs" as const)
+										: ("no_seeds" as const),
 						};
 					},
 				);
@@ -719,7 +730,8 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 		source,
 		stale: false,
 		coverage,
-		ordered_by: semantics === "per_chain_round_robin" ? "chain_round_robin" : "global_sort",
+		ordered_by:
+			semantics === "per_chain_round_robin" ? "chain_round_robin" : semantics,
 		sort,
 		sort_semantics: semantics,
 		offset,
@@ -744,7 +756,10 @@ export function fixtureMarketList(query: MarketQuery = {}): MarketList {
 		population: {
 			// Search is one feed-wide query with no per-chain coverage, matching the API
 			// contract rather than pretending the fixture scanned every chain.
-			chains_scanned: coverage === null ? null : coverage.length,
+			chains_scanned:
+				coverage === null
+					? null
+					: coverage.filter((item) => item.reason !== "no_seeds").length,
 			addresses_requested:
 				coverage === null
 					? null

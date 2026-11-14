@@ -18,7 +18,7 @@ import { serverAuthorizationHeader } from "./api-auth";
 
 export type WebMode = "fixture" | "live";
 export type MarketSort = "trending" | "liquidity" | "new" | "change_h24" | "pair_age";
-export type MarketSortSemantics = "global_sort" | "per_chain_round_robin";
+export type MarketSortSemantics = "global_sort" | "per_chain_sort" | "per_chain_round_robin";
 export type Side = "buy" | "sell";
 
 export interface Source {
@@ -67,7 +67,7 @@ export interface MarketCoverage {
 	chain: string;
 	requested: number;
 	returned: number;
-	reason: "pairs" | "no_pairs" | "error";
+	reason: "pairs" | "no_pairs" | "no_seeds" | "timeout" | "error";
 }
 
 export interface MarketFilters {
@@ -99,7 +99,7 @@ export interface MarketList {
 	source: Source;
 	stale: boolean;
 	coverage: MarketCoverage[] | null;
-	ordered_by: "chain_round_robin" | "global_sort";
+	ordered_by: "chain_round_robin" | "per_chain_sort" | "global_sort";
 	sort: MarketSort;
 	sort_semantics: MarketSortSemantics;
 	offset: number;

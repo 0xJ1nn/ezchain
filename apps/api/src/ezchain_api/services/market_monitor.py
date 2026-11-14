@@ -335,7 +335,9 @@ class MarketMonitor:
             persisted = self._use_all_chain_coverage(
                 coverage, discovered, started, attempted, rows_by_chain, errors
             )
-            successful_chains.update(item.chain for item in coverage if item.reason != "error")
+            successful_chains.update(
+                item.chain for item in coverage if item.reason not in ("error", "no_seeds")
+            )
         else:
             # The all-chain pass raised or returned no coverage: this process cannot know
             # which chains were attempted, so probe each one once, never more.
@@ -430,6 +432,10 @@ class MarketMonitor:
         persisted = 0
         failed_chains: set[str] = set()
         for item in coverage:
+            if item.reason == "no_seeds":
+                # Nothing was asked of the provider: this chain has no observation, which
+                # is not the same as an empty one. Do not record an attempt or a success.
+                continue
             state = self._states.get(item.chain)
             if state is None:
                 continue
@@ -457,6 +463,8 @@ class MarketMonitor:
             rows_by_chain[chain_id] = count
 
         for item in coverage:
+            if item.reason == "no_seeds":
+                continue
             if item.chain in rows_by_chain:
                 continue
             rows_by_chain[item.chain] = 0

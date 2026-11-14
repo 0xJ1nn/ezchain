@@ -143,7 +143,9 @@ export function populationSummary(list: MarketList): string {
 			? list.applied_filters.q
 				? "feed-wide market query"
 				: "feed-wide market result"
-			: `${population.chains_scanned} chains scanned`;
+			: `${population.chains_scanned} ${
+				population.chains_scanned === 1 ? "chain" : "chains"
+			} scanned`;
 	const addresses =
 		population.addresses_requested !== null
 			? ` · ${population.addresses_requested} addresses requested`

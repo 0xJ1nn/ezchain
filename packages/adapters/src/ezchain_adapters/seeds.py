@@ -1,9 +1,10 @@
 """Chain-specific seed tokens for discovery.
 
 DexScreener's discovery endpoints (profiles, boosts, takeovers) are dominated by Solana
-tokens. Without seeds, ``chain=all`` is effectively a Solana board. The seeds below are
-canonical, high-liquidity tokens per chain, so a whole-market browse always has coverage
-on the chains ezCHAIN advertises.
+tokens. Without seeds, ``chain=all`` against those feeds alone is effectively a Solana
+board. The seeds below are canonical, high-liquidity tokens per chain, so a whole-market
+browse asks the provider about every chain ezCHAIN advertises. A chain the provider does
+not index still yields no rows; coverage reports that instead of inventing one.
 
 Seeds are only used for discovery (no search query); they never produce a price without a
 real pair returned by the API, and an absent chain simply yields no rows.
@@ -11,7 +12,9 @@ real pair returned by the API, and an absent chain simply yields no rows.
 Recorded against the public DexScreener API on 2026-10-22. Osmosis, Cosmos Hub and
 Moonbeam returned no indexed pairs that day, so their seeds are canonical on-chain
 identifiers (``uosmo``, ``uatom``, WGLMR) rather than verified API hits; they stay so
-discovery picks the chains up if DexScreener coverage returns.
+discovery picks the chains up if DexScreener coverage returns. Solana's seeds are the
+canonical SPL mints for wrapped SOL, USDC, BONK and JUP, so Solana discovery no longer
+depends on the promotional feeds.
 
 The Blast, Mantle, Linea, Scroll and zkSync seeds were verified the same day with
 ``/latest/dex/tokens``: every address below returned indexed pairs on its own chain
@@ -23,6 +26,12 @@ from __future__ import annotations
 from .registry import BY_ID
 
 SEED_TOKENS: dict[str, tuple[str, ...]] = {
+    "solana": (
+        "So11111111111111111111111111111111111111112",  # wrapped SOL
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+        "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
+        "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  # JUP
+    ),
     "ethereum": (
         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",  # WETH
         "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",  # USDC

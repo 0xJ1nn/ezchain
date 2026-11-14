@@ -252,6 +252,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **Discovery claims only the coverage it has, and labels trending by its true scope
+  (GH-119).** Solana had no entry in `SEED_TOKENS`, so its discovery depended on the
+  promotional profile/boost/takeover feeds while `chain=all` looked like a seeded scan of
+  every advertised chain. Solana now carries the canonical wrapped-SOL, USDC, BONK and JUP
+  SPL mints, so an empty hint feed still returns Solana rows and every registered chain is
+  asked about directly. Coverage gained `no_seeds` for a chain with no seed or hint address:
+  nothing was requested, so its population is unknown, not `no_pairs` (which keeps its true
+  meaning, the provider was asked and returned nothing). The market monitor no longer
+  records such a chain as an empty observation or a successful scan, and `chains_scanned`
+  does not count it. Ordering is named per its real scope: an all-chain browse is
+  `per_chain_round_robin`, a feed-wide search is `global_sort`, and a single-chain read is
+  `per_chain_sort`; the markets page badge/footer and the dashboard trending strip say so
+  instead of calling a within-chain ranking global. Coverage also exposes `timeout` in the
+  API shape instead of failing serialization.
 - **The risk dashboard reads a mark's freshness from the server, not from a 60s rule
   (GH-115).** `/risk` re-derived stale/fresh from `source.observed_at` with a client-side
   `STALE_AFTER_SECONDS = 60`, while the API ages the mark with the configured

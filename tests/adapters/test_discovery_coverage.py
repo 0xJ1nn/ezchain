@@ -23,7 +23,8 @@ from ezchain_adapters.seeds import SEED_TOKENS
 NON_DATA_CHAINS = {"osmosis", "cosmos", "moonbeam"}
 DATA_CHAINS = [chain.id for chain in CHAINS if chain.id not in NON_DATA_CHAINS]
 NEW_EVM_CHAINS = ("blast", "mantle", "linea", "scroll", "zksync")
-SOLANA_HINT = "So11111111111111111111111111111111111111112"
+#: A Solana mint that is not one of the seeds, so hint merging is exercised.
+SOLANA_HINT = "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"
 SHARED_WETH = "0x4200000000000000000000000000000000000006"
 TOKENS_URL = rf"^{re.escape(BASE)}/latest/dex/tokens/.+$"
 TOKEN_PAIRS_URL = rf"^{re.escape(BASE)}/token-pairs/v1/.+$"
@@ -59,8 +60,6 @@ def make_pair(
 
 
 def _seed_address(chain: str) -> str:
-    if chain == "solana":
-        return SOLANA_HINT
     return SEED_TOKENS[chain][0]
 
 
@@ -158,6 +157,63 @@ async def test_all_chain_scan_covers_every_seeded_chain(
     assert len(batches) <= len(CHAINS)
     assert all(len(batch) <= MAX_BATCH for batch in batches)
     assert all(row.source.observed_at == source.observed_at for row in rows)
+
+
+@respx.mock
+async def test_solana_returns_rows_without_any_hint_feed(
+    dexscreener: DexScreenerClient,
+) -> None:
+    # Solana discovery used to depend on promotional hints. Every registered chain now
+    # has seed tokens, so an empty profile/boost/takeover set still finds Solana pairs.
+    mock_hint_feeds(solana_hint="")
+    batches = mock_tokens(data_pairs())
+
+    async with dexscreener as client:
+        rows, _source, coverage = await client.discover_markets(chain="all", limit=100)
+
+    by_chain = {item.chain: item for item in coverage or []}
+    assert by_chain["solana"].reason == "pairs"
+    assert by_chain["solana"].returned >= 1
+    assert any(row.chain == "solana" for row in rows)
+    solana_batches = [batch for batch in batches if SEED_TOKENS["solana"][0] in batch]
+    assert solana_batches
+    assert set(SEED_TOKENS["solana"]) <= set(solana_batches[0])
+
+
+@respx.mock
+async def test_chain_without_seeds_is_unknown_not_no_pairs(
+    dexscreener: DexScreenerClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pairs = data_pairs()
+    monkeypatch.delitem(SEED_TOKENS, "base")
+    mock_hint_feeds(solana_hint="")
+    mock_tokens(pairs)
+
+    async with dexscreener as client:
+        rows, _source, coverage = await client.discover_markets(chain="all", limit=100)
+
+    by_chain = {item.chain: item for item in coverage or []}
+    # Nothing was requested for Base, so the pass cannot claim it looked and found none.
+    assert by_chain["base"].requested == 0
+    assert by_chain["base"].returned == 0
+    assert by_chain["base"].reason == "no_seeds"
+    assert not any(row.chain == "base" for row in rows)
+
+
+@respx.mock
+async def test_single_chain_without_seeds_reports_no_seeds(
+    dexscreener: DexScreenerClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pairs = data_pairs()
+    monkeypatch.delitem(SEED_TOKENS, "base")
+    mock_hint_feeds(solana_hint="")
+    mock_tokens(pairs)
+
+    async with dexscreener as client:
+        rows, _source, coverage = await client.discover_markets(chain="base", limit=50)
+
+    assert rows == []
+    assert coverage == [ChainCoverage("base", 0, 0, "no_seeds")]
 
 
 @respx.mock

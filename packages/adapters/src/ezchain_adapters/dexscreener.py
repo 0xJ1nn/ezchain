@@ -44,7 +44,7 @@ DISCOVERY_PROVIDER_SECONDS = 5.0
 MAX_DISCOVERY_ADDRESSES = MAX_BATCH * 4
 
 SortMode = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
-CoverageReason = Literal["pairs", "no_pairs", "error", "timeout"]
+CoverageReason = Literal["pairs", "no_pairs", "no_seeds", "error", "timeout"]
 
 SAFETY_UNKNOWN = {"status": "unknown", "reason": "SAFETY_NOT_IMPLEMENTED"}
 
@@ -452,6 +452,23 @@ def _shared_seed_addresses() -> set[str]:
     return {address for address, count in counts.items() if count > 1}
 
 
+def _coverage_reason(
+    *, requested: int, rows: list[MarketRow], failed: bool, timed_out: bool = False
+) -> CoverageReason:
+    """Name what actually happened, including "nothing was asked".
+
+    ``no_seeds`` is not ``no_pairs``: an unrequested chain's population is unknown, and
+    reporting it as an empty observation would be a claim the pass cannot support.
+    """
+    if timed_out:
+        return "timeout"
+    if failed:
+        return "error"
+    if requested == 0:
+        return "no_seeds"
+    return "pairs" if rows else "no_pairs"
+
+
 def _round_robin(groups: list[list[MarketRow]]) -> list[MarketRow]:
     """Interleave already-sorted chain groups in registry order, one row at a time."""
     merged: list[MarketRow] = []
@@ -563,8 +580,9 @@ class DexScreenerClient(JsonApiClient):
     ) -> tuple[list[MarketRow], list[ChainCoverage]]:
         """One token lookup per registered chain, bounded to four in flight.
 
-        A chain with no addresses is reported as ``no_pairs`` rather than being invented.
-        A failing chain yields no rows and `no_pairs`; it never aborts the other chains.
+        A chain with no seed or hint addresses is reported as ``no_seeds``: nothing was
+        asked of the provider, so its population is unknown, not empty. A failing chain
+        yields no rows and `error`; it never aborts the other chains.
         """
         hints = await self._hint_items()
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHAINS)
@@ -605,9 +623,9 @@ class DexScreenerClient(JsonApiClient):
                 chain,
                 requested,
                 len(rows),
-                "timeout"
-                if was_timeout
-                else ("error" if failed else ("pairs" if rows else "no_pairs")),
+                _coverage_reason(
+                    requested=requested, rows=rows, failed=failed, timed_out=was_timeout
+                ),
             )
             for chain, rows, requested, failed, was_timeout in results
         ]
@@ -627,7 +645,7 @@ class DexScreenerClient(JsonApiClient):
                 chain,
                 len(addresses),
                 len(rows),
-                "error" if failed else ("pairs" if rows else "no_pairs"),
+                _coverage_reason(requested=len(addresses), rows=rows, failed=failed),
             )
         ]
         return rows, coverage

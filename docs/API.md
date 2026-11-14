@@ -112,7 +112,10 @@ optional filters `min_liquidity_usd`, `min_volume_24h_usd`, `min_change_h24`,
 `max_change_h24`, `min_pair_age_minutes`, `max_pair_age_minutes` and `dex`. Rows carry
 `source`, `observed_at` and decimal-string money. Unknown liquidity, volume or change is
 `null`, never zero. A `chain=all` query is a per-chain round robin, not one global
-ranking; `sort_semantics` and `ordered_by` say which ordering was used.
+ranking; a feed-wide search is a global sort of the matching rows, and a single-chain read
+is `per_chain_sort`. `sort_semantics` and `ordered_by` say which ordering was used.
+Coverage `reason` is `pairs`, `no_pairs`, `no_seeds` (nothing was requested, so the chain's
+population is unknown), `error` or `timeout`.
 
 ### Market freshness
 

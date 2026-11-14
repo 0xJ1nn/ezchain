@@ -44,6 +44,7 @@ from ..schemas import (
     MarketPopulationOut,
     MarketRowOut,
     MarketSort,
+    MarketSortSemantics,
     QuoteOut,
     SourceOut,
     StoredMarketListOut,
@@ -213,10 +214,18 @@ def _apply_filters(
     return kept, unknown
 
 
-def _sort_semantics(chain: str, q: str | None, coverage: Any) -> str:
-    if chain == "all" and q is None and coverage is not None:
-        return "per_chain_round_robin"
-    return "global_sort"
+def _sort_semantics(chain: str, q: str | None, coverage: Any) -> MarketSortSemantics:
+    """Name the ordering the read actually produced.
+
+    An all-chain browse is a per-chain round robin. A feed-wide query ranks the matching
+    rows globally. A single-chain read only ranks inside that chain, so calling it global
+    would claim an all-chain ordering that never happened.
+    """
+    if q is not None:
+        return "global_sort" if chain == "all" else "per_chain_sort"
+    if chain == "all":
+        return "per_chain_round_robin" if coverage is not None else "global_sort"
+    return "per_chain_sort"
 
 
 def _population(
@@ -226,7 +235,7 @@ def _population(
     total: int,
     returned: int,
     sort: MarketSort,
-    semantics: str,
+    semantics: MarketSortSemantics,
 ) -> MarketPopulationOut:
     if coverage is None:
         discovered = len(rows)
@@ -236,7 +245,8 @@ def _population(
     else:
         discovered = sum(item.returned for item in coverage)
         truncated = discovered > len(rows)
-        chains_scanned = len(coverage)
+        # A chain with no seed or hint address was never asked, so it is not scanned.
+        chains_scanned = sum(1 for item in coverage if item.reason != "no_seeds")
         addresses_requested = sum(item.requested for item in coverage)
     return MarketPopulationOut(
         chains_scanned=chains_scanned,
@@ -246,7 +256,7 @@ def _population(
         rows_returned=returned,
         truncated=truncated,
         sort=sort,
-        sort_semantics=semantics,  # type: ignore[arg-type]
+        sort_semantics=semantics,
     )
 
 
@@ -715,9 +725,6 @@ async def markets(
     returned = len(page_rows)
     has_more = start + returned < total
     semantics = _sort_semantics(chain, q, coverage)
-    semantics_value = (
-        "per_chain_round_robin" if semantics == "per_chain_round_robin" else "global_sort"
-    )
 
     next_cursor = None
     if has_more and page_rows:
@@ -746,9 +753,11 @@ async def markets(
         coverage=None
         if coverage is None
         else [MarketCoverageOut.model_validate(item.to_dict()) for item in coverage],
-        ordered_by="chain_round_robin" if semantics == "per_chain_round_robin" else "global_sort",
+        ordered_by="chain_round_robin"
+        if semantics == "per_chain_round_robin"
+        else semantics,
         sort=sort,
-        sort_semantics=semantics_value,  # type: ignore[arg-type]
+        sort_semantics=semantics,
         offset=start,
         limit=limit,
         total=total,
@@ -774,7 +783,7 @@ async def markets(
             total=total,
             returned=returned,
             sort=sort,
-            semantics=semantics_value,
+            semantics=semantics,
         ),
     )
 

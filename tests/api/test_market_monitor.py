@@ -26,7 +26,7 @@ from sqlalchemy.pool import StaticPool
 
 import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
 from ezchain_adapters import CHAINS, ChainCoverage, DexScreenerClient, UpstreamError
-from ezchain_adapters.dexscreener import BASE
+from ezchain_adapters.dexscreener import BASE, CoverageReason
 from ezchain_adapters.ratelimit import TokenBucket
 from ezchain_api.config import Settings
 from ezchain_api.db import Base
@@ -110,6 +110,7 @@ class FakeSource:
         self.fail: dict[str, Exception] = {}
         self.error_chains: set[str] = set()
         self.coverage_available = coverage_available
+        self.no_seeds_chains: set[str] = set()
         self.calls: list[tuple[str, int]] = []
         self.token_snapshots: dict[tuple[str, str], TokenSnapshot] = {}
         self.token_calls: list[tuple[str, str]] = []
@@ -122,6 +123,13 @@ class FakeSource:
         if snapshot is None:
             raise RuntimeError("no token snapshot")
         return snapshot
+
+    def _reason(self, chain_id: str, returned: int) -> CoverageReason:
+        if chain_id in self.no_seeds_chains:
+            return "no_seeds"
+        if chain_id in self.error_chains:
+            return "error"
+        return "pairs" if returned else "no_pairs"
 
     async def discover_markets(
         self,
@@ -146,9 +154,7 @@ class FakeSource:
                         meta.id,
                         1,
                         len(self.rows.get(meta.id, [])),
-                        "error"
-                        if meta.id in self.error_chains
-                        else ("pairs" if self.rows.get(meta.id) else "no_pairs"),
+                        self._reason(meta.id, len(self.rows.get(meta.id, []))),
                     )
                     for meta in CHAINS
                 ]
@@ -157,12 +163,7 @@ class FakeSource:
             coverage = None
             if self.coverage_available:
                 coverage = [
-                    ChainCoverage(
-                        key,
-                        1,
-                        len(rows),
-                        "error" if key in self.error_chains else ("pairs" if rows else "no_pairs"),
-                    )
+                    ChainCoverage(key, 1, len(rows), self._reason(key, len(rows)))
                 ]
         rows.sort(key=lambda row: row.volume_24h_usd or Decimal(0), reverse=True)
         return rows[:limit], SourceRef("dexscreener", "https://dexscreener.com", now), coverage
@@ -261,6 +262,30 @@ async def test_chain_without_rows_is_no_data_not_zero(
     assert base["last_error"] is None
     # Coverage said no_pairs; the monitor must not spend a second request on it.
     assert source.calls == [("all", 50)]
+
+
+async def test_chain_without_seeds_is_not_recorded_as_an_empty_observation(
+    session: Session, session_factory: sessionmaker[Session], settings: Settings
+) -> None:
+    source = FakeSource({"ethereum": [make_row()]})
+    source.no_seeds_chains = {"base"}
+    monitor = MarketMonitor(session_factory, source, settings)
+
+    result = await monitor.run_once()
+
+    # No address existed for Base, so nothing was asked and nothing was observed. It must
+    # not become no_data (an empty but real observation) or count as a successful scan.
+    assert result.persisted == 1
+    assert "base" not in result.attempted
+    assert "base" not in result.rows_by_chain
+    assert source.calls == [("all", 50)]
+
+    overview = build_overview(session, monitor, settings)
+    base = next(chain for chain in overview["chains"] if chain["id"] == "base")
+    assert base["status"] == "scanning"
+    assert base["rows"] == 0
+    assert base["last_attempt_at"] is None
+    assert base["last_observed_at"] is None
 
 
 async def test_coverage_unavailable_falls_back_to_one_probe_per_chain(
@@ -529,7 +554,9 @@ async def test_successful_scan_stays_within_upstream_call_budget(
 
     upstream_calls = 4 + token_route.call_count + pairs_route.call_count
     assert token_route.call_count <= len(CHAINS)
-    assert upstream_calls <= 30
+    # Four hint feeds, one token lookup per registered chain, and one chain-filtered
+    # fallback for each shared seed address (Base and Optimism share WETH).
+    assert upstream_calls == 4 + len(CHAINS) + 2
     assert result.attempted == tuple(chain.id for chain in CHAINS)
 
 

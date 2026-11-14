@@ -75,16 +75,20 @@ class MarketRowOut(BaseModel):
 
 
 MarketSort = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
-MarketSortSemantics = Literal["global_sort", "per_chain_round_robin"]
+MarketSortSemantics = Literal["global_sort", "per_chain_sort", "per_chain_round_robin"]
 
 
 class MarketCoverageOut(BaseModel):
-    """One chain's contribution to a discovery pass; counts are pre-slice."""
+    """One chain's contribution to a discovery pass; counts are pre-slice.
+
+    ``no_seeds`` means no address existed for the chain, so the pass did not ask the
+    provider and its population is unknown — never an empty observation.
+    """
 
     chain: str
     requested: int
     returned: int
-    reason: Literal["pairs", "no_pairs", "error"]
+    reason: Literal["pairs", "no_pairs", "no_seeds", "error", "timeout"]
 
 
 class MarketFiltersOut(BaseModel):
@@ -124,7 +128,7 @@ class MarketListOut(BaseModel):
     source: SourceOut
     stale: bool
     coverage: list[MarketCoverageOut] | None = None
-    ordered_by: Literal["chain_round_robin", "global_sort"] = "global_sort"
+    ordered_by: Literal["chain_round_robin", "per_chain_sort", "global_sort"] = "global_sort"
     sort: MarketSort = "trending"
     sort_semantics: MarketSortSemantics = "global_sort"
     offset: int = 0

@@ -114,7 +114,11 @@ test("markets renders the fixture screener with source, age and real filters", a
 	await expect(page.getByLabel("Sort markets")).toHaveValue("liquidity");
 	await expect(marketTable.locator("tbody tr").first()).toContainText("WIF");
 	await page.goto("/markets?sort=liquidity&chain=ethereum");
-	await expect(page.getByText("GLOBAL SORT", { exact: true })).toBeVisible();
+	await expect(page.getByText("PER-CHAIN SORT", { exact: true })).toBeVisible();
+	await expect(
+		page.getByTitle(/ranked within the selected chain only/),
+	).toBeVisible();
+	await expect(page.getByText(/Order: per-chain sort/)).toBeVisible();
 	await expect(marketTable.locator("tbody tr").first()).toContainText("UNI");
 
 	// Empty state is a reason code, not a zero row. A pure search miss names the query
@@ -464,7 +468,8 @@ test("fixture mode returns fixture rows without touching the network", async () 
 		expect(list.total).toBe(4);
 		expect(list.has_more).toBe(false);
 		expect(list.next_offset).toBeNull();
-		expect(list.sort_semantics).toBe("global_sort");
+		expect(list.sort_semantics).toBe("per_chain_sort");
+		expect(list.ordered_by).toBe("per_chain_sort");
 		expect(list.source.name).toBe("fixture");
 		expect(list.stale).toBe(false);
 
