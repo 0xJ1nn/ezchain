@@ -369,8 +369,17 @@ def access_log(
     status: int,
     duration_ms: float,
     secrets: Iterable[str] = (),
+    mode: str | None = None,
+    order_id: str | None = None,
+    strategy_id: str | None = None,
+    intent_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build the record that becomes one JSON line. Headers and bodies are excluded."""
+    """Build the record that becomes one JSON line. Headers and bodies are excluded.
+
+    The money-path ids are ``None`` when the request carried none, so a consumer can tell
+    "this read had no order" from "this order was not logged". They are redacted like the
+    route: an id is caller-influenced data and could carry a token.
+    """
     payload: dict[str, Any] = {
         "ts": datetime.now(UTC).isoformat(),
         "level": "INFO",
@@ -381,8 +390,52 @@ def access_log(
         "route": redact(route, secrets),
         "status": status,
         "duration_ms": round(max(0.0, duration_ms), 3),
+        "mode": mode,
+        "order_id": redact(order_id, secrets) if order_id else None,
+        "strategy_id": redact(strategy_id, secrets) if strategy_id else None,
+        "intent_id": redact(intent_id, secrets) if intent_id else None,
     }
     return payload
+
+
+def _configured_settings(request: Request) -> Any:
+    """The settings this app was built with, or a bare default for a test app."""
+    state = getattr(request.app, "state", None)
+    settings = getattr(state, "settings", None) if state is not None else None
+    if settings is not None:
+        return settings
+    from .config import get_settings
+
+    try:
+        return get_settings()
+    except Exception:
+        return None
+
+
+def _execution_mode(request: Request) -> str:
+    """The derived mode for this request, upper-cased, never a request argument.
+
+    The middleware runs before routing, so a handler has not set the mode yet; the
+    setting is the server-derived answer the rest of the API uses. A bare app built
+    without settings (as tests do) reports paper, which is the only truthful default.
+    """
+    settings = _configured_settings(request)
+    mode = getattr(settings, "execution_mode", None)
+    return str(mode or "paper").upper()
+
+
+def _log_secrets(request: Request) -> tuple[str, ...]:
+    """The deployment token, so it is redacted if it reaches a logged string.
+
+    The ids in this line and the route can both be caller-influenced, so the token is
+    scrubbed from them the same way a bearer header would be.
+    """
+    settings = _configured_settings(request)
+    token: Any = getattr(settings, "api_token", None)
+    value: str | None = None
+    if token is not None:
+        value = token.get_secret_value() if hasattr(token, "get_secret_value") else str(token)
+    return (value,) if value else ()
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
@@ -411,6 +464,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/metrics":
             # Prometheus scrapes are noisy and already visible in the metrics themselves.
             return
+        state = request.state
         logger.info(
             json.dumps(
                 access_log(
@@ -419,6 +473,11 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                     route=route,
                     status=status,
                     duration_ms=duration_ms,
+                    mode=_execution_mode(request),
+                    order_id=getattr(state, "order_id", None),
+                    strategy_id=getattr(state, "strategy_id", None),
+                    intent_id=getattr(state, "intent_id", None),
+                    secrets=_log_secrets(request),
                 )
             )
         )
