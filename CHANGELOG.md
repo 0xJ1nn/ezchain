@@ -7,6 +7,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **A gap in the pump.fun firehose is now visible and untradeable (ingest).** The
+  firehose adapter's entry read, `FirehoseFeed.entries(now)`, raises `StaleFeed` once the
+  newest observation is older than the 60 s budget, and the refusal carries the age, the
+  budget and the last event's timestamp and drains nothing — an observation the stream
+  cannot defend can no longer be turned into an entry. `FirehoseFeed.health(now)` reports
+  the four facts an operator needs from one measured snapshot: `last_event_age_seconds`
+  (and `last_event_at`), `reconnects`, `dropped`, and `decoded_ratio`/`rejected_ratio`;
+  an unobserved feed reports `null` for age and both ratios rather than a fresh-looking
+  zero or a perfect `1.0`. The handoff to a consumer is a bounded buffer
+  (`FirehoseFeed(queue_size=…)`, default 500) that drops the oldest observation under
+  pressure and counts every drop, and whose census is synchronous so observing it never
+  blocks the socket reader. `FirehoseSource.health()` gains the same `dropped`,
+  `decoded_ratio` and `rejected_ratio` fields over the package's own gate and queue.
+  `tests/adapters/fixtures/firehose_sample.json` now carries one sanitised record of real
+  pump.fun traffic behind a provenance header, replaying through the same
+  `normalize_firehose_event` path every live event uses. See
+  [docs/INFRA.md §6](docs/INFRA.md#6-health-metrics-and-alerts).
+
 - **A Compose drill that proves the stack at the current migration head (PAPER).**
   `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts
   `infra/compose.yaml` under an isolated project, then requires `/readyz` to report

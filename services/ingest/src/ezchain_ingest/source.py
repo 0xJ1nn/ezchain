@@ -168,14 +168,24 @@ class FirehoseSource:
         return len(events)
 
     def health(self, now: float | None = None) -> dict[str, Any]:
-        """One snapshot of the package's gate plus this source's counters."""
+        """One snapshot of the package's gate plus this source's counters.
+
+        The gate supplies the last-event age and the live/stale verdict, the queue
+        census supplies depth and drops, and the decode ratio is this source's own
+        received/rejected pair. An unobserved stream reports ``None`` for the ratio
+        rather than a perfect 1.0.
+        """
         decision = self._gate.check(now)
         census = self._queue.census()
+        decided = self._received + self._rejected
         return {
             "gate": decision.as_dict(),
             "queue": census.as_dict(),
             "received": self._received,
             "rejected": self._rejected,
+            "dropped": census.dropped,
+            "decoded_ratio": None if decided == 0 else self._received / decided,
+            "rejected_ratio": None if decided == 0 else self._rejected / decided,
         }
 
     def census(self) -> QueueCensus:

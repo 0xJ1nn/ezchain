@@ -181,6 +181,35 @@ Grafana is bound to `127.0.0.1:3001` and has no provisioned dashboards. It falls
 the image's default admin credentials unless `EZCHAIN_GRAFANA_ADMIN_PASSWORD` is set; do
 that before enabling the profile on a shared host.
 
+### Stream health and the staleness gate
+
+The pump.fun firehose is a data-layer seam, not an HTTP route, so its health is a dict the
+operator process reads rather than an endpoint: `FirehoseFeed.health(now)` in
+`ezchain_adapters.firehose` and `FirehoseSource.health(now)` in `ezchain_ingest.source`.
+Both expose the same four facts, and every one of them is measured, never defaulted:
+
+| Field | Meaning |
+|---|---|
+| `last_event_age_seconds` | Age of the newest observation at the read clock. `null` before the first event — an unobserved stream is not a fresh one. |
+| `reconnects` | Reconnect count recorded by `record_reconnect()`; the source's own socket owner reports them. |
+| `dropped` | Observations discarded from the bounded buffer under pressure (also in `queue.dropped`). |
+| `decoded_ratio` / `rejected_ratio` | Decoded over decoded plus rejected. `null` when nothing has arrived, never a perfect `1.0`. |
+
+Two behaviours follow from it:
+
+- **A gap is untradeable.** `FirehoseFeed.entries(now)` and `FirehoseSource.pull(now)` raise
+  `StaleFeed` / `pumpfire.health.StaleStream` once the last event is older than the budget
+  (60 s). The refusal carries the age and the budget and drains nothing, so an entry can
+  never be built from an observation the stream cannot defend.
+- **Pressure costs the oldest data, not the reader.** The handoff buffer is bounded
+  (`queue_size`, default 500), drops the oldest observation when full and counts each
+  drop. Its census is synchronous, so reading depth and counters never blocks the socket
+  reader.
+
+The one recorded sample of real traffic lives in
+`tests/adapters/fixtures/firehose_sample.json`; it is sanitised and replayed through the
+same `normalize_firehose_event` path every test and every live event uses.
+
 ## 7. Storage, backup and restore
 
 | Data | Location | Backup |

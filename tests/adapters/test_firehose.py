@@ -1,7 +1,9 @@
 """Pumpfun-firehose adapter: normalization, staleness gate, snapshot+deltas.
 
 All inputs are the committed trimmed fixture (``firehose_sample.json``) replayed
-through the same decode path. No test reaches the network, signs, or trades.
+through the same decode path. The fixture carries one sanitised record of real
+traffic behind a provenance header; every test reads the events, never the header.
+No test reaches the network, signs, or trades.
 
 The adapter emits the one core ``MarketEvent``; ``FirehoseEvent`` only adds this
 wire's own extras on top of it, so these tests assert the contract's field names
@@ -10,11 +12,15 @@ and its serialiser, not an adapter-local shape.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import inspect
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 import ezchain_core
 from ezchain_adapters.firehose import (
@@ -24,18 +30,22 @@ from ezchain_adapters.firehose import (
     FirehoseEvent,
     FirehoseFeed,
     MarketEvent,
+    StaleFeed,
     normalize_firehose_event,
 )
 
-SOURCES = {"create", "trade", "complete"}
 BASE = 1_760_000_000
+FIXTURE = Path(__file__).parent / "fixtures" / "firehose_sample.json"
+SENTINEL = re.compile(r"^[A-Za-z]+1{5,}$")
 
 
 def _at(epoch: int) -> datetime:
     return datetime.fromtimestamp(epoch, tz=UTC)
 
 
-NOW = _at(BASE + 4_000)
+# Later than every record in the fixture, including the captured one: an observation dated
+# ahead of the read clock is a clock fault, and age is floored at zero by the contract.
+NOW = _at(1_800_000_000)
 
 
 def test_source_conventions_match_package() -> None:
@@ -44,9 +54,44 @@ def test_source_conventions_match_package() -> None:
     assert DEFAULT_STALE_BUDGET_SECONDS == 60.0
 
 
-def test_fixture_replays_to_contract_events(load_fixture: Callable[[str], Any]) -> None:
-    raw = load_fixture("firehose_sample.json")
-    assert isinstance(raw, list) and len(raw) >= 4
+def test_the_recorded_fixture_declares_its_provenance_and_is_sanitised() -> None:
+    """The committed sample is real traffic, and it says so and is sanitised."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    assert isinstance(raw, dict)
+    meta = raw["_fixture"]
+    assert meta["kind"] == "recorded"
+    assert meta["captured_at"] == "2026-11-14"
+    # The identifiers a capture carries are replaced; the amounts are the recorded ones.
+    assert set(meta["sanitised"]) == {"signature", "mint", "user", "creator"}
+    events = raw["events"]
+    assert isinstance(events, list) and 4 <= len(events) <= 12
+    for event in events:
+        assert SENTINEL.match(event["signature"]), event["signature"]
+    (recorded,) = [event for event in events if event["signature"].startswith("Captured")]
+    for field in ("signature", "mint", "user", "creator"):
+        assert SENTINEL.match(recorded[field]), (field, recorded[field])
+
+
+def test_the_recorded_sample_replays_through_the_same_decode_path(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    """The recorded record decodes with the adapter the live wire uses, unchanged."""
+    event = normalize_firehose_event(firehose_sample[-1])
+    assert event is not None
+    assert event.kind == "trade"
+    assert event.direction == "sell"
+    assert event.venue == "pumpfun"
+    # The recorded numbers survive normalisation; nothing is invented to fill a gap.
+    assert event.price == Decimal("2.3066231e-08")
+    assert event.size == Decimal("0.010407149")
+    assert event.timestamp == 1_794_672_495
+    assert event.observed_at == _at(1_794_672_495)
+    assert event.slot is None
+
+
+def test_fixture_replays_to_contract_events(firehose_sample: list[dict[str, Any]]) -> None:
+    raw = firehose_sample
+    assert len(raw) >= 4
     events = [normalize_firehose_event(item) for item in raw]
     assert all(event is not None for event in events)
     assert [event.kind for event in events if event] == [
@@ -55,14 +100,16 @@ def test_fixture_replays_to_contract_events(load_fixture: Callable[[str], Any]) 
         "trade",
         "complete",
         "trade",
+        "trade",
     ]
-    mint = raw[0]["mint"]
-    for event in events:
+
+    for index, event in enumerate(events):
         assert isinstance(event, FirehoseEvent)
         # The observation is the one core contract, not an adapter-local type.
         assert isinstance(event.event, MarketEvent)
         assert event.chain == "solana"
-        assert event.pair == mint
+        # Each event keeps its own mint; only the trailing capture is a different token.
+        assert event.pair == raw[index]["mint"]
         assert event.source.name == SOURCE_NAME
         assert event.source.url == SOURCE_URL
         assert event.source.observed_at == event.observed_at
@@ -89,7 +136,7 @@ def test_the_contract_itself_replays_and_is_the_one_market_event() -> None:
     assert MarketEvent is ezchain_core.MarketEvent
     raw = {
         "kind": "trade",
-        "mint": "Mint1111111111111111111111111111111111111111",
+        "mint": "Mint1111111111111111111111111111111111111",
         "timestamp": BASE,
         "is_buy": True,
         "sol": 1,
@@ -105,10 +152,9 @@ def test_the_contract_itself_replays_and_is_the_one_market_event() -> None:
 
 
 def test_create_maps_metadata_and_derives_price(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
-    event = normalize_firehose_event(raw[0])
+    event = normalize_firehose_event(firehose_sample[0])
     assert event is not None
     assert event.kind == "create"
     assert event.direction is None
@@ -118,8 +164,8 @@ def test_create_maps_metadata_and_derives_price(
     assert event.price == Decimal("30.0") / Decimal("1073000000000.0")
 
 
-def test_trades_map_side_size_and_venue(load_fixture: Callable[[str], Any]) -> None:
-    raw = load_fixture("firehose_sample.json")
+def test_trades_map_side_size_and_venue(firehose_sample: list[dict[str, Any]]) -> None:
+    raw = firehose_sample
     buy = normalize_firehose_event(raw[1])
     sell = normalize_firehose_event(raw[2])
     amm = normalize_firehose_event(raw[4])
@@ -135,9 +181,8 @@ def test_trades_map_side_size_and_venue(load_fixture: Callable[[str], Any]) -> N
     assert amm.size == Decimal("0.75")
 
 
-def test_complete_has_no_side_or_price(load_fixture: Callable[[str], Any]) -> None:
-    raw = load_fixture("firehose_sample.json")
-    event = normalize_firehose_event(raw[3])
+def test_complete_has_no_side_or_price(firehose_sample: list[dict[str, Any]]) -> None:
+    event = normalize_firehose_event(firehose_sample[3])
     assert event is not None
     assert event.kind == "complete"
     assert event.direction is None
@@ -146,9 +191,9 @@ def test_complete_has_no_side_or_price(load_fixture: Callable[[str], Any]) -> No
 
 
 def test_unknown_timestamp_fails_closed(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")[1]
+    raw = firehose_sample[1]
     assert isinstance(raw, dict)
     # Built per-case so each mutation is isolated; unknown is never zero.
     assert normalize_firehose_event({k: v for k, v in raw.items() if k != "timestamp"}) is None
@@ -161,9 +206,9 @@ def test_unknown_timestamp_fails_closed(
 
 
 def test_malformed_events_are_dropped(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")[1]
+    raw = firehose_sample[1]
     assert isinstance(raw, dict)
     assert normalize_firehose_event(None) is None
     assert normalize_firehose_event("not an event") is None
@@ -173,9 +218,9 @@ def test_malformed_events_are_dropped(
 
 
 def test_unknown_price_stays_none_never_zero(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")[1]
+    raw = firehose_sample[1]
     assert isinstance(raw, dict)
     for bad in (None, "NaN", "Infinity", "oops", 0, -1):
         event = normalize_firehose_event({**raw, "price_sol": bad})
@@ -184,12 +229,10 @@ def test_unknown_price_stays_none_never_zero(
 
 
 def test_stale_feed_degrades_reads_and_alerts_once(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
     feed = FirehoseFeed()
-    event = feed.ingest(raw[1])
-    assert event is not None
+    assert feed.ingest(firehose_sample[1]) is not None
     fresh = _at(BASE + 60)
     assert feed.fresh_events(fresh)
     assert feed.health(fresh)["stale"] is False
@@ -209,10 +252,106 @@ def test_stale_feed_degrades_reads_and_alerts_once(
     assert len(feed.health(stale_now)["alerts"]) == 1
 
 
-def test_recovery_clears_stale_without_dropping_history(
-    load_fixture: Callable[[str], Any],
+def test_an_entry_is_refused_while_the_stream_is_stale(
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
+    """A gap is untradeable: the entry read raises instead of returning a stale value."""
+    feed = FirehoseFeed()
+    assert feed.ingest(firehose_sample[1]) is not None  # observed at BASE + 60
+    assert feed.ingest(firehose_sample[2]) is not None  # observed at BASE + 120
+
+    stale_now = _at(BASE + 120 + DEFAULT_STALE_BUDGET_SECONDS + 1)
+    with pytest.raises(StaleFeed) as refused:
+        feed.entries(stale_now)
+
+    assert refused.value.stale is True
+    assert refused.value.age_seconds == pytest.approx(DEFAULT_STALE_BUDGET_SECONDS + 1)
+    assert refused.value.stale_budget_seconds == DEFAULT_STALE_BUDGET_SECONDS
+    # A refusal drains nothing: the observations stay buffered for a live reader.
+    assert feed.census()["depth"] == 2
+    queued = feed.entries(_at(BASE + 120))
+    assert [entry.direction for entry in queued] == ["buy", "sell"]
+    assert feed.census()["depth"] == 0
+
+
+def test_no_entry_at_all_before_the_first_event_is_refused() -> None:
+    feed = FirehoseFeed()
+    with pytest.raises(StaleFeed) as refused:
+        feed.entries(_at(BASE))
+    assert refused.value.stale is True
+    assert refused.value.age_seconds is None
+    assert refused.value.to_dict()["type"] == "provider_stale"
+
+
+def test_the_queue_drops_the_oldest_under_pressure_and_counts_it(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    """Pressure costs the stale end of the backlog, never the reader's progress."""
+    feed = FirehoseFeed(queue_size=2)
+    for index in range(3):
+        assert feed.ingest({**firehose_sample[1], "signature": f"pressure{index}"}) is not None
+
+    census = feed.census()
+    assert census["maxsize"] == 2
+    assert census["depth"] == 2
+    assert census["enqueued"] == 3
+    assert census["dropped"] == 1
+
+    # The newest two survive; the dropped one is the oldest.
+    queued = feed.entries(_at(BASE + 60))
+    assert [entry.signature for entry in queued] == ["pressure1", "pressure2"]
+    assert feed.health(_at(BASE + 60))["dropped"] == 1
+
+
+def test_the_census_never_blocks_the_reader(firehose_sample: list[dict[str, Any]]) -> None:
+    """Reading depth and counters is synchronous, so a full queue cannot stall a health call."""
+    feed = FirehoseFeed(queue_size=1)
+    assert feed.ingest(firehose_sample[1]) is not None
+    assert feed.ingest(firehose_sample[2]) is not None
+
+    census = feed.census()
+
+    assert isinstance(census, dict)
+    assert not inspect.isawaitable(census)
+    health = feed.health(_at(BASE + 60))
+    assert not inspect.isawaitable(health)
+    assert health["queue"]["dropped"] == 1
+
+
+def test_health_reports_age_reconnects_drops_and_the_decode_ratio(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    feed = FirehoseFeed(queue_size=1)
+    assert feed.ingest(firehose_sample[1]) is not None
+    assert feed.ingest({"kind": "trade", "mint": "x"}) is None
+    feed.record_reconnect()
+    assert feed.ingest(firehose_sample[2]) is not None  # drops the first, counts one
+
+    health = feed.health(_at(BASE + 180))
+
+    assert health["last_event_age_seconds"] == pytest.approx(60.0)
+    assert health["last_event_at"] == _at(BASE + 120).isoformat()
+    assert health["reconnects"] == 1
+    assert health["dropped"] == 1
+    assert (health["decoded"], health["rejected"]) == (2, 1)
+    assert health["decoded_ratio"] == pytest.approx(2 / 3)
+    assert health["rejected_ratio"] == pytest.approx(1 / 3)
+    assert health["queue"] == {"depth": 1, "maxsize": 1, "enqueued": 2, "dropped": 1}
+
+
+def test_an_unobserved_feed_reports_unknown_ratios_not_a_perfect_score() -> None:
+    feed = FirehoseFeed()
+    health = feed.health(_at(BASE))
+    assert health["last_event_age_seconds"] is None
+    assert health["last_event_at"] is None
+    assert health["decoded_ratio"] is None
+    assert health["rejected_ratio"] is None
+
+
+def test_recovery_clears_stale_without_dropping_history(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    raw = firehose_sample
     feed = FirehoseFeed()
     assert feed.ingest(raw[1]) is not None
     stale_now = _at(BASE) + timedelta(seconds=DEFAULT_STALE_BUDGET_SECONDS + 10)
@@ -234,9 +373,9 @@ def test_no_event_without_timestamp_passes_unknown_feed() -> None:
 
 
 def test_snapshot_then_deltas_for_api_surface(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
+    raw = firehose_sample
     feed = FirehoseFeed()
     events = feed.replay([raw[0], raw[1]])
     assert len(events) == 2
@@ -248,12 +387,13 @@ def test_snapshot_then_deltas_for_api_surface(
     # Snapshot rows carry the contract's source and a read-time age.
     assert snap["recent"][0]["source"]["name"] == SOURCE_NAME
     assert isinstance(snap["recent"][0]["age_seconds"], float)
+    assert snap["health"]["queue"]["maxsize"] == 500
 
 
 async def test_async_stream_yields_snapshot_then_delta(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
+    raw = firehose_sample
     feed = FirehoseFeed()
     feed.ingest(raw[0])
     stream = feed.stream(_at(BASE))
@@ -268,9 +408,9 @@ async def test_async_stream_yields_snapshot_then_delta(
 
 
 def test_duplicate_signature_is_counted_not_emitted_twice(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
+    raw = firehose_sample
     feed = FirehoseFeed()
     assert feed.ingest(raw[1]) is not None
     assert feed.ingest(raw[1]) is None
@@ -281,9 +421,9 @@ def test_duplicate_signature_is_counted_not_emitted_twice(
 
 
 def test_reconnect_and_reject_counters_are_visible(
-    load_fixture: Callable[[str], Any],
+    firehose_sample: list[dict[str, Any]],
 ) -> None:
-    raw = load_fixture("firehose_sample.json")
+    raw = firehose_sample
     feed = FirehoseFeed()
     assert feed.ingest(raw[1]) is not None
     assert feed.ingest({"kind": "trade", "mint": "x"}) is None
@@ -296,12 +436,12 @@ def test_reconnect_and_reject_counters_are_visible(
 
 
 def test_contract_observation_survives_the_ingest_recorder(
-    load_fixture: Callable[[str], Any], tmp_path: Path
+    firehose_sample: list[dict[str, Any]], tmp_path: Path
 ) -> None:
     """A firehose observation records and replays as the one core contract."""
     from ezchain_ingest import ReplayHarness, read_events, write_events
 
-    raw = load_fixture("firehose_sample.json")
+    raw = firehose_sample
     feed = FirehoseFeed()
     events = feed.replay([raw[0], raw[1], raw[1]])
     # The replay harness sees contract events, not the wire wrapper.

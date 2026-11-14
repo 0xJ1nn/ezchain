@@ -48,8 +48,8 @@ class FakeStream:
 @pytest.fixture
 def raw_events() -> list[dict[str, Any]]:
     loaded = json.loads((FIXTURES_DIR / "firehose_sample.json").read_text(encoding="utf-8"))
-    assert isinstance(loaded, list)
-    return loaded
+    assert isinstance(loaded, dict)
+    return loaded["events"]
 
 
 @pytest.fixture
@@ -175,14 +175,36 @@ def test_health_surfaces_the_gate_and_backpressure(
 
     assert health["gate"]["live"] is True
     assert health["gate"]["stale_after_s"] == STALE_AFTER
+    assert health["gate"]["age_s"] == pytest.approx(1.0)
     assert health["queue"]["maxsize"] == 2
     assert health["queue"]["depth"] == 2
     assert health["queue"]["dropped"] == 1
+    assert health["dropped"] == 1
     assert health["received"] == 3
+    assert health["decoded_ratio"] == 1.0
 
     stale = source.health(now=STALE_AFTER + 3.0)
     assert stale["gate"]["live"] is False
     assert stale["gate"]["reason"] == "stale"
+
+
+def test_health_reports_the_decode_ratio_with_no_traffic_as_unknown() -> None:
+    source = FirehoseSource(stale_after_s=STALE_AFTER)
+
+    idle = source.health(now=0.0)
+
+    assert idle["received"] == 0
+    assert idle["decoded_ratio"] is None
+    assert idle["rejected_ratio"] is None
+    assert idle["gate"]["age_s"] is None
+
+    assert source.receive({"kind": "trade", "mint": ""}, now=1.0) is None
+    assert source.receive({**{"kind": "trade", "mint": "m"}, "timestamp": 1760000060}, now=2.0)
+    mixed = source.health(now=3.0)
+    assert mixed["received"] == 1
+    assert mixed["rejected"] == 1
+    assert mixed["decoded_ratio"] == 0.5
+    assert mixed["rejected_ratio"] == 0.5
 
 
 def test_a_rejected_payload_proves_life_but_never_becomes_an_entry() -> None:

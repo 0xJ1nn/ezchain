@@ -14,6 +14,17 @@ second one. Age is computed at read time from ``source.observed_at`` (never
 stamped at write time), and an event without a defensible source timestamp is
 dropped (fail closed, I3). ``chain`` is data here; nothing branches on it (I6).
 
+A gap is a first-class state, because a WebSocket reconnects by nature.
+``FirehoseFeed.entries`` refuses while the newest observation is older than the
+budget (``StaleFeed``), so a stale feed cannot leak an entry into an order, and
+``FirehoseFeed.health`` reports the four facts a dashboard reads — last-event age,
+reconnect count, drop count and the decoded/rejected ratio. The handoff to a
+consumer is a bounded buffer that drops the oldest observation under pressure and
+counts it; its census is synchronous, so observing the queue never blocks the
+reader. These are the same three pieces the upstream package owns
+(``pumpfire.health``); this module needs no dependency on it, and
+``services/ingest`` uses the package's copy for the live socket.
+
 PyPI does not publish ``pumpfun-firehose`` in this environment (``pip index``
 reports no versions; GitHub carries no ``0.4.0`` tag), so the adapter treats
 the dependency as duck-typed: it accepts both ``pumpfire`` dataclass objects
@@ -26,6 +37,7 @@ is imported by the package and none of its code is vendored here.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -221,6 +233,100 @@ class FirehoseEvent:
         return body
 
 
+class StaleFeed(RuntimeError):
+    """Raised when an entry is requested from a feed whose last event is too old.
+
+    A gap is a state, not an error to retry: the refusal carries the age that
+    caused it and the budget it broke, so a caller reports a number and a verdict
+    instead of an empty list that looks like a quiet market. Nothing is drained
+    by the refusal — the observations stay buffered for a live reader.
+    """
+
+    def __init__(
+        self,
+        *,
+        age_seconds: float | None,
+        stale_budget_seconds: float,
+        observed_at: str | None = None,
+    ) -> None:
+        self.age_seconds = age_seconds
+        self.stale_budget_seconds = stale_budget_seconds
+        self.observed_at = observed_at
+        detail = (
+            "no event observed yet" if age_seconds is None else f"last event age {age_seconds:g}s"
+        )
+        super().__init__(
+            f"{SOURCE_NAME} feed is not live; {detail}, budget {stale_budget_seconds:g}s"
+        )
+
+    @property
+    def stale(self) -> bool:
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": SOURCE_NAME,
+            "stale": True,
+            "age_seconds": self.age_seconds,
+            "last_event_at": self.observed_at,
+            "stale_budget_seconds": self.stale_budget_seconds,
+            "type": "provider_stale",
+        }
+
+
+class _EventBuffer:
+    """A bounded handoff from the wire to a consumer: newest wins, oldest is dropped.
+
+    ``put`` never waits. When the buffer is full the oldest observation is
+    discarded first, so the socket keeps up at the cost of the stale end of the
+    backlog, and every discard is counted. ``census`` is synchronous, so reading
+    depth and counters never blocks the reader that is falling behind.
+    """
+
+    __slots__ = ("dropped", "enqueued", "maxsize", "_items", "_waiter")
+
+    def __init__(self, maxsize: int) -> None:
+        if maxsize < 1:
+            raise ValueError("queue_size must be at least 1")
+        self.maxsize = int(maxsize)
+        self.enqueued = 0
+        self.dropped = 0
+        self._items: deque[FirehoseEvent] = deque()
+        self._waiter: asyncio.Event | None = None
+
+    def put(self, event: FirehoseEvent) -> None:
+        if len(self._items) >= self.maxsize:
+            self._items.popleft()
+            self.dropped += 1
+        self._items.append(event)
+        self.enqueued += 1
+        if self._waiter is not None:
+            self._waiter.set()
+
+    def take(self) -> FirehoseEvent | None:
+        return self._items.popleft() if self._items else None
+
+    def drain(self) -> list[FirehoseEvent]:
+        out = list(self._items)
+        self._items.clear()
+        return out
+
+    def census(self) -> dict[str, int]:
+        return {
+            "depth": len(self._items),
+            "maxsize": self.maxsize,
+            "enqueued": self.enqueued,
+            "dropped": self.dropped,
+        }
+
+    def open_waiter(self) -> asyncio.Event:
+        self._waiter = asyncio.Event()
+        return self._waiter
+
+    def close_waiter(self) -> None:
+        self._waiter = None
+
+
 @dataclass(frozen=True)
 class FirehoseAlert:
     """``alert.raised`` for a stale feed, emitted once per transition."""
@@ -321,12 +427,19 @@ class FirehoseFeed:
     """In-memory read-only feed over normalized events.
 
     Tracks last-event age against a staleness budget, emits one
-    ``provider_stale`` alert per stale transition, degrades reads while stale
-    (``fresh_events`` returns nothing), and exposes snapshot+deltas for the
-    API surface. Not wired into the web app; data layer only.
+    ``provider_stale`` alert per stale transition, refuses every entry read
+    while the feed is stale (:class:`StaleFeed`), and exposes a synchronous
+    health snapshot. The handoff to a consumer is a bounded buffer that drops
+    the oldest observation under pressure and counts it, so a slow reader never
+    stalls the socket. Not wired into the web app; data layer only.
     """
 
-    def __init__(self, *, stale_budget_seconds: float = DEFAULT_STALE_BUDGET_SECONDS) -> None:
+    def __init__(
+        self,
+        *,
+        stale_budget_seconds: float = DEFAULT_STALE_BUDGET_SECONDS,
+        queue_size: int = MAX_RECENT,
+    ) -> None:
         if stale_budget_seconds <= 0:
             raise ValueError("stale_budget_seconds must be positive")
         self._budget = float(stale_budget_seconds)
@@ -336,11 +449,11 @@ class FirehoseFeed:
         self._recent: list[FirehoseEvent] = []
         self._by_pair: dict[str, FirehoseEvent] = {}
         self._seen: dict[str, None] = {}
+        self._buffer = _EventBuffer(queue_size)
         self._decoded = 0
         self._rejected = 0
         self._duplicates = 0
         self._reconnects = 0
-        self._queue: asyncio.Queue[FirehoseEvent] | None = None
 
     def ingest(self, raw: object) -> FirehoseEvent | None:
         event = normalize_firehose_event(raw)
@@ -362,11 +475,7 @@ class FirehoseFeed:
         if self._last_seen is None or event.observed_at > self._last_seen:
             self._last_seen = event.observed_at
         self._stale_active = False
-        if self._queue is not None:
-            try:
-                self._queue.put_nowait(event)
-            except asyncio.QueueFull:  # keep the reader bounded; drop oldest
-                self._recent = self._recent[-MAX_RECENT:]
+        self._buffer.put(event)
         return event
 
     def replay(self, raw_events: Iterable[object]) -> list[FirehoseEvent]:
@@ -379,6 +488,26 @@ class FirehoseFeed:
 
     def record_reconnect(self) -> None:
         self._reconnects += 1
+
+    def census(self) -> dict[str, int]:
+        """Depth, capacity and drop count. Synchronous: it never awaits the reader."""
+        return self._buffer.census()
+
+    def entries(self, now: datetime | None = None) -> tuple[FirehoseEvent, ...]:
+        """Drain the buffer for an entry decision, refusing while the feed is stale.
+
+        This is the one entry read. A gap raises :class:`StaleFeed` and drains
+        nothing, so an untradeable feed cannot leak an observation into an order.
+        """
+        current = now or utcnow()
+        age, stale = self._check_staleness(current)
+        if stale:
+            raise StaleFeed(
+                age_seconds=age,
+                stale_budget_seconds=self._budget,
+                observed_at=None if self._last_seen is None else self._last_seen.isoformat(),
+            )
+        return tuple(self._buffer.drain())
 
     def _check_staleness(self, now: datetime) -> tuple[float | None, bool]:
         if self._last_seen is None:
@@ -405,24 +534,34 @@ class FirehoseFeed:
         return age, stale
 
     def health(self, now: datetime | None = None) -> dict[str, Any]:
+        """One snapshot: age, stale verdict, reconnects, drops and the decode ratio.
+
+        Every number here is measured. An unobserved feed reports ``None`` for
+        its age and both ratios rather than a fresh-looking zero or a perfect 1.0.
+        """
         current = now or utcnow()
         age, stale = self._check_staleness(current)
-        denominator = self._decoded + self._rejected
-        ratio = (self._decoded / denominator) if denominator > 0 else 1.0
+        decided = self._decoded + self._rejected
+        queue = self._buffer.census()
         return {
             "source": SOURCE_NAME,
             "stale": stale,
             "last_event_age_seconds": age,
+            "last_event_at": None if self._last_seen is None else self._last_seen.isoformat(),
             "stale_budget_seconds": self._budget,
             "decoded": self._decoded,
             "rejected": self._rejected,
             "duplicates": self._duplicates,
             "reconnects": self._reconnects,
-            "decoded_ratio": ratio,
+            "decoded_ratio": None if decided == 0 else self._decoded / decided,
+            "rejected_ratio": None if decided == 0 else self._rejected / decided,
+            "dropped": queue["dropped"],
+            "queue": queue,
             "alerts": [alert.to_dict() for alert in self._alerts],
         }
 
     def fresh_events(self, now: datetime | None = None) -> tuple[FirehoseEvent, ...]:
+        """The recent observations, or nothing while stale. Read-only: drains nothing."""
         current = now or utcnow()
         _age, stale = self._check_staleness(current)
         if stale:
@@ -447,15 +586,24 @@ class FirehoseFeed:
 
     async def stream(self, now: datetime | None = None) -> AsyncIterator[dict[str, Any]]:
         """Snapshot then deltas. The API surface subscribes here; the web app does not."""
-        queue: asyncio.Queue[FirehoseEvent] = asyncio.Queue(maxsize=MAX_RECENT)
-        self._queue = queue
+        # The snapshot carries every observation buffered so far, so deltas are what
+        # arrives after the snapshot. No await sits between the two, so nothing is lost.
+        opening = self.snapshot(now)
+        self._buffer.drain()
+        waiter = self._buffer.open_waiter()
         try:
-            yield self.snapshot(now)
+            yield opening
             while True:
-                event = await queue.get()
+                event = self._buffer.take()
+                if event is None:
+                    waiter.clear()
+                    # A put between the take and the clear is not lost: re-check depth.
+                    if self._buffer.census()["depth"] == 0:
+                        await waiter.wait()
+                    continue
                 yield {"type": "delta", "event": event.to_dict(event.observed_at)}
         finally:
-            self._queue = None
+            self._buffer.close_waiter()
 
 
 __all__ = [
@@ -470,5 +618,6 @@ __all__ = [
     "FirehoseEvent",
     "FirehoseFeed",
     "MarketEvent",
+    "StaleFeed",
     "normalize_firehose_event",
 ]
