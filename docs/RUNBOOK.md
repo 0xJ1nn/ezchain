@@ -411,6 +411,27 @@ Use `/healthz` for restart policy, `/readyz` for load-balancer membership and de
 gates, and `/metrics` for alerting. A 200 `/healthz` with a 503 `/readyz` means the
 process is running but must not receive work.
 
+### 12.6.2.1 Operational metric families
+
+Every family below is sampled from live state on each scrape; none is a constant.
+
+| Metric | Labels | Read it as |
+|---|---|---|
+| `ezchain_source_freshness_seconds` | `source`, `source_class` | age of the newest persisted observation; `NaN` means the age cannot be established (future-dated) |
+| `ezchain_source_freshness_budget_seconds` | `source_class` | the configured budget the age is compared with |
+| `ezchain_breaker_state` | `provider`, `state` | `0` closed, `1` half-open, `2` open |
+| `ezchain_queue_depth` | `queue` | waiting callers on `provider:<kind>`, unpublished rows on `market_outbox` |
+| `ezchain_queue_capacity` | `queue` | the configured `max_queue` of a bounded provider queue; the outbox is unbounded and has none |
+| `ezchain_ledger_drift_entries` | — | failing reconciliation checks right now |
+
+`source_class` covers `mark` and `candle` here: those are the classes with a persisted
+observation table. `quote` and `feed` have budgets but no stored observation, so they are
+absent rather than reported at an invented age. When the database cannot be read, the four
+families are omitted and `ezchain_up 0` explains why — an unreachable database is not
+"zero drift, empty queue". `infra/prometheus/alerts.yml` alerts on each family and on its
+absence; a `NaN` age is its own alert (`SourceFreshnessUnknown`, matched with `x != x`)
+because it compares false against the budget and does not count as absent.
+
 ### 12.6.3 401 and 403 triage
 
 Symptom: a web mutation returns `401` with `detail.code == "UNAUTHORIZED"`, while pages

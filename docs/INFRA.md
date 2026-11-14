@@ -163,9 +163,10 @@ for default numbers; do not duplicate limits in compose.
 Prometheus config scrapes only `api:8000` and itself. The API serves `/metrics` to
 loopback or with the operator token; the scrape reads that token from
 `/etc/prometheus/api-token`, which Compose fills from `EZCHAIN_API_TOKEN`. Alerts cover
-the API scrape target, the API's `ezchain_up` gauge, the HTTP request counter and the
-paper-order counter. There are no executor, queue, breaker, drift or backup alerts
-because those metrics do not exist.
+the API scrape target, the API's `ezchain_up` gauge, the HTTP request counter, the
+paper-order counter, and the four operational families sampled on each scrape (source
+freshness and its budget, breaker state, queue depth and capacity, ledger drift). There
+are no executor or backup alerts because those metrics do not exist.
 
 The observability profile:
 

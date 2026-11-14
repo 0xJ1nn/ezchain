@@ -23,6 +23,7 @@ from ..mode import mode_status
 from ..models import PaperFillRow, PaperOrderRow
 from ..observability import HTTP_METRICS, render_prometheus
 from ..schemas import ChainOut, KillSwitchIn, KillSwitchOut
+from ..services.ops_signals import build_ops_snapshot
 from ..services.system_flags import read_kill_switch, set_kill_switch
 
 router = APIRouter(tags=["system"])
@@ -109,11 +110,12 @@ def readyz(
 
 
 @router.get("/metrics")
-def metrics(session: Session = Depends(get_session)) -> Response:
+def metrics(request: Request, session: Session = Depends(get_session)) -> Response:
     """Prometheus text exposition with bounded labels. No third-party dependency.
 
     A loopback scrape needs no credential; a scrape from another host sends the
-    deployment token (middleware).
+    deployment token (middleware). The operational families are sampled from live state;
+    when the database cannot be read they are omitted rather than reported as zero.
     """
     up = True
     counts = {status: 0 for status in PAPER_ORDER_STATUSES}
@@ -130,8 +132,22 @@ def metrics(session: Session = Depends(get_session)) -> Response:
     except Exception:
         _rollback_quietly(session)
         up = False
+    ops = None
+    if up:
+        router = getattr(request.app.state, "quote_router", None)
+        ops = build_ops_snapshot(
+            session,
+            quote_router=router,
+            market_monitor=getattr(request.app.state, "market_monitor", None),
+            provider_budget=getattr(request.app.state, "provider_budget", None),
+            # The same policy the order gate classifies with, so the budget reported as
+            # the alert threshold is the one a refused read was measured against.
+            policy=getattr(router, "freshness", None),
+        )
     return Response(
-        content=render_prometheus(HTTP_METRICS, up=up, paper_orders=counts, paper_fills=fills),
+        content=render_prometheus(
+            HTTP_METRICS, up=up, paper_orders=counts, paper_fills=fills, ops=ops
+        ),
         media_type=METRICS_MEDIA_TYPE,
     )
 

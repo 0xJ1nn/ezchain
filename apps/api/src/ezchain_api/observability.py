@@ -17,7 +17,7 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 from uuid import uuid4
 
 from fastapi import Request
@@ -207,6 +207,122 @@ def _number(value: float) -> str:
 
 HTTP_METRICS = HttpMetrics()
 
+# The alert rules read a numeric gauge, so each breaker state maps to one value. Zero is
+# closed, which is why ``ezchain_breaker_state > 0`` means "degraded or refusing calls".
+BREAKER_STATE_VALUES: Final[dict[str, int]] = {"closed": 0, "half_open": 1, "open": 2}
+
+
+@dataclass(frozen=True)
+class SourceFreshnessSample:
+    """One source class's newest observation, as the process can prove it."""
+
+    source: str
+    source_class: str
+    age_seconds: float | None
+
+
+@dataclass(frozen=True)
+class OpsSnapshot:
+    """Operational state sampled from persisted and in-process state.
+
+    Built once per scrape by :func:`ezchain_api.services.ops_signals.build_ops_snapshot`.
+    An empty snapshot is not rendered: the caller omits the families when the database
+    cannot be read, so a broken process reports absence instead of a confident zero.
+    """
+
+    source_freshness: tuple[SourceFreshnessSample, ...] = ()
+    freshness_budgets: Mapping[str, float] = field(default_factory=dict)
+    breakers: Mapping[str, str] = field(default_factory=dict)
+    queues: Mapping[str, int] = field(default_factory=dict)
+    queue_capacities: Mapping[str, int] = field(default_factory=dict)
+    ledger_drift_entries: int = 0
+
+
+def render_ops(snapshot: OpsSnapshot) -> list[str]:
+    """The four operational families the alert rules read.
+
+    Every value here is sampled state: an age measured against the clock, a breaker's
+    actual state, a queue's actual depth, a reconciliation check's actual result. An age
+    the process cannot establish is ``NaN`` (unknown is not zero); a breaker state outside
+    the known vocabulary is omitted rather than guessed.
+    """
+    lines = [
+        "# HELP ezchain_source_freshness_seconds Age of the newest observation per source.",
+        "# TYPE ezchain_source_freshness_seconds gauge",
+    ]
+    for sample in sorted(
+        snapshot.source_freshness, key=lambda item: (item.source_class, item.source)
+    ):
+        age = "NaN" if sample.age_seconds is None else f"{max(0.0, sample.age_seconds):.3f}"
+        lines.append(
+            f'ezchain_source_freshness_seconds{{source="{_label(sample.source)}",'
+            f'source_class="{_label(sample.source_class)}"}} {age}'
+        )
+
+    lines.extend(
+        [
+            "# HELP ezchain_source_freshness_budget_seconds Configured freshness budget "
+            "per source class.",
+            "# TYPE ezchain_source_freshness_budget_seconds gauge",
+        ]
+    )
+    for source_class in sorted(snapshot.freshness_budgets):
+        lines.append(
+            "ezchain_source_freshness_budget_seconds"
+            f'{{source_class="{_label(source_class)}"}} '
+            f"{_number(float(snapshot.freshness_budgets[source_class]))}"
+        )
+
+    lines.extend(
+        [
+            "# HELP ezchain_breaker_state Circuit breaker state per provider "
+            "(0 closed, 1 half-open, 2 open).",
+            "# TYPE ezchain_breaker_state gauge",
+        ]
+    )
+    for provider in sorted(snapshot.breakers):
+        state = snapshot.breakers[provider]
+        value = BREAKER_STATE_VALUES.get(state)
+        if value is None:
+            continue
+        lines.append(
+            f'ezchain_breaker_state{{provider="{_label(provider)}",'
+            f'state="{_label(state)}"}} {value}'
+        )
+
+    lines.extend(
+        [
+            "# HELP ezchain_queue_depth Rows or callers waiting in a bounded queue.",
+            "# TYPE ezchain_queue_depth gauge",
+        ]
+    )
+    for queue in sorted(snapshot.queues):
+        lines.append(
+            f'ezchain_queue_depth{{queue="{_label(queue)}"}} {int(snapshot.queues[queue])}'
+        )
+
+    lines.extend(
+        [
+            "# HELP ezchain_queue_capacity Configured bound of a bounded queue, so an "
+            "alert threshold is the queue's own limit.",
+            "# TYPE ezchain_queue_capacity gauge",
+        ]
+    )
+    for queue in sorted(snapshot.queue_capacities):
+        lines.append(
+            f'ezchain_queue_capacity{{queue="{_label(queue)}"}} '
+            f"{int(snapshot.queue_capacities[queue])}"
+        )
+
+    lines.extend(
+        [
+            "# HELP ezchain_ledger_drift_entries Failing reconciliation checks.",
+            "# TYPE ezchain_ledger_drift_entries gauge",
+            f"ezchain_ledger_drift_entries {int(snapshot.ledger_drift_entries)}",
+        ]
+    )
+    return lines
+
 
 def render_prometheus(
     metrics: HttpMetrics,
@@ -214,6 +330,7 @@ def render_prometheus(
     up: bool,
     paper_orders: Mapping[str, int],
     paper_fills: int,
+    ops: OpsSnapshot | None = None,
 ) -> str:
     lines = metrics.render()
     lines.extend(
@@ -239,6 +356,8 @@ def render_prometheus(
             f"ezchain_read_rate_limited_total {READ_RATE_LIMITED.value}",
         ]
     )
+    if ops is not None:
+        lines.extend(render_ops(ops))
     return "\n".join(lines) + "\n"
 
 

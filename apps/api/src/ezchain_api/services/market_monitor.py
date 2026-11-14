@@ -260,6 +260,11 @@ class MarketMonitor:
     def breaker(self) -> CircuitBreaker:
         return self._breaker
 
+    @property
+    def provider_name(self) -> str:
+        """The discovery provider this monitor's breaker protects."""
+        return self._provider_name
+
     def state(self, chain_id: str) -> ChainState | None:
         return self._states.get(chain_id)
 

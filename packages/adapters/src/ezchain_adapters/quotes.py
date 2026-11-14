@@ -213,6 +213,11 @@ class HttpQuoteProvider(JsonApiClient):
     def supports(self, chain: ChainMeta) -> bool:
         return chain.id in self.CHAINS
 
+    @property
+    def breaker_state(self) -> str:
+        """This provider's live breaker state, for the ops surface."""
+        return self._breaker.state
+
     def record_timeout(self) -> None:
         """A deadline the caller owns elapsed: the provider is hanging, so count it.
 
@@ -291,6 +296,19 @@ class QuoteRouter:
     @property
     def freshness(self) -> FreshnessPolicy:
         return self._freshness
+
+    def breakers(self) -> dict[str, str]:
+        """Live breaker state per provider kind that owns one.
+
+        A provider without a breaker is absent, not reported ``closed``: the ops gauge
+        says only what the process can prove.
+        """
+        states: dict[str, str] = {}
+        for kind, provider in self._providers.items():
+            state = getattr(provider, "breaker_state", None)
+            if isinstance(state, str):
+                states[kind] = state
+        return states
 
     def stale_alerts(self) -> tuple[ProviderStaleAlert, ...]:
         """Alerts raised since the last drain, for the caller's alert surface."""
