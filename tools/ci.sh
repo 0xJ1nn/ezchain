@@ -22,22 +22,44 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/6 agent stubs"
+step "1/7 agent stubs"
 node tools/sync-agent-stubs.mjs --check
 
-step "2/6 design tokens"
+step "2/7 design tokens"
 node tools/build-tokens.mjs --check
 
-step "3/6 wireframe integrity"
+step "3/7 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "4/6 markdown links"
+step "4/7 markdown links"
 node tools/check-links.mjs
 
-step "5/6 secret scan"
+step "5/7 secret scan"
 node tools/check-secrets.mjs
 
-step "6/6 runtime gates (when present)"
+step "6/7 dependency pins"
+# Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
+# they were compiled from; every package pyproject must declare only pinned dependencies
+# (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
+# base image must be a sha256 digest with the tag it came from recorded above it.
+# Nothing here needs a network, so a bumped constraint fails here before anything
+# installs. The full install proof is `bash tools/pins/install.sh --full` (add --offline
+# on a machine with a wheelhouse) and needs a network; it is deliberately not in this
+# gate. The checker needs `packaging`, which is a pinned test requirement: the venv is
+# the gate, exactly as it is for ruff, mypy and pytest below.
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python tools/check_pins.py --fast
+elif command -v python3.11 >/dev/null 2>&1 && \
+  python3.11 -c "import packaging" >/dev/null 2>&1; then
+  python3.11 tools/check_pins.py --fast
+else
+  echo "not present yet: dependency pins (no venv and no python3.11 with packaging)"
+  echo "              run: PYTHON=python3.11 bash tools/setup-python.sh"
+fi
+# The Node lock's integrity hashes are covered by the check above; its advisories come
+# from a network service and are audited separately: python3 tools/audit_pins.py --node
+
+step "7/7 runtime gates (when present)"
 ran=0
 # The project venv is the gate. Global tools run only when no venv exists, so the same
 # commit cannot pass on one machine and fail on another because of a stray global ruff.
