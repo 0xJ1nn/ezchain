@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .services.discovery import MetricUnit, SafetyStatus
 from .services.system_flags import KILL_SWITCH_SCOPES
 
 
@@ -1098,3 +1099,121 @@ class StrategyPerformanceOut(BaseModel):
     realized_pnl_series: list[dict[str, Any]] = []
     drawdown_series: list[dict[str, Any]] = []
     series: dict[str, Any] = {}
+
+
+class DiscoveryMetricOut(BaseModel):
+    """One displayed number, its source and the age of that observation.
+
+    ``known`` is explicit so a client cannot read a missing value as a zero: ``value`` is
+    null exactly when nothing was measured, and then the source still says who was asked.
+    """
+
+    value: str | None = None
+    known: bool = False
+    unit: MetricUnit = "usd"
+    source: SourceOut
+    age_seconds: int | None = None
+
+
+class DiscoverySafetyOut(BaseModel):
+    """The safety evidence behind a row's ``tradeable`` flag.
+
+    ``status`` is ``verified`` only with positive evidence. ``unknown`` is the honest state
+    of this build: no safety source exists, so ``reason`` names that
+    (``SAFETY_NOT_IMPLEMENTED``) and ``checked_at`` is null — never a timestamp that would
+    imply a check happened.
+    """
+
+    status: SafetyStatus
+    reason: str
+    checked_at: str | None = None
+
+
+class DiscoveryNewPairOut(BaseModel):
+    """One new pair: the token, its ages, its numbers and its safety verdict.
+
+    ``tradeable`` is true only with positive safety evidence. ``not_tradeable_reason`` says
+    why otherwise, and every metric names its own source and age.
+    """
+
+    chain: str
+    token_address: str
+    pair_address: str
+    dex: str
+    symbol: str
+    name: str
+    url: str | None = None
+    pair_created_at: str | None = None
+    pair_age_seconds: int | None = None
+    price_usd: DiscoveryMetricOut
+    liquidity_usd: DiscoveryMetricOut
+    volume_24h_usd: DiscoveryMetricOut
+    price_change_h24_pct: DiscoveryMetricOut
+    source: SourceOut
+    observed_at: str
+    age_seconds: int | None = None
+    stale: bool = True
+    safety: DiscoverySafetyOut
+    tradeable: bool = False
+    not_tradeable_reason: str | None = None
+
+
+class DiscoveryCoverageOut(BaseModel):
+    """What the pass saw and what it dropped, so a short feed is explainable.
+
+    ``candidates`` is every row read, ``deduped`` is how many tokens remained, and
+    ``dropped`` counts each rejection under the first reason that applied to it.
+    ``chains`` is the adapter's per-chain coverage, carried through unchanged: a chain with
+    ``reason == "error"`` or ``"no_seeds"`` means the source failed or was never asked, which
+    is not the same fact as a chain that answered and had nothing new. ``None`` means the
+    pass made no per-chain claim (a global search), never "every chain was fine".
+    """
+
+    candidates: int = 0
+    deduped: int = 0
+    dropped: dict[str, int] = Field(default_factory=dict)
+    truncated: bool = False
+    chains: list[MarketCoverageOut] | None = None
+
+
+class DiscoveryAppliedOut(BaseModel):
+    """The floors and bounds this response was produced under.
+
+    They come from ``Settings`` where a field exists (`min_pair_age_minutes`,
+    `min_liquidity_usd`, `max_mark_age_seconds`); only the feed window is still a module
+    constant, and a Settings field for it is the documented follow-up. Echoing every bound
+    here means a reader never has to guess which ones produced the page.
+    """
+
+    chain: str
+    min_pair_age_seconds: int
+    max_pair_age_seconds: int
+    min_liquidity_usd: str
+    max_mark_age_seconds: int
+    candidate_rows: int
+    candidate_sort: str
+    limit: int
+
+
+class NewPairsOut(BaseModel):
+    """The new-pairs read model: a bounded, deduplicated, safety-evidenced feed.
+
+    An empty ``rows`` list carries a ``reason`` code. ``tradeable_on_page`` counts the rows
+    of *this page* with positive safety evidence — ``total`` counts the population — which is
+    zero in this build; a client must render the per-row ``safety`` rather than inferring
+    from that count alone.
+    """
+
+    chain: str
+    as_of: str
+    rows: list[DiscoveryNewPairOut]
+    total: int = 0
+    limit: int = 20
+    truncated: bool = False
+    reason: str | None = None
+    tradeable_on_page: int = 0
+    coverage: DiscoveryCoverageOut
+    applied: DiscoveryAppliedOut
+    source: SourceOut
+    stale: bool = False
+    safety_policy: Literal["fail_closed"] = "fail_closed"

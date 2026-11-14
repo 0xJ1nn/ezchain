@@ -42,6 +42,7 @@ from .routers import (
     approvals,
     backtests,
     buckets,
+    discovery,
     graph,
     markets,
     paper,
@@ -232,6 +233,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(markets.router)
     app.include_router(signals.router)
+    app.include_router(discovery.router)
     app.include_router(paper.router)
     app.include_router(approvals.router)
     app.include_router(account.router)

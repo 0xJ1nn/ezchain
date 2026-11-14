@@ -1511,3 +1511,73 @@ asynchronous on-chain verification service with drift alerts and quarantine, and
 forensic audit command remain open under GH-155; there is no withdrawal or transfer
 journal in this slice at all, so hardening one is not deferred work but a missing path.
 The replay, balance and seal primitives the others need are now in core.
+## ADR-0047 — The new-pairs feed lists a token as tradeable only with positive safety evidence
+
+**Date:** 2026-11-14 · **Status:** Accepted
+
+**Context:** The Launches page read `/api/v1/markets?sort=new` and presented the newest rows
+as new pairs. That read could not prove a row was inside the feed window (an unknown
+`pairCreatedAt` was admitted), could not say how many rows it had dropped, could not answer
+"one row per token" when a token had several pools, and had nowhere to put safety evidence —
+so it had nothing to gate a Trade action on. Token safety is the input the risk gate needs
+and does not have: the DexScreener adapter ships `SAFETY_UNKNOWN` /
+`SAFETY_NOT_IMPLEMENTED` and nothing implements a checker. CONTRACT I3 says unknown safety
+means no new risk, and I12 says claim only what was measured.
+
+**Options:** (a) keep the markets read and add filters on the client; (b) add a
+`discovery_new_pairs` table filled by an ingest job; (c) a read model over the existing
+bounded discovery pass, with an explicit safety-evidence field that defaults to unknown.
+
+**Decision:** (c). `ezchain_api/services/discovery.py` is one pure ranking pass over
+`MarketRow`s: dedupe to one row per `(chain, base_token)` keeping the pool that can reach the
+table, drop and count stale / future / unknown-age / too-young / too-old / unknown-liquidity /
+below-floor rows under their own reasons, then rank newest pair first and deepest pool
+second. The router at `GET /api/v1/discovery/new-pairs` reports coverage (candidates,
+deduped, per-reason drops, truncated, and the adapter's per-chain coverage), the bounds it
+applied, the source and the read clock.
+
+Two dedupe rules are load-bearing. The token address is case-folded only where its case
+carries no meaning: an EVM address is hex, so a checksummed and a lowercase spelling are one
+token, while an SVM address is base58, where `EPjFWdd5…` and `epjfwdd5…` are two different
+mints and folding them would silently delete one from the feed. And the pool kept is the one
+the floor can judge, not merely the one with a number: ranking pure depth let a $50 pool beat
+a deep pool whose liquidity was unknown, the shallow row then won the dedupe, the floor
+filter dropped it, and the token vanished with a `below_liquidity_floor` count naming the
+wrong fact. A token whose every pool is unknown keeps its row and is counted under
+`unknown_liquidity`, which says "nobody measured this" rather than "this was measured thin";
+the row still does not reach the table, because unknown liquidity is fail-closed.
+
+Coverage is carried, not discarded. The adapter swallows a per-chain exception and reports
+`error` in that chain's coverage, so an all-chain provider outage produces zero rows and no
+`AdapterError`; without the per-chain list a reader could not tell "the source failed" from
+"there was nothing new". `coverage.chains` is `null` when the pass made no per-chain claim (a
+global search), never a silent all-clear.
+
+Safety is a parameter of the pass, not a field of the row: `SafetyCheck` returns a
+`SafetyEvidence`, and a row is `tradeable` only when `status == "verified"`. The only check
+that exists is the adapter's own `SAFETY_UNKNOWN`, so **with the real adapter no row is ever
+tradeable**; every row carries `status: "unknown"`, `reason: "SAFETY_NOT_IMPLEMENTED"`,
+`checked_at: null` and a `not_tradeable_reason`. A check that is absent, silent or raises is
+unknown — never an empty pass — so the gate fails closed by construction rather than by a
+caller remembering to check.
+
+The floors reuse settings that already exist (`min_pair_age_minutes`,
+`min_liquidity_usd`, `max_mark_age_seconds`) and are passed in, not defaulted, so there is
+exactly one home per number (CONTRACT I7). Only the seven-day feed window is a module
+constant, because `Settings` has no discovery section; adding one is a separate change with
+its own review, and the response echoes every bound under `applied` meanwhile. There is no
+new table and no migration: this is a read model over market reads (CONTRACT I8 is not
+touched).
+
+**Consequences:** the feed can be short and says exactly why, including the reason a row was
+dropped, and it cannot overstate safety. Wire-format cost is four provenance-carrying metric
+objects per row instead of bare strings, which is the price of "every number names its
+source and age". The honest limitation is that the feed is currently *browseable and not
+tradeable*: the Trade action must stay disabled on a row whose `tradeable` is false, and a
+real safety source is a follow-up adapter (with its own ADR) rather than a change here.
+
+Two pieces are deliberately left out of this change. The Launches page still reads
+`/api/v1/markets?sort=new`; switching it to this endpoint changes the row shape (four metric
+objects and a safety verdict instead of bare numbers) and is a separate UI change with its
+own screenshot evidence. And the feed window stays a module constant until `Settings` gains a
+discovery section.
