@@ -129,10 +129,20 @@ as a security sandbox. The executor remains the only key holder (ADR-0026).
 
 ## 6. Supply chain
 
-- Lockfiles for npm/uv; Dependabot/Renovate with a review gate.
+- Lockfiles committed for both ecosystems; `tools/ci.sh` step 6 refuses a lock that is
+  not exact, unhashed, or no longer satisfies the ranges it was compiled from.
+  [DEPENDENCIES.md](DEPENDENCIES.md) is the procedure.
+- Python: `pip-compile --generate-hashes` into `requirements*.lock`; both the dev setup and
+  the API image install with `--require-hashes`. No `pip install <range>` path remains.
+- Node: `pnpm-lock.yaml` with an `integrity` hash per resolution, installed
+  `--frozen-lockfile`.
+- `tools/audit_pins.py` fails the build on an advisory that is not allowlisted with a
+  written reason; it exits 2, never 0, when the audit could not run.
+- Dependabot/Renovate is not configured; a pin moves by the review ritual in
+  [DEPENDENCIES §3](DEPENDENCIES.md).
 - Container images: distroless/non-root, read-only root FS, no shell in prod, pinned
-  digests, SBOM, Trivy gate (no HIGH/CRITICAL without an accepted exception).
-- Python: `uv lock` + hash verification; no `pip install` at runtime.
+  digests, SBOM, Trivy gate (no HIGH/CRITICAL without an accepted exception). The SBOM and
+  Trivy gate are not built yet.
 - Third-party actions pinned by SHA.
 - Secrets scanning (gitleaks) in pre-commit and CI; history scan before first public push.
 

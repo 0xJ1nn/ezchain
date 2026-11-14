@@ -242,6 +242,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   currently the only reviewing account, so a money-path PR is refused until a second
   account with write access approves it; [WORKFLOW §3](docs/WORKFLOW.md) says exactly that.
 
+- **The dependency set is pinned, hashed, audited and reproducible (security).** The three
+  Python range files now have generated locks — `requirements.lock` (43 pins),
+  `requirements-runtime.lock` (31) and `requirements-keyring.lock` (9) — each entry an exact
+  version with `sha256` for every artifact; the dev setup and the API image install them
+  with `--require-hashes`, and `pnpm-lock.yaml` carries an `integrity` hash per resolution.
+  `tools/check_pins.py --fast` is step 6 of `tools/ci.sh` and fails on a range its pin no
+  longer satisfies, an unhashed pin, or a Node resolution without integrity; its `--full`
+  path installs a lock into a fresh venv and fails on any drift, and `--full --offline`
+  does the same from a wheelhouse with no network. `tools/audit_pins.py` exits 1 on an
+  advisory that is not allowlisted with a written reason and exits 2 (never 0) when the
+  audit could not run. `pnpm.overrides` moves the transitive `postcss` inside `next` from
+  8.4.31 to 8.5.33, which clears two high and two moderate advisories. The update ritual
+  and the honest list of what was not verified are in
+  [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) and
+  [docs/evidence/dependencies/pins.md](docs/evidence/dependencies/pins.md).
+
 - **The live pump.fun source is an opt-in extra, so the API image stays free of it
   (ingest).** `pumpfun-firehose` was pinned in `requirements.txt` and
   `requirements-runtime.txt`, which made every consumer — the API image included — install a
