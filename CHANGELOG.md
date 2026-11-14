@@ -66,7 +66,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 - **One stable reason-code taxonomy, and a guard that keeps it honest (GH-28).**
   `ezchain_core.reason_codes` now holds one `ReasonSpec` per failure that can block or move
-  money: 253 codes across 17 categories, each with its category, emitting layer, source
+  money: 254 codes across 17 categories, each with its category, emitting layer, source
   module, operator summary, display message, HTTP status, retryable flag and severity. The
   older registries are derived from it rather than copied — `RISK_REASON_MESSAGES`,
   `VAULT_REASONS` and `BINDING_REASONS` are built from the single registry — so a message

@@ -1986,6 +1986,15 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         severity="info",
     ),
     _S(
+        "APPROVAL_NOT_FOUND",
+        "approval",
+        "api",
+        "ezchain_api/services/approvals.py",
+        "No approval has that id.",
+        "Approval not found.",
+        http_status=404,
+    ),
+    _S(
         "APPROVAL_EXPIRED",
         "approval",
         "api",

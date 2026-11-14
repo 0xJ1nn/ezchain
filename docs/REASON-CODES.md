@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 253 codes across 17 categories, 6 layers.
+**Scale:** 254 codes across 17 categories, 6 layers.
 
 ---
 
@@ -155,11 +155,12 @@ or a process-local refusal).
 | `CUSTODY_OWNER_MISMATCH` | core | — | no | critical | The order's principal is not the key handle's owner. |
 | `AUTOMATION_CONSENT_REQUIRED` | core | — | no | critical | An unattended run has no consent record for that user and automation. |
 
-### Approvals and automation (11)
+### Approvals and automation (12)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
 | `AWAITING_APPROVAL` | api | — | no | info | An agent order under the manual automation tier is held for a person's decision. |
+| `APPROVAL_NOT_FOUND` | api | 404 | no | warning | No approval has that id. |
 | `APPROVAL_EXPIRED` | api | 409 | no | warning | The approval window closed before a decision; no order was placed. |
 | `APPROVAL_NOT_PENDING` | api | 409 | no | warning | The approval was already decided or expired. |
 | `APPROVAL_REQUIRES_PERSON` | api | 403 | no | warning | An agent principal tried to decide an approval or change the automation tier. |
@@ -471,7 +472,7 @@ define them. It found the following, all resolved in the same change.
 | `KILL_SWITCH_UNAVAILABLE` with no home | Defined twice (executor class attr, pipeline literal) and never in `RISK_REASON_MESSAGES`. | One registry row, `governance` category. |
 | An unmatchable code | `JOURNAL_FAILED: {exc}` interpolated a free-form suffix, so no reader could match the string exactly. | The taxonomy records `JOURNAL_FAILED` as the stable prefix; the suffix stays operator detail. |
 | One code, two contracts | `PROFILE_UNKNOWN` is both a `ValueError` argument and a persisted order reason. | Documented as one code with one meaning; the raise site is unchanged (no behaviour change). |
-| Codes that never cross HTTP | 157 of 253 never appear as an HTTP error (executor custody codes, engine holds, read-model reasons). | The registry's `http_status` is `None` for each, so nobody invents a status for them. |
+| Codes that never cross HTTP | 157 of 254 never appear as an HTTP error (executor custody codes, engine holds, read-model reasons). | The registry's `http_status` is `None` for each, so nobody invents a status for them. |
 | An undocumented UI expectation | `apps/web/e2e/kill-switch-topbar.spec.ts` asserts `KILL_SWITCH_REASON_REQUIRED`, which no Python code emits. | Recorded as an open follow-up (§8); the taxonomy does not invent the code. |
 
 **What was deliberately not unified:** `RiskReason` (a `str` subclass returned from a
