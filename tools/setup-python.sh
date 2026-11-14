@@ -20,6 +20,7 @@ fi
   -e apps/mcp \
   -e services/engine \
   -e services/executor \
-  -e services/ingest
+  -e services/ingest \
+  -e services/agent-runtime
 
 echo "python: ok — run .venv/bin/pytest"

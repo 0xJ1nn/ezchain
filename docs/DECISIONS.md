@@ -1176,7 +1176,10 @@ rolls its transaction back before the refusal is written.
 
 ## ADR-0042 — The built-in agent runtime is its own service that speaks only MCP
 
-**Status:** accepted 2026-11-14.
+**Status:** accepted 2026-11-14. **Implementation note:** the minimal loop exists in
+`services/agent-runtime` (model seam, MCP tool surface, six budgets, lifecycle table,
+sourced answers); the stdio transport, the session trace store, the panel and the headless
+command remain planned, not built.
 
 **Context:** the agent surface today is the MCP server in `apps/mcp`; the process that calls
 it belongs to the user. The product's own agent is the next piece to build — one loop, a

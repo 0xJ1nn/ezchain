@@ -292,20 +292,24 @@ agent must hold it in its own secret store, never in a prompt or a model context
 
 ## 9. The built-in agent runtime
 
-ezCHAIN's own agent is a separate service, `services/agent-runtime` (ADR-0042), decided but
-not built: neither the service, the panel nor the headless command exists in the repository,
-and the Agent Client Protocol path is planned with no implementation. When built it runs one
-model loop with the platform's tools; the panel and the headless command are its two entry
-points, and an external agent over the Agent Client Protocol would use the same boundary. The
-panel is additionally blocked on the owner's design export: `design/` is the source of truth
-for visuals, and no agent-panel design has been exported yet. The runtime is not part of the
-API, the engine or the executor, and no strategy code runs in it — strategies stay external
-SDK packages hosted by the engine.
+ezCHAIN's own agent is a separate service, `services/agent-runtime` (ADR-0042). The minimal
+loop is built: one model seam, the platform's MCP tools, per-session and per-day budgets for
+turns, tokens and cost, the six-state session lifecycle, the kill-switch stop and
+sourced-number answers. Not built yet: the stdio transport that spawns `ezchain-mcp` (the
+loop takes a toolbox seam), the append-only session trace, the panel and the headless
+command. The Agent Client Protocol path is planned with no implementation. The panel and the
+headless command are the loop's two eventual entry points, and an external agent over the
+Agent Client Protocol would use the same boundary. The panel is additionally blocked on the
+owner's design export: `design/` is the source of truth for visuals, and no agent-panel
+design has been exported yet. The runtime is not part of the API, the engine or the
+executor, and no strategy code runs in it — strategies stay external SDK packages hosted by
+the engine.
 
-- **One egress.** It reaches ezCHAIN only through a child `ezchain-mcp` over stdio with a
-  scoped `read`/`trade` key. It has no REST client, no database connection and no shared
-  process or filesystem with the platform. An unreachable MCP server fails the session
-  closed; there is no direct-API fallback.
+- **One egress.** Its only door is the injected MCP toolbox — one child `ezchain-mcp` over
+  stdio with a scoped `read`/`trade` key. It has no REST client, no database connection and
+  no shared process or filesystem with the platform. The tool surface is exactly the
+  server's `tools/list` response, so a name the server did not list cannot be called. An
+  unreachable MCP server fails the session closed; there is no direct-API fallback.
 - **Two-way credential isolation.** Model-provider credentials are read from the runtime's
   own environment and never stored in the platform, the vault, the MCP server, a trace, a
   log line or the browser. Venue and market-data credentials stay in the operator's
@@ -318,11 +322,18 @@ SDK packages hosted by the engine.
   state and the approval queue, propose paper orders, and create, change, delete or run
   strategy records the platform validates. It cannot approve its own proposal, change the
   automation tier, arm or release the kill switch, reload plugins, mint keys or set a mode.
+- **Hard stops.** Reaching any of the six budgets stops the session with a typed reason
+  (`SESSION_TURNS_EXHAUSTED`, `DAILY_COST_EXHAUSTED`, …). A runtime kill switch armed by the
+  operator stops the session before the next turn or tool call, and a platform refusal
+  carrying `KILL_SWITCH_ACTIVE` stops it on that tool result. An order that comes back
+  `pending_approval` moves the session to `awaiting_approval`; the agent cannot decide it.
 - **The platform is the trust boundary.** An order placed through the runtime is `agent`,
   addressed by the key id (ADR-0037), and waits under `manual` like any other agent order.
   The runtime never sees a wallet key, a `KeyHandle` or the vault; when the executor's live
   path exists the vault signs for the owner's handle and the runtime receives only the
-  outcome. Every money number it states is read from a tool result.
+  outcome. Every money number it states is read from a tool result: a final answer is a set
+  of claims resolved against this session's recorded results, and a value that differs from
+  the read model fails the session (`NUMBER_MISMATCH`) instead of being printed.
 - **Two audit records.** The runtime will write an append-only session trace in its own
   store — prompt hash, model, tool, arguments, result summary, latency, tokens, cost,
   approval id — redacted on write and replayable; that store is planned, not built. The
