@@ -141,8 +141,8 @@ def entry_from_row(row: SealedRow) -> LedgerEntry:
     """Rebuild the sealed :class:`LedgerEntry` for one persisted journal row.
 
     The seal is taken over this projection, so it covers the attribution the row carries
-    (group, timestamp, wallet, agent bucket, actor) and not only its arithmetic. SQLite returns a naive
-    datetime for a timestamp stored in UTC; it is read back as UTC.
+    (group, timestamp, wallet, agent bucket, actor) and not only its arithmetic. SQLite
+    returns a naive datetime for a timestamp stored in UTC; it is read back as UTC.
     """
     created_at = row.created_at
     if created_at.tzinfo is None:

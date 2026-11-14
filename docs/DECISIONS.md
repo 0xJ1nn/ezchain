@@ -1486,7 +1486,7 @@ sum derives its precision from its operands (`exact_precision`, `exact_sum`): th
 otherwise round a minor unit away before the balance check saw it. The ordered tape also
 gains a chained SHA-256 seal (`seal_entries`/`verify_seal`) over canonical JSON
 (`ezchain.ledger/v2`) covering index, account, asset, amount, USD value, kind, `group_id`,
-`created_at`, `wallet_id` and actor, plus a canonical `replay_balances`; both are
+`created_at`, `wallet_id`, `bucket_id` and actor, plus a canonical `replay_balances`; both are
 deterministic for the same tape, and no two distinct entries can serialize to the same
 payload. The full policy and the control matrix are in [`LEDGER.md`](LEDGER.md).
 

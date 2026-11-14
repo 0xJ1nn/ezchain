@@ -106,11 +106,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   exact integers — a persisted row off the quantum is reported, never compared at a
   coarser scale. The ordered tape gains a chained SHA-256 seal (`seal_entries` /
   `verify_seal`) over canonical JSON (`ezchain.ledger/v2`) that covers group, timestamp,
-  wallet and actor, so no two distinct entries can serialize alike, plus a canonical
-  `replay_balances`; changing any entry changes the head and the same tape always replays
-  the same ledger. **The bps fee quantum moves from 1e-6 to 1e-8, so some fees previously
-  journaled under the old rule change — and not only dust:** any fee whose exact
-  `notional * fee_bps / 10_000` carries more than six decimals moves (30 bps of
+  wallet, agent bucket and actor, so no two distinct entries can serialize alike, plus a
+  canonical `replay_balances`; changing any entry changes the head and the same tape
+  always replays the same ledger. **The bps fee quantum moves from 1e-6 to 1e-8, so some
+  fees previously journaled under the old rule change — and not only dust:** any fee
+  whose exact `notional * fee_bps / 10_000` carries more than six decimals moves (30 bps of
   `0.000412` was `0.000001` and is now `0.00000124`; 30 bps of `0.0000033333` was
   `0.000000` and is now `0.00000001`). A fee already on a whole micro-dollar is unchanged
   (`0.30` stays `0.30`), and existing rows are not rewritten (the ledger is append-only).

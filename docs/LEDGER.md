@@ -111,11 +111,12 @@ Implemented by this change:
 | Double-entry completeness | `assert_balanced` requires an exact zero minor-unit sum; the buy/sell/genesis/funding factories assert it before returning. `tests/paper/test_ledger_hardening.py`, `tests/paper/test_accounting.py`. |
 | Exact minor-unit accounting | `packages/core-py/src/ezchain_core/money.py` (`exact_precision`, `exact_sum`, `to_minor_units`); zero-drift property test over eight seeded 250-operation **mixed** tapes (funding, explicit and derived notionals, full exits, derived partial sells). |
 | Reconciliation | `apps/api/src/ezchain_api/services/reconciliation.py` re-derives every journal group, fill, position and cash figure from persisted rows and compares money as exact integer minor units. `tests/paper/test_reconciliation.py`, `tests/paper/test_property.py`. |
-| Immutability evidence | `ledger_digest` / `seal_entries` / `verify_seal`: a chained SHA-256 over the ordered tape. Each link is canonical JSON (`ezchain.ledger/v2`) covering the index, account, asset, amount, USD value, kind, `group_id`, `created_at`, `wallet_id` and the actor (`actor_kind`, `actor_id`). Any changed field changes the head, and no two distinct entries can serialize to the same payload. `tests/paper/test_ledger_hardening.py`. |
+| Immutability evidence | `ledger_digest` / `seal_entries` / `verify_seal`: a chained SHA-256 over the ordered tape. Each link is canonical JSON (`ezchain.ledger/v2`) covering the index, account, asset, amount, USD value, kind, `group_id`, `created_at`, `wallet_id`, the agent bucket (`bucket_id`) and the actor (`actor_kind`, `actor_id`). Any changed field changes the head, and no two distinct entries can serialize to the same payload. `tests/paper/test_ledger_hardening.py`. |
 | Replay determinism | `replay_balances` / `replay_position` project one ordered tape to canonical, account-sorted amounts and USD minor units, summing with `exact_sum`; the same tape always produces the same balances and seal. |
 
-The seal commits to `group_id`, `created_at`, `wallet_id` and the actor, so a tape whose
-attribution was edited is a different tape. `entry_from_row` projects a persisted
+The seal commits to `group_id`, `created_at`, `wallet_id`, `bucket_id` and the actor, so a
+tape whose attribution — including which agent bucket a cash leg charged — was edited is a
+different tape. `entry_from_row` projects a persisted
 `ledger_entries` row into the sealed entry, which is what a forensic export re-verifies.
 
 Open under GH-155 (not implemented here):

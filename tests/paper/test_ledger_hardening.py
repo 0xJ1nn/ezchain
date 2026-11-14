@@ -373,6 +373,7 @@ def test_seal_covers_group_time_wallet_and_actor() -> None:
         {"group_id": "order-2"},
         {"created_at": START + timedelta(seconds=1)},
         {"wallet_id": "paper-wallet:base"},
+        {"bucket_id": "agent:key-1"},
         {"actor_kind": "agent"},
         {"actor_id": "human:someone-else"},
     )
@@ -393,6 +394,7 @@ def test_entry_round_trips_from_a_persisted_row_into_the_seal() -> None:
         usd_value = Decimal("-200")
         kind = "buy"
         wallet_id = "paper-wallet:settlement"
+        bucket_id = "agent:key-1"
         actor_kind = "human"
         actor_id = "human:test"
         created_at = START.replace(tzinfo=None)  # SQLite returns a naive UTC datetime
@@ -401,9 +403,15 @@ def test_entry_round_trips_from_a_persisted_row_into_the_seal() -> None:
     assert projected.group_id == "order-9"
     assert projected.created_at == START
     assert projected.wallet_id == "paper-wallet:settlement"
+    assert projected.bucket_id == "agent:key-1"
     assert projected.actor_kind == "human"
     assert projected.actor_id == "human:test"
     assert ledger_digest([projected]) != ledger_digest([replace(projected, actor_id="agent:1")])
+    # The bucket an agent spends from is attribution too: moving a cash leg to another
+    # bucket is a different tape, not the same journal with a different label.
+    assert ledger_digest([projected]) != ledger_digest(
+        [replace(projected, bucket_id="agent:key-2")]
+    )
 
 
 def test_a_naive_timestamp_is_refused_by_a_sealed_entry() -> None:
