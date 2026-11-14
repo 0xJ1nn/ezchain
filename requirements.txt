@@ -9,6 +9,8 @@ alembic>=1.15,<2
 pytest>=8
 pytest-asyncio>=0.24
 respx>=0.21
+# The alert-rule drift test parses infra/prometheus/alerts.yml.
+pyyaml>=6
 ruff>=0.6
 mypy>=1.11
 packaging>=23

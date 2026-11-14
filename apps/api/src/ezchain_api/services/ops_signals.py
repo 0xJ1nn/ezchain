@@ -28,14 +28,11 @@ from sqlalchemy.orm import Session
 from ezchain_core import FreshnessPolicy, SourceRef, utcnow
 from ezchain_core.freshness import DEFAULT_MAX_AGE_BY_CLASS
 
+from ..config import get_settings
 from ..models import MarketCandleRow, MarketOutboxRow, MarketSnapshotRow
 from ..observability import OpsSnapshot, SourceFreshnessSample
 from . import reconciliation
-
-# Source classes whose newest persisted observation this process can read. ``quote`` and
-# ``feed`` have budgets but no persisted observation table, so they are absent rather than
-# reported at a made-up age.
-PERSISTED_SOURCE_CLASSES = ("mark", "candle")
+from .paper import freshness_from_settings
 
 MARK_SOURCE_CLASS = "mark"
 CANDLE_SOURCE_CLASS = "candle"
@@ -92,8 +89,10 @@ def _sample(
     """Classify one source's newest observation exactly as the read gate would."""
     reference = SourceRef(name=source, url=None, observed_at=_aware(observed))
     verdict = policy.classify(reference, source_class=source_class, now=now)
-    # A future-dated observation is a clock fault: its arithmetic age would read as
-    # fresh, so the age is unknown instead of a confident zero.
+    # A future-dated observation is a clock fault: its arithmetic age would read as fresh,
+    # so the age is unknown (``NaN``) instead of a confident zero, and the rules select it
+    # with ``x != x``. This is not the "cannot read" case: a failed read omits the whole
+    # family (``build_ops_snapshot`` returns ``None``), which the absence guard catches.
     age = None if verdict.status in ("future", "unknown") else verdict.age_seconds
     return SourceFreshnessSample(
         source=source,
@@ -138,6 +137,22 @@ def _queue_depths(session: Session, provider_budget: Any | None) -> dict[str, in
     return depths
 
 
+def _queue_capacities(provider_budget: Any | None) -> dict[str, int]:
+    """The configured bound of each provider queue, from the same limit it enforces.
+
+    ``acquire`` refuses a waiter at ``max_queue``, so depth can reach the bound and never
+    exceed it. Emitting the bound lets the alert compare against the queue's own limit
+    instead of a second, hand-copied number. The market outbox is unbounded (it grows
+    until the relay drains it), so it has no capacity series.
+    """
+    if provider_budget is None:
+        return {}
+    return {
+        f"{PROVIDER_QUEUE_PREFIX}:{provider}": int(provider_budget.limit(provider).max_queue)
+        for provider in provider_budget.depths()
+    }
+
+
 def _ledger_drift(session: Session) -> int:
     """How many reconciliation checks fail right now."""
     report = reconciliation.reconciliation(session)
@@ -157,15 +172,19 @@ def build_ops_snapshot(
     """Sample all four families from live state, or ``None`` when the read fails.
 
     ``policy`` is the instance the order gate classifies with, so the emitted budget is
-    the one a refused read was measured against. ``None`` means the caller renders no ops
-    family at all: an unreachable database must not be reported as zero drift and an
-    empty queue.
+    the one a refused read was measured against. When the caller has none (no quote
+    router wired), it is built here from the same settings loader the gate's router is
+    built from, so the alert's budget never silently falls back to a library default.
+    ``None`` return means the database could not be read: the caller then renders no ops
+    family at all, because an unreachable database must not be reported as zero drift and
+    an empty queue.
     """
-    policy = policy or FreshnessPolicy()
+    policy = policy or freshness_from_settings(get_settings())
     current = now()
     try:
         samples = _newest_per_source(session, current, policy)
         queues = _queue_depths(session, provider_budget)
+        capacities = _queue_capacities(provider_budget)
         drift = _ledger_drift(session)
     except Exception:
         session.rollback()
@@ -175,12 +194,12 @@ def build_ops_snapshot(
         freshness_budgets=_budgets(policy),
         breakers=_breaker_states(quote_router, market_monitor),
         queues=queues,
+        queue_capacities=capacities,
         ledger_drift_entries=drift,
     )
 
 
 __all__ = [
     "MARKET_OUTBOX_QUEUE",
-    "PERSISTED_SOURCE_CLASSES",
     "build_ops_snapshot",
 ]

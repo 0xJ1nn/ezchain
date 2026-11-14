@@ -352,8 +352,9 @@ a sanitized `/config/public` projection.
   `ezchain_source_freshness_budget_seconds` per `source`/`source_class`,
   `ezchain_breaker_state` per `provider` (0 closed, 1 half-open, 2 open),
   `ezchain_queue_depth` per bounded queue, and `ezchain_ledger_drift_entries` from the
-  reconciliation checks. `/metrics` stays loopback-only; the product's ops surface reads
-  the same state, not a second dashboard.
+  reconciliation checks. `/metrics` is loopback or operator-token: it is not published by
+  the edge, and every non-loopback scrape carries the deployment token. The product's ops
+  surface reads the same state, not a second dashboard.
 - Structured JSON logs, redacted by key-pattern allowlist.
 - Audit log table (append-only) for config, keys, wallets, manual orders, kill switch.
 - Ops page in the product mirrors those signals; Grafana is optional.

@@ -31,13 +31,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   matching `ezchain_source_freshness_budget_seconds`), `ezchain_breaker_state` per
   `provider` (0 closed, 1 half-open, 2 open, read from the live `CircuitBreaker`),
   `ezchain_queue_depth` (waiting callers on the bounded provider budgets and unpublished
-  `market_outbox` rows), and `ezchain_ledger_drift_entries` (failing reconciliation checks).
-  The alerts file names exactly these metrics and labels, and gains `SourceStale` (age past
-  the class's own budget), `CircuitBreakerOpen`, `CircuitBreakerHalfOpenTooLong`,
-  `QueueDepthHigh`, `LedgerDrift`, plus an `absent(...)` guard per family so a metric that
-  stops being emitted raises a warning instead of leaving a green board. Because the four
-  families read the database, an unreachable database omits them and reports `ezchain_up 0`
-  rather than a confident zero. `/metrics` stays loopback-only.
+  `market_outbox` rows) with the queue's own configured bound beside it as
+  `ezchain_queue_capacity`, and `ezchain_ledger_drift_entries` (failing reconciliation
+  checks). The alerts file names exactly these metrics and labels, and gains `SourceStale`
+  (age past the class's own budget), `SourceFreshnessUnknown` (the `NaN` age of a
+  clock-faulted source, which `>` and `absent()` both miss), `CircuitBreakerOpen`,
+  `CircuitBreakerHalfOpenTooLong`, `ProviderQueueSaturated` (depth at the queue's emitted
+  bound — a provider budget refuses a caller at `max_queue`, so the old `> 100` could never
+  fire), `QueueDepthHigh`, `LedgerDrift`, plus an `absent(...)` guard per family so a metric
+  that stops being emitted raises a warning instead of leaving a green board; each guard
+  is conjoined with the signal that owns the outage (`up == 1` for the DB-independent HTTP
+  counter, `ezchain_up == 1` for the four ops families, which are omitted exactly when the
+  database is unreadable) so one outage pages once instead of every family.
+  Because the four families read the database, an unreachable database omits them and
+  reports `ezchain_up 0` rather than a confident zero. `/metrics` is served to a loopback
+  client or to a request carrying the deployment token; it is never published by the edge.
 
 - **Custody is the user's, and the vault keeps keys from everyone else (PAPER).** Keys are
   added at runtime by the person who owns them, encrypted at rest under that user's

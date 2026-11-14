@@ -234,6 +234,7 @@ class OpsSnapshot:
     freshness_budgets: Mapping[str, float] = field(default_factory=dict)
     breakers: Mapping[str, str] = field(default_factory=dict)
     queues: Mapping[str, int] = field(default_factory=dict)
+    queue_capacities: Mapping[str, int] = field(default_factory=dict)
     ledger_drift_entries: int = 0
 
 
@@ -298,6 +299,19 @@ def render_ops(snapshot: OpsSnapshot) -> list[str]:
     for queue in sorted(snapshot.queues):
         lines.append(
             f'ezchain_queue_depth{{queue="{_label(queue)}"}} {int(snapshot.queues[queue])}'
+        )
+
+    lines.extend(
+        [
+            "# HELP ezchain_queue_capacity Configured bound of a bounded queue, so an "
+            "alert threshold is the queue's own limit.",
+            "# TYPE ezchain_queue_capacity gauge",
+        ]
+    )
+    for queue in sorted(snapshot.queue_capacities):
+        lines.append(
+            f'ezchain_queue_capacity{{queue="{_label(queue)}"}} '
+            f"{int(snapshot.queue_capacities[queue])}"
         )
 
     lines.extend(

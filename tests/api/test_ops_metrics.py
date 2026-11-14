@@ -20,7 +20,16 @@ import pytest
 import yaml
 from sqlalchemy.orm import Session
 
-from ezchain_adapters import ProviderBudgetManager, ProviderLimit
+from ezchain_adapters import (
+    JUPITER_LIMIT,
+    HttpQuoteProvider,
+    JupiterClient,
+    KyberSwapClient,
+    ProviderBudgetManager,
+    ProviderLimit,
+    QuoteRouter,
+)
+from ezchain_api.config import Settings
 from ezchain_api.models import (
     LedgerEntryRow,
     MarketCandleRow,
@@ -32,7 +41,6 @@ from ezchain_api.observability import (
     BREAKER_STATE_VALUES,
     HttpMetrics,
     OpsSnapshot,
-    SourceFreshnessSample,
     render_ops,
     render_prometheus,
 )
@@ -42,9 +50,23 @@ from ezchain_api.services.ops_signals import (
     MARKET_OUTBOX_QUEUE,
     build_ops_snapshot,
 )
+from ezchain_core import FreshnessPolicy
 
 ALERTS = Path(__file__).resolve().parents[2] / "infra" / "prometheus" / "alerts.yml"
 MARK_BUDGET_SECONDS = 60.0
+POLICY = FreshnessPolicy()
+
+
+class _NoDex:
+    """The alert fixtures never quote; a real router still needs a market client."""
+
+    async def get_token(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("the alert fixture never quotes")
+
+
+def _snapshot(session: Any, **overrides: Any) -> OpsSnapshot | None:
+    """Sample with the policy the order gate classifies with, unless a test overrides it."""
+    return build_ops_snapshot(session, policy=POLICY, **overrides)
 
 
 def _value(body: str, name: str, **labels: str) -> float:
@@ -64,8 +86,12 @@ def _client(session: Session, app_state: dict[str, Any] | None = None) -> Any:
     from fastapi.testclient import TestClient
 
     from ezchain_api.deps import get_session
+    from ezchain_api.observability import ObservabilityMiddleware
 
     app = FastAPI()
+    # The real app counts every request, so the scrape itself emits the request counter
+    # the alerts read instead of the test inventing a sample.
+    app.add_middleware(ObservabilityMiddleware)
     app.include_router(system.router)
     app.dependency_overrides[get_session] = lambda: session
     for key, value in (app_state or {}).items():
@@ -496,6 +522,29 @@ def test_the_emitted_budget_is_the_configured_one(session: Session) -> None:
     assert _value(body, "ezchain_source_freshness_budget_seconds", source_class="mark") == 7.0
 
 
+def test_without_a_router_the_budget_still_comes_from_the_gates_settings(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No quote router is not "use a library default": derive it as the gate's router does."""
+    from ezchain_api.services import ops_signals
+    from ezchain_api.services.paper import freshness_from_settings
+
+    settings = Settings(
+        environment="test",
+        database_url="sqlite+pysqlite://",
+        max_mark_age_seconds=11,
+        max_candle_age_seconds=222,
+    )
+    monkeypatch.setattr(ops_signals, "get_settings", lambda: settings)
+
+    body = "\n".join(render_ops(build_ops_snapshot(session)))  # type: ignore[arg-type]
+
+    expected = freshness_from_settings(settings).max_age_by_class
+    assert expected["mark"] == 11.0
+    assert _value(body, "ezchain_source_freshness_budget_seconds", source_class="mark") == 11.0
+    assert _value(body, "ezchain_source_freshness_budget_seconds", source_class="candle") == 222.0
+
+
 def test_an_unreadable_database_omits_the_ops_families(session: Session) -> None:
     """No database, no ops series: absence beats a confident zero."""
 
@@ -546,6 +595,7 @@ def test_the_metric_families_are_gauge_typed(session: Session) -> None:
         "ezchain_source_freshness_budget_seconds",
         "ezchain_breaker_state",
         "ezchain_queue_depth",
+        "ezchain_queue_capacity",
         "ezchain_ledger_drift_entries",
     ):
         assert f"# TYPE {family} gauge" in body
@@ -556,77 +606,246 @@ def test_the_metric_families_are_gauge_typed(session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _alert_expressions() -> list[tuple[str, str]]:
+def _alert_rules() -> dict[str, dict[str, Any]]:
     document = yaml.safe_load(ALERTS.read_text(encoding="utf-8"))
+    return {rule["alert"]: rule for group in document["groups"] for rule in group["rules"]}
+
+
+def _alert_expressions() -> list[tuple[str, str]]:
+    return [(name, str(rule["expr"])) for name, rule in _alert_rules().items()]
+
+
+def _real_router(clock: dict[str, float]) -> tuple[QuoteRouter, JupiterClient]:
+    """A router with its real providers, so the breaker states are the ones it reports."""
+    jupiter = JupiterClient(clock=lambda: clock["now"])
+    router = QuoteRouter(
+        providers=[jupiter, KyberSwapClient()],
+        dexscreener=_NoDex(),  # type: ignore[arg-type]
+        freshness=POLICY,
+    )
+    return router, jupiter
+
+
+def _live_body(session: Session) -> str:
+    """The real /metrics body, from live state, with every family its alerts read."""
+    now = datetime.now(UTC)
+    _snapshot_row(session, source="dexscreener", observed_at=now - timedelta(seconds=900))
+    _candle_row(session, source="geckoterminal", fetched_at=now - timedelta(seconds=120))
+    session.add(
+        MarketOutboxRow(
+            id="00000000-0000-0000-0000-0000000000aa",
+            topic="market.event",
+            payload={},
+            created_at=now,
+        )
+    )
+    session.commit()
+
+    clock = {"now": 1000.0}
+    router, jupiter = _real_router(clock)
+    jupiter.record_timeout()
+    # The same manager the router's provider is budgeted against, so the emitted depth
+    # and its capacity come from the live limit.
+    budget = ProviderBudgetManager()
+    client = _client(session, {"quote_router": router, "provider_budget": budget})
+    # The middleware counts a request after its body is rendered, so the second scrape
+    # is the first one that also carries the request counter its alerts read.
+    assert client.get("/metrics").status_code == 200
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    return response.text
+
+
+def _emitted_labels(body: str) -> dict[str, set[str]]:
+    """Every label key each emitted family actually carries, from a rendered body."""
+    labels: dict[str, set[str]] = {"up": {"job", "instance"}}
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name = re.split(r"[{ ]", line, maxsplit=1)[0]
+        labels.setdefault(name, set()).update(re.findall(r'([a-z_]+)="', line))
+    return labels
+
+
+def _selectors(expr: str) -> list[tuple[str, dict[str, str]]]:
+    """``metric{labels}`` selectors in one expression, with their matchers."""
     return [
-        (rule["alert"], rule["expr"]) for group in document["groups"] for rule in group["rules"]
+        (metric, dict(re.findall(r'([a-z_]+)\s*(?:=~|!~|!=|=)\s*"([^"]*)"', braces)))
+        for metric, braces in re.findall(r"\b(ezchain_[a-z_]+|up)\s*\{([^}]*)\}", expr)
     ]
 
 
-def _ops_body() -> str:
-    snapshot = OpsSnapshot(
-        source_freshness=(SourceFreshnessSample("dexscreener", "mark", 900.0),),
-        freshness_budgets={"mark": 60.0, "candle": 300.0},
-        breakers={"jupiter": "open"},
-        queues={"market_outbox": 0, "provider:jupiter": 0},
-        ledger_drift_entries=0,
-    )
-    return render_prometheus(
-        HttpMetrics(), up=True, paper_orders={"filled": 0}, paper_fills=0, ops=snapshot
-    )
-
-
-def test_every_metric_an_alert_names_is_emitted() -> None:
+def test_every_metric_an_alert_names_is_emitted(session: Session) -> None:
     """No rule may reference a family this process does not expose."""
-    body = _ops_body()
-    builtin = {"up"}
+    body = _live_body(session)
+    emitted = _emitted_labels(body)
     referenced: set[str] = set()
     for _name, expr in _alert_expressions():
         referenced.update(re.findall(r"\b(ezchain_[a-z_]+|up)\b", expr))
 
-    missing = sorted(
-        name for name in referenced - builtin if f"{name}{{" not in body and f"{name} " not in body
-    )
+    missing = sorted(referenced - set(emitted))
     assert not missing, f"alerts reference unemitted metrics: {missing}"
 
 
-def test_alert_labels_match_the_emitted_labels() -> None:
+def test_every_alert_selector_matches_the_emitted_labels(session: Session) -> None:
     """A selector on a label the series never carries would silently never fire."""
-    body = _ops_body()
-    expressions = dict(_alert_expressions())
+    emitted = _emitted_labels(_live_body(session))
+    mismatched: list[str] = []
+    for name, expr in _alert_expressions():
+        for metric, matchers in _selectors(expr):
+            if metric not in emitted:
+                continue
+            unknown = set(matchers) - emitted[metric]
+            if unknown:
+                mismatched.append(f"{name}: {metric} has no {sorted(unknown)}")
+    assert not mismatched, mismatched
 
-    assert 'state="open"' in expressions["CircuitBreakerOpen"]
-    assert 'state="open"' in body and 'provider="jupiter"' in body
-    assert 'state="half_open"' in expressions["CircuitBreakerHalfOpenTooLong"]
-    # The freshness rule joins the two families on source_class; both must carry it.
-    assert "on(source_class)" in expressions["SourceStale"]
-    assert 'source_class="mark"' in body
-    assert 'ezchain_source_freshness_budget_seconds{source_class="mark"}' in body
+    # The freshness rule joins the two families on ``source_class``; both carry it.
+    assert "on(source_class)" in dict(_alert_expressions())["SourceStale"]
+    assert "source_class" in emitted["ezchain_source_freshness_seconds"]
+    assert "source_class" in emitted["ezchain_source_freshness_budget_seconds"]
 
 
-def test_the_stale_expression_fires_for_a_stale_source_and_not_a_fresh_one() -> None:
-    """Evaluate the rule's comparison on the emitted samples, without a Prometheus."""
-    budget = 60.0
-    stale = OpsSnapshot(
-        source_freshness=(SourceFreshnessSample("dexscreener", "mark", 900.0),),
-        freshness_budgets={"mark": budget},
+def test_the_queue_threshold_is_the_queue_own_bound(session: Session) -> None:
+    """The provider budget refuses a waiter at max_queue, so the rule must compare with it."""
+    expr = str(_alert_rules()["ProviderQueueSaturated"]["expr"])
+
+    assert ">=" in expr, "a depth capped at max_queue can never exceed it"
+    assert "ezchain_queue_capacity" in expr, "the bound must be the emitted one, not a copy"
+    assert "on(queue)" in expr
+    assert ">= 4" not in expr and "> 4" not in expr
+
+    outbox = str(_alert_rules()["QueueDepthHigh"]["expr"])
+    assert 'queue="market_outbox"' in outbox
+
+
+def test_the_emitted_capacity_is_the_limit_the_manager_enforces(session: Session) -> None:
+    """The capacity series is read from the same ProviderLimit that refuses the caller."""
+    manager = ProviderBudgetManager(
+        limits=[
+            ProviderLimit(
+                "jupiter", requests_per_second=1.0, burst=1, max_queue=7, max_wait_seconds=1.0
+            )
+        ]
     )
-    fresh = OpsSnapshot(
-        source_freshness=(SourceFreshnessSample("dexscreener", "mark", 5.0),),
-        freshness_budgets={"mark": budget},
-    )
 
-    def exceeds_budget(snapshot: OpsSnapshot) -> bool:
+    body = "\n".join(render_ops(_snapshot(session, provider_budget=manager)))
+
+    assert _value(body, "ezchain_queue_capacity", queue="provider:jupiter") == 7.0
+    assert 7.0 == manager.limit("jupiter").max_queue
+    # The outbox is unbounded, so it has a depth but no fabricated capacity.
+    assert 'ezchain_queue_capacity{queue="market_outbox"}' not in body
+    assert JUPITER_LIMIT.max_queue == ProviderBudgetManager().limit("jupiter").max_queue
+
+
+def test_the_breaker_alert_can_fire_inside_the_cooldown() -> None:
+    """``for`` plus one evaluation interval must fit inside the cooldown.
+
+    Prometheus marks an alert firing only after it has been pending for ``for``. If the
+    hold plus an evaluation reaches the cooldown, the open sample has already become
+    half_open by the second look and the alert never fires.
+    """
+    rule = _alert_rules()["CircuitBreakerOpen"]
+    match = re.fullmatch(r"(\d+)([sm])", str(rule["for"]).strip())
+    assert match is not None
+    hold = int(match.group(1)) * (60 if match.group(2) == "m" else 1)
+
+    prometheus = yaml.safe_load((ALERTS.parent / "prometheus.yml").read_text(encoding="utf-8"))
+    interval = int(str(prometheus["global"]["evaluation_interval"]).rstrip("s"))
+
+    assert hold + interval <= HttpQuoteProvider.breaker_cooldown_seconds
+    assert hold < 60, "the default cooldown is 60 s; a 1m hold never sees the state"
+
+
+def test_a_future_dated_source_is_visible_to_its_own_unknown_age_alert(
+    session: Session,
+) -> None:
+    """``NaN`` escapes both ``>`` and ``absent()``; ``x != x`` is what selects it."""
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    _snapshot_row(session, source="dexscreener", observed_at=now + timedelta(minutes=5))
+    body = "\n".join(render_ops(_snapshot(session, now=lambda: now)))
+    age = _value(
+        body, "ezchain_source_freshness_seconds", source="dexscreener", source_class="mark"
+    )
+    budget = _value(body, "ezchain_source_freshness_budget_seconds", source_class="mark")
+
+    assert age != age, "the emitted age must be NaN, not a confident zero"
+    assert not age > budget, "SourceStale cannot see a NaN age"
+    assert age != age, "the x != x rule keeps exactly this sample"
+
+    expr = str(_alert_rules()["SourceFreshnessUnknown"]["expr"])
+    assert expr.strip() == ("ezchain_source_freshness_seconds != ezchain_source_freshness_seconds")
+    assert 'source="dexscreener"' in body, "the family is still emitted, so absent() is zero"
+
+
+def test_each_absent_guard_defers_to_the_process_that_owns_the_outage(
+    session: Session,
+) -> None:
+    """An absent guard pages only when the process is otherwise healthy.
+
+    The four ops families are omitted when the database cannot be read, so their guard
+    keys off ``ezchain_up`` and lets ``ApiUnhealthy`` own that outage. The HTTP counter is
+    database-independent, so it keys off the scrape target instead.
+    """
+    body = _live_body(session)
+    assert "ezchain_up 1" in body
+
+    guards = {
+        name: expr for name, expr in _alert_expressions() if expr.strip().startswith("absent(")
+    }
+    assert guards, "every family keeps its absence guard"
+    assert 'up{job="api"} == 1' in guards["ApiMetricsMissing"]
+    for name, expr in guards.items():
+        if name == "ApiMetricsMissing":
+            continue
+        assert "ezchain_up == 1" in expr, f"{name} fires while the API reports itself down"
+
+
+def test_the_real_router_reports_its_providers_live_breaker_state() -> None:
+    """Drive ``QuoteRouter.breakers()`` and ``HttpQuoteProvider.breaker_state`` directly."""
+    clock = {"now": 1000.0}
+    router, jupiter = _real_router(clock)
+
+    assert router.breakers() == {"jupiter": "closed", "kyberswap": "closed"}
+    assert jupiter.breaker_state == "closed"
+
+    jupiter.record_timeout()
+    assert jupiter.breaker_state == "open"
+    assert router.breakers()["jupiter"] == "open"
+
+    clock["now"] += HttpQuoteProvider.breaker_cooldown_seconds + 1.0
+    assert router.breakers()["jupiter"] == "half_open"
+
+    jupiter._breaker.record_success()  # noqa: SLF001 - the live breaker behind the property
+    assert router.breakers()["jupiter"] == "closed"
+
+
+def test_the_alert_parser_dependency_is_declared() -> None:
+    """``import yaml`` in this file must be a declared, installable dependency."""
+    requirements = (ALERTS.parents[2] / "requirements.txt").read_text(encoding="utf-8")
+
+    assert re.search(r"(?im)^pyyaml\b", requirements)
+
+
+def test_the_stale_expression_fires_for_a_stale_source_and_not_a_fresh_one(
+    session: Session,
+) -> None:
+    """Evaluate the rule's comparison on samples sampled from live rows, no Prometheus."""
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+    def exceeds_budget(age_offset: timedelta) -> bool:
+        session.query(MarketSnapshotRow).delete()
+        _snapshot_row(session, source="dexscreener", observed_at=now - age_offset)
+        body = "\n".join(render_ops(_snapshot(session, now=lambda: now)))
         # The rule is `freshness > on(source_class) budget`, per sample.
-        body = "\n".join(render_ops(snapshot))
         age = _value(
             body, "ezchain_source_freshness_seconds", source="dexscreener", source_class="mark"
         )
         cap = _value(body, "ezchain_source_freshness_budget_seconds", source_class="mark")
         return age > cap
 
-    assert exceeds_budget(stale)
-    assert not exceeds_budget(fresh)
+    assert exceeds_budget(timedelta(seconds=900))
+    assert not exceeds_budget(timedelta(seconds=5))
 
 
 def test_no_alert_is_documented_for_an_absent_deployable() -> None:
