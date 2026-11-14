@@ -7,6 +7,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **A tested backup: scripted, idempotent, and restored with a measured recovery time
+  (PAPER).** `python -m tools.ops` adds `backup`, `restore`, `verify`, `rehearse` and
+  `drop`. A backup writes the `pg_dump` and a manifest that records the dump's SHA-256 plus
+  a row digest of every table, read from the **same exported snapshot**; a second run on an
+  unchanged source reuses the verified dump instead of writing a second copy, and a changed
+  source always gets a new one. `restore` rebuilds a freshly created database (its name must
+  contain `test`, `scratch` or `_ci`, the same rule `tools/check-migrations.sh` applies),
+  then requires every ledger table to match the manifest row-for-row and the API's own
+  reconciliation report to be `ok: true`; a short restore fails with the table and the
+  difference named and exits `1`. `rehearse` runs the whole incident — build a source
+  database through the real paper order path, back it up, **drop it**, restore into a new
+  database, verify — and records the elapsed recovery time. The first measured drill on
+  Postgres 16 restored 33 ledger entries and 7 fills in 0.54–7.44 s across five idle runs and is
+  recorded in [docs/evidence/release-gate/backup-restore-rehearsal.md](docs/evidence/release-gate/backup-restore-rehearsal.md).
+  [RUNBOOK §8](docs/RUNBOOK.md#8-restore-drill--disaster-recovery) is the procedure, with a
+  table for what to do when a restore comes back short; [INFRA §7](docs/INFRA.md#7-storage-backup-and-restore)
+  is the deployment contract. Docker Compose was not exercised (no daemon on this host).
 - **Agent orders wait for a person, per user (PAPER).** Automation is now a per-user
   setting: `manual` (the default) holds every agent order in a durable approval queue,
   and `full_auto` executes it with no approval. `full_auto` requires acknowledging a
