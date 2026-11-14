@@ -181,6 +181,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **The review a pull request needs is now decided from its diff, not from a label
+  (ops).** `tools/check_reviews.py` classifies a diff as money-path when it touches
+  `packages/core-py/`, `apps/api/alembic/`, `services/engine/`, `services/executor/` or
+  `packages/adapters/`, and requires two distinct approvers there and one everywhere else.
+  An approver is one GitHub login — an `APPROVED` review or a maintainer comment whose line
+  begins with `approved` — so a reviewer who comments twice is still one reviewer, and a
+  bot login is none. An unreadable thread exits `1`; the merge gate refuses on any
+  non-zero exit, so an outage cannot read as consent. The gate itself now calls the
+  checker for every PR instead of grepping comment bodies for "approved". `0xJ1nn` is
+  currently the only reviewing account, so a money-path PR is refused until a second
+  account with write access approves it; [WORKFLOW §3](docs/WORKFLOW.md) says exactly that.
+
 - **The live pump.fun source is an opt-in extra, so the API image stays free of it
   (ingest).** `pumpfun-firehose` was pinned in `requirements.txt` and
   `requirements-runtime.txt`, which made every consumer — the API image included — install a

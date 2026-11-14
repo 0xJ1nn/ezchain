@@ -39,8 +39,40 @@ Every PR (even solo) uses `.github/PULL_REQUEST_TEMPLATE.md`:
 5. **Screens** — wireframe/UI diff for design PRs.
 6. **Checklist** — invariant impact, docs, changelog, no secrets, DCO.
 
-Review is by CODEOWNERS. For money-path PRs (ledger, risk, executor, adapters/venue),
-two reviewers or one reviewer + the maintainer's explicit approval in the thread.
+Review is by CODEOWNERS. A pull request whose diff touches `packages/core-py/`,
+`apps/api/alembic/`, `services/engine/`, `services/executor/` or `packages/adapters/` is
+money-path and needs **two distinct approvers**; every other pull request needs **one**.
+`tools/check_reviews.py` is the decision, and the merge gate runs it:
+
+```bash
+git diff --name-only origin/main...HEAD | python3 tools/check_reviews.py <pr>
+python3 tools/check_reviews.py <pr> --diff changed.txt --json
+```
+
+What counts as evidence — this is the whole rule, and there is no other door:
+
+- **An approver is one GitHub login.** Either an `APPROVED` review, or a comment by an
+  `OWNER`, `MEMBER` or `COLLABORATOR` with a line that begins with `approved`
+  (case-insensitive; `**approved**` and "looks approved to me" do not count).
+- **One login is one approver.** A review and a comment by the same login, or two
+  comments by it, are still one. A bot login never counts.
+- **A thread that cannot be read is a refusal.** A `gh` failure, malformed JSON or a
+  document without reviews and comments exits `1`, and the gate treats any non-zero exit
+  as no review. Nothing degrades to "probably fine".
+- `CHANGES_REQUESTED` and `DISMISSED` reviews count for nothing.
+
+The check is honest about what independence cannot mean here: **`0xJ1nn` is the only
+account that authors and reviews on this repository**, and the work is written by agents
+under it. GitHub allows one `APPROVED` review per login per pull request, so one account
+can supply exactly one approver however many times it comments. Two approvers therefore
+require a second account with write access; until one exists, a money-path pull request
+is refused by the gate rather than waved through. If a second agent login is added, it is
+a distinct login and counts — the check does not know or care whether both are machines,
+and no document here should pretend a single-account approval is two reviews.
+
+To leave the refusal on record, run the checker by hand and quote its output in the pull
+request; `--json` prints the diff's classification, the required count, each approver
+with its source, and the verdict.
 
 ## 4. Gates
 
@@ -97,7 +129,8 @@ must be runnable on this machine.
 
 `bug`, `feature`, `design`, `documentation`, `chain`, `venue`, `strategy-sdk`, `security`,
 `money-path`, `good first issue`, `needs-triage`, `blocked`. `money-path` is intended to
-require a second review; the branch ruleset does not enforce that yet, so reviewers must.
+require a second review; the branch ruleset does not enforce that yet, so the merge gate
+does it from the diff (§3), and a label is not what protects a path.
 
 ## 9. Working agreements
 
