@@ -54,9 +54,10 @@ Status codes:
 
 Every code in this table, and every code that only appears as a stored `reason`, is
 enumerated with its meaning, source module, HTTP status, retryability and severity in
-[REASON-CODES.md](REASON-CODES.md). That document is generated from one module,
-`ezchain_core.reason_codes`, and a contract test fails the build when a code is emitted
-without a row there. Compare on `code`, never on `message`.
+[REASON-CODES.md](REASON-CODES.md). That document is hand-maintained and test-checked
+against every emission site in one module, `ezchain_core.reason_codes`, and a contract
+test fails the build when a code is emitted without a row there. Compare on `code`, never
+on `message`.
 
 ## Authentication and scopes
 

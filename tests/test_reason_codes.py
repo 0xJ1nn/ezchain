@@ -9,8 +9,10 @@ Three things must stay true, and each failure mode here is silent in production:
 
 The scan is deliberately syntactic: it walks the Python AST for the shapes this project
 emits codes through (a ``code`` class attribute, a ``RiskReason(...)``, a helper's code
-argument, a ``{"code": "X"}`` body, a ``.code =`` constant). It is not a grep, so renaming
-a variable cannot hide a code and a comment cannot invent one.
+argument, a ``{"code": "X"}`` body, a ``.code``/``.reason`` attribute assignment, and a
+constant name resolved to its literal). It is not a grep, so a comment cannot invent a
+code and every emission shape is seen. A name assigned its own spelling
+(``VAULT_LOCKED = "VAULT_LOCKED"``) is the definition of a constant, not an emission.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import TypeGuard
 
 import pytest
 
@@ -80,13 +83,15 @@ CONSTRUCTOR_CODE_INDEX = {
     "ArmEvaluation": 1,
     "StrategyDecision": 2,
     "GraphDecision": 3,
+    # ``super().__init__(VAULT_LOCKED, message)`` in the executor's signer errors.
+    "__init__": 0,
 }
 
 CONTAINER_MARKERS = ("REASON", "CODES", "MESSAGES")
 REASON_FUNCTION = re.compile(r"reason", re.IGNORECASE)
 
 
-def _is_code(value: object) -> bool:
+def _is_code(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and len(value) > 3 and CODE_PATTERN.match(value) is not None
 
 
@@ -98,16 +103,52 @@ def _call_name(node: ast.expr) -> str:
     return ""
 
 
+def _collect_constants() -> dict[str, str]:
+    """Module-level names whose value is a code, so an emission by name resolves.
+
+    ``TRANSACTION_UNDECODABLE = "TRANSACTION_UNDECODABLE"`` defines a name and emits
+    nothing. Resolving the name lets ``RiskReason(TRANSACTION_UNDECODABLE)`` or
+    ``code = TRANSACTION_UNDECODABLE`` count, while the definition itself does not.
+    """
+    constants: dict[str, str] = {}
+    for root in SOURCE_ROOTS:
+        for path in sorted((ROOT / root).rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in tree.body:
+                if isinstance(node, ast.Assign):
+                    targets: list[ast.expr] = list(node.targets)
+                    value: ast.expr | None = node.value
+                elif isinstance(node, ast.AnnAssign):
+                    targets = [node.target]
+                    value = node.value
+                else:
+                    continue
+                if isinstance(value, ast.Constant) and _is_code(value.value):
+                    for target in targets:
+                        if isinstance(target, ast.Name):
+                            constants[target.id] = value.value
+    return constants
+
+
 class _CodeScanner(ast.NodeVisitor):
     """Collect every literal this module can put into a ``code``/``reason`` slot."""
 
-    def __init__(self) -> None:
+    def __init__(self, constants: dict[str, str] | None = None) -> None:
         self.hits: list[tuple[str, int, str]] = []
         self._functions: list[str] = []
+        self._constants = constants or {}
 
     def _record(self, node: ast.AST, value: object, how: str) -> None:
         if _is_code(value):
             self.hits.append((str(value), getattr(node, "lineno", 0), how))
+
+    def _literal(self, node: ast.expr | None) -> object:
+        """The code a node stands for: a literal, or a known constant's value."""
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            return self._constants.get(node.id)
+        return None
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._functions.append(node.name)
@@ -124,29 +165,33 @@ class _CodeScanner(ast.NodeVisitor):
             if isinstance(body, (ast.Assign, ast.AnnAssign)):
                 targets = body.targets if isinstance(body, ast.Assign) else [body.target]
                 if any(isinstance(t, ast.Name) and t.id == "code" for t in targets):
-                    if isinstance(body.value, ast.Constant):
-                        self._record(body, body.value.value, f"class {node.name}.code")
+                    value = self._literal(body.value)
+                    if value is not None:
+                        self._record(body, value, f"class {node.name}.code")
         self._functions.append(f"<class {node.name}>")
         self.generic_visit(node)
         self._functions.pop()
 
-    def visit_Assign(self, node: ast.Assign | ast.AnnAssign) -> None:
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        names = [t.id for t in targets if isinstance(t, ast.Name)]
-        value = node.value
-        if isinstance(value, ast.Constant):
-            if any(value.value == name for name in names):
-                self._record(node, value.value, "constant")
-            elif any(name.startswith(("REASON_", "CODE_")) for name in names):
-                self._record(node, value.value, "named reason")
-            elif any(name in CODE_KEYWORDS for name in names):
-                self._record(node, value.value, f"{names[0]} =")
+    def visit_Assign(self, node: ast.Assign) -> None:
+        names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        value = self._literal(node.value)
+        if value is not None:
+            for target in node.targets:
+                if isinstance(target, ast.Attribute) and target.attr in CODE_KEYWORDS:
+                    self._record(node, value, f"{target.attr} =")
+            # ``VAULT_LOCKED = "VAULT_LOCKED"`` defines the name; only a use of it emits.
+            defined_here = isinstance(node.value, ast.Constant) and value in names
+            if not defined_here:
+                if any(name.startswith(("REASON_", "CODE_")) for name in names):
+                    self._record(node, value, "named reason")
+                elif any(name in CODE_KEYWORDS for name in names):
+                    self._record(node, value, f"{names[0]} =")
         if names and any(marker in names[0] for marker in CONTAINER_MARKERS):
             literals: list[object] = []
-            if isinstance(value, (ast.Tuple, ast.List, ast.Set)):
-                literals = [e.value for e in value.elts if isinstance(e, ast.Constant)]
-            if isinstance(value, ast.Dict):
-                literals = [k.value for k in value.keys if isinstance(k, ast.Constant)]
+            if isinstance(node.value, (ast.Tuple, ast.List, ast.Set)):
+                literals = [e.value for e in node.value.elts if isinstance(e, ast.Constant)]
+            if isinstance(node.value, ast.Dict):
+                literals = [k.value for k in node.value.keys if isinstance(k, ast.Constant)]
             for literal in literals:
                 self._record(node, literal, f"container {names[0]}")
         self.generic_visit(node)
@@ -154,35 +199,38 @@ class _CodeScanner(ast.NodeVisitor):
     def visit_Dict(self, node: ast.Dict) -> None:
         for key, value in zip(node.keys, node.values, strict=False):
             if isinstance(key, ast.Constant) and key.value in CODE_KEYWORDS:
-                if isinstance(value, ast.Constant):
-                    self._record(node, value.value, f"dict {key.value}=")
+                literal = self._literal(value)
+                if literal is not None:
+                    self._record(node, literal, f"dict {key.value}=")
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
         function = _call_name(node.func)
         for keyword in node.keywords:
-            if keyword.arg in CODE_KEYWORDS and isinstance(keyword.value, ast.Constant):
-                self._record(node, keyword.value.value, f"{function}({keyword.arg}=)")
+            if keyword.arg in CODE_KEYWORDS:
+                literal = self._literal(keyword.value)
+                if literal is not None:
+                    self._record(node, literal, f"{function}({keyword.arg}=)")
         for table in (HELPER_CODE_INDEX, CONSTRUCTOR_CODE_INDEX):
             index = table.get(function)
             if index is not None and len(node.args) > index:
-                argument = node.args[index]
-                if isinstance(argument, ast.Constant):
-                    self._record(node, argument.value, f"{function}(pos)")
+                literal = self._literal(node.args[index])
+                if literal is not None:
+                    self._record(node, literal, f"{function}(pos)")
         if isinstance(node.func, ast.Attribute) and node.func.attr in ("append", "add"):
             owner = _call_name(node.func.value)
             if owner.endswith(("reasons", "unknown", "codes")) and node.args:
-                argument = node.args[0]
-                if isinstance(argument, ast.Constant):
-                    self._record(node, argument.value, f"{owner}.{node.func.attr}()")
+                literal = self._literal(node.args[0])
+                if literal is not None:
+                    self._record(node, literal, f"{owner}.{node.func.attr}()")
         self.generic_visit(node)
 
     def visit_Raise(self, node: ast.Raise) -> None:
         exception = node.exc
         if isinstance(exception, ast.Call) and exception.args:
-            argument = exception.args[0]
-            if isinstance(argument, ast.Constant):
-                self._record(node, argument.value, f"raise {_call_name(exception.func)}")
+            literal = self._literal(exception.args[0])
+            if literal is not None:
+                self._record(node, literal, f"raise {_call_name(exception.func)}")
         self.generic_visit(node)
 
     def visit_Return(self, node: ast.Return) -> None:
@@ -191,22 +239,29 @@ class _CodeScanner(ast.NodeVisitor):
         if isinstance(value, ast.Tuple):
             # ``return wallet, "SOME_CODE"`` — the reason travels beside the value.
             for element in value.elts:
-                if isinstance(element, ast.Constant):
-                    self._record(node, element.value, f"tuple return in {current}()")
-        if value is not None and REASON_FUNCTION.search(current):
-            if isinstance(value, ast.Constant):
-                self._record(node, value.value, f"return in {current}()")
-            elif isinstance(value, ast.IfExp):
+                literal = self._literal(element)
+                if literal is not None:
+                    self._record(node, literal, f"tuple return in {current}()")
+        if isinstance(value, (ast.Constant, ast.Name)):
+            literal = self._literal(value)
+            if literal is not None:
+                self._record(node, literal, f"return in {current}()")
+        elif value is not None and REASON_FUNCTION.search(current):
+            if isinstance(value, ast.IfExp):
                 for branch in (value.body, value.orelse):
-                    if isinstance(branch, ast.Constant):
-                        self._record(node, branch.value, f"return in {current}()")
+                    literal = self._literal(branch)
+                    if literal is not None:
+                        self._record(node, literal, f"return in {current}()")
             elif isinstance(value, ast.Call):
                 for argument in value.args:
-                    if isinstance(argument, ast.Constant):
-                        self._record(node, argument.value, f"return in {current}()")
+                    literal = self._literal(argument)
+                    if literal is not None:
+                        self._record(node, literal, f"return in {current}()")
                 for keyword in value.keywords:
-                    if keyword.arg in CODE_KEYWORDS and isinstance(keyword.value, ast.Constant):
-                        self._record(node, keyword.value.value, f"return in {current}()")
+                    if keyword.arg in CODE_KEYWORDS:
+                        literal = self._literal(keyword.value)
+                        if literal is not None:
+                            self._record(node, literal, f"return in {current}()")
         self.generic_visit(node)
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
@@ -219,17 +274,19 @@ class _CodeScanner(ast.NodeVisitor):
     def visit_BoolOp(self, node: ast.BoolOp) -> None:
         if isinstance(node.op, ast.Or):
             for operand in node.values[1:]:
-                if isinstance(operand, ast.Constant):
-                    self._record(node, operand.value, "fallback")
+                literal = self._literal(operand)
+                if literal is not None:
+                    self._record(node, literal, "fallback")
         self.generic_visit(node)
 
 
 def _emitted_codes() -> dict[str, set[str]]:
     """Every code this repository can emit, mapped to where it was found."""
+    constants = _collect_constants()
     sites: dict[str, set[str]] = {}
     for root in SOURCE_ROOTS:
         for path in sorted((ROOT / root).rglob("*.py")):
-            scanner = _CodeScanner()
+            scanner = _CodeScanner(constants)
             scanner.visit(ast.parse(path.read_text(encoding="utf-8")))
             for code, line, how in scanner.hits:
                 sites.setdefault(code, set()).add(f"{path.relative_to(ROOT)}:{line} {how}")

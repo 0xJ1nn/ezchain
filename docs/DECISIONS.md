@@ -1288,6 +1288,7 @@ same approval path, and the BYO-agent adapter inherits this boundary rather than
 second one.
 
 ## ADR-0043 — One reason-code taxonomy, one home, checked both ways
+## ADR-0042 — One reason-code taxonomy, one home, checked both ways
 
 **Status:** accepted 2026-11-14. Implements the vocabulary half of GH-28.
 

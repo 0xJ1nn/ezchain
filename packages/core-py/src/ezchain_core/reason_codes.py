@@ -1,9 +1,9 @@
 """The stable reason-code vocabulary for every failure that can block or move money.
 
 One code, one meaning, one home. Every layer imports its codes from here instead of
-re-typing a literal, and :mod:`docs/REASON-CODES.md` is generated from this module, so
-the document cannot drift from the code. The drift guard in
-``tests/test_reason_codes.py`` fails when a code is emitted anywhere without a row here.
+re-typing a literal, and :mod:`docs/REASON-CODES.md` is hand-maintained and test-checked
+against every emission site, so the document cannot drift from the code. The drift guard
+in ``tests/test_reason_codes.py`` fails when a code is emitted anywhere without a row here.
 
 Stability promise: a code's **string** and its **meaning** are permanent. Within a
 minor release a code may gain a new emission site or a friendlier ``message``; it is
@@ -1134,7 +1134,7 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "api",
         "ezchain_api/services/paper.py",
         "The requested risk profile is not allowed for this account.",
-        "The requested risk profile is not allowed for this account.",
+        "The requested risk profile is unknown; use low, mid or high.",
     ),
     _S(
         "ARM_NOT_FOUND",
@@ -1972,7 +1972,7 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "api",
         "ezchain_api/services/paper.py",
         "A cash shortfall was funded rather than refused.",
-        "A cash shortfall was funded.",
+        "Shortfall was funded.",
         severity="info",
     ),
     # ------------------------------------------------------- api: approvals and automation

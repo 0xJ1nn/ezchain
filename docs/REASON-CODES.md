@@ -1,7 +1,8 @@
 # REASON CODES — the stable failure vocabulary
 
 One code, one meaning, one home. Every failure that can block or move money is named
-here, and the list is generated from a single module:
+here, and the list is hand-maintained and test-checked against every emission site in a
+single module:
 [`packages/core-py/src/ezchain_core/reason_codes.py`](../packages/core-py/src/ezchain_core/reason_codes.py).
 The API, the executor, the engine, the adapters and the web UI all read that module (or
 the derived registries it exports) instead of re-typing a literal. A drift guard fails the

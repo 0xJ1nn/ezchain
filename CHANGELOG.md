@@ -83,6 +83,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   duplicated (`KILL_SWITCH_ARMED` vs `KILL_SWITCH_ACTIVE`, `NO_ROUTE` vs `NO_SELL_ROUTE` vs
   `EXIT_NO_ROUTE`) with the difference documented. Refusals themselves are unchanged; only
   the vocabulary moved. Recorded as ADR-0043.
+  the vocabulary moved. Recorded as ADR-0042.
 - **Custody is the user's, and the vault keeps keys from everyone else (PAPER).** Keys are
   added at runtime by the person who owns them, encrypted at rest under that user's
   credential, and used only for that user's orders. `ezchain_core.vault` owns the contract:
