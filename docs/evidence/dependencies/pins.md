@@ -244,3 +244,38 @@ exit code is recorded above:
 `datetime.UTC`) hits in `tools/model_router.py`, which this change does not touch and which
 the gate does not lint: `tools/ci.sh` runs ruff on `packages apps services`. Fixing them is
 not part of this item and was left alone rather than folded into a dependency commit.
+
+## 9. The gate, and a constraint bumped by hand
+
+`bash tools/ci.sh` on this branch, run with the gate's own declared import channel
+(`EZCHAIN_GATE_PYTHONPATH` points at this worktree, because the venv's editable installs
+resolve to the primary checkout):
+
+```text
+tokens: ok
+wireframe: ok (32 pages, 32 files)
+links: ok
+secrets: ok
+pins: ok — exact, hashed and covering their sources (requirements.lock 43, requirements-runtime.lock 31, requirements-keyring.lock 9; node locked)
+All checks passed!
+Success: no issues found in 153 source files
+2099 passed, 20 skipped, 1 warning in 96.72s (0:01:36)
+ci_exit=0
+```
+
+The failure path, against a copy of the tree with only `requirements.txt` edited — the pin
+file and lock untouched:
+
+```bash
+cp -R . /tmp/ez219-bump && cd /tmp/ez219-bump
+sed -i '' 's/fastapi>=0.115,<1/fastapi>=0.200,<1/' requirements.txt
+.venv/bin/python tools/check_pins.py --fast
+# pins: requirements.lock: fastapi==0.162.7 does not satisfy <1,>=0.200
+echo $?
+# 1
+```
+
+That is the behaviour the issue asks for: a bumped constraint fails before a resolver runs,
+naming the pin and the range it no longer satisfies. The same path is asserted in
+`test_a_bumped_constraint_fails_the_check`, which uses a synthetic checkout rather than a
+copy of this one.

@@ -252,9 +252,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   path installs a lock into a fresh venv and fails on any drift, and `--full --offline`
   does the same from a wheelhouse with no network. `tools/audit_pins.py` exits 1 on an
   advisory that is not allowlisted with a written reason and exits 2 (never 0) when the
-  audit could not run. `pnpm.overrides` moves the transitive `postcss` inside `next` from
-  8.4.31 to 8.5.33, which clears two high and two moderate advisories. The update ritual
-  and the honest list of what was not verified are in
+  audit could not run. Both Dockerfiles now name their base image by manifest-list digest
+  with the tag it came from in a comment, and the gate refuses a bare `FROM` or a digest
+  with no tag. Every dependency a package pyproject declares must be pinned; the one that
+  cannot be — the firehose extra's git tag — is named with its reason in
+  `tools/pins/unpinned.txt` instead of being given an invented version.
+  `pnpm.overrides` moves the transitive `postcss` inside `next` from
+  8.4.31 to 8.5.33, which clears two high and two moderate advisories. The update ritual,
+  the re-audit cadence and the honest list of what was not verified are in
   [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) and
   [docs/evidence/dependencies/pins.md](docs/evidence/dependencies/pins.md).
 
