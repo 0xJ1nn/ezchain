@@ -21,7 +21,7 @@ from ..db import database_revision, head_revision
 from ..deps import get_session
 from ..mode import mode_status
 from ..models import PaperFillRow, PaperOrderRow
-from ..observability import HTTP_METRICS, render_prometheus
+from ..observability import HTTP_METRICS, reject_series, render_prometheus
 from ..schemas import ChainOut, KillSwitchIn, KillSwitchOut
 from ..services.ops_signals import build_ops_snapshot
 from ..services.system_flags import read_kill_switch, set_kill_switch
@@ -120,6 +120,7 @@ def metrics(request: Request, session: Session = Depends(get_session)) -> Respon
     up = True
     counts = {status: 0 for status in PAPER_ORDER_STATUSES}
     fills = 0
+    rejected: dict[object, int] = {}
     try:
         session.execute(text("SELECT 1"))
         rows = session.execute(
@@ -129,10 +130,23 @@ def metrics(request: Request, session: Session = Depends(get_session)) -> Respon
             key = status if status in counts else "other"
             counts[key] = counts.get(key, 0) + int(count)
         fills = int(session.scalar(select(func.count()).select_from(PaperFillRow)) or 0)
+        # A refused order persists the code of the first gate that refused it, so this
+        # grouping is the database's own answer to "why was this order rejected" rather
+        # than a count of what this process happened to observe. An unreadable database
+        # reports no rejects and ``ezchain_up 0`` explains the absence.
+        rejected = {
+            reason: int(count)
+            for reason, count in session.execute(
+                select(PaperOrderRow.reason, func.count())
+                .where(PaperOrderRow.status == "rejected")
+                .group_by(PaperOrderRow.reason)
+            ).all()
+        }
     except Exception:
         _rollback_quietly(session)
         up = False
     ops = None
+    rejects = None
     if up:
         router = getattr(request.app.state, "quote_router", None)
         ops = build_ops_snapshot(
@@ -144,9 +158,19 @@ def metrics(request: Request, session: Session = Depends(get_session)) -> Respon
             # the alert threshold is the one a refused read was measured against.
             policy=getattr(router, "freshness", None),
         )
+        # One series per reason code, each key normalised against the taxonomy, so the
+        # exposition is the persisted answer with a bounded label set. When the database
+        # is unreadable this stays ``None`` and the family is omitted: an empty rejects
+        # family must never be read as "no order was rejected".
+        rejects = reject_series(rejected)
     return Response(
         content=render_prometheus(
-            HTTP_METRICS, up=up, paper_orders=counts, paper_fills=fills, ops=ops
+            HTTP_METRICS,
+            up=up,
+            paper_orders=counts,
+            paper_fills=fills,
+            ops=ops,
+            rejects=rejects,
         ),
         media_type=METRICS_MEDIA_TYPE,
     )
