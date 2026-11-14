@@ -63,7 +63,14 @@ from ezchain_core.ledger import (
 )
 from ezchain_core.types import RISK_REASON_MESSAGES
 
-from ..actor import ACTOR_AGENT, ACTOR_STRATEGY, ACTOR_UNKNOWN, UNKNOWN_ACTOR, OrderActor
+from ..actor import (
+    ACTOR_AGENT,
+    ACTOR_HUMAN,
+    ACTOR_STRATEGY,
+    ACTOR_UNKNOWN,
+    UNKNOWN_ACTOR,
+    OrderActor,
+)
 from ..config import Settings, get_settings
 from ..models import (
     LedgerEntryRow,
@@ -72,6 +79,7 @@ from ..models import (
     PaperFillRow,
     PaperOrderRow,
     PaperWalletRow,
+    StrategyRow,
     new_id,
 )
 from . import approvals, market_snapshots, pnl
@@ -97,19 +105,47 @@ def last_created() -> bool:
     return _ORDER_CREATED.get()
 
 
-def resolve_actor(payload: OrderRequest, actor: OrderActor | None) -> OrderActor:
+def resolve_actor(session: Session, payload: OrderRequest, actor: OrderActor | None) -> OrderActor:
     """The placing principal for one order, from facts the server holds.
 
     Strategy attribution wins: the engine is the only caller that sets ``strategy_id`` (the
     manual and MCP routes refuse the field), so an order that carries one was placed by
-    that strategy no matter what a caller passed. Otherwise the API edge supplies the
-    authenticated principal, and a caller with no principal is recorded as unknown.
+    that strategy no matter what a caller passed. The strategy row also carries the
+    principal that created it, so the automation tier is the creator's — an agent-created
+    strategy is an agent's automation, while a person-created one is not gated. A strategy
+    whose provenance is unknown keeps the strategy actor and is treated as automation.
+    Otherwise the API edge supplies the authenticated principal, and a caller with no
+    principal is recorded as unknown.
     """
     if payload.strategy_id is not None:
+        strategy = session.get(StrategyRow, payload.strategy_id)
+        if strategy is not None and strategy.created_by_kind in (ACTOR_AGENT, ACTOR_HUMAN):
+            creator_id = strategy.created_by_id or ""
+            return OrderActor(
+                ACTOR_STRATEGY,
+                payload.strategy_id,
+                owner=strategy.created_by_owner or creator_id or None,
+                creator_kind=strategy.created_by_kind,
+            )
         return OrderActor(ACTOR_STRATEGY, payload.strategy_id)
     if actor is None or actor.kind == ACTOR_UNKNOWN:
         return UNKNOWN_ACTOR
     return actor
+
+
+def requires_automation_gate(placed_by: OrderActor) -> bool:
+    """Whether this order is automation whose user must have consented.
+
+    The gate keys on the automation, not the actor label: a direct agent order is
+    automation; a strategy order is automation unless a person created the strategy. An
+    unknown strategy provenance is automation too, because fail-closed is the only safe
+    reading of a row that cannot say who wrote it.
+    """
+    if placed_by.kind == ACTOR_AGENT:
+        return True
+    if placed_by.kind == ACTOR_STRATEGY:
+        return placed_by.creator_kind != ACTOR_HUMAN
+    return False
 
 
 POSITION_PREFIX = "position:"
@@ -1447,7 +1483,7 @@ async def place_order(
     stored intent, so the approved order runs Intent → RiskDecision → Quote → Order →
     Fill → Journal like any other.
     """
-    placed_by = resolve_actor(payload, actor)
+    placed_by = resolve_actor(session, payload, actor)
     _ORDER_CREATED.set(True)
     _RESUMING.set(resume_order)
     ensure_genesis(session, settings.paper_starting_cash_usd)
@@ -1785,17 +1821,26 @@ async def place_order(
                 session, order, ",".join(str(r) for r in reasons), reasons=reasons
             )
 
-        # An agent order under the manual tier stops here: risk has run, the quote and its
-        # cost sheet are on the order, and the server's verdict is recorded as evidence for
-        # the person. Nothing is journaled. This is a gate *on* the path — an approved
-        # order re-enters this same window with its stored intent — never a second path.
-        # An unreadable queue refuses the order here rather than letting it fill.
-        if not approved and placed_by.kind == ACTOR_AGENT:
-            probe = approvals.health(session, settings)
+        # An automated order stops here unless its user has a consented full-auto tier:
+        # risk has run, the quote and its cost sheet are on the order, and the server's
+        # verdict is recorded as evidence for the person. Nothing is journaled. This is a
+        # gate *on* the path — an approved order re-enters this same window with its
+        # stored intent — never a second path. An unreadable queue refuses the order
+        # here rather than letting it fill, and a full_auto setting whose consent record
+        # cannot be proven refuses with AUTOMATION_CONSENT_REQUIRED instead of being read
+        # as manual.
+        if not approved and requires_automation_gate(placed_by):
+            probe = approvals.health(
+                session, settings, approvals.ordering_user(placed_by, settings)
+            )
             if not probe.readable:
                 order.quote_kind = quote.kind
                 order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
                 return _mark_rejected(session, order, "APPROVAL_STATE_UNREADABLE")
+            if probe.consent_required:
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                return _mark_rejected(session, order, "AUTOMATION_CONSENT_REQUIRED")
             if probe.tier == approvals.MANUAL:
                 order.quote_kind = quote.kind
                 order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)

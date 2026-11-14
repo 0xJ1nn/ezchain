@@ -263,12 +263,22 @@ Automation is a per-user setting with two tiers:
 
 `GET /api/v1/paper/automation` returns the tier and the risk disclosure; a user with no
 setting is `manual`. `PUT /api/v1/paper/automation` switches it, and **only a person may**
-(the deployment token, recorded as `human`). Switching to `full_auto` requires
+(the deployment token, recorded as `human`). The setting is bound to the authenticated
+principal's owner (the deployment subject for a person, the key's subject for an agent),
+never to the workspace: one user's `full_auto` does not authorize another user's orders.
+Switching to `full_auto` requires
 `{"tier": "full_auto", "acknowledge_risk": true}`: without the acknowledgement the request
 is `422`, and with it the server appends a consent row naming the user, the disclosure
 version and the moment. Returning to `manual` leaves that history in place
-(`{"tier": "manual"}`). A `full_auto` setting whose consent row is missing reads as
-`manual`, so an unreadable opt-in never lets an agent order through.
+(`{"tier": "manual"}`). A `full_auto` setting whose consent row is missing (or is for an
+older disclosure version) refuses an automated order closed as
+`AUTOMATION_CONSENT_REQUIRED`; it is never silently read as `manual`.
+
+The same gate covers automation that did not come from an agent key directly. A strategy
+records the principal that created it: an order the engine places for an agent-created
+strategy waits exactly like an agent order, while a strategy a person created is not
+gated. A strategy whose creating principal predates this record is treated as automation
+and fails closed; it never runs unattended by default.
 
 Under `manual`, `POST /paper/orders` from an agent key answers `201` with the stored order
 and `status: "pending_approval"`, `reason: "AWAITING_APPROVAL"`, plus `approval_id` and
@@ -332,9 +342,11 @@ order, and nothing is asked twice:
 5. Inside the fill window: the kill switch is re-read (again entry-only), then the position
    replay and the quote-size checks.
 6. The risk decision.
-7. The **automation tier / approval queue**: an agent order under `manual` is stored as
-   `pending_approval` and queued — nothing is journaled; an unreadable queue refuses
-   `APPROVAL_STATE_UNREADABLE`.
+7. The **automation tier / approval queue**: an agent order, and a strategy order whose
+   strategy an agent created (or whose provenance is unknown), is stored as
+   `pending_approval` and queued under `manual` — nothing is journaled; an unreadable
+   queue refuses `APPROVAL_STATE_UNREADABLE`, and an unconsented `full_auto` refuses
+   `AUTOMATION_CONSENT_REQUIRED`. A strategy a person created is not gated.
 8. Fill and journal.
 
 Approving re-enters the same function with the stored intent, so steps 2–6 and 8 run again

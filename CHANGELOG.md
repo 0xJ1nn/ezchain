@@ -229,6 +229,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   reported as a missing one. The web fixtures carry the server's verdict explicitly instead
   of computing it from an age, and one row demonstrates the divergence (45s old, server
   says stale). ARCHITECTURE §4.5 now names `mark_age_seconds` as the field on the wire.
+- **The approval gate follows the automation, not the actor label (PAPER).** An agent key
+  with `trade` could create a strategy and run it with no approval, because every
+  `strategy_id` resolved to `ACTOR_STRATEGY` and the gate only looked at `ACTOR_AGENT`.
+  Strategies now record their creating principal (`0022_strategy_creator`); an
+  agent-created strategy is gated like a direct agent order, a person-created one is not,
+  and unknown provenance fails closed. The tier and its consent are bound to the ordering
+  principal's owner instead of `workspace_id`, so user A's `full_auto` does not authorize
+  user B's agent orders; a stored `full_auto` without its consent record refuses
+  `AUTOMATION_CONSENT_REQUIRED` rather than being read as `manual`; and the queue-health
+  probe rolls back a failed read so the typed `APPROVAL_STATE_UNREADABLE` refusal can
+  still commit.
+
 - **A quote timeout counts against the provider's breaker, and a cancelled market scan
   releases its half-open permit.** The router's attempt deadline cancels the inner quote,
   which reaches the provider as cancellation; the breaker recorded no failure for it, so a

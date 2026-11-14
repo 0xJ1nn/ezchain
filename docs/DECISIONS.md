@@ -1159,3 +1159,15 @@ executor process's own venue path (services/executor), which is live-only and ou
 change's scope; when live execution reaches the approval surface it must gate there too.
 The web queue screen is a follow-up: the API carries the queue and the tier, and no UI is
 changed here.
+
+**Amendment (review round 1):** the gate keys on the *automation*, not the actor label.
+`resolve_actor` had mapped every `strategy_id` to `ACTOR_STRATEGY`, so an agent key with
+`trade` could create a strategy and run it with no approval. Strategies now carry the
+principal that created them (`created_by_kind`/`created_by_id`/`created_by_owner`, migration
+`0022_strategy_creator`); an agent-created strategy is gated exactly like a direct agent
+order, a person-created one is not, and unknown provenance fails closed. The tier and its
+consent are bound to the ordering principal's owner — the authenticated subject, or the
+strategy's creator — not to `workspace_id`, so one user's `full_auto` cannot authorize
+another user's agent orders. A stored `full_auto` whose consent record is missing refuses
+`AUTOMATION_CONSENT_REQUIRED` instead of being read as `manual`, and an unreadable queue
+rolls its transaction back before the refusal is written.

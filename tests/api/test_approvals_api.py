@@ -242,7 +242,7 @@ def test_full_auto_opt_in_records_the_consent_with_the_user_and_time(
     assert body["disclosure"]["acknowledged_at"] is not None
     consent = session.scalar(select(AutomationConsentRow))
     assert consent is not None
-    assert consent.user_id == authed_settings.workspace_id
+    assert consent.user_id == "deployment"
     assert consent.tier == "full_auto"
     assert consent.actor_kind == ACTOR_HUMAN
     assert consent.acknowledged_at is not None
@@ -274,7 +274,7 @@ def test_a_full_auto_user_gets_agent_orders_that_fill_without_an_approval(
         json={"tier": "full_auto", "acknowledge_risk": True},
         headers=_bearer(DEPLOYMENT),
     )
-    agent = _agent_token(key_factory)
+    agent = _agent_token(key_factory, subject="deployment")
 
     response = client.post(
         "/api/v1/paper/orders", json=_payload("api-fullauto-1"), headers=_bearer(agent)
@@ -285,6 +285,91 @@ def test_a_full_auto_user_gets_agent_orders_that_fill_without_an_approval(
     assert body["status"] == "filled"
     assert body["approval_id"] is None
     assert body["approval_status"] is None
+
+
+def test_an_agent_who_creates_then_runs_a_strategy_is_gated(
+    authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
+) -> None:
+    """The reported bypass: an agent's ``trade`` key could create a strategy and run it."""
+    from ezchain_api.routers import strategies as strategies_router
+    from ezchain_api.services import paper
+
+    source = FakeDex()
+    quotes = QuoteRouter(providers=[], dexscreener=source)  # type: ignore[arg-type]
+
+    class Executor:
+        async def place_order(self, request: Any) -> str:
+            row = await paper.place_order(
+                session,
+                request,
+                authed_settings,
+                source,
+                quotes,  # type: ignore[arg-type]
+            )
+            return row.id
+
+    app = FastAPI()
+    app.add_middleware(BearerAuthMiddleware, settings=authed_settings, session_factory=key_factory)
+    app.include_router(paper_router.router)
+    app.include_router(approvals_router.router)
+    app.include_router(strategies_router.router)
+    app.state.order_executor = Executor()
+    app.dependency_overrides[get_session] = lambda: session
+    app.dependency_overrides[get_dexscreener] = lambda: source
+    app.dependency_overrides[get_quote_router] = lambda: quotes
+    client = TestClient(app)
+    agent = _agent_token(key_factory, subject="alice")
+
+    created = client.post(
+        "/api/v1/strategies",
+        json={
+            "name": "agent dca",
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "token_symbol": "TEST",
+            "kind": "dca",
+            "params": {"order_usd": 25, "interval_minutes": 60},
+        },
+        headers=_bearer(agent),
+    )
+    assert created.status_code == 201
+    strategy_id = created.json()["id"]
+
+    run = client.post(f"/api/v1/strategies/{strategy_id}/run", headers=_bearer(agent))
+    assert run.status_code == 200
+
+    orders = client.get("/api/v1/paper/orders", headers=_bearer(agent)).json()
+    assert orders[0]["status"] == "pending_approval"
+    assert orders[0]["reason"] == "AWAITING_APPROVAL"
+    assert orders[0]["approval_status"] == "pending"
+
+
+def test_full_auto_is_bound_to_the_key_owner_not_the_workspace(
+    authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
+) -> None:
+    """User A's opt-in must not authorize user B's agent orders."""
+    from ezchain_api.services import approvals
+
+    approvals.set_tier(
+        session,
+        tier="full_auto",
+        actor=OrderActor(ACTOR_HUMAN, "alice-user", owner="alice"),
+        settings=authed_settings,
+        acknowledge_risk=True,
+    )
+    client = _client(authed_settings, session, key_factory)
+    alice = _agent_token(key_factory, subject="alice")
+    bob = _agent_token(key_factory, subject="bob")
+
+    a = client.post(
+        "/api/v1/paper/orders", json=_payload("api-cross-a-1"), headers=_bearer(alice)
+    ).json()
+    b = client.post(
+        "/api/v1/paper/orders", json=_payload("api-cross-b-1"), headers=_bearer(bob)
+    ).json()
+
+    assert a["status"] == "filled"
+    assert b["status"] == "pending_approval"
 
 
 def test_returning_to_manual_keeps_the_consent_history_and_gates_again(
@@ -310,31 +395,36 @@ def test_returning_to_manual_keeps_the_consent_history_and_gates_again(
     assert gated["status"] == "pending_approval"
 
 
-def test_a_full_auto_row_without_its_consent_reads_as_manual(
+def test_a_full_auto_row_without_its_consent_refuses_the_order_closed(
     authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
 ) -> None:
-    """An opt-in whose acknowledgement is missing never lets an agent order through."""
-    session.add(AutomationSettingRow(user_id=authed_settings.workspace_id, tier="full_auto"))
+    """An opt-in whose acknowledgement is missing refuses, rather than queueing silently."""
+    session.add(AutomationSettingRow(user_id="deployment", tier="full_auto"))
     session.commit()
     client = _client(authed_settings, session, key_factory)
 
-    assert client.get("/api/v1/paper/automation").json()["tier"] == "manual"
+    assert (
+        client.get("/api/v1/paper/automation", headers=_bearer(DEPLOYMENT)).json()["tier"]
+        == "manual"
+    )
 
-    agent = _agent_token(key_factory)
+    agent = _agent_token(key_factory, subject="deployment")
     posted = client.post(
         "/api/v1/paper/orders", json=_payload("api-orphan-auto-1"), headers=_bearer(agent)
     ).json()
-    assert posted["status"] == "pending_approval"
+    assert posted["status"] == "rejected"
+    assert posted["reason"] == "AUTOMATION_CONSENT_REQUIRED"
+    assert posted["approval_id"] is None
 
 
 def test_a_consent_for_an_older_disclosure_version_reads_as_manual(
     authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
 ) -> None:
     """The acknowledgement that counts is the current disclosure's, not any older one."""
-    session.add(AutomationSettingRow(user_id=authed_settings.workspace_id, tier="full_auto"))
+    session.add(AutomationSettingRow(user_id="deployment", tier="full_auto"))
     session.add(
         AutomationConsentRow(
-            user_id=authed_settings.workspace_id,
+            user_id="deployment",
             tier="full_auto",
             disclosure_version="v0",
             disclosure_text="an older wording",
@@ -343,7 +433,10 @@ def test_a_consent_for_an_older_disclosure_version_reads_as_manual(
     session.commit()
     client = _client(authed_settings, session, key_factory)
 
-    assert client.get("/api/v1/paper/automation").json()["tier"] == "manual"
+    assert (
+        client.get("/api/v1/paper/automation", headers=_bearer(DEPLOYMENT)).json()["tier"]
+        == "manual"
+    )
 
 
 def test_the_tier_in_force_is_cores_automation_setting(
@@ -353,14 +446,14 @@ def test_the_tier_in_force_is_cores_automation_setting(
     from ezchain_api.services import approvals
     from ezchain_core import AUTOMATION_FULL, AUTOMATION_MANUAL, AutomationSetting
 
-    setting = approvals.automation_setting(session, authed_settings)
+    setting = approvals.automation_setting(session, authed_settings, "deployment")
     assert isinstance(setting, AutomationSetting)
     assert setting.tier == AUTOMATION_MANUAL and setting.requires_approval
 
-    session.add(AutomationSettingRow(user_id=authed_settings.workspace_id, tier="full_auto"))
+    session.add(AutomationSettingRow(user_id="deployment", tier="full_auto"))
     session.commit()
-    assert approvals.read_tier(session, authed_settings) == AUTOMATION_MANUAL
-    assert approvals.automation_setting(session, authed_settings).requires_approval
+    assert approvals.read_tier(session, authed_settings, "deployment") == AUTOMATION_MANUAL
+    assert approvals.automation_setting(session, authed_settings, "deployment").requires_approval
 
     approvals.set_tier(
         session,
@@ -369,7 +462,9 @@ def test_the_tier_in_force_is_cores_automation_setting(
         settings=authed_settings,
         acknowledge_risk=True,
     )
-    assert not approvals.automation_setting(session, authed_settings).requires_approval
+    assert not approvals.automation_setting(
+        session, authed_settings, "deployment"
+    ).requires_approval
 
 
 def test_a_human_order_is_never_queued_under_manual(

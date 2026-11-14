@@ -23,6 +23,7 @@ from ezchain_engine import (
 from ezchain_sdk import ParamsError
 from ezchain_sdk import validate_params as validate_plugin_params
 
+from ..actor import ACTOR_UNKNOWN, from_principal
 from ..config import Settings, get_settings
 from ..deps import get_dexscreener, get_plugin_registry, get_session
 from ..models import StrategyRow, StrategyRunRow
@@ -162,6 +163,7 @@ def list_strategies(session: Session = Depends(get_session)) -> list[StrategyOut
 @router.post("", response_model=StrategyOut, status_code=201)
 def create_strategy(
     payload: StrategyIn,
+    request: Request,
     session: Session = Depends(get_session),
     registry: PluginRegistry = Depends(get_plugin_registry),
 ) -> StrategyOut:
@@ -204,6 +206,7 @@ def create_strategy(
                 },
             )
         plugin_version = record.manifest.version
+    creator = from_principal(getattr(request.state, "principal", None))
     row = StrategyRow(
         name=payload.name,
         chain=payload.chain,
@@ -214,6 +217,9 @@ def create_strategy(
         plugin_id=payload.plugin_id,
         plugin_version=plugin_version,
         status=payload.status,
+        created_by_kind=None if creator.kind == ACTOR_UNKNOWN else creator.kind,
+        created_by_id=creator.id,
+        created_by_owner=None if creator.kind == ACTOR_UNKNOWN else creator.principal,
     )
     session.add(row)
     session.commit()

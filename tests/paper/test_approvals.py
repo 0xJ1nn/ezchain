@@ -20,11 +20,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ezchain_api.actor import ACTOR_AGENT, ACTOR_HUMAN, ACTOR_STRATEGY, OrderActor
 from ezchain_api.models import (
+    AutomationSettingRow,
     Base,
     LedgerEntryRow,
     OrderApprovalRow,
     PaperFillRow,
     PaperOrderRow,
+    StrategyRow,
 )
 from ezchain_api.services import approvals, paper
 
@@ -38,8 +40,10 @@ from .conftest import (
     place,
 )
 
-AGENT = OrderActor(ACTOR_AGENT, "key-agent-1")
-PERSON = OrderActor(ACTOR_HUMAN, "deployment")
+AGENT = OrderActor(ACTOR_AGENT, "key-agent-1", owner="alice")
+OTHER_AGENT = OrderActor(ACTOR_AGENT, "key-agent-2", owner="bob")
+PERSON = OrderActor(ACTOR_HUMAN, "deployment", owner="deployment")
+ALICE = OrderActor(ACTOR_HUMAN, "alice-user", owner="alice")
 
 
 def _place_agent(
@@ -48,6 +52,7 @@ def _place_agent(
     dex: FakeDexScreener,
     jupiter: FakeJupiter,
     request: Any,
+    actor: OrderActor = AGENT,
 ) -> PaperOrderRow:
     import asyncio
 
@@ -58,9 +63,33 @@ def _place_agent(
             settings,
             dex,
             make_router(dex, jupiter),
-            actor=AGENT,  # type: ignore[arg-type]
+            actor=actor,  # type: ignore[arg-type]
         )
     )
+
+
+def _strategy(
+    session: Session,
+    strategy_id: str,
+    *,
+    created_by: OrderActor | None,
+) -> None:
+    session.add(
+        StrategyRow(
+            id=strategy_id,
+            name=strategy_id,
+            chain="blast",
+            token_address="0x0000000000000000000000000000000000000abc",
+            token_symbol="TEST",
+            kind="dca",
+            params={"order_usd": 100, "interval_minutes": 60},
+            status="active",
+            created_by_kind=None if created_by is None else created_by.kind,
+            created_by_id=None if created_by is None else created_by.id,
+            created_by_owner=None if created_by is None else created_by.owner,
+        )
+    )
+    session.commit()
 
 
 def _approve(session: Session, settings: Any, approval_id: str) -> tuple[Any, Any]:
@@ -133,20 +162,157 @@ def test_a_person_can_still_trade_without_an_approval(
     assert approvals.by_order(session, order.id) is None
 
 
-def test_a_strategy_order_is_not_gated(
+def test_a_strategy_created_by_an_agent_is_gated(
     session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
 ) -> None:
-    """The engine's own orders already carry their own gate; the queue is for agents."""
+    """The previous test asserted every strategy order bypasses the queue; that was false.
+
+    ``resolve_actor`` mapped any ``strategy_id`` to ``ACTOR_STRATEGY``, so an agent key
+    holding only ``trade`` could create a strategy and run it unattended. The gate now
+    keys on the automation's creating principal, which an agent-created strategy carries.
+    """
+    _strategy(session, "strategy-agent", created_by=AGENT)
+
     order = place(
         session,
         settings,
         dex,
         jupiter,
-        make_request(key="appr-strategy-1", strategy_id="strategy-9"),
+        make_request(key="appr-strategy-agent-1", strategy_id="strategy-agent"),
+    )
+
+    assert order.status == "pending_approval"
+    assert order.reason == "AWAITING_APPROVAL"
+    assert (order.actor_kind, order.actor_id) == (ACTOR_STRATEGY, "strategy-agent")
+    assert approvals.by_order(session, order.id) is not None
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
+
+
+def test_a_strategy_created_by_a_person_is_not_gated(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """A person's own automation is not an agent order; they already chose to run it."""
+    _strategy(session, "strategy-human", created_by=PERSON)
+
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(key="appr-strategy-human-1", strategy_id="strategy-human"),
     )
 
     assert order.status == "filled"
-    assert (order.actor_kind, order.actor_id) == (ACTOR_STRATEGY, "strategy-9")
+    assert (order.actor_kind, order.actor_id) == (ACTOR_STRATEGY, "strategy-human")
+    assert approvals.by_order(session, order.id) is None
+
+
+def test_a_strategy_of_unknown_provenance_is_gated(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """A strategy that cannot say who wrote it must not run unattended by default."""
+    _strategy(session, "strategy-legacy", created_by=None)
+
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(key="appr-strategy-legacy-1", strategy_id="strategy-legacy"),
+    )
+
+    assert order.status == "pending_approval"
+    assert approvals.by_order(session, order.id) is not None
+
+
+def test_a_consented_full_auto_owner_gets_agent_orders_that_fill(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    approvals.set_tier(
+        session,
+        tier="full_auto",
+        actor=ALICE,
+        settings=settings,
+        acknowledge_risk=True,
+    )
+
+    order = _place_agent(session, settings, dex, jupiter, make_request(key="appr-fullauto-1"))
+
+    assert order.status == "filled"
+    assert approvals.by_order(session, order.id) is None
+
+
+def test_full_auto_does_not_authorize_another_users_agent_orders(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """The tier belongs to the ordering principal's owner, not the deployment workspace."""
+    approvals.set_tier(
+        session,
+        tier="full_auto",
+        actor=ALICE,
+        settings=settings,
+        acknowledge_risk=True,
+    )
+
+    alice = _place_agent(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(key="appr-cross-a-1"),
+        actor=AGENT,
+    )
+    bob = _place_agent(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(key="appr-cross-b-1"),
+        actor=OTHER_AGENT,
+    )
+
+    assert alice.status == "filled"
+    assert bob.status == "pending_approval"
+    assert approvals.by_order(session, bob.id) is not None
+
+
+def test_a_strategy_created_by_an_agent_honours_its_owners_full_auto(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    _strategy(session, "strategy-agent-auto", created_by=AGENT)
+    approvals.set_tier(
+        session,
+        tier="full_auto",
+        actor=ALICE,
+        settings=settings,
+        acknowledge_risk=True,
+    )
+
+    order = place(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(key="appr-strategy-auto-1", strategy_id="strategy-agent-auto"),
+    )
+
+    assert order.status == "filled"
+    assert approvals.by_order(session, order.id) is None
+
+
+def test_a_full_auto_setting_without_consent_refuses_the_order(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """An opt-in whose acknowledgement is missing must refuse, not quietly queue."""
+    session.add(AutomationSettingRow(user_id="alice", tier="full_auto"))
+    session.commit()
+
+    order = _place_agent(session, settings, dex, jupiter, make_request(key="appr-no-consent-1"))
+
+    assert order.status == "rejected"
+    assert order.reason == "AUTOMATION_CONSENT_REQUIRED"
+    assert approvals.by_order(session, order.id) is None
+    assert session.scalar(select(func.count()).select_from(PaperFillRow)) == 0
 
 
 def test_an_agent_retry_returns_the_same_pending_order(
@@ -475,12 +641,31 @@ def test_a_pending_approval_survives_a_restart(tmp_path: Path) -> None:
 def test_an_unreadable_queue_refuses_the_order_closed(
     session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter, monkeypatch: Any
 ) -> None:
-    """A queue that cannot be read must never let an agent order through."""
+    """A queue that cannot be read must never let an agent order through.
 
-    def broken(*_: Any, **__: Any) -> Any:
-        raise RuntimeError("queue unavailable")
+    The failure is a real poisoned transaction, not a clean Python raise: the probe's
+    read fails on the database (a duplicate primary key at flush), SQLAlchemy marks the
+    session rollback-only, and only ``session.rollback()`` in the handler lets the
+    caller's ``_mark_rejected`` commit the typed refusal afterwards. Without the
+    rollback this would raise ``PendingRollbackError`` out of the order service.
+    """
 
-    monkeypatch.setattr(approvals, "read_tier", broken)
+    def poison(*_: Any, **__: Any) -> Any:
+        for index in range(2):
+            session.add(
+                PaperOrderRow(
+                    id="poison-duplicate",
+                    idempotency_key=f"poison-{index}",
+                    chain="blast",
+                    token_address="0x0000000000000000000000000000000000000abc",
+                    side="buy",
+                    amount_usd=Decimal("1"),
+                )
+            )
+        session.flush()
+        return approvals.MANUAL
+
+    monkeypatch.setattr(approvals, "read_tier", poison)
 
     order = _place_agent(session, settings, dex, jupiter, make_request(key="appr-broken-1"))
 

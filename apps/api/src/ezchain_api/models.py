@@ -303,6 +303,14 @@ class StrategyRow(Base):
     plugin_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     plugin_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    # The principal that created the strategy, on the server. An order the engine places
+    # for this strategy is attributed to the strategy, but its automation tier belongs to
+    # the principal that wrote it: a strategy an agent created is an agent's automation.
+    # Null means the provenance predates these columns; the order gate treats unknown
+    # provenance as automation rather than letting it run unattended.
+    created_by_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_by_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

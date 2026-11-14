@@ -118,12 +118,22 @@ def reject(
     return ApprovalOut.model_validate(approvals.to_dict(row))
 
 
+def _automation_user(request: Request, settings: Settings) -> str:
+    """The user whose tier these routes read or change: the caller's owner."""
+    actor = from_principal(getattr(request.state, "principal", None))
+    return approvals.ordering_user(actor, settings)
+
+
 @router.get("/automation", response_model=AutomationOut)
 def read_automation(
-    session: Session = Depends(get_session), settings: Settings = Depends(get_settings)
+    request: Request,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> AutomationOut:
-    """The user's automation tier. A new user is ``manual``: agent orders wait."""
-    return AutomationOut.model_validate(approvals.automation_state(session, settings))
+    """This user's automation tier. A new user is ``manual``: agent orders wait."""
+    return AutomationOut.model_validate(
+        approvals.automation_state(session, settings, _automation_user(request, settings))
+    )
 
 
 @router.put("/automation", response_model=AutomationOut)

@@ -188,9 +188,13 @@ persists the reason code of the first gate that refused it.
 5. Inside the fill window: the kill switch is re-read (entry-only), then the position
    replay and the quote-size checks.
 6. The risk decision.
-7. The automation tier / approval queue: an agent order under `manual` is stored as
-   `pending_approval` and queued with the server's own evidence — nothing is journaled;
-   an unreadable queue refuses `APPROVAL_STATE_UNREADABLE`.
+7. The automation tier / approval queue: an agent order, and a strategy order whose
+   strategy an agent created (or whose provenance is unknown), is stored as
+   `pending_approval` and queued with the server's own evidence under `manual` — nothing
+   is journaled; an unreadable queue refuses `APPROVAL_STATE_UNREADABLE`, and a
+   `full_auto` whose consent record is missing refuses `AUTOMATION_CONSENT_REQUIRED`.
+   The tier belongs to the ordering principal's owner, not the workspace. A strategy a
+   person created is not gated.
 8. Fill and journal.
 
 A person's approval re-enters the same function with the stored intent, so steps 2–6 and 8

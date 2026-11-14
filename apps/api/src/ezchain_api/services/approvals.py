@@ -170,8 +170,21 @@ def _consent_for(session: Session, user_id: str) -> AutomationConsentRow | None:
     )
 
 
-def automation_setting(session: Session, settings: Settings) -> AutomationSetting:
-    """This workspace's tier as the one core contract, never a local re-reading.
+def ordering_user(actor: OrderActor, settings: Settings) -> str:
+    """The user whose tier decides this actor's orders.
+
+    The tier is bound to the principal's owner, never to the deployment workspace: a key
+    id is per key, the owner is the user, and a strategy carries the owner that created
+    it. Only an actor that names no user at all falls back to the workspace id, which is
+    the development/no-principal case.
+    """
+    return actor.principal or settings.workspace_id
+
+
+def automation_setting(
+    session: Session, settings: Settings, user: str | None = None
+) -> AutomationSetting:
+    """This user's tier as the one core contract, never a local re-reading.
 
     ``ezchain_core.AutomationSetting`` refuses ``full_auto`` without an automation
     disclosure for the same user, so the same rule gates the executor pipeline and this
@@ -179,7 +192,7 @@ def automation_setting(session: Session, settings: Settings) -> AutomationSettin
     ``full_auto`` row whose consent record is absent or for another version — reads as a
     plain ``manual`` setting. The queue then holds the order; it never lets it through.
     """
-    user = settings.workspace_id
+    user = user or settings.workspace_id
     row = session.get(AutomationSettingRow, user)
     if row is None or row.tier not in AUTOMATION_TIERS or row.tier == MANUAL:
         return AutomationSetting(user=user, tier=MANUAL)
@@ -198,18 +211,21 @@ def automation_setting(session: Session, settings: Settings) -> AutomationSettin
         return AutomationSetting(user=user, tier=MANUAL)
 
 
-def read_tier(session: Session, settings: Settings) -> Tier:
-    """The tier in force for this workspace, as core's contract determines it."""
-    return FULL_AUTO if automation_setting(session, settings).tier == FULL_AUTO else MANUAL
+def read_tier(session: Session, settings: Settings, user: str | None = None) -> Tier:
+    """The tier in force for this user, as core's contract determines it."""
+    return FULL_AUTO if automation_setting(session, settings, user).tier == FULL_AUTO else MANUAL
 
 
-def automation_state(session: Session, settings: Settings) -> dict[str, Any]:
+def automation_state(
+    session: Session, settings: Settings, user: str | None = None
+) -> dict[str, Any]:
     """The tier and its provenance, for the read surface."""
-    tier = read_tier(session, settings)
-    consent = _consent_for(session, settings.workspace_id)
-    row = session.get(AutomationSettingRow, settings.workspace_id)
+    user = user or settings.workspace_id
+    tier = read_tier(session, settings, user)
+    consent = _consent_for(session, user)
+    row = session.get(AutomationSettingRow, user)
     return {
-        "user_id": settings.workspace_id,
+        "user_id": user,
         "tier": tier,
         "tiers": list(TIERS),
         "updated_at": None if row is None else _iso(row.updated_at),
@@ -247,6 +263,9 @@ def set_tier(
             "AUTOMATION_TIER_UNKNOWN",
             f"tier must be one of {', '.join(TIERS)}",
         )
+    # The tier belongs to the person who set it; an agent's orders for that same user
+    # inherit it, and another user's orders never do.
+    user = ordering_user(actor, settings)
     stamp = now or utcnow()
     disclosure: RiskDisclosure | None = None
     if tier == FULL_AUTO:
@@ -257,19 +276,19 @@ def set_tier(
             )
         disclosure = RiskDisclosure(
             point=DISCLOSURE_AUTOMATION_OPT_IN,
-            user=settings.workspace_id,
+            user=user,
             acknowledged_at=stamp,
             version=DISCLOSURE_VERSION,
         )
     # Core's contract is the only judge of whether this tier is consented; nothing is
     # written if it refuses.
     try:
-        AutomationSetting(user=settings.workspace_id, tier=tier, disclosure=disclosure)
+        AutomationSetting(user=user, tier=tier, disclosure=disclosure)
     except ValueError as exc:
         raise ApprovalError("AUTOMATION_CONSENT_REQUIRED", str(exc)) from exc
-    row = session.get(AutomationSettingRow, settings.workspace_id)
+    row = session.get(AutomationSettingRow, user)
     if row is None:
-        row = AutomationSettingRow(user_id=settings.workspace_id, tier=tier)
+        row = AutomationSettingRow(user_id=user, tier=tier)
         session.add(row)
     row.tier = tier
     row.updated_at = stamp
@@ -279,7 +298,7 @@ def set_tier(
         session.add(
             AutomationConsentRow(
                 id=new_id(),
-                user_id=settings.workspace_id,
+                user_id=user,
                 tier=FULL_AUTO,
                 disclosure_version=DISCLOSURE_VERSION,
                 disclosure_text=DISCLOSURE_TEXT,
@@ -289,7 +308,7 @@ def set_tier(
             )
         )
     session.commit()
-    return automation_state(session, settings)
+    return automation_state(session, settings, user)
 
 
 # ---------------------------------------------------------------------------
@@ -656,25 +675,40 @@ def fail_unexecuted(
 
 @dataclass(frozen=True)
 class QueueHealth:
-    """Whether the queue can be read, for the placement path's fail-closed check."""
+    """Whether the queue can be read, for the placement path's fail-closed check.
+
+    ``consent_required`` is the third state: a stored ``full_auto`` setting whose
+    disclosure record is missing or for another version. It is not silently read as
+    ``manual`` here — an opt-in the platform cannot prove must refuse the unattended
+    order with ``AUTOMATION_CONSENT_REQUIRED`` instead of quietly queueing it.
+    """
 
     readable: bool
     tier: Tier
+    consent_required: bool = False
 
 
-def health(session: Session, settings: Settings) -> QueueHealth:
+def health(session: Session, settings: Settings, user: str | None = None) -> QueueHealth:
     """Probe the tier and the queue. An unreadable queue refuses the order.
 
     Every failure reads as unreadable, not just a database error: a queue whose state
     cannot be established has no safe default, and this is the check that makes the
     placement path fail closed rather than guess that an agent order may proceed.
+
+    A failed read poisons the surrounding transaction on Postgres; the rollback here is
+    what lets the caller's ``_mark_rejected`` commit the refusal afterwards instead of
+    raising out of the order service.
     """
+    target = user or settings.workspace_id
     try:
-        tier = read_tier(session, settings)
+        tier = read_tier(session, settings, target)
+        stored = session.get(AutomationSettingRow, target)
+        consent_required = stored is not None and stored.tier == FULL_AUTO and tier != FULL_AUTO
         session.execute(select(OrderApprovalRow.id).limit(1)).first()
     except Exception:  # noqa: BLE001 - any failure to establish state is a refusal
+        session.rollback()
         return QueueHealth(readable=False, tier=MANUAL)
-    return QueueHealth(readable=True, tier=tier)
+    return QueueHealth(readable=True, tier=tier, consent_required=consent_required)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -721,6 +755,7 @@ __all__ = [
     "list_approvals",
     "lock",
     "next_action",
+    "ordering_user",
     "read_tier",
     "record_proposal",
     "refuse_decision",
