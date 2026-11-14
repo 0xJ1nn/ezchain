@@ -5,6 +5,11 @@
   "engines": {
     "node": ">=22"
   },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.33"
+    }
+  },
   "scripts": {
     "dev": "pnpm --filter @ezchain/web dev",
     "build": "pnpm --filter @ezchain/web build",

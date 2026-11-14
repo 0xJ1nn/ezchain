@@ -1,3 +1,8 @@
+# Direct Python requirements, as ranges. This file declares intent; the exact
+# install source is requirements.lock, generated from this file by
+# tools/pins/compile.sh and verified by tools/check_pins.py. `pip install -r
+# requirements.txt` is no longer the setup path — tools/setup-python.sh installs
+# the lock with --require-hashes.
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 sqlalchemy>=2.0,<3
@@ -17,3 +22,6 @@ packaging>=23
 # The live pump.fun source is the ingest package's optional extra, not a base pin:
 #   pip install -e "services/ingest[firehose]"
 # Everything else (retention, replay, the store, the duck-typed adapter) runs without it.
+# The OS-keyring provider secret store is the API's optional extra; its pins live in
+# requirements-keyring.lock:
+#   pip install -r requirements-keyring.lock
