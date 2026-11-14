@@ -204,6 +204,7 @@ open http://localhost:3000
 ```
 
 - API docs: <http://127.0.0.1:8000/docs> · contract: [docs/API.md](docs/API.md)
+- Reason codes (every refusal and its meaning): [docs/REASON-CODES.md](docs/REASON-CODES.md)
 - Plugin catalogue: <http://127.0.0.1:8000/api/v1/plugins>
 - Agent state: <http://127.0.0.1:8000/api/v1/agent/state> (needs a `read` principal)
 - Agent keys: `/api/v1/agent/keys` (admin only; tokens shown once)

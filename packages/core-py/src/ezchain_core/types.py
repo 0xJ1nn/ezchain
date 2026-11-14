@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
+from .reason_codes import RISK_REASON_MESSAGES
+
 Mode = Literal["paper", "live"]
 Side = Literal["buy", "sell"]
 # One literal per executable quote provider plus the non-executable DexScreener mark.
@@ -308,55 +310,8 @@ class Quote:
         }
 
 
-# Human-readable text for each risk reason code. The code stays the stable identifier;
-# the message is for display and may change between releases.
-RISK_REASON_MESSAGES: dict[str, str] = {
-    "INVALID_SIDE": "Order side must be buy or sell.",
-    "INVALID_AMOUNT": "Order amount must be greater than zero.",
-    "ORDER_LIMIT": "Order size exceeds the configured limit.",
-    "SIZE_BELOW_MIN": "Order size is below the configured minimum.",
-    "SIZE_ABOVE_MAX": "Order size is above the configured maximum.",
-    "EQUITY_UNKNOWN": "Account equity is unknown; cannot size against it.",
-    "PROFILE_UNKNOWN": "The requested risk profile is unknown; use low, mid or high.",
-    "PAPER_MARK_LIMIT": "Order size exceeds the paper-mark limit.",
-    "PRICE_IMPACT_TOO_HIGH": "Price impact exceeds the configured ceiling.",
-    "QUOTE_STALE": "Quote is too old to trust.",
-    "MARK_TIMESTAMP_FUTURE": "Market observation is dated ahead of the clock.",
-    "PRICE_UNKNOWN": "Token price is unknown.",
-    "LIQUIDITY_UNKNOWN": "Token liquidity is unknown.",
-    "LIQUIDITY_TOO_LOW": "Token liquidity is below the minimum.",
-    "NO_PAIR": "No market pair is available for the token.",
-    "SNAPSHOT_STALE": "Market snapshot is stale.",
-    "PAIR_AGE_UNKNOWN": "Pair creation time is unknown.",
-    "PAIR_TOO_YOUNG": "Pair is younger than the minimum age.",
-    "EXIT_NO_ROUTE": "No executable exit route is available.",
-    "NO_SELL_ROUTE": "No sell route is available.",
-    "NO_ROUTE": "No route is available.",
-    "POSITION_LIMIT": "Position size would exceed the configured limit.",
-    "MAX_OPEN_POSITIONS": "Maximum number of open positions reached.",
-    "DAILY_LOSS_LIMIT": "Daily loss limit reached.",
-    "INSUFFICIENT_CASH": "Insufficient cash to cover the order.",
-    "SHORTFALL_FUNDED": "Shortfall was funded.",
-    "INSUFFICIENT_POSITION": "Insufficient position to sell.",
-    "POSITION_CHANGED": "Position changed while the order was being priced.",
-    "KILL_SWITCH_ACTIVE": "Kill switch is active.",
-    "KILL_SWITCH_ARMED": "Kill switch is armed; new risk-increasing orders are refused.",
-    "WALLET_UNKNOWN": "No paper wallet settles this chain.",
-    "SETTLEMENT_ASSET_UNKNOWN": "The paper wallet does not settle in the ledger asset.",
-    # An agent order under the manual automation tier is held for a person's decision.
-    "AWAITING_APPROVAL": "Waiting for a person to approve this order.",
-    "APPROVAL_REQUIRED": "This order needs a person's approval before it can execute.",
-    "APPROVAL_EXPIRED": "The approval window closed before a person decided.",
-    "APPROVAL_NOT_PENDING": "This approval was already decided.",
-    "APPROVAL_REQUIRES_PERSON": "Only a person may approve or reject an order.",
-    "APPROVAL_INTENT_INVALID": "The stored order behind this approval cannot be read.",
-    "APPROVAL_STATE_UNREADABLE": "The approval queue could not be read; no order was placed.",
-    "APPROVAL_SUPERSEDED": "A newer proposal replaced this one.",
-    "APPROVAL_REJECTED": "A person rejected this order.",
-    "APPROVAL_DECISION_NOTE_INVALID": "A rejection needs a reason a person wrote.",
-    "AUTOMATION_CONSENT_REQUIRED": "Full auto needs an acknowledged risk disclosure.",
-    "AUTOMATION_TIER_UNKNOWN": "The requested automation tier is not one of manual, full_auto.",
-}
+# Human-readable text for each risk reason code comes from the one taxonomy. The code
+# stays the stable identifier; the message is for display and may change between releases.
 
 
 class RiskReason(str):

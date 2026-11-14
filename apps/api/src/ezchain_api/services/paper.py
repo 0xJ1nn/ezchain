@@ -61,7 +61,7 @@ from ezchain_core.ledger import (
     position_account,
     sell_entries,
 )
-from ezchain_core.types import RISK_REASON_MESSAGES
+from ezchain_core.reason_codes import RISK_REASON_MESSAGES
 
 from ..actor import (
     ACTOR_AGENT,

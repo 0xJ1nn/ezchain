@@ -441,7 +441,7 @@ class OrderOut(BaseModel):
             reason = data.get("reason")
             reasons = data.get("reasons")
             if not reasons and reason is not None:
-                from ezchain_core.types import RISK_REASON_MESSAGES
+                from ezchain_core.reason_codes import RISK_REASON_MESSAGES
 
                 data = dict(data)
                 data["reasons"] = [

@@ -64,6 +64,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   reports `ezchain_up 0` rather than a confident zero. `/metrics` is served to a loopback
   client or to a request carrying the deployment token; it is never published by the edge.
 
+- **One stable reason-code taxonomy, and a guard that keeps it honest (GH-28).**
+  `ezchain_core.reason_codes` now holds one `ReasonSpec` per failure that can block or move
+  money: 253 codes across 17 categories, each with its category, emitting layer, source
+  module, operator summary, display message, HTTP status, retryable flag and severity. The
+  older registries are derived from it rather than copied — `RISK_REASON_MESSAGES`,
+  `VAULT_REASONS` and `BINDING_REASONS` are built from the single registry — so a message
+  or a membership test has exactly one home, and the API imports the codes from there
+  instead of re-typing ~20 literals. `docs/REASON-CODES.md` enumerates every code with its
+  meaning and maps each to the `Intent`/`Order` state it explains and to the surface the web
+  renders. The stability promise is explicit: a code's string and meaning are permanent, its
+  message is not, and callers compare on `code`. `tests/test_reason_codes.py` is the drift
+  guard: it scans the AST for every shape this project emits a code through and fails when a
+  code is emitted without a row, when a row names a code nothing emits, when a row is
+  missing from the document, or when the document lists a code the registry does not
+  define. The audit it enabled found and fixed a missing message (`MISSING_RISK_INPUTS`),
+  removed three homes for one spelling (`SNAPSHOT_STALE`) and kept the codes that only look
+  duplicated (`KILL_SWITCH_ARMED` vs `KILL_SWITCH_ACTIVE`, `NO_ROUTE` vs `NO_SELL_ROUTE` vs
+  `EXIT_NO_ROUTE`) with the difference documented. Refusals themselves are unchanged; only
+  the vocabulary moved. Recorded as ADR-0043.
 - **Custody is the user's, and the vault keeps keys from everyone else (PAPER).** Keys are
   added at runtime by the person who owns them, encrypted at rest under that user's
   credential, and used only for that user's orders. `ezchain_core.vault` owns the contract:
