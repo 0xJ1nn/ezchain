@@ -91,9 +91,10 @@ workflow — do not add a workflow that cannot run.
 | 3 | Wireframe integrity | `node tools/check-wireframe.mjs` |
 | 4 | Docs links | `node tools/check-links.mjs` |
 | 5 | Security | `node tools/check-secrets.mjs` |
-| 6 | Runtime gates | `ruff`/`mypy`/`pytest` when the Python artifacts exist; `pnpm -r lint`, `pnpm -r typecheck`, `pnpm --filter @ezchain/web build`, `pnpm -r test` |
+| 6 | Dependency pins | `tools/check_pins.py --fast` — exact versions, sha256 for every Python pin, integrity for every Node resolution, and every declared range still satisfied |
+| 7 | Runtime gates | `ruff`/`mypy`/`pytest` when the Python artifacts exist; `pnpm -r lint`, `pnpm -r typecheck`, `pnpm --filter @ezchain/web build`, `pnpm -r test` |
 
-All six steps run today. Python, invariant and adapter-contract suites activate as those
+All seven steps run today. Python, invariant and adapter-contract suites activate as those
 artifacts land; compose validation is not in the gate yet. Every gate that is committed
 must be runnable on this machine.
 

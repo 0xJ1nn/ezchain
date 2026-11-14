@@ -1,0 +1,3 @@
+# Advisory ids accepted for a pin, one per line: <id> <reason>.
+# An entry without a reason is refused, so this cannot become a mute button.
+# Nothing is allowlisted today.

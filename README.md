@@ -203,6 +203,11 @@ bash tools/dev.sh                # API on :8000, web on :3000
 open http://localhost:3000
 ```
 
+Both setup scripts install from the committed locks, not from the ranges: Python via
+`requirements.lock` with `--require-hashes`, Node via `pnpm-lock.yaml --frozen-lockfile`.
+`python3 tools/check_pins.py --fast` verifies the pins without a network; the pin, audit
+and update ritual is [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
 - API docs: <http://127.0.0.1:8000/docs> · contract: [docs/API.md](docs/API.md)
 - Reason codes (every refusal and its meaning): [docs/REASON-CODES.md](docs/REASON-CODES.md)
 - Plugin catalogue: <http://127.0.0.1:8000/api/v1/plugins>

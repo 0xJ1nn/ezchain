@@ -1,5 +1,9 @@
 # Runtime dependencies only. The test/lint toolchain lives in requirements.txt and
 # must not be installed into the production API image.
+#
+# This file declares ranges. The API image installs requirements-runtime.lock with
+# --require-hashes; `tools/pins/compile.sh` regenerates that lock from this file and
+# `tools/check_pins.py` fails when the two disagree.
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 sqlalchemy>=2.0,<3

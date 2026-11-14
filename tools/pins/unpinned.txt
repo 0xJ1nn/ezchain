@@ -1,0 +1,9 @@
+# Declared dependencies that no lock can pin, one per line: <name> <reason>.
+# `tools/check_pins.py --fast` reads this file for every dependency declared in a package
+# pyproject that is not a workspace package. An entry without a reason is refused, and a
+# VCS or direct-URL requirement that is not listed here fails the check, so a gap is a
+# written decision rather than a dependency nobody noticed.
+#
+# An entry is a gap, not an approval: the package is not installed by any lock, so it is
+# not hashed, not audited and not reproduced. Moving it into a lock is the fix.
+pumpfun-firehose v0.5.0 is a git tag (no sdist or wheel published, so no sha256 to record); it is the optional services/ingest[firehose] extra, imported lazily, and absent from every lock
