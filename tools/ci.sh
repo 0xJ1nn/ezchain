@@ -11,6 +11,15 @@ cd "$(dirname "$0")/.."
 # The caller's environment is not modified: this script runs in a child shell.
 unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET PYTHONPATH NODE_ENV
 
+# The one deliberate exception: a gate that runs a clone (rather than this checkout) points
+# imports at that clone's own package sources through EZCHAIN_GATE_PYTHONPATH, because the
+# venv's editable installs resolve to this checkout and would otherwise test the wrong tree.
+# It is a declared channel, not an inherited environment: a stray PYTHONPATH is still unset
+# above, so a developer's shell cannot change what the gate imports.
+if [ -n "${EZCHAIN_GATE_PYTHONPATH:-}" ]; then
+  export PYTHONPATH="$EZCHAIN_GATE_PYTHONPATH"
+fi
+
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 step "1/6 agent stubs"
