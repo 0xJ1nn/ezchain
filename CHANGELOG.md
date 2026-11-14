@@ -62,6 +62,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   never exits `0`. The suite scripts both seams, so it makes no network call and needs no
   provider key. See [docs/AGENT-INTEGRATION.md §9.1](docs/AGENT-INTEGRATION.md#91-the-headless-command).
 
+- **The agent runtime keeps an append-only, tamper-evident session trace, and replay
+  (PAPER).** `services/agent-runtime` now writes one trace per session through a `TraceSink`
+  whose only operation is `append`: no update, delete or rewrite exists in the API, and a
+  session id with events on disk cannot be started a second time. Every turn, tool call
+  (name, arguments digest, result status and digest, latency, refusal code), budget debit,
+  kill-switch observation and the terminal outcome is recorded, with the prompt stored as a
+  hash, credentials redacted on write and tool data stored as digests. Each event carries the
+  previous event's SHA-256, taken over a canonical JSON encoding with sorted keys rather than
+  a delimiter join (the lesson of the ledger seal review), so `1` and `"1"` cannot collide and
+  a field containing `|` cannot move a boundary; `verify_events` names the event and the
+  reason for a mutated, reordered, dropped or duplicated event. `replay` verifies the chain
+  and reconstructs the session summary from the events alone, and the suite pins replay equal
+  to the live summary across a completed session, a budget stop, a kill-switch stop, an
+  approval stop, a tool error and a model failure. Storage is a file (`FileTraceLog`, one
+  JSON-lines file per session) or the in-memory sink behind the same interface, so the
+  runtime's ADR-0042 boundary is unchanged: no database, no platform import.
 - **A Compose drill that proves the stack at the current migration head (PAPER).**
   `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts
   `infra/compose.yaml` under an isolated project, then requires `/readyz` to report

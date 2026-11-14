@@ -50,6 +50,39 @@ up in this session's successful tool result and fails the session with
 `UNSOURCED_NUMBER` (missing result, unknown path) or `NUMBER_MISMATCH` (stated value differs
 from the read model). The rendered answer prints the source and age of each number.
 
+**The trace.** Every session writes one append-only trace (ADR-0042's audit trail) through
+the injected `trace` sink; with none injected it lives in a `MemoryTraceLog` for the life of
+the loop, and a durable run passes a `FileTraceLog(root)` that writes one JSON-lines file per
+session.
+
+| Operation | Contract |
+|---|---|
+| `TraceSink.append` | the interface's only member: no update, no delete, no rewrite |
+| `MemoryTraceLog.append/read/sessions` | the same contract without a filesystem |
+| `FileTraceLog.append/read/sessions/path_for` | one file per session, opened `"a"` to write and read back |
+
+Each event records the session start (prompt hash, model id), every turn (tokens, cost,
+latency), every tool call (name, arguments digest, result status and digest, latency, refusal
+code), every budget debit (session and day), every kill-switch observation, and the terminal
+outcome with its typed reason, spend and approval id. Rules that hold by construction:
+
+- **Append only.** A store refuses an event that does not continue the chain, and a session id
+  with events already on disk cannot be started a second time.
+- **Tamper evidence.** An event's digest is the SHA-256 of `canonical(record)`: one JSON
+  object with sorted keys over a validated JSON-native type domain. A float or a `Decimal`
+  is refused rather than guessed at, so `1` and `"1"` cannot collide and no delimiter exists
+  to smuggle a field boundary across (the lesson of the ledger seal review). `verify_events`
+  stops at the first mutated, reordered, dropped or duplicated event and names the index and
+  the reason.
+- **Replay.** `replay(events)` verifies the chain and rebuilds a `SessionSummary` — state,
+  reason, turns, tool calls, tool errors, tokens, cost, numbers — from the events alone.
+  `summarize(outcome)` reads the same summary off the live outcome, and the tests assert the
+  two are equal for a completed session, a budget stop, a kill-switch stop, an approval stop,
+  a tool error and a model failure.
+- **Redaction.** Credential-shaped strings are replaced in every field on write, tool
+  arguments and results are stored as digests rather than text, and the prompt is stored as
+  a hash. The agent key appears in neither.
+
 **Testing seam.** `ModelClient` and `McpToolbox` are protocols. The suite supplies a
 scripted model and a fake MCP server; it makes no network call and needs no provider key.
 The stdio transport that spawns `ezchain-mcp` is not built yet — the toolbox is the seam

@@ -147,11 +147,23 @@ def _imported_names(source: str) -> set[str]:
 
 
 def test_the_package_imports_no_shell_url_or_filesystem_module() -> None:
-    sources = list(PACKAGE.rglob("*.py"))
+    # The trace store is the one module allowed a filesystem import: it writes one append-only
+    # file per session and reads nothing else. Every module that can reach a tool decision
+    # stays clean, and the trace's own surface is pinned in test_trace_append_only.
+    sources = [source for source in PACKAGE.rglob("*.py") if source.name != "trace.py"]
     assert sources
     for source in sources:
         names = _imported_names(source.read_text())
         assert names.isdisjoint(FORBIDDEN_IMPORTS), f"{source.name} imports {names}"
+
+
+def test_only_the_trace_store_reaches_the_filesystem() -> None:
+    for source in PACKAGE.rglob("*.py"):
+        names = _imported_names(source.read_text())
+        if source.name == "trace.py":
+            assert "pathlib" in names
+        else:
+            assert names.isdisjoint({"os", "pathlib", "tempfile"}), f"{source.name} imports {names}"
 
 
 def test_the_package_calls_no_dynamic_code_primitive() -> None:

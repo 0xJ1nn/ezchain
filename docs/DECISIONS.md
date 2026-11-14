@@ -1181,6 +1181,22 @@ rolls its transaction back before the refusal is written.
 sourced answers), and the headless entry point exists in `services/harness` (one session on
 the real loop, a printed trace, typed exit codes); the stdio transport, the session trace
 store and the panel remain planned, not built.
+sourced answers), and so does the append-only session trace (chain, verification and replay).
+The stdio transport, the panel and the headless command remain planned, not built.
+
+**Amendment (session trace, this change).** The trace is built as the audit trail below
+describes: one JSON-lines file per session, written through a `TraceSink` whose only
+operation is `append`, with `read`/`sessions` beside it and no update, delete or rewrite path
+anywhere in the API. Every event carries the previous event's digest, and the event's own
+digest is the SHA-256 of its canonical encoding — one JSON object with sorted keys over a
+validated type domain, never a delimiter join, because the ledger seal review found a `"|"`
+join let two different tapes hash the same. `verify_events` names the event and the reason
+when a mutated, reordered, dropped or duplicated event breaks the chain, and `replay`
+rebuilds a session summary (turns, tool calls, spend, outcome) from the events alone; a test
+pins replay equal to the live summary for a completed session, a budget stop, a kill-switch
+stop, an approval stop, a tool error and a model failure. The store is a file or an in-memory
+sink behind the same interface, so the runtime still opens no database and imports no
+platform package.
 
 **Amendment (review round 1, budgets).** "Per day" is per process, not per loop: the loop is
 built per session, so the daily counters live in a process-scoped store keyed by
@@ -1267,12 +1283,13 @@ executor, and the runtime holds none. The one platform credential the runtime ho
 scoped agent key — an API bearer token, not a signing key — and it never enters a prompt, a
 tool argument, the trace or the model context.
 
-**The audit trail.** The runtime will write one append-only trace per session in its own
-store, never in the platform database: session, step, prompt hash, model id, tool, arguments,
-result summary, latency, tokens, cost and approval id, redacted on write and replayable
-against the recorded results. That store belongs to a service that is decided, not built: the
-runtime-side audit log is planned, not built, and the platform holds no trace today. The
-platform keeps the money record it already had: the order row and every journal leg carry
+**The audit trail.** The runtime writes one append-only trace per session in its own store,
+never in the platform database: session, step, prompt hash, model id, tool, arguments
+digest, result summary, latency, tokens, cost and approval id, redacted on write and
+replayable against the recorded results. The chain is hashed so a mutated, reordered,
+dropped or duplicated event is detected, and `replay` reconstructs the session summary from
+the events alone. The platform still holds no trace today. The platform keeps the money
+record it already had: the order row and every journal leg carry
 the agent principal (ADR-0037); `order_approvals` carries the server's own risk evidence and
 `decided_by`; the executor's pipeline decodes the transaction bytes and compares every bound
 field with the approved intent and its digest before any signer is called (ADR-0038).

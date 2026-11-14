@@ -73,7 +73,7 @@ iteration speed without lying about the topology.
 | `services/engine` | Python | strategy runtime, automation scheduler, signal routing, risk | 1 per workspace partition |
 | `services/executor` | Python | key custody, signing, broadcast, fill confirmation | 1 per key shard |
 | `services/ingest` | Python (Rust only if measured) | market/chain streams, normalization, candles | per source, N |
-| `services/agent-runtime` | Python | one model loop, MCP-only tool surface, budgets, session lifecycle; trace and stdio transport planned (ADR-0042) | 1 per session, N |
+| `services/agent-runtime` | Python | one model loop, MCP-only tool surface, budgets, session lifecycle, append-only trace and replay; stdio transport planned (ADR-0042) | 1 per session, N |
 | `migrate` | Python | one-shot Alembic | run-to-completion |
 | `apps/desktop` | TypeScript / Electron + Python | native shell, private sidecar supervision, tray/background | 1 per desktop user |
 

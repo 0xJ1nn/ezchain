@@ -321,6 +321,13 @@ step. The Agent Client Protocol path is planned with no implementation. The pane
 headless command are the loop's two entry points, and an external agent over the Agent
 Client Protocol would use the same boundary. The panel is additionally blocked on the
 owner's design export: `design/` is the source of truth for visuals, and no agent-panel
+turns, tokens and cost, the six-state session lifecycle, the kill-switch stop, sourced-number
+answers and an append-only, hash-chained session trace with replay. Not built yet: the stdio
+transport that spawns `ezchain-mcp` (the loop takes a toolbox seam), the panel and the
+headless command. The Agent Client Protocol path is planned with no implementation. The panel
+and the headless command are the loop's two eventual entry points, and an external agent over
+the Agent Client Protocol would use the same boundary. The panel is additionally blocked on
+the owner's design export: `design/` is the source of truth for visuals, and no agent-panel
 design has been exported yet. The runtime is not part of the API, the engine or the
 executor, and no strategy code runs in it — strategies stay external SDK packages hosted by
 the engine.
@@ -354,15 +361,17 @@ the engine.
   outcome. Every money number it states is read from a tool result: a final answer is a set
   of claims resolved against this session's recorded results, and a value that differs from
   the read model fails the session (`NUMBER_MISMATCH`) instead of being printed.
-- **Two audit records.** The runtime will write an append-only session trace in its own
-  store — prompt hash, model, tool, arguments, result summary, latency, tokens, cost,
-  approval id — redacted on write and replayable; that store is planned, not built. The
-  platform keeps the money record: order and journal rows with the agent principal, the
-  approval with its risk evidence and `decided_by`, and the executor's pipeline check that
-  decodes the bytes against the approved digest before any signer runs (ADR-0038).
-  Attribution of kill-switch changes is not implemented: the switch row holds only its
-  state, reason and update time. They join on approval id, order id and key id, and neither
-  substitutes for the other.
+- **Two audit records.** The runtime writes an append-only session trace in its own store —
+  prompt hash, model, tool, arguments digest, result summary, latency, tokens, cost, approval
+  id — redacted on write and replayable. Each event carries the previous event's SHA-256
+  digest over a canonical JSON encoding, so a mutated, reordered, dropped or duplicated event
+  is detected, and replay rebuilds the session summary from the events alone. The platform
+  keeps the money record: order and journal rows with the agent principal, the approval with
+  its risk evidence and `decided_by`, and the executor's pipeline check that decodes the
+  bytes against the approved digest before any signer runs (ADR-0038). Attribution of
+  kill-switch changes is not implemented: the switch row holds only its state, reason and
+  update time. They join on approval id, order id and key id, and neither substitutes for the
+  other.
 
 ## 9.1 The headless command
 
