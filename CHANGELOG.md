@@ -50,6 +50,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `tools/ci.sh` already collects; no network and no sleeps, and a guard removed by hand
   makes it fail. The matrix and what is **not** covered are
   [docs/PROMPT-INJECTION.md](docs/PROMPT-INJECTION.md).
+- **A headless command for the agent runtime.** `ezchain-harness` runs one session on the
+  real `AgentLoop` — the same budgets, kill switch and approval path the panel will use —
+  and prints each step to stdout as it happens: the session id, the MCP tool surface, each
+  turn, each tool call with its one-line result summary, the sourced answer, and a final
+  `end` line with the typed `StopReason`, the state and the spend. The model and the MCP
+  toolbox are `module:attribute` factories, so the command carries no provider SDK of its
+  own, and a factory that cannot start is reported as a usage error rather than a failed
+  session. Exit codes are `0` completed, `1` failed, `2` usage, `3` stopped (kill switch or
+  budget) and `4` awaiting approval; a session waiting for a person, stopped or failed
+  never exits `0`. The suite scripts both seams, so it makes no network call and needs no
+  provider key. See [docs/AGENT-INTEGRATION.md §9.1](docs/AGENT-INTEGRATION.md#91-the-headless-command).
 
 - **A Compose drill that proves the stack at the current migration head (PAPER).**
   `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts

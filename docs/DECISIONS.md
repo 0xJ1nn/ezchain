@@ -1178,8 +1178,9 @@ rolls its transaction back before the refusal is written.
 
 **Status:** accepted 2026-11-14. **Implementation note:** the minimal loop exists in
 `services/agent-runtime` (model seam, MCP tool surface, six budgets, lifecycle table,
-sourced answers); the stdio transport, the session trace store, the panel and the headless
-command remain planned, not built.
+sourced answers), and the headless entry point exists in `services/harness` (one session on
+the real loop, a printed trace, typed exit codes); the stdio transport, the session trace
+store and the panel remain planned, not built.
 
 **Amendment (review round 1, budgets).** "Per day" is per process, not per loop: the loop is
 built per session, so the daily counters live in a process-scoped store keyed by

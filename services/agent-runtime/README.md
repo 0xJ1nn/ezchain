@@ -60,3 +60,9 @@ real MCP server in front of the real API with a model scripted to obey injected
 instructions, and asserts the structural controls hold anyway: the approval queue, the key's
 tool surface, the budgets and the absence of key material. The matrix and the honest gaps are
 [docs/PROMPT-INJECTION.md](../../docs/PROMPT-INJECTION.md).
+where it will land.
+
+**Entry points.** The panel and the headless command (`services/harness`) are two fronts on
+this same loop and the same approval path; neither keeps a second copy of either. See
+[`services/harness/README.md`](../harness/README.md) for the command, its trace format and
+its exit codes.
