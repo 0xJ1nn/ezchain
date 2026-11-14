@@ -15,7 +15,10 @@ Rounding policy (normative, see ``docs/LEDGER.md``):
   ``Decimal(str(float))`` which has already lost the exact value.
 * Every conversion and computation below sizes its own decimal context from the input's
   digit count. The ambient context (28 significant digits by default) is never trusted:
-  a value that does not fit is a refusal, never a rounded answer.
+  a value that does not fit is a refusal, never a rounded answer. A bare ``a * b`` is
+  itself a rounding operation at that ambient precision, so a product is always
+  :func:`exact_product`: quantizing the ambient product afterwards cannot recover the
+  digits the multiply already dropped.
 
 The pre-trade cost preview lives here too, not at the edge: the web preview and the
 journal must agree on one cost model (CONTRACT I1/I7), so ``preview_cost`` produces
@@ -164,6 +167,28 @@ def exact_sum(values: Iterable[object]) -> Decimal:
         return sum(items, Decimal(0))
 
 
+def exact_product(*values: object) -> Decimal:
+    """Multiply Decimals exactly, with no ambient-precision rounding.
+
+    ``quantity * price_usd`` under the ambient 28-digit context is rounded *before* the
+    quantize that follows it, so the journal books a double-rounded value: at 22 integer
+    digits the ambient product hides thirteen minor units. The precision here is derived
+    from the operands — a product of factors with ``m`` and ``n`` significant digits has at
+    most ``m + n`` — so the multiplication itself never rounds and the caller's
+    ``quantize_money`` is the only rounding the value ever sees.
+    """
+    factors = [_as_decimal(value, field="factor") for value in values]
+    if not factors:
+        raise MoneyError("exact_product needs at least one factor")
+    significant = sum(len(factor.as_tuple().digits) for factor in factors)
+    with localcontext() as context:
+        context.prec = significant + len(factors) + 2
+        product = Decimal(1)
+        for factor in factors:
+            product = product * factor
+    return product
+
+
 def require_quantity(value: object, *, field: str = "quantity") -> Decimal:
     """Validate a token quantity: exact and finite, but not restricted to USD scale."""
     return _as_decimal(value, field=field)
@@ -264,14 +289,25 @@ def preview_cost(
 
     ``fill_fee_usd`` is the journal rule: a paper mark pays the flat bps fee; an
     executable quote pays the larger of the bps leg and its own venue cost, never
-    their sum (the venue already prices pool fees and gas). ``worst_case_out`` is
-    the expected out less the slippage window, rounded like every other money
-    figure; it is null when there is no window to guarantee.
+    their sum (the venue already prices pool fees and gas). The venue leg is a
+    computed receipt figure, so it is quantized half-even at the ledger boundary
+    *before* the comparison: ``fill_fee_usd`` is then exactly the fee the journal
+    books, never a value the journal would round down by a minor unit. The echoed
+    ``venue_fee_usd`` is the quote's own reported cost, unchanged — a venue that
+    reports a sub-minor fee shows it, while the journal books the quantized figure.
+    ``worst_case_out`` is the expected out less the slippage window, rounded like
+    every other money figure; it is null when there is no window to guarantee.
     """
-    if notional_usd <= 0:
+    # The float guard belongs at the argument, not only downstream: a caller that passes
+    # ``0.5`` must get ``FloatMoneyError`` here, where the field name is known, instead of
+    # a journal boundary refusing a preview's fill fee later.
+    notional = _as_decimal(notional_usd, field="notional_usd")
+    venue_fee = _as_decimal(venue_fee_usd, field="venue_fee_usd")
+    venue_leg = quantize_money(venue_fee, field="venue_fee_usd")
+    if notional <= 0:
         raise ValueError("notional must be positive")
-    paper_leg = bps_fee(notional_usd, fee_bps)
-    fill_fee = paper_leg if kind == PAPER_MARK else max(paper_leg, venue_fee_usd)
+    paper_leg = bps_fee(notional, fee_bps)
+    fill_fee = paper_leg if kind == PAPER_MARK else max(paper_leg, venue_leg)
     slippage_bps = None if kind == PAPER_MARK else DEFAULT_SLIPPAGE_BPS
     worst_case_out: Decimal | None = None
     if slippage_bps is not None and amount_out is not None:
@@ -284,7 +320,7 @@ def preview_cost(
         worst_case_out = quantize_money(inside_window, field="worst_case_out")
     return CostPreview(
         platform_fee_usd=Decimal(0),
-        venue_fee_usd=venue_fee_usd,
+        venue_fee_usd=venue_fee,
         network_fee_usd=None,
         price_impact_pct=price_impact_pct,
         slippage_bps=slippage_bps,

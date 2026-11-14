@@ -167,6 +167,34 @@ async def test_a_fill_walks_every_stage_and_journals_the_receipt() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_partial_fill_with_a_repeating_decimal_notional_is_journaled() -> None:
+    """A partial fill's notional is a division result, and the receipt is a computed value.
+
+    ``FakeVenue(mode="partial", partial_ratio=1/3)`` fills ``50 * (1/3)`` tokens at $2,
+    so the receipt's notional is ``33.33333333333333333333333332`` — off the ledger's
+    minor unit by more than a rounding error, because the venue's own division already
+    ran out of digits. The boundary quantizes it half-even exactly once, so the fill is
+    journaled rather than raising ``SubQuantumError`` out of the pipeline while the money
+    has already moved at the venue.
+    """
+    venue = FakeVenue(mode="partial", partial_ratio=Decimal(1) / Decimal(3))
+    pipe, _, journal = pipeline(venue)
+    result = await pipe.run(buy(amount_usd=Decimal("100")), snapshot=make_snapshot())
+
+    assert result.status == "partially_filled"
+    assert result.fill is not None
+    assert result.journal is not None
+    assert result.fill.notional_usd == Decimal("33.33333333333333333333333332")
+    assert journal.groups == (f"fill:{result.order.id}",)
+    position_leg = next(
+        entry for entry in result.journal.entries if entry.account.startswith("position:")
+    )
+    assert position_leg.usd_value == Decimal("33.33333333")
+    assert position_leg.amount == result.fill.quantity
+    assert _sum_usd(result.journal.entries) == Decimal("0")
+
+
+@pytest.mark.asyncio
 async def test_a_confirmed_fill_is_booked_from_the_receipt_not_the_intent() -> None:
     # The venue confirms a smaller fill than the intent asked for; the ledger must agree
     # with the receipt, not with the request.
@@ -506,6 +534,31 @@ async def test_a_journal_failure_is_reported_and_not_hidden() -> None:
     assert result.status == "journal_error"
     assert result.fill is not None
     assert "JOURNAL_FAILED" in (result.reason or "")
+
+
+@pytest.mark.asyncio
+async def test_a_journal_that_cannot_be_built_is_a_journal_error_not_a_crash() -> None:
+    """Building the journal sits inside the same guard as appending it.
+
+    The venue confirmed a receipt this process cannot book: the fill is accepted and
+    priced, but its notional quantizes to zero, so the journal refuses it. The money moved,
+    so the caller must get ``journal_error`` with the fill attached — never an exception
+    with the fill lost.
+    """
+
+    class UnbookableReceiptVenue(FakeVenue):
+        async def submit(self, order, signed=None):  # type: ignore[no-untyped-def]
+            fill = await super().submit(order, signed)
+            return replace(fill, notional_usd=Decimal("0.000000001"))
+
+    pipe, _, journal = pipeline(UnbookableReceiptVenue())
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "journal_error"
+    assert result.fill is not None
+    assert result.journal is None
+    assert "JOURNAL_FAILED" in (result.reason or "")
+    assert journal.groups == ()
 
 
 @pytest.mark.asyncio

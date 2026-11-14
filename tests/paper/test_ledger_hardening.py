@@ -28,7 +28,7 @@ from decimal import Decimal, localcontext
 
 import pytest
 
-from ezchain_core import buy_entries, genesis_entries, sell_entries
+from ezchain_core import Fill, buy_entries, genesis_entries, journal_from_fill, sell_entries
 from ezchain_core.ledger import (
     FUNDING_ACCOUNT,
     LEDGER_GENESIS_DIGEST,
@@ -37,6 +37,7 @@ from ezchain_core.ledger import (
     assert_balanced,
     cash_account,
     entry_from_row,
+    fee_account,
     funding_entries,
     ledger_digest,
     position_account,
@@ -53,6 +54,7 @@ from ezchain_core.money import (
     SourceRef,
     SubQuantumError,
     bps_fee,
+    exact_product,
     exact_sum,
     from_minor_units,
     preview_cost,
@@ -193,13 +195,120 @@ def test_rounding_policy_is_half_even_at_the_ledger_boundary() -> None:
 
 
 def test_bps_fee_is_exact_for_long_tail_notionals() -> None:
-    """The bps product is sized from its operands, not from the 28-digit default."""
-    notional = Decimal("1234567890123456789012.5")
+    """The bps product is sized from its operands, not from the 28-digit default.
+
+    The expected values are hard-coded strings, not recomputed here: a test that builds
+    its own expectation under the same ambient context passes against an unsized
+    implementation and pins nothing.
+    """
+    assert bps_fee(Decimal("1234567890123456789012.5"), 30) == Decimal(
+        "3703703670370370367.03750000"
+    )
+    # 27 integer digits: under the ambient 28-digit context the product rounds to
+    # ``...7014`` and the journal loses 2_963 minor units. Sized from the operands it is
+    # exactly ``...70137037034``, i.e. ``...70137037`` at the ledger unit.
+    assert bps_fee(Decimal("123456789012345678901234567.12345678"), 30) == Decimal(
+        "370370367037037036703703.70137037"
+    )
     with localcontext() as context:
-        context.prec = PRECISION
-        expected = quantize_money(notional * Decimal(30) / Decimal(10_000))
-    assert bps_fee(notional, 30) == expected
-    assert to_minor_units(bps_fee(notional, 30)) == to_minor_units(expected)
+        context.prec = 28
+        ambient = Decimal("123456789012345678901234567.12345678") * Decimal(30) / Decimal(10_000)
+    # The ambient product is a different number before any quantize runs at all.
+    assert ambient == Decimal("370370367037037036703703.7014")
+
+
+def test_exact_product_is_not_the_ambient_product() -> None:
+    """``quantity * price`` under the ambient context is a *different number*.
+
+    ``quantize_money`` only sizes its own quantize, so an unsized product is rounded to 28
+    significant digits first and the journal then quantizes the wrong value: at 22 integer
+    digits that is 13 minor units. ``exact_product`` is the multiplication that must run
+    before the quantize.
+    """
+    quantity = Decimal("1234567890123456789012")
+    price = Decimal("1.000000010666666666666666666666")
+    assert quantize_money(exact_product(quantity, price)) == Decimal(
+        "1234567903292180950328.87241613"
+    )
+    with localcontext() as context:
+        context.prec = 28
+        ambient = quantity * price
+    # The ambient product is one 28-digit number; the journal's quantize cannot recover
+    # the digits it already lost.
+    assert quantize_money(ambient) == Decimal("1234567903292180950328.87241600")
+    assert quantize_money(ambient) != quantize_money(exact_product(quantity, price))
+
+    # The small case: the ambient product lands just under the half-even boundary while
+    # the exact one is just over it, so the journal is a minor unit apart.
+    small_price = Decimal("1.000000001666666666666666666667")
+    assert quantize_money(exact_product(Decimal(3), small_price)) == Decimal("3.00000001")
+    with localcontext() as context:
+        context.prec = 28
+        small_ambient = Decimal(3) * small_price
+    assert quantize_money(small_ambient) == Decimal("3.00000000")
+
+
+def test_a_derived_notional_and_cost_basis_use_the_exact_product() -> None:
+    """Both factory paths that multiply journal the exact product, hard-coded."""
+    quantity = Decimal("1234567890123456789012")
+    price = Decimal("1.000000010666666666666666666666")
+    expected = Decimal("1234567903292180950328.87241613")
+
+    bought = buy_entries(
+        chain=CHAIN,
+        token_address=TOKEN,
+        quantity=quantity,
+        price_usd=price,
+        fee_bps=0,
+    )
+    position_leg = next(entry for entry in bought if entry.account == POSITION)
+    assert position_leg.usd_value == expected
+    assert_balanced(bought)
+
+    sold = sell_entries(
+        chain=CHAIN,
+        token_address=TOKEN,
+        quantity=quantity,
+        price_usd=price,
+        avg_cost_usd=price,
+        fee_bps=0,
+    )
+    cash_leg = next(entry for entry in sold if entry.account == cash_account())
+    assert cash_leg.usd_value == expected
+    removed_basis = next(entry for entry in sold if entry.account == POSITION)
+    assert removed_basis.usd_value == expected.copy_negate()
+    assert_balanced(sold)
+
+
+def test_preview_venue_fee_is_the_fee_the_journal_books() -> None:
+    """A sub-quantum venue fee is quantized for the fill leg, not echoed into it."""
+    preview = _preview(venue_fee_usd=Decimal("0.500000001"))
+    assert preview.fill_fee_usd == Decimal("0.50000000")
+    # The quoted venue cost is still reported as the venue said it, and the fill fee is
+    # the quantized maximum, which is what ``journal_from_fill`` books for the receipt.
+    assert preview.venue_fee_usd == Decimal("0.500000001")
+    journal = journal_from_fill(
+        Fill(
+            order_id="o",
+            side="buy",
+            quantity=Decimal("1"),
+            price_usd=Decimal("100"),
+            notional_usd=Decimal("100"),
+            fee_usd=preview.venue_fee_usd,
+        ),
+        chain=CHAIN,
+        token_address=TOKEN,
+    )
+    fee_leg = next(entry for entry in journal.entries if entry.account == fee_account())
+    assert fee_leg.usd_value == preview.fill_fee_usd
+
+
+def test_preview_refuses_floats_at_its_own_arguments() -> None:
+    """The guard is at the argument, so a caller learns the field it passed badly."""
+    with pytest.raises(FloatMoneyError):
+        _preview(venue_fee_usd=0.5)
+    with pytest.raises(FloatMoneyError):
+        _preview(notional_usd=100.0)
 
 
 def test_fee_quantum_change_matches_the_documented_table() -> None:

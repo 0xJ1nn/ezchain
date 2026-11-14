@@ -27,6 +27,7 @@ from .money import (
     bps_fee,
     exact_neg,
     exact_precision,
+    exact_product,
     exact_sum,
     quantize_money,
     require_money,
@@ -264,7 +265,7 @@ def buy_entries(
     if quantity <= 0 or price_usd <= 0:
         raise ValueError("quantity and price must be positive")
     notional = (
-        quantize_money(quantity * price_usd, field="notional_usd")
+        quantize_money(exact_product(quantity, price_usd), field="notional_usd")
         if notional_usd is None
         else require_money(notional_usd, field="notional_usd")
     )
@@ -314,7 +315,7 @@ def sell_entries(
     if avg_cost_usd < 0:
         raise ValueError("average cost cannot be negative")
     proceeds = (
-        quantize_money(quantity * price_usd, field="proceeds_usd")
+        quantize_money(exact_product(quantity, price_usd), field="proceeds_usd")
         if proceeds_usd is None
         else require_money(proceeds_usd, field="proceeds_usd")
     )
@@ -324,7 +325,7 @@ def sell_entries(
     if fee < 0:
         raise ValueError("fee cannot be negative")
     cost_basis = (
-        quantize_money(quantity * avg_cost_usd, field="cost_basis_usd")
+        quantize_money(exact_product(quantity, avg_cost_usd), field="cost_basis_usd")
         if cost_basis_usd is None
         else require_money(cost_basis_usd, field="cost_basis_usd")
     )

@@ -99,9 +99,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   bases, partial-sell proceeds, the cost preview's worst case) are rounded half-even once
   at the ledger boundary, and explicit sub-minor values or floats fail closed with
   `SubQuantumError` / `FloatMoneyError` instead of being silently adjusted. Every
-  conversion and sum derives its decimal precision from its operands; the ambient
-  28-digit default is never trusted, so a notional with more digits than that converts
-  exactly instead of rounding a minor unit away. A journal group balances to exactly zero
+  conversion, product and sum derives its decimal precision from its operands
+  (`exact_product` for a multiplication, `exact_sum` for a sum); the ambient 28-digit
+  default is never trusted, so a notional with more digits than that converts exactly
+  instead of rounding a minor unit away — a bare `quantity * price` rounds *before* the
+  quantize and loses thirteen minor units at 22 integer digits. A venue receipt is the
+  same: `journal_from_fill` quantizes its notional and fee once, so a partial fill whose
+  notional is a repeating-decimal division result is journaled instead of crashing the
+  pipeline after the money already moved. A journal group balances to exactly zero
   minor units with no tolerance, and the reconciliation read model compares money as
   exact integers — a persisted row off the quantum is reported, never compared at a
   coarser scale. The ordered tape gains a chained SHA-256 seal (`seal_entries` /

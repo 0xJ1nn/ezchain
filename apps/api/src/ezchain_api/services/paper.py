@@ -63,7 +63,7 @@ from ezchain_core.ledger import (
     position_account,
     sell_entries,
 )
-from ezchain_core.money import MONEY_QUANTUM, quantize_money
+from ezchain_core.money import MONEY_QUANTUM, exact_product, quantize_money
 from ezchain_core.reason_codes import RISK_REASON_MESSAGES
 
 from ..actor import (
@@ -1943,7 +1943,7 @@ async def place_order(
             notional = (
                 quote.amount_out
                 if fill_quantity == quote.amount_in
-                else fill_quantity * quote.price
+                else exact_product(fill_quantity, quote.price)
             )
         else:
             fill_quantity = quote.amount_out
@@ -2128,7 +2128,8 @@ async def place_order(
                 basis = held_cost
             else:
                 basis = min(
-                    quantize_money(fill_quantity * avg_cost, field="cost_basis_usd"), held_cost
+                    quantize_money(exact_product(fill_quantity, avg_cost), field="cost_basis_usd"),
+                    held_cost,
                 )
             entries = sell_entries(
                 chain=payload.chain,

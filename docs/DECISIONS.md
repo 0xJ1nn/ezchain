@@ -1480,10 +1480,15 @@ cost basis, a partial sell's proceeds, the paper service's notional/fee/basis) a
 quantized **once, half-even**, at the ledger boundary by `quantize_money`. Explicit values
 must already be whole minor units; otherwise `SubQuantumError` is raised. `LedgerEntry`
 rejects floats and non-finite values, `assert_balanced` sums integer minor units and
-requires exactly zero, and reads compare money via `to_minor_units`. Every conversion and
-sum derives its precision from its operands (`exact_precision`, `exact_sum`): the ambient
-28-digit default is never trusted, because a notional with more digits than that would
-otherwise round a minor unit away before the balance check saw it. The ordered tape also
+requires exactly zero, and reads compare money via `to_minor_units`. Every conversion,
+product and sum derives its precision from its operands (`exact_precision`,
+`exact_product`, `exact_sum`): the ambient 28-digit default is never trusted, because a
+notional with more digits than that would otherwise round a minor unit away before the
+balance check saw it — and a bare `quantity * price` rounds there *before* the quantize,
+a double round that loses thirteen minor units at 22 integer digits. The venue receipt is
+the last computed input: `journal_from_fill` quantizes its `notional_usd` and `fee_usd`
+once at that boundary, so a partial fill whose notional is a division result is journaled
+rather than refused. The ordered tape also
 gains a chained SHA-256 seal (`seal_entries`/`verify_seal`) over canonical JSON
 (`ezchain.ledger/v2`) covering index, account, asset, amount, USD value, kind, `group_id`,
 `created_at`, `wallet_id`, `bucket_id` and actor, plus a canonical `replay_balances`; both are

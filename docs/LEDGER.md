@@ -25,15 +25,21 @@ this change implements and the ones that remain open under GH-155.
 2. **Computed values are quantized.** The boundary function is
    `ezchain_core.money.quantize_money`. It is applied to a notional derived from
    `quantity * price`, a bps fee (`notional * fee_bps / 10_000`), a derived cost basis, a
-   partial sell's derived proceeds, the paper service's notional, fee and basis, and the
-   cost preview's `worst_case_out`.
+   partial sell's derived proceeds, the paper service's notional, fee and basis, the cost
+   preview's `worst_case_out`, and — once, at `journal_from_fill` — the venue receipt's
+   own `notional_usd` and `fee_usd`. A receipt is a *computed* value, not an explicit one:
+   a partial fill's notional is `quantity * price` at the venue's precision, so it is
+   rounded half-even here rather than refused as sub-quantum.
 3. **Precision is derived, never ambient.** Every conversion and computation here sizes a
-   `localcontext` from its operands' digit count (`exact_precision`) and sums with
-   `exact_sum`. Python's ambient context is 28 significant digits, and a notional may carry
-   more: `to_minor_units`/`quantize_money`/`bps_fee` under that default silently round, and
-   a balance check built on them would accept a group that is a whole minor unit out. A
-   value that does not fit the derived precision **fails closed** (`SubQuantumError`);
-   nothing is rounded "because it did not fit".
+   `localcontext` from its operands' digit count (`exact_precision`), multiplies with
+   `exact_product` and sums with `exact_sum`. Python's ambient context is 28 significant
+   digits, and a notional may carry more: `to_minor_units`/`quantize_money`/`bps_fee` under
+   that default silently round, and a balance check built on them would accept a group
+   that is a whole minor unit out. A bare `quantity * price` is itself a rounding
+   operation at ambient precision — quantizing its result afterwards cannot recover the
+   dropped digits, which is a double round — so no money path multiplies without
+   `exact_product`. A value that does not fit the derived precision **fails closed**
+   (`SubQuantumError`); nothing is rounded "because it did not fit".
 4. **Explicit values must be exact.** A value that is already on the quantum is written
    unchanged. A value with more than eight decimal places raises `SubQuantumError`; the
    ledger never absorbs, invents or silently rounds an explicit amount. Fail closed.
@@ -56,6 +62,10 @@ this change implements and the ones that remain open under GH-155.
 | 30 bps fee on `0.0000033333` (exactly `9.9999e-9`) | half-even, 8 dp | `0.00000001` |
 | 30 bps fee on `0.0000003333` (exactly `9.999e-10`) | half-even, 8 dp | `0` |
 | `to_minor_units` of `1234567890123456789012.00000001`, ambient precision 28 | derived precision, exact | `123456789012345678901200000001` minor units, no rounding |
+| `1234567890123456789012 * 1.000000010666666666666666666666`, ambient precision 28 | `exact_product`, then half-even | `1234567903292180950328.87241613`; the ambient product quantizes to `...87241600`, thirteen minor units short |
+| `3 * 1.000000001666666666666666666667` | `exact_product`, then half-even | `3.00000001`; the ambient product rounds to `3.000000005000000000000000000` and quantizes to `3.00000000` |
+| Partial fill receipt `notional_usd=33.33333333333333333333333332` | computed, quantized at `journal_from_fill` | journaled as `33.33333333` |
+| Cost preview with `venue_fee_usd=0.500000001` | venue leg quantized before the max | `fill_fee_usd=0.50000000` (the journaled fee) |
 | Explicit `notional_usd=1.000000001` | fail closed | `SubQuantumError` |
 | `usd_value=0.1` (float) | fail closed | `FloatMoneyError` |
 | Group sums to `0.00000001` | fail closed | `LedgerError` |
@@ -109,7 +119,7 @@ Implemented by this change:
 | Control | Evidence |
 |---|---|
 | Double-entry completeness | `assert_balanced` requires an exact zero minor-unit sum; the buy/sell/genesis/funding factories assert it before returning. `tests/paper/test_ledger_hardening.py`, `tests/paper/test_accounting.py`. |
-| Exact minor-unit accounting | `packages/core-py/src/ezchain_core/money.py` (`exact_precision`, `exact_sum`, `to_minor_units`); zero-drift property test over eight seeded 250-operation **mixed** tapes (funding, explicit and derived notionals, full exits, derived partial sells). |
+| Exact minor-unit accounting | `packages/core-py/src/ezchain_core/money.py` (`exact_precision`, `exact_product`, `exact_sum`, `to_minor_units`); zero-drift property test over eight seeded 250-operation **mixed** tapes (funding, explicit and derived notionals, full exits, derived partial sells). |
 | Reconciliation | `apps/api/src/ezchain_api/services/reconciliation.py` re-derives every journal group, fill, position and cash figure from persisted rows and compares money as exact integer minor units. `tests/paper/test_reconciliation.py`, `tests/paper/test_property.py`. |
 | Immutability evidence | `ledger_digest` / `seal_entries` / `verify_seal`: a chained SHA-256 over the ordered tape. Each link is canonical JSON (`ezchain.ledger/v2`) covering the index, account, asset, amount, USD value, kind, `group_id`, `created_at`, `wallet_id`, the agent bucket (`bucket_id`) and the actor (`actor_kind`, `actor_id`). Any changed field changes the head, and no two distinct entries can serialize to the same payload. `tests/paper/test_ledger_hardening.py`. |
 | Replay determinism | `replay_balances` / `replay_position` project one ordered tape to canonical, account-sorted amounts and USD minor units, summing with `exact_sum`; the same tape always produces the same balances and seal. |
@@ -161,12 +171,19 @@ env -u PYTHONPATH .venv/bin/pytest tests/paper -q -k "ledger or rounding or drif
 
 `tests/paper/test_ledger_hardening.py` proves the policy on the arithmetic itself:
 floats and sub-minor values fail closed, a one-minor-unit imbalance at a 22-integer-digit
-notional is rejected, the v1 `"|"` payload is forged to produce one head for two different
+notional is rejected, a product under the ambient 28-digit context is shown to be a
+different number from `exact_product` (thirteen minor units at 22 integer digits, one at
+three), the v1 `"|"` payload is forged to produce one head for two different
 entries and the shipped seal is shown to split them, a tape whose group/time/wallet/actor
 changed is a different head, the same tape produces the same seal and replay, a changed
 entry is detected, the §2.1 fee table is pinned row by row against both quanta, and eight
 seeded 250-operation mixed tapes (funding top-ups, explicit and derived notionals, full
 exits, derived partial sells) conserve every minor unit with zero drift.
+
+`tests/executor/test_pipeline.py` covers the receipt boundary: a partial fill whose notional
+is a repeating-decimal division result is journaled from the quantized receipt with no
+exception, and a receipt the journal cannot book surfaces as `journal_error` with the fill
+attached rather than as a traceback.
 
 Any change to a money formula needs an exact-conservation test and an entry in
 `docs/DECISIONS.md` when it moves a boundary.

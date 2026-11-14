@@ -43,7 +43,9 @@ export function bpsFee(notionalUsd: string, feeBps: number): number {
 
 export function previewCost(input: CostModelInput): CostModelView {
 	const paperLeg = bpsFee(input.notional_usd, FIXTURE_PAPER_FEE_BPS);
-	const venueFee = Number(input.venue_fee_usd);
+	// The venue leg is a receipt figure: quantize it before the max, exactly as the
+	// server does, so `fill_fee_usd` is the fee the journal books.
+	const venueFee = round8(Number(input.venue_fee_usd));
 	const fillFee = input.kind === "paper_mark" ? paperLeg : Math.max(paperLeg, venueFee);
 	const slippageBps = input.kind === "paper_mark" ? null : FIXTURE_SLIPPAGE_BPS;
 	const amountOut = input.amount_out === null ? null : Number(input.amount_out);

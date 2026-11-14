@@ -84,7 +84,9 @@ from ezchain_core import (
     VaultBackedSigner,
     Venue,
     decode_transaction,
+    exact_product,
     journal_from_fill,
+    quantize_money,
     risk_decision_from_intent,
     verify_prepared_transaction,
     verify_signed_transaction,
@@ -373,8 +375,13 @@ class ExecutionPipeline:
             return _order_failed(order, "rejected", TRANSACTION_DIGEST_MISMATCH, fill=fill)
 
         # 8. Journal from the receipt, then append. The ledger is the only accountant.
-        journal = _journal_from(intent, fill, position)
+        # Building the journal is inside the same guard as appending it: the money already
+        # moved at the venue, so any failure to book it — a refusal, a sink error — must
+        # surface as the documented journal error, never as a traceback that loses the
+        # fill. ``journal_from_fill`` quantizes the receipt at the boundary, so a
+        # repeating-decimal partial fill journals instead of raising.
         try:
+            journal = _journal_from(intent, fill, position)
             self.sink.append(journal)
         except Exception as exc:  # noqa: BLE001 - the fill happened; the journal did not
             return ExecutionResult(
@@ -656,7 +663,8 @@ def _journal_from(intent: Intent, fill: Fill, position: PositionState) -> Journa
     avg_cost = position.avg_cost_usd
     cost_basis = None
     if fill.side == "sell":
-        cost_basis = min(position.cost_usd, fill.quantity * avg_cost)
+        # A partial exit's basis is a computed value: multiply exactly, quantize once.
+        cost_basis = min(position.cost_usd, quantize_money(exact_product(fill.quantity, avg_cost)))
     return journal_from_fill(
         fill,
         chain=intent.chain,
