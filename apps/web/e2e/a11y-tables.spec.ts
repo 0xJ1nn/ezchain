@@ -58,8 +58,8 @@ for (const c of CASES) {
 
 const STRATEGY_CASES = [
 	{ route: "/strategies", label: "Decision log table", caption: "Decision log", headers: 5 },
-	{ route: "/automations", label: "Scheduled strategies table", caption: "Scheduled strategies", headers: 7 },
-	{ route: "/automations", label: "Automation vs strategy table", caption: "Automation vs strategy", headers: 2 },
+	{ route: "/strategies?view=automations", label: "Scheduled strategies table", caption: "Scheduled strategies", headers: 7 },
+	{ route: "/strategies?view=automations", label: "Automation vs strategy table", caption: "Automation vs strategy", headers: 2 },
 	{ route: "/strategies/str-bonk-momentum", label: "Runs table", caption: "Runs", headers: 4 },
 ];
 
@@ -149,7 +149,7 @@ test("Armed protection table is keyboard focusable with a name and scoped header
 	await form.getByRole("button", { name: "Arm protection" }).click();
 	await expect(form.getByRole("status")).toContainText("Armed stop-loss");
 
-	await page.goto("/automations");
+	await page.goto("/strategies?view=automations");
 	await expect(page.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
 
 	const wrapper = page.getByRole("region", { name: "Armed protection table" });

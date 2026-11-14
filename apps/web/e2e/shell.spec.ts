@@ -438,8 +438,8 @@ test("sidebar fits its viewport at 1440x900 and 1100x900", async ({ page }) => {
 		if (!box) throw new Error(`sidebar has no box at ${width}px`);
 
 		const items = nav.locator(".nav-item");
-		await expect(items).toHaveCount(21);
-		for (let index = 0; index < 21; index += 1) {
+		await expect(items).toHaveCount(20);
+		for (let index = 0; index < 20; index += 1) {
 			const item = await items.nth(index).boundingBox();
 			if (!item) throw new Error(`nav item ${index} has no box at ${width}px`);
 			expect(item.y, `item ${index} top at ${width}px`).toBeGreaterThanOrEqual(

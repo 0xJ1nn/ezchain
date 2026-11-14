@@ -1,8 +1,10 @@
+import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { FixtureBadge } from "@/components/ops";
 import { Badge, Panel } from "@/components/ui";
 import { PositionTile } from "@/components/position-tile";
 import { positionTiles } from "@/lib/position-fixtures";
+import { referenceSurfacesEnabled } from "@/lib/runtime";
 
 const codeStates = [
 	{ state: "Entering (intent, not fill)", rendered: true },
@@ -19,6 +21,9 @@ const codeStates = [
 ];
 
 export default function StatesPage() {
+	// Design documentation: reachable in the development (fixture) build only.
+	if (!referenceSurfacesEnabled()) notFound();
+
 	return (
 		<AppShell active="states">
 			<header className="page-head">

@@ -47,7 +47,10 @@ Open `design/wireframe/index.html`.
 Persistent rules:
 
 - Discovery leads: Browse and Signals are the first sidebar group. Reference galleries
-  live under `/more`, never in the primary navigation.
+  (`/states`, `/components`, `/mobile`) are design documentation: they are listed under
+  `/more` and served only in the development (fixture) build, never in the primary nav.
+- Strategy and automation management is one surface: `/strategies`, with the scheduler view
+  at `/strategies?view=automations`. `/automations` redirects there.
 - Mode badge (`PAPER` / `LIVE`) is always in the topbar; live adds a red hairline.
 - Chain scope belongs to the page that owns the rows. Markets, Launches and Positions
   each carry their own chain filter in the page URL; the shell has no global chain
@@ -155,7 +158,7 @@ unsellable, dust, stale mark, closed, quarantined.
 | Markets | `/markets?chain=…&sort=…` |
 | Token | `/tokens/{chain}/{mint}`, `/tokens/{chain}/{mint}/candles`, `/quote`, `/positions?token=…` (chart: closed candles with source+age; safety: the snapshot's safety object, `—` for any field the store lacks) |
 | Wallets | `/wallets`, `/wallets/{id}/balances` |
-| Automations | `/automations`, `/automations/{id}/runs`, `/protection/arms` (armed list) |
+| Automations | `/automations` (redirects to `/strategies?view=automations`), `/strategies/{id}/runs`, `/protection/arms` (armed list) |
 | Positions protection | `/protection/arms`, `/protection/profiles`, `/protection/profiles/effective?chain=…` |
 | Strategies | `/strategies`, `/strategies/{id}` |
 | Signals | `/signals`, `/signals/sources` |

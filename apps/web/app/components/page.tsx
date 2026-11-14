@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { FixtureBadge } from "@/components/ops";
 import { MarketSpark } from "@/components/market-spark";
@@ -10,8 +11,12 @@ import {
 	Stat,
 	TokenAvatar,
 } from "@/components/ui";
+import { referenceSurfacesEnabled } from "@/lib/runtime";
 
 export default function ComponentsPage() {
+	// Design documentation: reachable in the development (fixture) build only.
+	if (!referenceSurfacesEnabled()) notFound();
+
 	return (
 		<AppShell active="components">
 			<header className="page-head">

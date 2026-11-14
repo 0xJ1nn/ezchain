@@ -127,7 +127,6 @@ const moreSections = new Set([
 	"wallets",
 	"ledger",
 	"reports",
-	"automations",
 	"strategies",
 	"backtests",
 	"risk",

@@ -102,8 +102,9 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 
 ### 2. Automations + builder — #11 (strategy scheduler live; generic builder open)
 
-- `/automations` shows the real strategy scheduler: status, interval, last run and links
-  to each strategy. A generic trigger/action object is not part of this build.
+- `/strategies?view=automations` shows the real strategy scheduler: status, interval, last
+  run and links to each strategy. `/automations` redirects there; one surface, no duplicate
+  nav entry. A generic trigger/action object is not part of this build.
 - The graph builder is `/strategies/builder`; no separate automation builder is claimed.
 
 ### 3. Strategies + strategy detail + signals — #12 (surfaces live; tracker open for follow-ups)
@@ -123,7 +124,8 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 ### 5. Remaining system pages + component gallery — #14 (routes live; gallery polish open)
 
 - Every sidebar route is implemented; the placeholder catch-all is removed and unknown
-  routes return 404. `/states`, `/mobile` and `/components` are real galleries.
+  routes return 404. `/states`, `/mobile` and `/components` are real galleries, served only
+  in the development (fixture) build: production answers 404 and `/more` omits the group.
 - `/wallets` and `/security` state custody/live limits honestly rather than inventing a
   backend.
 

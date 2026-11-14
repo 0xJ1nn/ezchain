@@ -1,66 +1,16 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { Panel } from "@/components/ui";
-
-const groups = [
-	{
-		title: "Discovery",
-		links: [
-			["/markets", "Browse markets"],
-			["/signals", "Signals"],
-		],
-	},
-	{
-		title: "Overview",
-		links: [["/performance", "Performance"]],
-	},
-	{
-		title: "Trade",
-		links: [
-			["/wallets", "Wallets"],
-			["/ledger", "Activity / ledger"],
-			["/reports", "Reports"],
-		],
-	},
-	{
-		title: "Automate",
-		links: [
-			["/automations", "Automations"],
-			["/strategies", "Strategies"],
-			["/backtests", "Backtests"],
-		],
-	},
-	{
-		title: "Protect",
-		links: [
-			["/risk", "Risk & kill switch"],
-			["/alerts", "Alerts"],
-		],
-	},
-	{
-		title: "System",
-		links: [
-			["/chains", "Chains & RPC"],
-			["/integrations", "Integrations"],
-			["/security", "Security"],
-			["/developer", "Developer"],
-			["/operations", "Operations"],
-			["/workspace", "Workspace"],
-			["/settings", "Settings"],
-		],
-	},
-	{
-		title: "Reference",
-		links: [
-			["/states", "State gallery"],
-			["/components", "Components"],
-			["/mobile", "Mobile"],
-		],
-	},
-];
+import { moreGroups } from "@/lib/more-nav";
+import { referenceSurfacesEnabled } from "@/lib/runtime";
 
 export default function MorePage() {
 	const fixture = process.env.EZCHAIN_WEB_MODE === "fixture";
+	// The reference galleries are design documentation, so they are listed only where
+	// their routes exist: the development (fixture) build. Production keeps the same
+	// page without them.
+	const reference = referenceSurfacesEnabled();
+	const sections = moreGroups(reference);
 	return (
 		<AppShell active="more">
 			<header className="page-head">
@@ -70,13 +20,16 @@ export default function MorePage() {
 					<p className="sub">
 						Browse and Signals are the primary discovery surfaces and stay one tap away in
 						the bottom nav. Performance, Automate, Trade, Protect and System live here under
-						More. Reference galleries are design documentation, not production surfaces.
+						More.
+						{reference
+							? " Reference galleries are design documentation, not production surfaces."
+							: ""}
 					</p>
 				</div>
 			</header>
 
 			<div className="grid cols-2">
-				{groups.map((group) => (
+				{sections.map((group) => (
 					<Panel title={group.title} key={group.title}>
 						<div className="list">
 							{group.links.map(([href, label]) => (

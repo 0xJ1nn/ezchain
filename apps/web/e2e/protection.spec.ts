@@ -1,8 +1,8 @@
 import { expect, test } from "./test";
 
 // Position protection: arm a stop from the positions page, edit it, and see
-// the armed arm reflected on the automations page. Fixture mode only; the
-// fixture never pretends to write to the API.
+// the armed arm reflected on the strategy surface's automations view. Fixture
+// mode only; the fixture never pretends to write to the API.
 
 test("arm a stop-loss from the positions page, edit it, and list it in automations", async ({
 	page,
@@ -32,7 +32,7 @@ test("arm a stop-loss from the positions page, edit it, and list it in automatio
 	await armed.getByRole("button", { name: "Save" }).click();
 	await expect(armed).toContainText("0.000018");
 
-	await page.goto("/automations");
+	await page.goto("/strategies?view=automations");
 	await expect(page.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
 	const arms = page
 		.locator("section.panel")
