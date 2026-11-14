@@ -105,6 +105,24 @@ operator action.
 | GET | `/api/v1/system/kill-switch` | read | Persisted operator switch, global and strategy levels |
 | POST | `/api/v1/system/kill-switch` | admin | `{active, reason?}`: arm or release the switch in one step |
 
+#### `/metrics` and the money-path question
+
+`/metrics` is Prometheus text with bounded labels: no token mint, pair address, wallet,
+order id or request id is ever a label. Two families answer "why was this order
+rejected":
+
+- `ezchain_paper_rejects_total{reason}` — persisted refusals, grouped from
+  `paper_orders.reason` where the status is `rejected`, one series per reason code. A value
+  outside the [reason-code taxonomy](REASON-CODES.md) is counted as `OTHER`; a rejection
+  that stored no code is `UNKNOWN`. Neither is a label a caller can choose.
+- `ezchain_venue_latency_seconds{venue}` — a fixed-bucket histogram of one venue call, so
+  `histogram_quantile()` yields a p95. `venue` is a quote provider `kind` from the chain
+  registry, or `other`.
+
+The reject family is omitted, not zeroed, when the database cannot be read; `ezchain_up 0`
+says why. The query set that walks from reject rate to reason, venue p95 and source
+staleness is [OBSERVABILITY.md](OBSERVABILITY.md).
+
 ### Markets, tokens and quotes
 
 | Method | Path | Auth | Purpose |

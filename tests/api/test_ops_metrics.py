@@ -39,8 +39,16 @@ from ezchain_api.models import (
 )
 from ezchain_api.observability import (
     BREAKER_STATE_VALUES,
+    MAX_REJECT_LABELS,
+    REJECT_LABEL_VALUES,
+    VENUE_LATENCY,
+    VENUE_LATENCY_BUCKETS_SECONDS,
     HttpMetrics,
     OpsSnapshot,
+    RejectMetrics,
+    VenueLatencyMetrics,
+    VenueLatencyProvider,
+    reject_label,
     render_ops,
     render_prometheus,
 )
@@ -854,3 +862,279 @@ def test_no_alert_is_documented_for_an_absent_deployable() -> None:
 
     assert "ExecutorUnreachable" not in expressions
     assert not any("backup" in name.lower() for name in expressions)
+
+
+# ---------------------------------------------------------------------------
+# Why was this order rejected
+# ---------------------------------------------------------------------------
+
+
+def _rejected(session: Session, key: str, reason: str | None) -> None:
+    session.add(
+        PaperOrderRow(
+            idempotency_key=key,
+            chain="ethereum",
+            token_address="0xtoken",
+            side="buy",
+            amount_usd=Decimal("10"),
+            status="rejected",
+            reason=reason,
+        )
+    )
+    session.commit()
+
+
+def test_persisted_rejections_are_counted_by_their_reason_code(session: Session) -> None:
+    """The counter is the reason the order row persisted, not a second opinion."""
+    _rejected(session, "r-1", "SNAPSHOT_STALE")
+    _rejected(session, "r-2", "SNAPSHOT_STALE")
+    _rejected(session, "r-3", "INSUFFICIENT_CASH")
+
+    body = _client(session).get("/metrics").text
+
+    assert 'ezchain_paper_rejects_total{reason="SNAPSHOT_STALE"} 2' in body
+    assert 'ezchain_paper_rejects_total{reason="INSUFFICIENT_CASH"} 1' in body
+
+
+def test_a_rejection_with_no_code_is_unknown_not_zero(session: Session) -> None:
+    """A row with no reason is a refusal whose cause is unrecorded, not an absence."""
+    _rejected(session, "r-null", None)
+
+    body = _client(session).get("/metrics").text
+
+    assert 'ezchain_paper_rejects_total{reason="UNKNOWN"} 1' in body
+
+
+def test_the_reject_label_set_is_bounded_and_contains_no_caller_string(session: Session) -> None:
+    """A caller cannot buy a series: outside the taxonomy is one ``OTHER`` bucket.
+
+    The candidates are the shapes that would blow up a label set if they were trusted: a
+    code nobody defined, a 90-character token-like string, a base58 address and a hex
+    pair address. None may reach the exposition, and the family's label count must stay
+    inside the taxonomy's own size.
+    """
+    absurd = "TOTALLY_MADE_UP_REASON"
+    token_like = "So11111111111111111111111111111111111111112" * 2
+    address = "0x9f8a2b7c4d1e6f3a5b0c8d7e2f4a6b1c3d5e7f90"
+    quoted = 'stale "batch"\nSNAPSHOT_STALE'
+    for index, candidate in enumerate((absurd, token_like, address, quoted)):
+        _rejected(session, f"r-hostile-{index}", candidate)
+    _rejected(session, "r-real", "ORDER_LIMIT")
+
+    body = _client(session).get("/metrics").text
+
+    for candidate in (absurd, token_like, address, "batch"):
+        assert candidate not in body
+    rejects = [
+        line for line in body.splitlines() if line.startswith("ezchain_paper_rejects_total{")
+    ]
+    assert rejects == [
+        'ezchain_paper_rejects_total{reason="ORDER_LIMIT"} 1',
+        'ezchain_paper_rejects_total{reason="OTHER"} 4',
+    ]
+    assert len(rejects) <= MAX_REJECT_LABELS
+
+
+def test_every_reject_label_is_member_of_the_declared_vocabulary() -> None:
+    """The bound is a property of the label set, not a cap that silently drops samples."""
+    assert reject_label("SNAPSHOT_STALE") == "SNAPSHOT_STALE"
+    assert reject_label(None) == "UNKNOWN"
+    assert reject_label("") == "UNKNOWN"
+    assert reject_label("TOKEN_MINT") == "OTHER"
+    assert reject_label(42) == "OTHER"  # type: ignore[arg-type]
+
+    metrics = RejectMetrics()
+    metrics.record("SNAPSHOT_STALE")
+    metrics.record("x" * 500)
+    metrics.record(None)
+    assert set(metrics.snapshot()) <= REJECT_LABEL_VALUES
+    assert MAX_REJECT_LABELS == len(REJECT_LABEL_VALUES)
+
+
+def test_an_unreadable_database_omits_the_reject_family(session: Session) -> None:
+    """No database is not "no rejects": the family is absent and ``ezchain_up 0`` says why."""
+
+    class BrokenSession:
+        def execute(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("database is gone")
+
+        def rollback(self) -> None:
+            pass
+
+    body = _client(BrokenSession()).get("/metrics").text  # type: ignore[arg-type]
+
+    assert "ezchain_up 0" in body
+    assert "ezchain_paper_rejects_total" not in body
+
+
+# ---------------------------------------------------------------------------
+# Venue latency
+# ---------------------------------------------------------------------------
+
+
+def test_venue_latency_is_a_histogram_a_percentile_can_be_read_from() -> None:
+    """Fixed buckets, cumulative counts and a matching ``_sum``/``_count`` pair."""
+    latency = VenueLatencyMetrics()
+    for seconds in (0.01, 0.2, 0.3, 4.0):
+        latency.observe("jupiter", seconds)
+
+    body = "\n".join(latency.render())
+
+    assert "# TYPE ezchain_venue_latency_seconds histogram" in body
+    assert 'ezchain_venue_latency_seconds_bucket{venue="jupiter",le="0.05"} 1' in body
+    assert 'ezchain_venue_latency_seconds_bucket{venue="jupiter",le="0.25"} 2' in body
+    assert 'ezchain_venue_latency_seconds_bucket{venue="jupiter",le="0.5"} 3' in body
+    assert 'ezchain_venue_latency_seconds_bucket{venue="jupiter",le="5"} 4' in body
+    assert 'ezchain_venue_latency_seconds_bucket{venue="jupiter",le="+Inf"} 4' in body
+    assert 'ezchain_venue_latency_seconds_count{venue="jupiter"} 4' in body
+    assert 'ezchain_venue_latency_seconds_sum{venue="jupiter"} 4.510000' in body
+
+
+def test_the_latency_buckets_cover_the_routers_own_deadline() -> None:
+    """The last finite bucket is past the quote deadline, so a timeout is not ``+Inf``."""
+    from ezchain_adapters import quotes
+
+    assert max(VENUE_LATENCY_BUCKETS_SECONDS) > quotes.QUOTE_DEADLINE_SECONDS
+    assert min(VENUE_LATENCY_BUCKETS_SECONDS) <= 0.05
+
+
+def test_an_unknown_venue_and_an_unmeasurable_call_do_not_create_series() -> None:
+    latency = VenueLatencyMetrics()
+    latency.observe("some-new-venue", 0.2)
+    latency.observe("jupiter", float("nan"))
+
+    body = "\n".join(latency.render())
+
+    assert 'ezchain_venue_latency_seconds_count{venue="other"} 1' in body
+    assert "some-new-venue" not in body
+    assert 'venue="jupiter"' not in body, "NaN is not a zero-second sample"
+
+
+class _FakeVenue:
+    kind = "kyberswap"
+    breaker_state = "closed"
+    calls = 0
+
+    def supports(self, chain: object) -> bool:
+        return True
+
+    async def quote(self, request: object) -> str:
+        _FakeVenue.calls += 1
+        return "quoted"
+
+
+async def test_the_provider_wrapper_times_the_venue_it_wraps() -> None:
+    """The wrapper delegates identity and times the call the router already awaits."""
+    latency = VenueLatencyMetrics()
+    wrapped = VenueLatencyProvider(_FakeVenue(), histogram=latency)
+
+    result = await wrapped.quote(object())
+
+    assert result == "quoted"
+    assert wrapped.kind == "kyberswap"
+    assert wrapped.breaker_state == "closed"
+    assert wrapped.supports(object()) is True
+    assert 'ezchain_venue_latency_seconds_count{venue="kyberswap"} 1' in "\n".join(latency.render())
+
+
+def test_the_real_router_still_reads_its_provider_through_the_wrapper() -> None:
+    """Breaker state and timeout notification stay the provider's, not the wrapper's."""
+    clock = {"now": 1000.0}
+    jupiter = JupiterClient(clock=lambda: clock["now"])
+    wrapped = VenueLatencyProvider(jupiter)
+    router = QuoteRouter(
+        providers=[wrapped, KyberSwapClient()],
+        dexscreener=_NoDex(),  # type: ignore[arg-type]
+        freshness=POLICY,
+    )
+
+    assert router.breakers() == {"jupiter": "closed", "kyberswap": "closed"}
+    wrapped.record_timeout()
+    assert jupiter.breaker_state == "open"
+    assert router.breakers()["jupiter"] == "open"
+
+
+async def test_the_router_ladder_times_each_venue_it_asks() -> None:
+    """The router awaits ``provider.quote``; the wrapper times exactly that call.
+
+    A buy is two venue calls -- the entry and its full-size exit -- so the count is a
+    property of the router's own ladder, not of the wrapper inventing samples.
+    """
+    from ezchain_core import SourceRef, TokenSnapshot, utcnow
+
+    latency = VenueLatencyMetrics()
+    venue = _LadderVenue()
+
+    class _Dex:
+        async def get_token(self, chain: str, address: str, **_: Any) -> TokenSnapshot:
+            return TokenSnapshot(
+                chain=chain,
+                address=address,
+                symbol="TEST",
+                name="Test",
+                price_usd=Decimal("2"),
+                liquidity_usd=Decimal("50000"),
+                volume_24h_usd=Decimal("1000"),
+                price_change_m5=None,
+                price_change_h1=Decimal("1"),
+                price_change_h6=None,
+                price_change_h24=None,
+                pairs=(),
+                source=SourceRef("dexscreener", None, utcnow()),
+                pair_created_at=None,
+            )
+
+    router = QuoteRouter(
+        providers=[VenueLatencyProvider(venue, histogram=latency)],
+        dexscreener=_Dex(),  # type: ignore[arg-type]
+        freshness=POLICY,
+    )
+
+    quote = await router.quote(
+        chain="base", token_address="0xtoken", side="buy", amount_usd=Decimal("10")
+    )
+
+    assert quote.kind == "kyberswap"
+    body = "\n".join(latency.render())
+    assert 'ezchain_venue_latency_seconds_count{venue="kyberswap"} 2' in body
+
+
+class _LadderVenue:
+    kind = "kyberswap"
+
+    def supports(self, chain: Any) -> bool:
+        return chain.id == "base"
+
+    async def quote(self, request: Any) -> Any:
+        from ezchain_core import Quote, SourceRef, utcnow
+
+        price = Decimal("2")
+        if request.side == "buy":
+            amount_in, amount_out = request.amount_usd, request.amount_usd / price
+        else:
+            amount_in = request.quantity or Decimal("0")
+            amount_out = amount_in * price
+        return Quote(
+            chain="base",
+            token_in="0xusdc",
+            token_out=request.token_address,
+            side=request.side,
+            amount_in=amount_in,
+            amount_out=amount_out,
+            price=price,
+            price_impact_pct=Decimal("0"),
+            fee_usd=Decimal("0"),
+            kind="kyberswap",
+            route="Test",
+            source=SourceRef("kyberswap", None, utcnow()),
+        )
+
+
+def test_the_metrics_endpoint_renders_the_venue_histogram(session: Session) -> None:
+    VENUE_LATENCY.reset()
+    VENUE_LATENCY.observe("jupiter", 0.42)
+
+    body = _client(session).get("/metrics").text
+
+    assert 'ezchain_venue_latency_seconds_count{venue="jupiter"} 1' in body
+    assert "ezchain_venue_latency_seconds_bucket{" in body

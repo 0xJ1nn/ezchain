@@ -499,6 +499,9 @@ Every family below is sampled from live state on each scrape; none is a constant
 
 | Metric | Labels | Read it as |
 |---|---|---|
+| `ezchain_paper_rejects_total` | `reason` | persisted refusals by reason code; `OTHER` is a code outside the taxonomy, `UNKNOWN` a refusal that stored no code |
+| `ezchain_paper_orders_total` | `status` | persisted orders by lifecycle status |
+| `ezchain_venue_latency_seconds` | `venue` | histogram of one venue call, 50 ms–10 s buckets, so `histogram_quantile()` reads a p95 |
 | `ezchain_source_freshness_seconds` | `source`, `source_class` | age of the newest persisted observation; `NaN` means the age cannot be established (future-dated) |
 | `ezchain_source_freshness_budget_seconds` | `source_class` | the configured budget the age is compared with |
 | `ezchain_breaker_state` | `provider`, `state` | `0` closed, `1` half-open, `2` open |
@@ -506,13 +509,21 @@ Every family below is sampled from live state on each scrape; none is a constant
 | `ezchain_queue_capacity` | `queue` | the configured `max_queue` of a bounded provider queue; the outbox is unbounded and has none |
 | `ezchain_ledger_drift_entries` | — | failing reconciliation checks right now |
 
+`ezchain_paper_rejects_total` and `ezchain_venue_latency_seconds` are the two families the
+"why was this order rejected" question reads; the query set that walks from the reject
+rate to the reason, the venue p95 and the source staleness is
+[OBSERVABILITY.md](OBSERVABILITY.md). Both are bounded: `reason` is a code from the
+taxonomy (anything else collapses to `OTHER`, so a token mint or an address can never be a
+label), and `venue` is a provider `kind` from the chain registry.
+
 `source_class` covers `mark` and `candle` here: those are the classes with a persisted
 observation table. `quote` and `feed` have budgets but no stored observation, so they are
-absent rather than reported at an invented age. When the database cannot be read, the four
-families are omitted and `ezchain_up 0` explains why — an unreachable database is not
-"zero drift, empty queue". `infra/prometheus/alerts.yml` alerts on each family and on its
-absence; a `NaN` age is its own alert (`SourceFreshnessUnknown`, matched with `x != x`)
-because it compares false against the budget and does not count as absent.
+absent rather than reported at an invented age. When the database cannot be read, the ops
+families and `ezchain_paper_rejects_total` are omitted and `ezchain_up 0` explains why — an
+unreachable database is not "zero drift, empty queue, no rejects". `infra/prometheus/alerts.yml`
+alerts on each family and on its absence; a `NaN` age is its own alert
+(`SourceFreshnessUnknown`, matched with `x != x`) because it compares false against the
+budget and does not count as absent.
 
 ### 12.6.3 401 and 403 triage
 

@@ -24,6 +24,7 @@ from ezchain_adapters import (
     OsmosisSqsClient,
     ProviderBudgetManager,
     ProviderKeyUnavailable,
+    QuoteProvider,
     QuoteRouter,
     StonfiClient,
     VeloraClient,
@@ -34,7 +35,11 @@ from .auth import BearerAuthMiddleware
 from .config import Settings, get_settings
 from .db import create_schema, session_factory
 from .errors import request_validation_error
-from .observability import ObservabilityMiddleware, configure_logging
+from .observability import (
+    ObservabilityMiddleware,
+    VenueLatencyProvider,
+    configure_logging,
+)
 from .rate_limit import ReadRateLimitMiddleware
 from .routers import (
     account,
@@ -125,7 +130,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Candle history uses the same GeckoTerminal client as decimals resolution.
     app.state.geckoterminal = gecko
     app.state.quote_router = QuoteRouter(
-        providers=providers,
+        # Each provider is timed at its own call boundary, so
+        # ``ezchain_venue_latency_seconds`` measures the venue and not the ladder. The
+        # wrapper forwards ``kind``, ``supports``, ``breaker_state`` and
+        # ``record_timeout``, so the circuit breaker stays the provider's own. The cast is
+        # the wrapper's dynamic ``kind``: the protocol declares it as a class variable,
+        # which a per-instance wrapper cannot state structurally.
+        providers=cast(
+            "list[QuoteProvider]",
+            [VenueLatencyProvider(provider) for provider in providers],
+        ),
         dexscreener=dexscreener,
         freshness=freshness_from_settings(settings),
     )

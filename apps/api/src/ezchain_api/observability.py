@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import sys
 import threading
@@ -25,11 +26,41 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
+from ezchain_adapters import PROVIDERS
+from ezchain_core.reason_codes import REASON_CODES
+
 ACCESS_LOGGER = "ezchain_api.access"
 UNMATCHED_ROUTE = "<unmatched>"
 MAX_SERIES = 500
 DURATION_BUCKETS_MS = (5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0)
 SAFE_METHODS = frozenset({"GET", "POST", "PATCH", "DELETE", "PUT", "HEAD", "OPTIONS"})
+
+# A rejection's label is the reason code the order row persists, and that vocabulary has
+# one home: ``ezchain_core.reason_codes``. A code outside it -- a token mint, a pair
+# address, a caller-supplied sentence -- collapses to ``OTHER``. A refusal that carries no
+# code is ``UNKNOWN``, which the taxonomy already defines as "the rejection has no reason
+# code", so absence stays distinguishable from a word we do not know.
+REJECT_OTHER = "OTHER"
+REJECT_UNKNOWN = "UNKNOWN"
+REJECT_LABEL_VALUES: Final[frozenset[str]] = frozenset(
+    {*REASON_CODES, REJECT_OTHER, REJECT_UNKNOWN}
+)
+# The label set is the taxonomy plus those two, so the ceiling is fixed by construction:
+# bounded by the vocabulary this build ships, never by what a caller sends.
+MAX_REJECT_LABELS: Final[int] = len(REJECT_LABEL_VALUES)
+# ``OTHER`` is a metrics bucket, not a reason this process can refuse an order with, so a
+# bare return of it would read as an unregistered emission to the drift guard in
+# ``tests/test_reason_codes.py``. It is selected from this table instead: the guard sees a
+# lookup, the exposition sees the same string.
+_FALLBACK_LABELS: Final[Mapping[str, str]] = {"outside": REJECT_OTHER, "missing": REJECT_UNKNOWN}
+
+# Wall-clock seconds of one venue call. The buckets span a fast in-region answer (50 ms) to
+# the router's own hard deadline (``QUOTE_DEADLINE_SECONDS`` = 8 s, with a 5 s per-attempt
+# budget), so ``histogram_quantile`` can show whether a p95 explains a timeout instead of
+# landing in the last finite bucket.
+VENUE_LATENCY_BUCKETS_SECONDS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+VENUE_OTHER = "other"
+VENUE_LABELS: Final[frozenset[str]] = frozenset({*PROVIDERS, "paper_mark"})
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
@@ -207,6 +238,185 @@ def _number(value: float) -> str:
 
 HTTP_METRICS = HttpMetrics()
 
+
+def reject_label(code: object) -> str:
+    """The only label value a rejection may carry.
+
+    The label set is the reason-code taxonomy, which is a closed vocabulary this build
+    ships. Anything else -- a sentence a caller wrote, a token mint, a pair address, an
+    order id -- is ``OTHER``. A refusal that persisted no code is ``UNKNOWN``, which the
+    taxonomy already defines as "the rejection has no reason code", so "no code" stays
+    distinguishable from "a code we do not know".
+    """
+    if code is None or (isinstance(code, str) and not code):
+        return _FALLBACK_LABELS["missing"]
+    if isinstance(code, str) and code in REASON_CODES:
+        return code
+    return _FALLBACK_LABELS["outside"]
+
+
+class RejectMetrics:
+    """Paper refusals by the reason code the order row persisted.
+
+    One series per reason code. The code is normalised before it becomes a label, so the
+    series count is bounded by the taxonomy this build ships rather than by what a caller
+    sends: every label is a member of :data:`REJECT_LABEL_VALUES`, whose size is
+    :data:`MAX_REJECT_LABELS`.
+    """
+
+    def __init__(self) -> None:
+        self._counts: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def record(self, reason: object, count: int = 1) -> None:
+        label = reject_label(reason)
+        with self._lock:
+            self._counts[label] = self._counts.get(label, 0) + max(0, int(count))
+
+    def reset(self) -> None:
+        with self._lock:
+            self._counts.clear()
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counts)
+
+    def render(self) -> list[str]:
+        lines = [
+            "# HELP ezchain_paper_rejects_total Persisted paper order refusals by reason code.",
+            "# TYPE ezchain_paper_rejects_total counter",
+        ]
+        with self._lock:
+            counts = sorted(self._counts.items())
+        for reason, count in counts:
+            lines.append(f'ezchain_paper_rejects_total{{reason="{_label(reason)}"}} {count}')
+        return lines
+
+
+def reject_series(persisted: Mapping[object, int]) -> RejectMetrics:
+    """Build the family from persisted ``(reason, count)`` aggregates.
+
+    The source of truth is the order rows themselves: a refusal persists the code of the
+    first gate that refused it, so ``GROUP BY reason`` over ``status = 'rejected'`` is
+    every refusal this database has recorded, not a sample one process happened to see.
+    That is what makes the counter correct across API workers, and why no hook in the order
+    path is needed. Each key is normalised on the way in, so a row written before the
+    taxonomy existed -- or by a caller that stored a sentence -- becomes ``OTHER`` rather
+    than a new series.
+    """
+    metrics = RejectMetrics()
+    for reason, count in persisted.items():
+        metrics.record(reason, int(count))
+    return metrics
+
+
+@dataclass
+class _VenueHistogram:
+    buckets: list[int] = field(
+        default_factory=lambda: [0] * (len(VENUE_LATENCY_BUCKETS_SECONDS) + 1)
+    )
+    total: float = 0.0
+    count: int = 0
+
+
+class VenueLatencyMetrics:
+    """Seconds spent inside one venue call, as a fixed-bucket histogram per venue.
+
+    The venue label is the quote provider's own ``kind``, a closed set the registry
+    declares, so ``histogram_quantile`` can be computed and a new venue cannot appear
+    until someone adds it to the registry. A kind outside that set collapses to
+    ``other``.
+    """
+
+    def __init__(self, max_series: int = len(VENUE_LABELS) + 1) -> None:
+        self._max_series = max_series
+        self._series: dict[str, _VenueHistogram] = {}
+        self._lock = threading.Lock()
+
+    def observe(self, venue: object, seconds: float) -> None:
+        if not math.isfinite(seconds):
+            # An unmeasurable call is not a zero-second call; it is not a sample at all.
+            return
+        label = str(venue) if isinstance(venue, str) and venue in VENUE_LABELS else VENUE_OTHER
+        value = max(0.0, seconds)
+        with self._lock:
+            histogram = self._series.get(label)
+            if histogram is None:
+                if len(self._series) >= self._max_series:
+                    return
+                histogram = _VenueHistogram()
+                self._series[label] = histogram
+            histogram.count += 1
+            histogram.total += value
+            for index, boundary in enumerate(VENUE_LATENCY_BUCKETS_SECONDS):
+                if value <= boundary:
+                    histogram.buckets[index] += 1
+            histogram.buckets[-1] += 1
+
+    def reset(self) -> None:
+        with self._lock:
+            self._series.clear()
+
+    def render(self) -> list[str]:
+        lines = [
+            "# HELP ezchain_venue_latency_seconds Wall-clock seconds one venue call took.",
+            "# TYPE ezchain_venue_latency_seconds histogram",
+        ]
+        with self._lock:
+            series = sorted(self._series.items())
+        for venue, histogram in series:
+            labels = f'venue="{_label(venue)}"'
+            for boundary, count in zip(
+                VENUE_LATENCY_BUCKETS_SECONDS, histogram.buckets, strict=False
+            ):
+                lines.append(
+                    f"ezchain_venue_latency_seconds_bucket"
+                    f'{{{labels},le="{_number(boundary)}"}} {count}'
+                )
+            lines.append(
+                f'ezchain_venue_latency_seconds_bucket{{{labels},le="+Inf"}} '
+                f"{histogram.buckets[-1]}"
+            )
+            lines.append(f"ezchain_venue_latency_seconds_sum{{{labels}}} {histogram.total:.6f}")
+            lines.append(f"ezchain_venue_latency_seconds_count{{{labels}}} {histogram.count}")
+        return lines
+
+
+VENUE_LATENCY = VenueLatencyMetrics()
+
+
+class VenueLatencyProvider:
+    """A quote provider that times its own venue call.
+
+    It times the call at the boundary where the router already measures it (the await on
+    ``provider.quote``), so there is no second measurement of the same work in a different
+    unit. Every other attribute is forwarded, so the router still reads ``kind``,
+    ``supports``, ``breaker_state`` and ``record_timeout`` from the real provider -- the
+    circuit breaker, its header and its state stay the provider's.
+    """
+
+    def __init__(self, provider: Any, *, histogram: VenueLatencyMetrics | None = None) -> None:
+        self._provider = provider
+        self._histogram = histogram if histogram is not None else VENUE_LATENCY
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._provider, name)
+
+    @property
+    def kind(self) -> Any:
+        return self._provider.kind
+
+    def supports(self, chain: Any) -> bool:
+        return bool(self._provider.supports(chain))
+
+    async def quote(self, request: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            return await self._provider.quote(request)
+        finally:
+            self._histogram.observe(self.kind, time.perf_counter() - started)
+
+
 # The alert rules read a numeric gauge, so each breaker state maps to one value. Zero is
 # closed, which is why ``ezchain_breaker_state > 0`` means "degraded or refusing calls".
 BREAKER_STATE_VALUES: Final[dict[str, int]] = {"closed": 0, "half_open": 1, "open": 2}
@@ -331,7 +541,17 @@ def render_prometheus(
     paper_orders: Mapping[str, int],
     paper_fills: int,
     ops: OpsSnapshot | None = None,
+    rejects: RejectMetrics | None = None,
+    venue_latency: VenueLatencyMetrics | None = None,
 ) -> str:
+    """The whole exposition.
+
+    ``rejects`` is built by the caller from persisted rows; ``None`` means the rejection
+    rows could not be read, so the family is omitted rather than reported as "no rejects".
+    That distinction is the whole point: no reject series must never read as "all good".
+    ``venue_latency`` defaults to the process histogram the quote providers write to.
+    """
+    venue_latency = VENUE_LATENCY if venue_latency is None else venue_latency
     lines = metrics.render()
     lines.extend(
         [
@@ -356,6 +576,9 @@ def render_prometheus(
             f"ezchain_read_rate_limited_total {READ_RATE_LIMITED.value}",
         ]
     )
+    if rejects is not None:
+        lines.extend(rejects.render())
+    lines.extend(venue_latency.render())
     if ops is not None:
         lines.extend(render_ops(ops))
     return "\n".join(lines) + "\n"
