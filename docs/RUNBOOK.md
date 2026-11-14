@@ -235,6 +235,14 @@ persists the reason code of the first gate that refused it.
    reduce-only exit sizes from the held quantity and still settles.
 6. Inside the fill window: the kill switch is re-read (entry-only), then the position
    replay and the quote-size checks.
+4. The agent's bucket, entry-only (`AGENT_BUCKET_EXCEEDED` / `AGENT_BUCKET_UNREADABLE`): an
+   agent may deploy only the net cash its owner capped for it. A cap lowered below what is
+   already deployed stops new buys and never refuses a sell.
+5. The market read and the quote; a stale mark refuses an entry (`SNAPSHOT_STALE`), a
+   reduce-only exit sizes from the held quantity and still settles.
+6. Inside the fill window: the kill switch is re-read (entry-only), the bucket is re-checked
+   at the quoted notional plus fee (entry-only), then the position replay and the quote-size
+   checks.
 7. The risk decision.
 8. The automation tier / approval queue: an agent order, and a strategy order whose
    strategy an agent created (or whose provenance is unknown), is stored as

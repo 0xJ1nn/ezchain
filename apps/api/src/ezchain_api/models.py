@@ -117,7 +117,35 @@ class LedgerEntryRow(Base):
     # the columns existed carry no kind; they read as unknown.
     actor_kind: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     actor_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # The agent bucket this cash leg was drawn from or returned to. Null on a leg that
+    # does not move cash out of the account, a person's order, and every row written
+    # before buckets existed. The bucket's deployment is replayed from these rows; there
+    # is no stored bucket balance.
+    bucket_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class AgentBucketRow(Base):
+    """One agent's spending cap. The row is the setting; the ledger is the account.
+
+    ``agent_id`` is the agent key id, which is how an agent order is addressed
+    (``OrderActor.id`` for a scoped key). ``owner`` is the user who set the cap, recorded
+    so an operator can see whose cash was set aside. ``cap_usd`` is the most net cash the
+    agent may deploy; an agent with no row has no bucket limit beyond the account's own
+    gates, which is the unchanged behaviour.
+
+    Nothing here is a balance. What the agent has deployed is the sum of the ``cash:USD``
+    ledger legs attributed to ``bucket_id``, replayed by ``ezchain_core.bucket``.
+    """
+
+    __tablename__ = "agent_buckets"
+
+    agent_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(120), index=True)
+    cap_usd: Mapped[Decimal] = mapped_column(MONEY)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_by_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    updated_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class PaperWalletRow(Base):

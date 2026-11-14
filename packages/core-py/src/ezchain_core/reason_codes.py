@@ -2084,6 +2084,54 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "An approved execution ended without a more specific reason code.",
         "The execution was refused.",
     ),
+    # ---------------------------------------------------------------- api: agent bucket
+    _S(
+        "AGENT_BUCKET_EXCEEDED",
+        "risk",
+        "api",
+        "ezchain_api/services/paper.py",
+        "The entry would take the agent's net cash deployment past its cap.",
+        "This order would exceed the agent's bucket.",
+        http_status=409,
+    ),
+    _S(
+        "AGENT_BUCKET_UNREADABLE",
+        "risk",
+        "api",
+        "ezchain_api/services/buckets.py",
+        "The cap or the journal could not be read, so the cap is unknown.",
+        "The agent's bucket could not be read; no order was placed.",
+        http_status=409,
+        severity="critical",
+    ),
+    _S(
+        "AGENT_BUCKET_UNKNOWN",
+        "risk",
+        "api",
+        "ezchain_api/routers/buckets.py",
+        "The agent has no bucket cap row; no cap was ever set for it.",
+        "This agent has no bucket cap on record.",
+        http_status=404,
+        severity="info",
+    ),
+    _S(
+        "AGENT_BUCKET_REQUIRES_PERSON",
+        "risk",
+        "api",
+        "ezchain_api/services/buckets.py",
+        "An agent principal tried to set a bucket cap.",
+        "Only a person may set an agent's bucket cap.",
+        http_status=403,
+    ),
+    _S(
+        "AGENT_BUCKET_CAP_INVALID",
+        "risk",
+        "api",
+        "ezchain_api/services/buckets.py",
+        "The cap is negative or larger than the absolute maximum.",
+        "An agent's bucket cap must be zero or greater.",
+        http_status=422,
+    ),
     # ------------------------------------------------------------ api: observability reads
     _S(
         "NO_MARKET_ROWS",
@@ -2386,6 +2434,14 @@ VAULT_BOUNDARY_REQUIRED = "VAULT_BOUNDARY_REQUIRED"
 CUSTODY_OWNER_MISMATCH = "CUSTODY_OWNER_MISMATCH"
 AUTOMATION_CONSENT_REQUIRED = "AUTOMATION_CONSENT_REQUIRED"
 
+# An agent's bucket refusals. ``ezchain_core.bucket`` exports the shorter ``BUCKET_*``
+# names it always had; they are aliases of these, never a second spelling.
+AGENT_BUCKET_EXCEEDED = "AGENT_BUCKET_EXCEEDED"
+AGENT_BUCKET_UNREADABLE = "AGENT_BUCKET_UNREADABLE"
+AGENT_BUCKET_UNKNOWN = "AGENT_BUCKET_UNKNOWN"
+AGENT_BUCKET_REQUIRES_PERSON = "AGENT_BUCKET_REQUIRES_PERSON"
+AGENT_BUCKET_CAP_INVALID = "AGENT_BUCKET_CAP_INVALID"
+
 SIGNING_BOUNDARY_REQUIRED = "SIGNING_BOUNDARY_REQUIRED"
 TRANSACTION_NOT_APPROVABLE = "TRANSACTION_NOT_APPROVABLE"
 TRANSACTION_UNDECODABLE = "TRANSACTION_UNDECODABLE"
@@ -2452,6 +2508,11 @@ _RISK_REASON_CODES: Final[tuple[str, ...]] = (
     "APPROVAL_DECISION_NOTE_INVALID",
     "AUTOMATION_CONSENT_REQUIRED",
     "AUTOMATION_TIER_UNKNOWN",
+    "AGENT_BUCKET_EXCEEDED",
+    "AGENT_BUCKET_UNREADABLE",
+    "AGENT_BUCKET_UNKNOWN",
+    "AGENT_BUCKET_REQUIRES_PERSON",
+    "AGENT_BUCKET_CAP_INVALID",
 )
 
 RISK_REASON_MESSAGES: Final[dict[str, str]] = {

@@ -83,7 +83,7 @@ from ..models import (
     StrategyRow,
     new_id,
 )
-from . import approvals, market_snapshots, pnl
+from . import approvals, buckets, market_snapshots, pnl
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -386,6 +386,63 @@ class Replay:
     # Cash per settlement wallet, bucketed in the same pass as ``cash``. A row without
     # an attribution (written before wallets existed) belongs to the genesis wallet.
     wallet_cash: dict[str, Decimal]
+    # Cash per agent bucket, bucketed in the same pass. A cash leg with no bucket
+    # attribution belongs to no bucket: only an agent's attributed legs move its
+    # deployment, and a person's cash is never charged to an agent.
+    bucket_cash: dict[str, Decimal]
+    # Open shares of each position account, per owner, derived from the journal: a buy's
+    # shares belong to the bucket its cash legs name (``None`` for no bucket — a person's
+    # own position), and an exit consumes the shares it sells. This is what decides who
+    # receives an exit's cash: the bucket that owns the position, never the caller.
+    position_claims: dict[str, dict[str | None, Decimal]]
+
+
+def _sell_attribution(claims: dict[str | None, Decimal], quantity: Decimal) -> str | None:
+    """The bucket that receives this exit's proceeds, or ``None`` for an unowned exit.
+
+    Attribution follows the position, not the placing actor. A position one bucket owns
+    credits that bucket however the exit was placed — a person closing an agent's position,
+    another agent closing it, or a protection arm whose actor is unknown. A position no
+    bucket owns credits nobody, so an agent that sells a person's position cannot spend
+    cash it never put up.
+
+    A sale spanning two owners has no honest single recipient, so its proceeds are left
+    unattributed: the deployment stays high and the cap stays tight, which is the
+    fail-closed answer when the money cannot be assigned to one bucket.
+    """
+    if quantity <= 0:
+        return None
+    covering = [
+        owner
+        for owner, held in claims.items()
+        if owner is not None and held >= quantity - MONEY_QUANTUM
+    ]
+    return covering[0] if len(covering) == 1 else None
+
+
+def _apply_sale(
+    claims: dict[str | None, Decimal], quantity: Decimal, bucket_id: str | None
+) -> None:
+    """Book a sale of ``quantity`` shares against the owner the proceeds went to.
+
+    The attributed bucket gives up the shares it sold, so its claim never outlives its
+    position. An unattributed sale spends the unowned shares first and then the buckets in
+    a fixed order: a sale the books cannot attribute must not leave a bucket holding shares
+    it no longer has, or a later exit would credit it cash it never put up.
+    """
+    remaining = quantity
+    order: list[str | None] = [bucket_id] if bucket_id is not None else []
+    order.append(None)
+    order.extend(sorted(owner for owner in claims if owner is not None and owner != bucket_id))
+    for owner in order:
+        if remaining <= 0:
+            return
+        held = claims.get(owner, Decimal(0))
+        if held <= 0:
+            continue
+        take = min(held, remaining)
+        claims[owner] = held - take
+        remaining -= take
 
 
 def group_position_delta(rows: list[LedgerEntryRow]) -> Decimal:
@@ -426,6 +483,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
     """
     cash = Decimal(0)
     wallet_cash: dict[str, Decimal] = {}
+    bucket_cash: dict[str, Decimal] = {}
     groups: dict[str, list[LedgerEntryRow]] = {}
     position_entries: dict[str, list[LedgerEntry]] = {}
 
@@ -436,11 +494,37 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
                 cash += row.usd_value
                 wallet = row.wallet_id or SETTLEMENT_WALLET_ID
                 wallet_cash[wallet] = wallet_cash.get(wallet, Decimal(0)) + row.usd_value
+                if row.bucket_id is not None:
+                    bucket_cash[row.bucket_id] = (
+                        bucket_cash.get(row.bucket_id, Decimal(0)) + row.usd_value
+                    )
             groups.setdefault(row.group_id, []).append(row)
             if row.account.startswith(POSITION_PREFIX):
                 position_entries.setdefault(row.account, []).append(_domain_entry(row))
 
     positions = {account: replay_position(entries) for account, entries in position_entries.items()}
+
+    # Who owns the open shares of each position. The journal already decided it: a group's
+    # cash legs name the bucket, and that is the bucket whose trade the shares belong to.
+    # Replaying this is what makes an exit's attribution a fact about the position rather
+    # than about the caller, and it survives a restart because it reads the same rows.
+    position_claims: dict[str, dict[str | None, Decimal]] = {}
+    for group in groups.values():
+        position_rows = [row for row in group if row.account.startswith(POSITION_PREFIX)]
+        if not position_rows:
+            continue
+        named = {
+            row.bucket_id
+            for row in group
+            if row.account == cash_account() and row.bucket_id is not None
+        }
+        bucket_id = named.pop() if len(named) == 1 else None
+        for row in position_rows:
+            claims = position_claims.setdefault(row.account, {})
+            if row.amount > 0:
+                claims[bucket_id] = claims.get(bucket_id, Decimal(0)) + row.amount
+            elif row.amount < 0:
+                _apply_sale(claims, -row.amount, bucket_id)
 
     realized_by_account: dict[str, Decimal] = {}
     daily = Decimal(0)
@@ -466,6 +550,8 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
         positions=positions,
         realized_by_account=realized_by_account,
         wallet_cash=wallet_cash,
+        bucket_cash=bucket_cash,
+        position_claims=position_claims,
     )
 
 
@@ -1598,6 +1684,40 @@ async def place_order(
             wallet.id if wallet is not None and wallet_reason is None else SETTLEMENT_WALLET_ID
         )
 
+    # An agent's bucket is an entry gate. The cap bounds the net cash the agent may
+    # deploy, replayed from the journal; an order that would take the deployment past it
+    # is refused before the market read and the quote, so it touches no venue and journals
+    # nothing. It is entry-only by design: refusing a sell here would let a lowered cap
+    # trap a position, and an exit that returns cash is exactly what brings the deployment
+    # back inside the cap. The check's evidence names the worst case in dollars.
+    #
+    # Resolving the bucket is fail-closed for an entry and never for an exit: a strategy
+    # lookup that cannot be read refuses a buy rather than silently drawing from no bucket,
+    # while a sell still settles with its returned cash left unattributed. That direction is
+    # the safe one — an unattributed return keeps the deployment high, so the cap stays
+    # tight, and a position is never trapped by a failed read (CONTRACT I3, ADR-0039).
+    try:
+        bucket_key = buckets.agent_bucket_key(session, placed_by)
+    except Exception:  # noqa: BLE001 - an unreadable bucket must refuse the entry
+        if payload.side == "buy":
+            return _reject_new(
+                session,
+                payload,
+                "AGENT_BUCKET_UNREADABLE",
+                reasons=(RiskReason("AGENT_BUCKET_UNREADABLE"),),
+                actor=placed_by,
+            )
+        bucket_key = None
+    if payload.side == "buy" and bucket_key is not None:
+        refusal = buckets.check(
+            session,
+            bucket_key,
+            _replay(_ledger_rows(session)).bucket_cash.get(bucket_key, Decimal(0)),
+            payload.amount_usd,
+        )
+        if refusal is not None:
+            return _reject_new(session, payload, refusal.code, reasons=(refusal,), actor=placed_by)
+
     # Profile selection is resolved once, from the strategy row and the request together:
     # a strategy's own profile is the floor on risk for its orders, a per-order profile may
     # only tighten it, and the deployment profile is the default when neither names one.
@@ -1890,6 +2010,23 @@ async def place_order(
                 session, order, ",".join(str(r) for r in reasons), reasons=reasons
             )
 
+        # The bucket gate ran before the quote; this is the same gate on the authoritative
+        # replay inside the fill window, now priced at the worst case (the quoted notional
+        # plus the fill fee). It is entry-only for the same reason, and a person approving
+        # a stored agent order re-enters here, so an approval cannot outrun the cap.
+        if payload.side == "buy" and bucket_key is not None:
+            refusal = buckets.check(
+                session,
+                bucket_key,
+                replay.bucket_cash.get(bucket_key, Decimal(0)),
+                notional,
+                fee_usd=fee,
+            )
+            if refusal is not None:
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                return _mark_rejected(session, order, refusal.code, reasons=(refusal,))
+
         # An automated order stops here unless its user has a consented full-auto tier:
         # risk has run, the quote and its cost sheet are on the order, and the server's
         # verdict is recorded as evidence for the person. Nothing is journaled. This is a
@@ -1953,9 +2090,26 @@ async def place_order(
                 # no wallet id.
                 if row["account"] == cash_account():
                     row["wallet_id"] = SETTLEMENT_WALLET_ID
+                    # The top-up is settlement capital from outside the account, not the
+                    # agent's own cash coming back. It carries no bucket: the trade's own
+                    # cash legs already charge the bucket the full ticket, and crediting
+                    # the top-up here would cancel part of that charge — room the bucket
+                    # never had. Only an exit returns cash to a bucket.
+                    row["bucket_id"] = None
                 row["actor_kind"] = placed_by.kind
                 row["actor_id"] = placed_by.id
                 session.add(LedgerEntryRow(**row))
+        # Who owns the position this fill touches decides who its cash belongs to. A buy
+        # opens shares for the bucket that will own them (the caller's, or none for a
+        # person). An exit credits the bucket that owns the shares — never the caller, so a
+        # person closing an agent's position returns the agent's cash, a protection arm
+        # with no actor returns it too, and an agent selling a person's position gets no
+        # credit it never earned.
+        cash_bucket = (
+            bucket_key
+            if payload.side == "buy"
+            else _sell_attribution(replay.position_claims.get(account, {}), fill_quantity)
+        )
         if payload.side == "buy":
             entries = buy_entries(
                 chain=payload.chain,
@@ -2003,6 +2157,11 @@ async def place_order(
             row = entry.to_row(order.id, created_at=stamp)
             if row["account"] == cash_account():
                 row["wallet_id"] = settlement_wallet_id
+                # A cash leg is attributed to the bucket that owns the position it settles,
+                # not to whoever placed the order. Only cash moves the deployment; a
+                # position or fee leg names none, so the replay charges the bucket for what
+                # left the account and credits it for what an exit returned.
+                row["bucket_id"] = cash_bucket
             # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
             # learns who placed the order, without joining back to ``paper_orders``.
             row["actor_kind"] = placed_by.kind
