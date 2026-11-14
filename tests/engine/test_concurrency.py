@@ -154,6 +154,9 @@ async def test_concurrent_evaluation_places_one_order_for_the_window(tmp_path: P
             kind="momentum",
             params={"order_usd": 100, "interval_minutes": 60},
             status="active",
+            created_by_kind="human",
+            created_by_id="deployment",
+            created_by_owner="deployment",
         )
         session.add(strategy)
         session.commit()

@@ -173,6 +173,12 @@ its source, age, stale state and reason; it never draws a fabricated line.
 | GET | `/api/v1/paper/limits` | read | Server limits in force for this account |
 | GET | `/api/v1/paper/alerts` | read | Reconciliation, mark, rejection and kill-switch alerts |
 | GET | `/api/v1/paper/reconciliation` | read | Journal, fill and order agreement checks |
+| GET | `/api/v1/paper/approvals?status=&limit=` | read | Agent orders waiting for a person |
+| GET | `/api/v1/paper/approvals/{approval_id}` | read | One approval and its decision |
+| POST | `/api/v1/paper/approvals/{approval_id}/approve` | trade | Approve the stored order and execute it |
+| POST | `/api/v1/paper/approvals/{approval_id}/reject` | trade | Reject the stored order with a reason |
+| GET | `/api/v1/paper/automation` | read | This user's automation tier and disclosure |
+| PUT | `/api/v1/paper/automation` | trade | Switch the tier; `full_auto` needs the acknowledgement |
 | GET | `/api/v1/paper/export/orders.csv` | read | CSV export |
 | GET | `/api/v1/paper/export/fills.csv` | read | CSV export |
 | GET | `/api/v1/paper/export/ledger.csv` | read | CSV export |
@@ -246,9 +252,110 @@ without joining back to the order. The genesis journal is `unknown`. A replay of
 idempotency key returns the original order and its original actor; a later caller cannot
 re-attribute it.
 
+### Agent orders wait for a person
+
+Automation is a per-user setting with two tiers:
+
+| Tier | Agent order |
+|---|---|
+| `manual` (default) | Stored and queued for a person; nothing fills until a person approves |
+| `full_auto` | Fills through the normal path with no approval |
+
+`GET /api/v1/paper/automation` returns the tier and the risk disclosure; a user with no
+setting is `manual`. `PUT /api/v1/paper/automation` switches it, and **only a person may**
+(the deployment token, recorded as `human`). The setting is bound to the authenticated
+principal's owner (the deployment subject for a person, the key's subject for an agent),
+never to the workspace: one user's `full_auto` does not authorize another user's orders.
+Switching to `full_auto` requires
+`{"tier": "full_auto", "acknowledge_risk": true}`: without the acknowledgement the request
+is `422`, and with it the server appends a consent row naming the user, the disclosure
+version and the moment. Returning to `manual` leaves that history in place
+(`{"tier": "manual"}`). A `full_auto` setting whose consent row is missing (or is for an
+older disclosure version) refuses an automated order closed as
+`AUTOMATION_CONSENT_REQUIRED`; it is never silently read as `manual`.
+
+The same gate covers automation that did not come from an agent key directly. A strategy
+records the principal that created it: an order the engine places for an agent-created
+strategy waits exactly like an agent order, while a strategy a person created is not
+gated. A strategy whose creating principal predates this record is treated as automation
+and fails closed; it never runs unattended by default.
+
+Under `manual`, `POST /paper/orders` from an agent key answers `201` with the stored order
+and `status: "pending_approval"`, `reason: "AWAITING_APPROVAL"`, plus `approval_id` and
+`approval_status`. Nothing is journaled. The order is claimed by its idempotency key at
+proposal time, so a retry from the same agent returns the same pending order.
+
+```json
+{
+  "id": "…", "status": "pending_approval", "reason": "AWAITING_APPROVAL",
+  "approval_id": "…", "approval_status": "pending",
+  "actor": {"kind": "agent", "id": "3f6c…"}
+}
+```
+
+An approval has one lifecycle, and every state names its next action:
+
+| Status | Next action |
+|---|---|
+| `pending` | `approve_or_reject` |
+| `approved` | `execute` (the single attempt a decision takes) |
+| `rejected`, `expired`, `superseded`, `executed`, `failed` | `none` |
+
+A pending approval expires after `EZCHAIN_APPROVAL_TTL_SECONDS` (300 by default); a read
+reports it as `expired` without writing, and a decision on it transitions it and is
+refused with `APPROVAL_EXPIRED`. A newer proposal from the same agent for the same chain,
+token and side supersedes an older pending one. An unrecognised stored status is reported
+as `failed`, never as pending.
+
+The approver sees the server's own evidence, never agent-written text: `risk_decision`
+carries the stage, the verdict, the structured reason codes, and the quote with its cost
+sheet, captured when the order was gated. The stored `intent` is what executes.
+
+`POST /paper/approvals/{id}/approve` (body `{"note": "…"}` optional) runs the stored intent
+through the same `Intent → RiskDecision → Quote → Order → Fill → Journal` path. It cannot be
+widened into a different trade, and the order keeps its original id and idempotency key. If
+the gate refuses the order at execution, the approval ends `failed` with the order's reason
+code. `POST /paper/approvals/{id}/reject` requires a `note`; the order is refused with
+`APPROVAL_REJECTED` and the note is kept on the approval and in the order's reasons.
+Decisions are attributed: `decided_by` names the person.
+
+An agent key may read the queue; only a person may decide. Any other principal gets
+`403 APPROVAL_REQUIRES_PERSON`, which is how an agent approving its own proposal is made
+impossible. An expired approval and an already-decided one are `409 APPROVAL_EXPIRED` and
+`APPROVAL_NOT_PENDING`; a missing one is `404 APPROVAL_NOT_FOUND`. If the queue cannot be
+read, an agent's order is refused closed as `APPROVAL_STATE_UNREADABLE` instead of
+filling.
+
 An armed operator switch refuses every buy here, whoever places it, before the market read
 and the quote; the rejected order row is the record of the attempt. Sells are not refused
 by the switch: an exit can only reduce risk, so reduce-only sells still settle.
+
+**The one gate order for a paper order.** Every gate is a gate *on* `place_order`, in this
+order, and nothing is asked twice:
+
+1. Idempotency replay and integrity (side, amount) — no network, no second fill.
+2. The kill switch, **entry-only**, before the market read: `KILL_SWITCH_ARMED` /
+   `KILL_SWITCH_UNAVAILABLE` for a buy; a sell is never refused.
+3. The settlement wallet, entry-only: `WALLET_UNKNOWN` / `SETTLEMENT_ASSET_UNKNOWN`.
+4. The market read and the quote. A stale mark refuses an entry with `SNAPSHOT_STALE`; a
+   reduce-only exit sizes from the held quantity and still settles.
+5. Inside the fill window: the kill switch is re-read (again entry-only), then the position
+   replay and the quote-size checks.
+6. The risk decision.
+7. The **automation tier / approval queue**: an agent order, and a strategy order whose
+   strategy an agent created (or whose provenance is unknown), is stored as
+   `pending_approval` and queued under `manual` — nothing is journaled; an unreadable
+   queue refuses `APPROVAL_STATE_UNREADABLE`, and an unconsented `full_auto` refuses
+   `AUTOMATION_CONSENT_REQUIRED`. A strategy a person created is not gated.
+8. Fill and journal.
+
+Approving re-enters the same function with the stored intent, so steps 2–6 and 8 run again
+(the trade keeps its original id and key) and step 7 is skipped because a person already
+decided. Consent is therefore asked in exactly one place — the `PUT /paper/automation`
+acknowledgement — and is never re-asked at placement. The executor's live-path
+`AUTOMATION_CONSENT_REQUIRED` validates the same `AutomationSetting` for an unattended run,
+so a `manual`-tier intent cannot reach a venue by the executor path either.
+
 
 A fill journals a simulated fee: 30 bps of the notional by default on a `paper_mark`, or
 the quote's own venue cost when that is larger. No money reaches a venue or network.

@@ -7,11 +7,30 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from ezchain_api.actor import ACTOR_AGENT, ACTOR_STRATEGY, ACTOR_UNKNOWN, OrderActor
-from ezchain_api.models import LedgerEntryRow
+from ezchain_api.actor import ACTOR_AGENT, ACTOR_HUMAN, ACTOR_STRATEGY, ACTOR_UNKNOWN, OrderActor
+from ezchain_api.models import LedgerEntryRow, StrategyRow
 from ezchain_api.services import paper
 
 from .conftest import make_request, make_router, make_settings, place
+
+
+def _human_strategy(session, strategy_id: str) -> None:
+    session.add(
+        StrategyRow(
+            id=strategy_id,
+            name=strategy_id,
+            chain="blast",
+            token_address="0x0000000000000000000000000000000000000abc",
+            token_symbol="TEST",
+            kind="dca",
+            params={"order_usd": 100, "interval_minutes": 60},
+            status="active",
+            created_by_kind=ACTOR_HUMAN,
+            created_by_id="deployment",
+            created_by_owner="deployment",
+        )
+    )
+    session.commit()
 
 
 def _place_with(session, settings, dex, jupiter, request, actor):
@@ -22,6 +41,7 @@ def _place_with(session, settings, dex, jupiter, request, actor):
 
 def test_a_strategy_order_is_attributed_to_the_strategy(session, settings, dex, jupiter) -> None:
     """The engine is the only caller that sets ``strategy_id``, so it names the actor."""
+    _human_strategy(session, "strategy-42")
     order = place(
         session,
         settings,
@@ -36,6 +56,7 @@ def test_a_strategy_order_is_attributed_to_the_strategy(session, settings, dex, 
 
 def test_strategy_attribution_wins_over_a_supplied_actor(session, settings, dex, jupiter) -> None:
     """A caller cannot claim to be the agent that placed a strategy's order."""
+    _human_strategy(session, "strategy-7")
     order = _place_with(
         session,
         settings,
@@ -91,6 +112,7 @@ def test_a_rejected_order_still_records_the_actor(session, dex, jupiter) -> None
 def test_the_journal_group_of_a_strategy_order_names_the_strategy(
     session, settings, dex, jupiter
 ) -> None:
+    _human_strategy(session, "strategy-9")
     order = place(
         session,
         settings,

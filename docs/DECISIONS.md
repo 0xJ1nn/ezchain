@@ -968,6 +968,10 @@ it and the UI is a separate change (tracked follow-up). Because the value comes 
 `request.state.principal`, a route that places orders without the auth middleware resolving
 a principal records `unknown` rather than borrowing another field's value.
 
+---
+
+---
+
 ## ADR-0038 — A signature is bound to the approved intent by a decode before signing
 
 **Status:** accepted 2026-11-13.
@@ -1106,3 +1110,64 @@ operator's KMS or sealed file, and how a user's credential wraps their own key);
 rotation and revocation (a tracked follow-up) and the rotation's fingerprint history; the offline
 known-answer vector and cluster guard (a tracked follow-up); the signing process's socket and per-start
 secret (a tracked follow-up). Each is a design against this decision and needs owner review before live.
+
+## ADR-0041 — Agent orders wait in a durable approval queue; automation is per user
+
+**Date:** 2026-11-13 · **Status:** Accepted
+
+**Context:** ADR-0037 made every order attributable, so an incident review can now tell an
+agent's order from a person's. It also exposed the next hole: an agent's order filled as
+soon as it was issued, with no human between the proposal and the fill. Attribution tells
+you who acted; it does not let anyone stop them. The owner's product requirement is a
+per-user choice — some users want every agent order approved, others deliberately run
+agents unattended — so the control cannot be a single deployment-wide switch, and an
+"unattended" mode must be an explicit, acknowledged opt-in rather than a silent default.
+
+**Options:** (a) approve by holding the HTTP request open until a person answers;
+(b) a second execution endpoint that fires an approved order; (c) a durable queue that
+gates the one existing path; (d) a deployment-wide mandatory approval for every agent.
+
+**Decision:** (c), with automation as a **per-user** setting. `automation_settings` holds
+one row per user with tier `manual` or `full_auto`; a user with no row is `manual`, and
+`full_auto` is only honoured while an append-only `automation_consents` row for that user
+and the current disclosure version exists. Switching tiers is a person's act — the
+deployment principal, recorded as `human` — and `full_auto` requires the risk
+acknowledgement in the same request, so the consent and the setting are written together.
+
+Under `manual`, an order attributed to an `agent` principal stops inside `place_order`
+after risk has allowed it and before any fill: the order row is claimed by its idempotency
+key, marked `pending_approval`, and an `order_approvals` row stores the intent, the
+server's own risk evidence and the quote's cost sheet. Nothing is journaled. There is no
+expiry timer process and no second write path: a read computes `expired` from
+`expires_at` without writing, a decision transitions it, and each new proposal sweeps its
+own expired rows. The queue is a gate *on* `place_order`, never beside it — approving
+re-enters `place_order` with the stored intent and `approved=True`, so the approved order
+runs `Intent → RiskDecision → Quote → Order → Fill → Journal` like any other and keeps its
+original id and idempotency key. The decision claim (`approved`) is committed before the
+attempt, so a second approver loses the row instead of filling twice; an attempt the gate
+refuses ends the approval `failed` with the order's reason code.
+
+**Consequences:** the queue is durable — a restart resumes it — and its state is one
+declared lifecycle with a next action per state. Only a person may decide, enforced on the
+principal kind rather than a scope, which is what makes an agent approving its own
+proposal impossible. An approver reads the server's verdict, never agent-written prose. An
+unreadable queue, an unreadable stored intent and an expired approval all refuse with a
+reason code instead of placing an order. Migration `0021_approvals` is additive and forward-only:
+`paper_orders.status` is already free text, so `pending_approval` needs no column change,
+and no existing row is rewritten. The queue is a paper control, so it does not cover the
+executor process's own venue path (services/executor), which is live-only and out of this
+change's scope; when live execution reaches the approval surface it must gate there too.
+The web queue screen is a follow-up: the API carries the queue and the tier, and no UI is
+changed here.
+
+**Amendment (review round 1):** the gate keys on the *automation*, not the actor label.
+`resolve_actor` had mapped every `strategy_id` to `ACTOR_STRATEGY`, so an agent key with
+`trade` could create a strategy and run it with no approval. Strategies now carry the
+principal that created them (`created_by_kind`/`created_by_id`/`created_by_owner`, migration
+`0022_strategy_creator`); an agent-created strategy is gated exactly like a direct agent
+order, a person-created one is not, and unknown provenance fails closed. The tier and its
+consent are bound to the ordering principal's owner — the authenticated subject, or the
+strategy's creator — not to `workspace_id`, so one user's `full_auto` cannot authorize
+another user's agent orders. A stored `full_auto` whose consent record is missing refuses
+`AUTOMATION_CONSENT_REQUIRED` instead of being read as `manual`, and an unreadable queue
+rolls its transaction back before the refusal is written.

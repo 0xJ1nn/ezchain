@@ -39,6 +39,8 @@ READ_TOOLS = (
     "get_performance",
     "get_ledger",
     "get_reconciliation",
+    "list_approvals",
+    "get_automation",
     "list_strategies",
     "get_strategy",
     "get_strategy_runs",

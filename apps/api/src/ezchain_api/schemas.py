@@ -423,6 +423,10 @@ class OrderOut(BaseModel):
     reasons: list[RiskReasonOut] = Field(default_factory=list)
     quote_kind: str | None = None
     actor: ActorOut = Field(default_factory=lambda: ActorOut(kind="unknown"))
+    # The approval this order waits in or was decided by. Null for a person's own order,
+    # an engine order, and an agent order under the ``full_auto`` tier.
+    approval_id: str | None = None
+    approval_status: str | None = None
     created_at: str
     filled_at: str | None = None
 
@@ -461,6 +465,112 @@ class FillOut(BaseModel):
     fee_usd: str
     quote_kind: str
     created_at: str
+
+
+class ApprovalIntentOut(BaseModel):
+    """The stored order request a person is approving, exactly as the agent proposed it."""
+
+    model_config = ConfigDict(extra="allow")
+
+    chain: str
+    token_address: str
+    side: str
+    amount_usd: str
+    idempotency_key: str
+    strategy_id: str | None = None
+    quantity: str | None = None
+    reduce_only: bool = False
+    risk_profile: str | None = None
+
+
+class ApprovalDecisionOut(BaseModel):
+    """The server's own risk evidence for an approval. Never text from the agent."""
+
+    model_config = ConfigDict(extra="allow")
+
+    stage: str | None = None
+    allowed: bool | None = None
+    reasons: list[RiskReasonOut] = Field(default_factory=list)
+
+
+class ApprovalOut(BaseModel):
+    """One agent order waiting for a person, and the record of what was decided.
+
+    ``status`` is one declared lifecycle value and ``next_action`` names what a reader may
+    do in it (``approve_or_reject`` while pending, ``execute`` for the one claim an
+    approval takes, ``none`` once terminal). ``decided_by`` is the person; a null means no
+    person has decided yet.
+    """
+
+    id: str
+    order_id: str
+    status: Literal[
+        "pending", "approved", "rejected", "expired", "superseded", "executed", "failed"
+    ]
+    next_action: Literal["approve_or_reject", "execute", "none"]
+    intent: ApprovalIntentOut
+    risk_decision: ApprovalDecisionOut
+    execution_reason: str | None = None
+    decided_by: ActorOut | None = None
+    decision_note: str | None = None
+    created_at: str
+    expires_at: str | None = None
+    decided_at: str | None = None
+    executed_at: str | None = None
+    mode: str = "paper"
+
+
+class ApprovalDecisionIn(BaseModel):
+    """A person's decision. It carries a note, never an order: the stored intent executes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ApprovalRejectIn(BaseModel):
+    """A rejection requires the person's reason."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    note: str = Field(min_length=1, max_length=1000)
+
+
+class AutomationTierIn(BaseModel):
+    """Switch a user's automation tier. ``full_auto`` requires the acknowledgement."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tier: Literal["manual", "full_auto"]
+    acknowledge_risk: bool = False
+
+    @model_validator(mode="after")
+    def full_auto_needs_acknowledgement(self) -> AutomationTierIn:
+        if self.tier == "full_auto" and not self.acknowledge_risk:
+            raise ValueError("switching to full_auto requires acknowledge_risk")
+        return self
+
+
+class AutomationDisclosureOut(BaseModel):
+    version: str
+    text: str
+    acknowledged_at: str | None = None
+
+
+class AutomationOut(BaseModel):
+    """The per-user automation tier and the disclosure behind it.
+
+    ``agent_orders`` is the plain-language consequence: ``wait_for_a_person`` under
+    ``manual``, ``execute_automatically`` under ``full_auto``.
+    """
+
+    user_id: str
+    tier: Literal["manual", "full_auto"]
+    tiers: list[Literal["manual", "full_auto"]]
+    updated_at: str | None = None
+    updated_by: ActorOut | None = None
+    disclosure: AutomationDisclosureOut
+    agent_orders: Literal["wait_for_a_person", "execute_automatically"]
 
 
 class PositionOut(BaseModel):

@@ -299,7 +299,9 @@ def test_from_principal_is_explicit_about_what_it_cannot_name() -> None:
 
     assert from_principal(None) == OrderActor(ACTOR_UNKNOWN, None)
     assert from_principal(Principal("deployment", None, True)) == OrderActor(
-        ACTOR_HUMAN, "deployment"
+        ACTOR_HUMAN, "deployment", owner="deployment"
     )
-    assert from_principal(Principal("hermes", "key-1", False)) == OrderActor(ACTOR_AGENT, "key-1")
+    assert from_principal(Principal("hermes", "key-1", False)) == OrderActor(
+        ACTOR_AGENT, "key-1", owner="hermes"
+    )
     assert from_principal(Principal("", None, True)) == OrderActor(ACTOR_UNKNOWN, None)

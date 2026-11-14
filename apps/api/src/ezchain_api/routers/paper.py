@@ -15,7 +15,7 @@ from ..actor import ACTOR_UNKNOWN, from_principal
 from ..config import Settings, get_settings
 from ..deps import get_dexscreener, get_quote_router, get_session
 from ..errors import adapter_http_error
-from ..models import PaperFillRow, PaperOrderRow
+from ..models import OrderApprovalRow, PaperFillRow, PaperOrderRow
 from ..schemas import (
     ActorOut,
     FillOut,
@@ -27,7 +27,7 @@ from ..schemas import (
     ReconciliationOut,
     RiskReasonOut,
 )
-from ..services import paper, reconciliation
+from ..services import approvals, paper, reconciliation
 
 router = APIRouter(prefix="/api/v1/paper", tags=["paper"])
 
@@ -45,7 +45,7 @@ def _actor(row: PaperOrderRow) -> ActorOut:
     return ActorOut(kind=row.actor_kind or ACTOR_UNKNOWN, id=row.actor_id)
 
 
-def _order(row: PaperOrderRow) -> OrderOut:
+def _order(row: PaperOrderRow, approval: OrderApprovalRow | None = None) -> OrderOut:
     return OrderOut(
         id=row.id,
         chain=row.chain,
@@ -76,6 +76,8 @@ def _order(row: PaperOrderRow) -> OrderOut:
         ),
         quote_kind=row.quote_kind,
         actor=_actor(row),
+        approval_id=None if approval is None else approval.id,
+        approval_status=None if approval is None else approvals.effective_status(approval),
         created_at=_dt(row.created_at),
         filled_at=None if row.filled_at is None else _dt(row.filled_at),
     )
@@ -141,7 +143,9 @@ def order_history(
     session: Session = Depends(get_session),
 ) -> list[OrderOut]:
     """Newest-first orders. ``offset`` pages past the newest ``limit`` rows."""
-    return [_order(row) for row in paper.orders(session, limit, offset)]
+    rows = paper.orders(session, limit, offset)
+    pending = approvals.by_orders(session, [row.id for row in rows])
+    return [_order(row, pending.get(row.id)) for row in rows]
 
 
 @router.get("/fills", response_model=list[FillOut])
@@ -205,4 +209,4 @@ async def create_order(
         response.status_code = 201
     else:
         response.status_code = 200
-    return _order(row)
+    return _order(row, approvals.by_order(session, row.id))

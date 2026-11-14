@@ -12,12 +12,31 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow
+from ezchain_api.models import LedgerEntryRow, PaperFillRow, PaperOrderRow, StrategyRow
 from ezchain_api.services import paper
 from ezchain_api.services.system_flags import KillSwitch as StoredKillSwitch
 from ezchain_api.services.system_flags import set_kill_switch
 
 from .conftest import FakeDexScreener, make_request, make_snapshot, place
+
+
+def _human_strategy(session, strategy_id: str) -> None:
+    session.add(
+        StrategyRow(
+            id=strategy_id,
+            name=strategy_id,
+            chain="blast",
+            token_address="0x0000000000000000000000000000000000000abc",
+            token_symbol="TEST",
+            kind="dca",
+            params={"order_usd": 100, "interval_minutes": 60},
+            status="active",
+            created_by_kind="human",
+            created_by_id="deployment",
+            created_by_owner="deployment",
+        )
+    )
+    session.commit()
 
 
 def _ledger_entries(session) -> int:
@@ -163,6 +182,7 @@ def test_an_unreadable_switch_in_the_fill_window_refuses_with_a_typed_code(
 def test_released_switch_allows_an_order(session, settings, dex, jupiter) -> None:
     set_kill_switch(session, active=False, reason="drill complete")
     dex.set(make_snapshot(price=Decimal("2000")))
+    _human_strategy(session, "strategy-1")
 
     order = place(
         session,

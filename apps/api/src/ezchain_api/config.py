@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     market_provider_max_failures: int | None = Field(default=None, ge=1, le=20)
     market_circuit_breaker_cooldown_seconds: float | None = Field(default=None, ge=1, le=3600)
 
+    # An agent order under the ``manual`` automation tier waits this long for a person.
+    # After it, the pending approval is expired and the order refuses closed.
+    approval_ttl_seconds: int = Field(default=300, ge=30, le=86400)
+
     paper_starting_cash_usd: Decimal = Field(default=Decimal("10000"))
     paper_fee_bps: int = 30
     # Paper-only no-risk mode: a buy that would overdraw cash is funded for the

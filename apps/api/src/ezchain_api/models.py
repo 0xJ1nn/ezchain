@@ -193,6 +193,84 @@ class PaperOrderRow(Base):
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class OrderApprovalRow(Base):
+    """An agent order held for a person's decision, and the record of that decision.
+
+    Status is one declared lifecycle: ``pending`` (a person must approve or reject),
+    ``approved`` (the decision claim, valid for exactly one execution attempt),
+    ``rejected`` (a person refused it), ``expired`` (the five-minute window closed),
+    ``superseded`` (a newer proposal replaced the same intent), ``executed`` (the stored
+    order filled) and ``failed`` (the stored order was refused by the execution path).
+    ``pending`` moves only to ``approved``, ``rejected``, ``expired`` or ``superseded``;
+    ``approved`` moves only to ``executed`` or ``failed``.
+
+    ``intent`` is the stored order request the approval authorises. The approve route
+    executes it, never a body sent with the decision, so what a person approves is what
+    the agent proposed. ``risk_decision`` holds the server's own pre-trade verdict and
+    reason codes, never text from the proposing agent. ``decided_by_kind``/``decided_by_id``
+    name the person who decided, resolved from the authenticated principal.
+    """
+
+    __tablename__ = "order_approvals"
+    __table_args__ = (UniqueConstraint("order_id", name="uq_order_approval_order"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    order_id: Mapped[str] = mapped_column(ForeignKey("paper_orders.id"), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    intent: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    risk_decision: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    execution_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decided_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # The person's own words. Kept apart from ``risk_decision`` so a decision note can
+    # never be mistaken for the server's risk verdict.
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AutomationSettingRow(Base):
+    """One user's automation tier: ``manual`` (agent orders need a person) or ``full_auto``.
+
+    The tier is per user and defaults to ``manual`` for a user with no row. A ``full_auto``
+    row is only honoured while an append-only consent record for the same user and the
+    current disclosure version exists; a missing or unrecognised tier reads as ``manual``,
+    so an unreadable setting never lets an agent order through.
+    """
+
+    __tablename__ = "automation_settings"
+
+    user_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    tier: Mapped[str] = mapped_column(String(16), default="manual")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_by_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    updated_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
+class AutomationConsentRow(Base):
+    """An append-only record of a person accepting the full-auto risk disclosure.
+
+    One row per opt-in. It names the user, the disclosure version and text that was
+    accepted, and when. A consent is never updated or deleted; withdrawing full-auto
+    writes a new ``manual`` setting and leaves this history intact.
+    """
+
+    __tablename__ = "automation_consents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(120), index=True)
+    tier: Mapped[str] = mapped_column(String(16))
+    disclosure_version: Mapped[str] = mapped_column(String(16))
+    disclosure_text: Mapped[str] = mapped_column(Text)
+    actor_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    acknowledged_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now, index=True
+    )
+
+
 class PaperFillRow(Base):
     __tablename__ = "paper_fills"
     __table_args__ = (UniqueConstraint("order_id", name="uq_paper_fill_order"),)
@@ -225,6 +303,14 @@ class StrategyRow(Base):
     plugin_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     plugin_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    # The principal that created the strategy, on the server. An order the engine places
+    # for this strategy is attributed to the strategy, but its automation tier belongs to
+    # the principal that wrote it: a strategy an agent created is an agent's automation.
+    # Null means the provenance predates these columns; the order gate treats unknown
+    # provenance as automation rather than letting it run unattended.
+    created_by_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_by_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

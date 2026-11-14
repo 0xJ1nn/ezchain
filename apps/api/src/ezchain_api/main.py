@@ -39,6 +39,7 @@ from .rate_limit import ReadRateLimitMiddleware
 from .routers import (
     account,
     agent,
+    approvals,
     backtests,
     graph,
     markets,
@@ -230,6 +231,7 @@ def create_app() -> FastAPI:
     app.include_router(markets.router)
     app.include_router(signals.router)
     app.include_router(paper.router)
+    app.include_router(approvals.router)
     app.include_router(account.router)
     app.include_router(strategies.router)
     app.include_router(graph.router)

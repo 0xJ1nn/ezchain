@@ -27,7 +27,7 @@ from ..services.system_flags import read_kill_switch, set_kill_switch
 
 router = APIRouter(tags=["system"])
 
-PAPER_ORDER_STATUSES = ("pending", "filled", "rejected")
+PAPER_ORDER_STATUSES = ("pending", "pending_approval", "filled", "rejected")
 METRICS_MEDIA_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
