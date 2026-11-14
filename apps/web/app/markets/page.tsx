@@ -11,6 +11,7 @@ import {
 	type Chain,
 	type MarketList,
 	type MarketSort,
+	type MarketSortSemantics,
 } from "@/lib/api";
 import { ModeBanner } from "@/lib/live-banner";
 import {
@@ -27,6 +28,28 @@ export const dynamic = "force-dynamic";
 type SearchParams = Record<string, string | string[] | undefined>;
 
 const DEFAULT_LIMIT = 50;
+
+// What the ordering actually covers. A single-chain read ranks inside that chain; only a
+// feed-wide query ranks across chains; an all-chain browse is a per-chain round robin.
+const SORT_SCOPE: Record<MarketSortSemantics, { label: string; badge: string; detail: string }> = {
+	global_sort: {
+		label: "global sort",
+		badge: "GLOBAL SORT",
+		detail: "Rows are ranked globally across the feed-wide query result.",
+	},
+	per_chain_sort: {
+		label: "per-chain sort",
+		badge: "PER-CHAIN SORT",
+		detail:
+			"Rows are ranked within the selected chain only. This is not an all-chain ranking.",
+	},
+	per_chain_round_robin: {
+		label: "per-chain round robin",
+		badge: "PER-CHAIN ROUND ROBIN",
+		detail:
+			"Each chain is sorted independently, then the chains are interleaved. This is not one global ranking.",
+	},
+};
 
 const SORTS: { id: MarketSort; label: string }[] = [
 	{ id: "trending", label: "24h volume (trending)" },
@@ -307,14 +330,15 @@ export default async function MarketsPage({
 	const refreshHref = marketsHref(params, { offset: params.offset });
 	const chips = filterChips(params, labelFor);
 	const filterNames = chips.filter((chip) => chip.key !== "sort").map((chip) => chip.label);
-	const semantics =
-		list?.sort_semantics === "per_chain_round_robin"
-			? "per-chain round robin"
-			: "global sort";
-	const semanticsTitle =
-		list?.sort_semantics === "per_chain_round_robin"
-			? "Each chain is sorted independently, then the chains are interleaved. This is not one global ranking."
-			: "Rows are ranked globally across the selected population.";
+	// A chain with no discovery seeds was never asked, so its empty page is unknown, not
+	// an empty result. Coverage is per-chain evidence from the read, so this holds for a
+	// single-chain browse and for a feed where every chain lacks seeds.
+	const noSeeds =
+		list?.coverage != null &&
+		list.coverage.length > 0 &&
+		list.coverage.every((item) => item.reason === "no_seeds");
+	const semantics = SORT_SCOPE[list?.sort_semantics ?? "global_sort"];
+	const semanticsTitle = semantics.detail;
 	const total = list?.total ?? 0;
 	const returned = list?.rows.length ?? 0;
 	const start = returned === 0 ? 0 : params.offset + 1;
@@ -426,9 +450,7 @@ export default async function MarketsPage({
 					action={
 						<div className="row">
 							<Badge tone="ghost" title={semanticsTitle}>
-								{list.sort_semantics === "per_chain_round_robin"
-									? "PER-CHAIN ROUND ROBIN"
-									: "GLOBAL SORT"}
+								{semantics.badge}
 							</Badge>
 							{list.stale ? (
 								<Badge tone="warn">STALE</Badge>
@@ -450,7 +472,7 @@ export default async function MarketsPage({
 								{sortLabel(list.sort).toLowerCase()}
 							</span>
 							<span>
-								Order: {semantics} ·{" "}
+								Order: {semantics.label} ·{" "}
 								{list.stale
 									? "the API marked this snapshot stale"
 									: `observed ${ageLabel(list.source.observed_at)} ago`}
@@ -633,27 +655,35 @@ export default async function MarketsPage({
 					{list.rows.length === 0 && !params.starredOnly ? (
 						<div className="panel-body">
 							<div className="row mb-8">
-								<Badge tone="warn">EMPTY_RESULT</Badge>
+								<Badge tone="warn">{noSeeds ? "NO_SEEDS" : "EMPTY_RESULT"}</Badge>
 								<span className="small muted">
-									{pagePastEnd
-										? `Page ${page} is past the last result.`
-										: "No market rows matched this request."}
+									{noSeeds
+										? params.chain === "all"
+											? "No chain in this feed has discovery seeds configured."
+											: "This chain has no discovery seeds configured."
+										: pagePastEnd
+											? `Page ${page} is past the last result.`
+											: "No market rows matched this request."}
 								</span>
 							</div>
 							<p className="small muted">
-								{pagePastEnd
-									? `${total} row${total === 1 ? "" : "s"} matched${
-											filterNames.length > 0
-												? ` the active filters (${filterNames.join(" · ")})`
-												: ""
-										}, but this page is beyond the end. Use Prev, or reset the page to start over.`
-									: params.q
-										? `Nothing matched “${params.q}”${
-												params.chain !== "all" ? ` on ${labelFor(params.chain)}` : ""
-											}. DexScreener may not index this token yet.`
-										: filterNames.length > 0
-											? `No rows matched: ${filterNames.join(" · ")}. Unknown values are excluded by these filters, never treated as zero.`
-											: "The feed returned no pairs for this chain. That is an empty result, not a zero price."}
+								{noSeeds
+									? params.chain === "all"
+										? "Nothing was requested for this feed, so its population is unknown — not an empty result."
+										: `Nothing was requested for ${labelFor(params.chain)}, so its population is unknown — not an empty result.`
+									: pagePastEnd
+										? `${total} row${total === 1 ? "" : "s"} matched${
+												filterNames.length > 0
+													? ` the active filters (${filterNames.join(" · ")})`
+													: ""
+											}, but this page is beyond the end. Use Prev, or reset the page to start over.`
+										: params.q
+											? `Nothing matched “${params.q}”${
+													params.chain !== "all" ? ` on ${labelFor(params.chain)}` : ""
+												}. DexScreener may not index this token yet.`
+											: filterNames.length > 0
+												? `No rows matched: ${filterNames.join(" · ")}. Unknown values are excluded by these filters, never treated as zero.`
+												: "The feed returned no pairs for this chain. That is an empty result, not a zero price."}
 							</p>
 							<div className="row mt-12">
 								{hasPrevious && (

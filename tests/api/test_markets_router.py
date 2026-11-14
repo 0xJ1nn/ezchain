@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any
-
 import base64
 import json
+from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -113,6 +112,66 @@ def test_router_uses_full_population_and_reports_round_robin() -> None:
     assert body["truncated"] is False
     assert body["population"]["truncated"] is False
     assert body["population"]["rows_discovered"] == 3
+    assert body["sort_semantics"] == "per_chain_round_robin"
+    assert body["ordered_by"] == "chain_round_robin"
+    assert body["population"]["sort_semantics"] == "per_chain_round_robin"
+
+
+def test_single_chain_browse_is_per_chain_sort_not_global() -> None:
+    observed = datetime.now(UTC)
+    adapter = FakeDiscovery(
+        [make_row("ethereum", "0xeth", "ETH", "10", observed)],
+        SourceRef("dexscreener", "https://dexscreener.com", observed),
+        [ChainCoverage("ethereum", 2, 1, "pairs")],
+    )
+    client = client_for(adapter)
+
+    body = client.get("/api/v1/markets", params={"chain": "ethereum", "sort": "trending"}).json()
+
+    # Ranking is within the selected chain. Calling it global would claim an all-chain
+    # ordering that no single-chain read produced.
+    assert body["sort_semantics"] == "per_chain_sort"
+    assert body["ordered_by"] == "per_chain_sort"
+    assert body["population"]["sort_semantics"] == "per_chain_sort"
+
+
+def test_feed_wide_search_is_global_and_reports_no_coverage() -> None:
+    observed = datetime.now(UTC)
+    adapter = FakeDiscovery(
+        [make_row("ethereum", "0xeth", "ETH", "10", observed)],
+        SourceRef("dexscreener", "https://dexscreener.com", observed),
+        None,
+    )
+    client = client_for(adapter)
+
+    body = client.get("/api/v1/markets", params={"chain": "all", "q": "ETH"}).json()
+
+    assert body["coverage"] is None
+    assert body["sort_semantics"] == "global_sort"
+    assert body["ordered_by"] == "global_sort"
+
+
+def test_coverage_reasons_include_unrequested_and_timeout() -> None:
+    observed = datetime.now(UTC)
+    adapter = FakeDiscovery(
+        [],
+        SourceRef("dexscreener", "https://dexscreener.com", observed),
+        [
+            ChainCoverage("base", 0, 0, "no_seeds"),
+            ChainCoverage("solana", 4, 0, "timeout"),
+        ],
+    )
+    client = client_for(adapter)
+
+    response = client.get("/api/v1/markets", params={"chain": "all"})
+
+    assert response.status_code == 200
+    coverage = {item["chain"]: item for item in response.json()["coverage"]}
+    assert coverage["base"]["reason"] == "no_seeds"
+    assert coverage["base"]["requested"] == 0
+    assert coverage["solana"]["reason"] == "timeout"
+    # Base was never asked, so it is not a scanned chain in the population line.
+    assert response.json()["population"]["chains_scanned"] == 1
 
 
 def test_offset_paging_has_no_duplicates_or_skips() -> None:

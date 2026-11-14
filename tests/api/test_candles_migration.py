@@ -92,7 +92,11 @@ def test_market_candles_upgrades_a_sqlite_database(tmp_path: Path) -> None:
     # The strategies table is seeded because a later revision adds columns to it.
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE strategies (id VARCHAR(36) PRIMARY KEY)"))
-        connection.execute(text("CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"))
+        connection.execute(
+            text(
+                "CREATE TABLE paper_orders (id VARCHAR(36) PRIMARY KEY, idempotency_key VARCHAR(120))"
+            )
+        )
     command.stamp(config, "0003_paper_fill_order")
     command.upgrade(config, "head")
     try:

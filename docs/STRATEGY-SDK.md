@@ -101,6 +101,7 @@ rejects unknown keys unless it explicitly sets `additionalProperties: true`.
 ```python
 from ezchain_sdk import Candle, Context, Fill, Intent, Signal, Strategy
 
+
 class Momentum(Strategy):
     def on_start(self, ctx: Context) -> None:
         ctx.state.setdefault("last_side", None)

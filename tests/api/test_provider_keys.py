@@ -489,9 +489,7 @@ def test_a_transient_store_failure_stays_retryable() -> None:
     assert adapter_http_error(error).detail["retryable"] is True
 
 
-def test_resolve_secret_keeps_a_rotated_key_non_retryable(
-    session: Any, settings: Settings
-) -> None:
+def test_resolve_secret_keeps_a_rotated_key_non_retryable(session: Any, settings: Settings) -> None:
     cipher = MemoryCipher()
     provider_keys.create_key(
         session,

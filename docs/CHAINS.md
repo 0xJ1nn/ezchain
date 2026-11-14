@@ -7,7 +7,7 @@ honest matrix of what is actually verified. This document defines all three.
 
 ```python
 class ChainAdapter(Protocol):
-    chain: ChainMeta          # id, family, native_asset, decimals, finality, explorer
+    chain: ChainMeta  # id, family, native_asset, decimals, finality, explorer
     capabilities: Capabilities
 
     async def validate_address(self, address: str) -> AddressInfo: ...
@@ -31,7 +31,7 @@ class Capabilities:
     native_transfer: bool
     token_transfer: bool
     swap: bool
-    limit_order: bool          # native or via venue adapter
+    limit_order: bool  # native or via venue adapter
     gasless: bool
     mempool: bool
     reorg_depth: int
@@ -39,7 +39,7 @@ class Capabilities:
     address_formats: tuple[str, ...]
     token_standards: tuple[str, ...]
     event_streams: tuple[str, ...]
-    rent: bool                 # account rent / storage deposits
+    rent: bool  # account rent / storage deposits
     simulation: bool
 ```
 
@@ -149,14 +149,43 @@ requested first, at most 12 hint addresses are added per chain, and four chains 
 flight at a time. Rows are ranked within each chain, then round-robined in registry order
 before `limit`, so a low-liquidity chain is not dropped by a global ranking. The response
 carries `coverage: [{chain, requested, returned, reason}]`; `reason` is `pairs`,
-`no_pairs` (successful empty response) or `error` (the probe failed), and coverage counts
-are pre-slice. When `chain=all`, `ordered_by` is `chain_round_robin`; search and single-chain
-queries are `global_sort`.
+`no_pairs` (the provider was asked and returned nothing), `no_seeds` (no seed or hint
+address existed, so nothing was asked and the population is unknown — never an empty
+observation), `error` (the probe failed) or `timeout` (the pass hit its deadline), and
+coverage counts are pre-slice. When `chain=all`, `ordered_by` is `chain_round_robin`; a
+feed-wide search is `global_sort`; a single-chain read is `per_chain_sort` because it
+ranks only inside that chain.
+
+Every registered chain has seed tokens; the list is the single source in
+`packages/adapters/src/ezchain_adapters/seeds.py` and this table names them:
+
+| Chain | Seeds |
+|---|---|
+| Solana | wrapped SOL, USDC, BONK, JUP |
+| Ethereum, Base, Arbitrum, Optimism | WETH, USDC |
+| Polygon | WETH, USDC |
+| BNB Chain | WBNB, USDT |
+| Avalanche C | WAVAX, USDC |
+| Blast | WETH, USDB |
+| Mantle | WETH, WMNT |
+| Linea, Scroll, zkSync | WETH, USDC |
+| Fantom | WFTM, USDC |
+| Cronos | WCRO, USDC |
+| Celo | CELO, USDC |
+| Sui | SUI, USDC |
+| Aptos | APT, USDC |
+| TON | native TON, USDT jetton |
+| Tron | WTRX, USDT (TRC-20) |
+| NEAR | wNEAR, USDC |
+| Metis | METIS, m.USDC |
+| Osmosis, Cosmos Hub, Moonbeam | `uosmo`, `uatom`, WGLMR contract |
 
 Live read-only smoke (`chain=all&limit=100`, 2026-10-22): **22 of 25** registered chains
 returned rows. Osmosis, Cosmos Hub and Moonbeam returned no indexed pairs and were reported
 `no_pairs`, never zero. The Blast, Mantle, Linea, Scroll and zkSync seeds were verified in
-the same pass.
+the same pass. The Solana seeds are the canonical SPL mints, so Solana discovery no longer
+depends on the promotional feeds; the measurement above predates that change and is kept
+as the recorded pass.
 
 ## 5. Adding a chain (checklist)
 

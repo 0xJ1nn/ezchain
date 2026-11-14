@@ -71,7 +71,9 @@ def _read_app(limit: int) -> FastAPI:
     """A minimal app with the real middleware, so the response shape is the production one."""
 
     app = FastAPI()
-    app.add_middleware(ReadRateLimitMiddleware, settings=_settings(read_rate_limit_per_minute=limit))
+    app.add_middleware(
+        ReadRateLimitMiddleware, settings=_settings(read_rate_limit_per_minute=limit)
+    )
 
     @app.get("/api/probe")
     def probe() -> dict[str, str]:

@@ -216,9 +216,7 @@ def serve_release(tmp_path: Path) -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
-def install_from_publication(
-    tmp_path: Path, base: str
-) -> subprocess.CompletedProcess[str]:
+def install_from_publication(tmp_path: Path, base: str) -> subprocess.CompletedProcess[str]:
     return run_installer(
         "--version",
         TAG,
@@ -252,9 +250,7 @@ def test_downloaded_release_is_verified_against_its_checksum(tmp_path: Path) -> 
     assert (target / "current" / "infra" / "compose.yaml").is_file()
 
 
-def publish(
-    tmp_path: Path, archive: Path, checksum_text: str
-) -> None:
+def publish(tmp_path: Path, archive: Path, checksum_text: str) -> None:
     published = tmp_path / "releases" / TAG
     published.mkdir(parents=True, exist_ok=True)
     name = f"ezchain-{TAG}.tar.gz"

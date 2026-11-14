@@ -168,6 +168,7 @@ export default async function DashboardPage({
 	const chainRows = chainsOutcome.ok ? chainsOutcome.rows : [];
 	const launchRows = launchesOutcome.ok ? launchesOutcome.list.rows.slice(0, 3) : [];
 	const trendingRows = marketRows.slice(0, 3);
+	const trendingScope = marketsOutcome.ok ? marketsOutcome.list.sort_semantics : null;
 	const labelFor = (id: string) => chainRows.find((chain) => chain.id === id)?.name ?? id;
 	const limitRows = limits.ok ? limits.data : null;
 	const alertRows = alerts.ok ? alerts.data.alerts : [];
@@ -305,6 +306,12 @@ export default async function DashboardPage({
 					</div>
 					<div>
 						<div className="strong mb-8">Trending</div>
+						{trendingScope === "per_chain_round_robin" && (
+							<div className="small muted mb-8">
+								One row per chain, interleaved in registry order — not one global
+								volume ranking.
+							</div>
+						)}
 						{!marketsOutcome.ok ? (
 							<div className="note">{failure(marketsOutcome)}</div>
 						) : trendingRows.length === 0 ? (
