@@ -73,6 +73,7 @@ iteration speed without lying about the topology.
 | `services/engine` | Python | strategy runtime, automation scheduler, signal routing, risk | 1 per workspace partition |
 | `services/executor` | Python | key custody, signing, broadcast, fill confirmation | 1 per key shard |
 | `services/ingest` | Python (Rust only if measured) | market/chain streams, normalization, candles | per source, N |
+| `services/agent-runtime` | Python | one model loop, MCP-only agent client, budgets, session trace — decided, not built (ADR-0042) | 1 per session, N |
 | `migrate` | Python | one-shot Alembic | run-to-completion |
 | `apps/desktop` | TypeScript / Electron + Python | native shell, private sidecar supervision, tray/background | 1 per desktop user |
 
@@ -99,6 +100,7 @@ apps/
 integrations/              # Hermes/OpenClaw packs (skill + MCP registration)
 services/
   engine/                  # strategy host, automation scheduler, signal router
+  agent-runtime/           # built-in agent loop: MCP client, model clients, budgets, trace (ADR-0042)
   executor/                # pipeline (intent -> journal), vault, signer, broadcaster, confirmer
   ingest/                  # sources/{chain,venue,cex,social}, normalizers, candles
 packages/
@@ -121,6 +123,8 @@ Enforced boundaries (import-linter):
 - `adapters/*` import `core_py` and their chain SDK; never another adapter.
 - `sdk_py` imports no platform code at all; it is a standalone Apache-2.0 package.
 - `services/engine` never touches key material or signing libraries.
+- `services/agent-runtime` imports no platform code; its only egress is `apps/mcp` over
+  stdio with a scoped key (ADR-0042).
 
 Module size budget: ≤ 800 LOC per module, ≤ 400 LOC per file outside generated code. A
 module that needs more is two bounded contexts. (v3's 697 KB `service.py` is the counter-
