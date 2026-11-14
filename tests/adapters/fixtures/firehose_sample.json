@@ -3,15 +3,20 @@
     "kind": "recorded",
     "captured_at": "2026-11-14",
     "source": "pumpfun-firehose v0.5.0 logsSubscribe, public endpoint",
-    "note": "One real pump.fun trade notification from a live capture, plus four synthetic records that keep the create/complete/pumpswap wire shapes. The wallet, mint, creator and signature of the captured record were replaced with sentinels; its amounts, price, timestamp and reserve figures are the recorded ones, and its slot was null on the wire and stays null. Not a live feed and not an executable sample.",
-    "sanitised": ["signature", "mint", "user", "creator"],
+    "note": "One real pump.fun trade notification from a live capture, plus five synthetic records that keep the create/complete/pumpswap wire shapes. The wallet, mint, creator and signature of every record are sentinels; the captured record's amounts, price, timestamp and reserve figures are the recorded ones, and its slot was null on the wire and stays null. Not a live feed and not an executable sample.",
+    "sanitised": [
+      "signature",
+      "mint",
+      "user",
+      "creator"
+    ],
     "decode": "pumpfire.decoder.decode_notification -> pumpfire.models.TradeEvent.as_dict -> ezchain_adapters.firehose.normalize_firehose_event"
   },
   "events": [
     {
       "kind": "create",
       "signature": "CreateSig111111111111111111111111111111111111111111",
-      "mint": "7xvRK69JGaXajoguXJRQGTMmCHqWXLNpvcK27yLpC8Gk",
+      "mint": "MintCreate11111111111111111111111111111111111",
       "name": "Whack-A-Don",
       "symbol": "WHACKADON",
       "uri": "https://example.invalid/whackadon.json",
@@ -28,7 +33,7 @@
     {
       "kind": "trade",
       "signature": "TradeBuySig1111111111111111111111111111111111111111",
-      "mint": "7xvRK69JGaXajoguXJRQGTMmCHqWXLNpvcK27yLpC8Gk",
+      "mint": "MintBuy111111111111111111111111111111111111111",
       "user": "BuyerWallet11111111111111111111111111111111111111",
       "is_buy": true,
       "side": "buy",
@@ -53,7 +58,7 @@
     {
       "kind": "trade",
       "signature": "TradeSellSig1111111111111111111111111111111111111111",
-      "mint": "7xvRK69JGaXajoguXJRQGTMmCHqWXLNpvcK27yLpC8Gk",
+      "mint": "MintSell11111111111111111111111111111111111111",
       "user": "SellerWallet1111111111111111111111111111111111111",
       "is_buy": false,
       "side": "sell",
@@ -78,7 +83,7 @@
     {
       "kind": "complete",
       "signature": "CompleteSig111111111111111111111111111111111111111",
-      "mint": "7xvRK69JGaXajoguXJRQGTMmCHqWXLNpvcK27yLpC8Gk",
+      "mint": "MintComplete111111111111111111111111111111111",
       "user": "CompleterWallet1111111111111111111111111111111111",
       "bonding_curve": "CurvePDA1111111111111111111111111111111111111",
       "timestamp": 1760003600,
@@ -88,7 +93,7 @@
     {
       "kind": "trade",
       "signature": "AmmBuySig11111111111111111111111111111111111111111",
-      "mint": "7xvRK69JGaXajoguXJRQGTMmCHqWXLNpvcK27yLpC8Gk",
+      "mint": "MintAmm1111111111111111111111111111111111111111",
       "user": "AmmBuyerWallet111111111111111111111111111111111111",
       "is_buy": true,
       "side": "buy",

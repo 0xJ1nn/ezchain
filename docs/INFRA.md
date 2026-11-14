@@ -186,29 +186,55 @@ that before enabling the profile on a shared host.
 The pump.fun firehose is a data-layer seam, not an HTTP route, so its health is a dict the
 operator process reads rather than an endpoint: `FirehoseFeed.health(now)` in
 `ezchain_adapters.firehose` and `FirehoseSource.health(now)` in `ezchain_ingest.source`.
-Both expose the same four facts, and every one of them is measured, never defaulted:
+Every field is measured, never defaulted. The feed reports the flat keys below; the source
+reports the same facts as `gate.as_dict()` (`live`, `stale`, `age_s`, `reason`,
+`stale_after_s`) plus its own counter dict, with `queue` carrying the packet census:
 
-| Field | Meaning |
-|---|---|
-| `last_event_age_seconds` | Age of the newest observation at the read clock. `null` before the first event — an unobserved stream is not a fresh one. |
-| `reconnects` | Reconnect count recorded by `record_reconnect()`; the source's own socket owner reports them. |
-| `dropped` | Observations discarded from the bounded buffer under pressure (also in `queue.dropped`). |
-| `decoded_ratio` / `rejected_ratio` | Decoded over decoded plus rejected. `null` when nothing has arrived, never a perfect `1.0`. |
+| Field | Surface | Meaning |
+|---|---|---|
+| `last_event_age_seconds` / `gate.age_s` | feed / source | Age of the newest *decoded* observation at the read clock. `null` before the first event — an unobserved stream is not a fresh one. |
+| `reconnects` | feed | Reconnect count recorded by `record_reconnect()`; the source's own socket owner reports them. |
+| `dropped` | both | Observations discarded from the bounded buffer under pressure (also in `queue.dropped`). |
+| `refused_stale` | both | Buffered observations the entry read discarded because the observation itself was older than the budget. Counted per item, separate from `dropped`. |
+| `decoded_ratio` / `rejected_ratio` | both | Decoded over decoded plus rejected. `null` when nothing has arrived, never a perfect `1.0`. |
 
-Two behaviours follow from it:
+Three behaviours follow from it:
 
-- **A gap is untradeable.** `FirehoseFeed.entries(now)` and `FirehoseSource.pull(now)` raise
-  `StaleFeed` / `pumpfire.health.StaleStream` once the last event is older than the budget
-  (60 s). The refusal carries the age and the budget and drains nothing, so an entry can
-  never be built from an observation the stream cannot defend.
+- **A gap is untradeable, and a gap does not end at the first fresh event.**
+  `FirehoseFeed.entries(now)` and `FirehoseSource.pull(now)` raise `StaleFeed` /
+  `pumpfire.health.StaleStream` once the newest observation is older than the budget
+  (60 s); the refusal carries the age and the budget and drains nothing. Once the feed is
+  live again, each drained observation is *still* aged on its own `observed_at` (feed) or
+  its own handoff clock (source), and any item older than the budget is refused and counted
+  in `refused_stale`. A recovered feed therefore serves only observations it can defend; a
+  pre-gap backlog never rides in on a new event's liveness.
+- **Liveness is decoded trade data, not socket traffic.** `FirehoseSource.receive` decodes
+  first and observes the gate only on a decoded event. A payload the adapter rejects is
+  counted and never refreshes the gate, so a provider that only emits rejects goes stale and
+  `pull()` serves nothing.
 - **Pressure costs the oldest data, not the reader.** The handoff buffer is bounded
   (`queue_size`, default 500), drops the oldest observation when full and counts each
   drop. Its census is synchronous, so reading depth and counters never blocks the socket
   reader.
 
-The one recorded sample of real traffic lives in
-`tests/adapters/fixtures/firehose_sample.json`; it is sanitised and replayed through the
-same `normalize_firehose_event` path every test and every live event uses.
+`entries()`/`pull()` are the only entry reads. `FirehoseFeed.snapshot()`,
+`FirehoseFeed.fresh_events()` and `FirehoseFeed.stream()` are display surfaces: they include
+observations from before a gap so a viewer can see what the feed last carried, and each row
+carries a read-time `age_seconds` plus the contract's own `stale` flag (that flag applies the
+contract's default 60 s budget, not a feed configured differently), so an old row is visibly
+old. A display row is not an entry and is never a trading decision — a `stream()` delta is
+stamped with the clock it is read at, not with its own timestamp.
+
+A stale transition is recorded by `ingest()` when a late event closes the gap, as well as by
+any reader, and keyed by the observation the gap started from, so the count is one per
+transition and does not repeat on repeated reads. A gap that is still open and that nobody
+read can only be reported at the first read: the feed has no timer of its own.
+
+`tests/adapters/fixtures/firehose_sample.json` holds one record of real pump.fun traffic and
+five synthetic records of the same wire shapes. Every signature, mint, wallet and creator in
+the file is a sentinel and the captured record's amounts, price, timestamp and reserves are
+the recorded ones; every record replays through the same `normalize_firehose_event` path
+every test and every live event uses.
 
 ## 7. Storage, backup and restore
 

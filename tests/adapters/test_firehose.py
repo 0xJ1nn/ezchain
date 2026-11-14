@@ -12,6 +12,7 @@ and its serialiser, not an adapter-local shape.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import re
@@ -25,6 +26,7 @@ import pytest
 import ezchain_core
 from ezchain_adapters.firehose import (
     DEFAULT_STALE_BUDGET_SECONDS,
+    PINNED_VERSION,
     SOURCE_NAME,
     SOURCE_URL,
     FirehoseEvent,
@@ -52,6 +54,8 @@ def test_source_conventions_match_package() -> None:
     assert SOURCE_NAME == "pumpfun-firehose"
     assert SOURCE_URL == "https://github.com/0xJ1nn/pumpfun-firehose"
     assert DEFAULT_STALE_BUDGET_SECONDS == 60.0
+    # The adapter's provenance constant names the tag the ingest extra pins.
+    assert PINNED_VERSION == "0.5.0"
 
 
 def test_the_recorded_fixture_declares_its_provenance_and_is_sanitised() -> None:
@@ -61,15 +65,20 @@ def test_the_recorded_fixture_declares_its_provenance_and_is_sanitised() -> None
     meta = raw["_fixture"]
     assert meta["kind"] == "recorded"
     assert meta["captured_at"] == "2026-11-14"
+    assert "v0.5.0" in meta["source"]
     # The identifiers a capture carries are replaced; the amounts are the recorded ones.
     assert set(meta["sanitised"]) == {"signature", "mint", "user", "creator"}
     events = raw["events"]
     assert isinstance(events, list) and 4 <= len(events) <= 12
     for event in events:
+        # Every record, not only the captured one: the claim covers the whole file.
+        # A create carries no ``user`` and a complete carries no ``creator``, so the
+        # assertion covers the fields a record actually has.
         assert SENTINEL.match(event["signature"]), event["signature"]
-    (recorded,) = [event for event in events if event["signature"].startswith("Captured")]
-    for field in ("signature", "mint", "user", "creator"):
-        assert SENTINEL.match(recorded[field]), (field, recorded[field])
+        assert SENTINEL.match(event["mint"]), event["mint"]
+        for field in ("user", "creator"):
+            if field in event:
+                assert SENTINEL.match(event[field]), (field, event[field])
 
 
 def test_the_recorded_sample_replays_through_the_same_decode_path(
@@ -304,17 +313,24 @@ def test_the_queue_drops_the_oldest_under_pressure_and_counts_it(
 
 
 def test_the_census_never_blocks_the_reader(firehose_sample: list[dict[str, Any]]) -> None:
-    """Reading depth and counters is synchronous, so a full queue cannot stall a health call."""
+    """Census is synchronous: reading it from inside a running loop returns a value."""
     feed = FirehoseFeed(queue_size=1)
     assert feed.ingest(firehose_sample[1]) is not None
     assert feed.ingest(firehose_sample[2]) is not None
 
-    census = feed.census()
+    async def read_inside_a_running_loop() -> dict[str, Any]:
+        # If census awaited anything it would need the loop to keep turning, and a
+        # coroutine awaited here would be the reader's own turn: it must return now.
+        return feed.census()
 
-    assert isinstance(census, dict)
-    assert not inspect.isawaitable(census)
+    census = asyncio.run(read_inside_a_running_loop())
+
+    assert census == {"depth": 1, "maxsize": 1, "enqueued": 2, "dropped": 1}
+    # The counters are fully materialised at call time, both on the queue and in health.
     health = feed.health(_at(BASE + 60))
-    assert not inspect.isawaitable(health)
+    assert type(census) is dict
+    assert type(health) is dict
+    assert not inspect.iscoroutine(census)
     assert health["queue"]["dropped"] == 1
 
 
@@ -364,6 +380,85 @@ def test_recovery_clears_stale_without_dropping_history(
     assert len(feed.snapshot(now)["recent"]) == 2
 
 
+def _gap_after(firehose_sample: list[dict[str, Any]], seconds: int) -> dict[str, Any]:
+    """The captured record's shape, ``seconds`` past the buy at index 1 on the chain clock."""
+    return {
+        **firehose_sample[-1],
+        "signature": "PostGapSig1111111111111111111111111111111111",
+        "timestamp": int(firehose_sample[1]["timestamp"]) + seconds,
+    }
+
+
+def test_after_a_gap_one_fresh_event_does_not_revive_the_pre_gap_backlog(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    """The reproduced failure: 1800 s quiet, one fresh event, and the old entry served.
+
+    The newest observation is fresh, so the feed is live and the gate passes. That
+    says nothing about the observation buffered before the gap, and the entry read
+    must refuse it on its own age, count it, and serve only what it can defend.
+    """
+    raw = firehose_sample
+    feed = FirehoseFeed()
+    before_gap = feed.ingest(raw[1])
+    assert before_gap is not None
+
+    fresh = feed.ingest(_gap_after(raw, 1800))
+    assert fresh is not None
+    now = fresh.observed_at
+
+    assert feed.health(now)["stale"] is False
+    entries = feed.entries(now)
+
+    assert [entry.signature for entry in entries] == [fresh.signature]
+    assert before_gap.signature not in {entry.signature for entry in entries}
+    health = feed.health(now)
+    assert health["refused_stale"] == 1
+    # The refusal is on the item's own age, not a blanket buffer flush.
+    assert before_gap.age_seconds(now) == 1800.0
+    assert feed.census()["depth"] == 0
+
+
+def test_a_display_row_carries_its_own_age_mid_gap(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    """The snapshot is a display surface: the row is shown, and it is shown as old."""
+    raw = firehose_sample
+    feed = FirehoseFeed()
+    assert feed.ingest(raw[1]) is not None
+    mid_gap = _at(BASE + 60) + timedelta(seconds=1800)
+
+    snap = feed.snapshot(mid_gap)
+
+    assert snap["stale"] is True
+    (row,) = snap["recent"]
+    assert row["age_seconds"] == 1800.0
+    assert row["stale"] is True
+    # A row is not an entry: the same read is refused outright.
+    with pytest.raises(StaleFeed):
+        feed.entries(mid_gap)
+
+
+def test_a_gap_nobody_read_is_still_one_alert(
+    firehose_sample: list[dict[str, Any]],
+) -> None:
+    """Ingest observes the transition, so silence during the gap does not lose the alert."""
+    raw = firehose_sample
+    feed = FirehoseFeed()
+    assert feed.ingest(raw[1]) is not None
+    assert feed.health(_at(BASE + 60))["alerts"] == []
+
+    # No health, entry or snapshot read happens during the gap: only a later arrival.
+    assert feed.ingest(_gap_after(raw, 1800)) is not None
+
+    alerts = feed.health(_at(BASE + 60))["alerts"]
+    assert len(alerts) == 1
+    assert alerts[0]["type"] == "provider_stale"
+    assert alerts[0]["age_seconds"] == 1800.0
+    # Reading again does not raise the same transition twice.
+    assert len(feed.health(_at(BASE + 60))["alerts"]) == 1
+
+
 def test_no_event_without_timestamp_passes_unknown_feed() -> None:
     feed = FirehoseFeed()
     assert feed.fresh_events(_at(BASE)) == ()
@@ -383,7 +478,8 @@ def test_snapshot_then_deltas_for_api_surface(
     assert snap["source"]["name"] == SOURCE_NAME
     assert snap["stale"] is False
     assert len(snap["recent"]) == 2
-    assert {row["pair"] for row in snap["coins"]} == {raw[0]["mint"]}
+    # One row per pair: each record carries its own mint, so both appear.
+    assert {row["pair"] for row in snap["coins"]} == {raw[0]["mint"], raw[1]["mint"]}
     # Snapshot rows carry the contract's source and a read-time age.
     assert snap["recent"][0]["source"]["name"] == SOURCE_NAME
     assert isinstance(snap["recent"][0]["age_seconds"], float)
@@ -404,6 +500,14 @@ async def test_async_stream_yields_snapshot_then_delta(
     assert second["type"] == "delta"
     assert second["event"]["kind"] == "trade"
     assert second["event"]["source"]["name"] == SOURCE_NAME
+    # A delta is stamped with the clock it is actually read at, not its own timestamp:
+    # the fixture record is years old, so the row must not report a fresh-looking zero.
+    observed = datetime.fromisoformat(second["event"]["observed_at"])
+    assert second["event"]["age_seconds"] == pytest.approx(
+        max(0.0, (datetime.now(UTC) - observed).total_seconds()), abs=5.0
+    )
+    assert second["event"]["age_seconds"] > DEFAULT_STALE_BUDGET_SECONDS
+    assert second["event"]["stale"] is True
     await stream.aclose()
 
 
