@@ -196,13 +196,18 @@ curl -s -X POST http://localhost:8080/api/v1/system/kill-switch \
   cannot open a short, so an armed switch refuses a new entry and still settles an exit,
   stop or reduce-only sell. Blocking an exit would trap funds. Existing positions are not
   sold by the switch; close them deliberately.
-- The executor reads the switch once before any venue contact, again after the quote, and
-  once more between the pre-submit position re-bound and the signature. An entry that meets
-  an armed switch is refused `KILL_SWITCH_ACTIVE` without the venue ever signing. The
-  paper order service reads it before the market read and the quote (refusal reason
-  `KILL_SWITCH_ARMED`), and again inside the fill window after the quote, so a buy that was
-  already in flight when the operator armed is refused too: it keeps the rejected row and
-  its quote but books no fill and no journal entry.
+- The executor reads the switch before any venue contact, again after the quote, a third
+  time after the transaction is built and immediately before the signer is called, and a
+  fourth time before the submit. The sign-time read is what makes the switch bind at the
+  key: building the transaction awaits, so an arm can land between the quote and the
+  signature, and that read refuses before the key is used rather than discarding a
+  signature already produced. An entry that meets an armed switch is refused
+  `KILL_SWITCH_ACTIVE` (or `KILL_SWITCH_UNAVAILABLE` when the state cannot be read) and
+  nothing is signed and nothing is submitted. The paper order service reads the switch
+  before the market read and the quote (refusal reason `KILL_SWITCH_ARMED`), and again
+  inside the fill window after the quote, so a buy that was already in flight when the
+  operator armed is refused too: it keeps the rejected row and its quote but books no fill
+  and no journal entry.
 - An unreadable switch is not a released switch: both paths refuse an entry with the typed
   `KILL_SWITCH_UNAVAILABLE` instead of raising out of the order path, and neither contacts
   the venue for new risk.
