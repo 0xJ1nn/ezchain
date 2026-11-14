@@ -230,6 +230,7 @@ PACKAGE_PYPROJECTS = (
     "services/engine/pyproject.toml",
     "services/executor/pyproject.toml",
     "services/ingest/pyproject.toml",
+    "services/harness/pyproject.toml",
 )
 WORKSPACE_PREFIX = "ezchain-"
 UNPINNED_PATH = Path("tools") / "pins" / "unpinned.txt"
