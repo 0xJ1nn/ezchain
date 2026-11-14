@@ -1,4 +1,18 @@
-"""Money helpers: exact Decimal arithmetic; no floats.
+"""Money helpers: exact Decimal arithmetic in integer minor units; no floats.
+
+Rounding policy (normative, see ``docs/LEDGER.md``):
+
+* The ledger's settlement asset is USD, accounted in **integer minor units** at
+  ``MONEY_QUANTUM`` = 1e-8 USD. That is finer than the fiat cent so sub-cent fees and
+  long-tail notionals stay exact; every monetary value the ledger writes is a whole
+  number of these units.
+* A *computed* value (``quantity * price``, a bps fee, a derived cost basis) is rounded
+  at the ledger boundary with **half-even**, the IEEE-754/SQL default and the policy in
+  ``docs/DOMAIN-MODEL.md``. Rounding happens once, at the boundary, never in a loop.
+* An *explicit* value is never silently rounded: a value that is not a whole number of
+  minor units raises :class:`SubQuantumError`. Fail closed, never guess.
+* Floats are refused at every boundary (:class:`FloatMoneyError`), including
+  ``Decimal(str(float))`` which has already lost the exact value.
 
 The pre-trade cost preview lives here too, not at the edge: the web preview and the
 journal must agree on one cost model (CONTRACT I1/I7), so ``preview_cost`` produces
@@ -9,12 +23,19 @@ this module; it never invents a second fee formula.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation, localcontext
 from typing import Any
 
 from .types import SourceRef
 
 BPS = Decimal(10_000)
+# The ledger's minimum monetary unit: 1e-8 USD. The database type is NUMERIC(38, 8);
+# this constant is the one home for that scale.
+MONEY_SCALE = 8
+MONEY_QUANTUM = Decimal(1).scaleb(-MONEY_SCALE)
+ROUNDING = ROUND_HALF_EVEN
+# Computation precision for quantising/summing: wide enough for the 38-digit column.
+_MONEY_PRECISION = 60
 # The slippage window every executable quote is requested with. Quotes are requested
 # at this window (adapters default to it), so the preview can quote the receiver's
 # worst case inside the window without another provider round-trip.
@@ -24,10 +45,86 @@ DEFAULT_SLIPPAGE_BPS = 50
 PAPER_MARK = "paper_mark"
 
 
+class MoneyError(ValueError):
+    """A value that cannot enter the ledger as exact money."""
+
+
+class FloatMoneyError(MoneyError):
+    """A float reached a money boundary; floats are never ledger money."""
+
+
+class SubQuantumError(MoneyError):
+    """An explicit value is not a whole number of ledger minor units."""
+
+
+def _as_decimal(value: object, *, field: str) -> Decimal:
+    """Reject floats and non-finite values; accept exact Decimal/int inputs."""
+    if isinstance(value, bool):
+        raise MoneyError(f"{field} must be exact Decimal, not bool")
+    if isinstance(value, float):
+        raise FloatMoneyError(
+            f"{field} must be exact Decimal, not float; a float has already lost the amount"
+        )
+    if isinstance(value, int):
+        value = Decimal(value)
+    if not isinstance(value, Decimal):
+        raise MoneyError(f"{field} must be Decimal or int, not {type(value).__name__}")
+    if not value.is_finite():
+        raise MoneyError(f"{field} must be finite")
+    return value
+
+
+def quantize_money(value: object, *, field: str = "amount") -> Decimal:
+    """Round a computed USD amount to the ledger minor unit, half-even."""
+    amount = _as_decimal(value, field=field)
+    with localcontext() as context:
+        context.prec = _MONEY_PRECISION
+        try:
+            return amount.quantize(MONEY_QUANTUM, rounding=ROUNDING)
+        except InvalidOperation as exc:  # pragma: no cover - only absurd exponents
+            raise MoneyError(f"{field} is outside the supported money range") from exc
+
+
+def require_money(value: object, *, field: str = "amount") -> Decimal:
+    """Return ``value`` only if it is already a whole number of minor units.
+
+    Explicit values are never silently rounded: a sub-minor amount is a caller bug,
+    not something the ledger may absorb.
+    """
+    amount = _as_decimal(value, field=field)
+    if quantize_money(amount, field=field) != amount:
+        raise SubQuantumError(
+            f"{field}={amount} is not a whole number of {MONEY_QUANTUM} minor units"
+        )
+    return amount
+
+
+def require_quantity(value: object, *, field: str = "quantity") -> Decimal:
+    """Validate a token quantity: exact and finite, but not restricted to USD scale."""
+    return _as_decimal(value, field=field)
+
+
+def to_minor_units(value: object, *, field: str = "amount") -> int:
+    """Exact integer count of ledger minor units. The comparison unit for money."""
+    amount = require_money(value, field=field)
+    return int(amount.scaleb(MONEY_SCALE))
+
+
+def from_minor_units(minor: int) -> Decimal:
+    """Inverse of :func:`to_minor_units`, for reporting and tests."""
+    if isinstance(minor, bool) or not isinstance(minor, int):
+        raise MoneyError(f"minor units must be int, not {type(minor).__name__}")
+    return Decimal(minor).scaleb(-MONEY_SCALE)
+
+
 def bps_fee(notional_usd: Decimal, fee_bps: int) -> Decimal:
     if fee_bps < 0:
         raise ValueError("fee_bps cannot be negative")
-    return (notional_usd * Decimal(fee_bps) / BPS).quantize(Decimal("0.000001"))
+    notional = _as_decimal(notional_usd, field="notional_usd")
+    with localcontext() as context:
+        context.prec = _MONEY_PRECISION
+        fee = notional * Decimal(fee_bps) / BPS
+    return quantize_money(fee, field="fee_usd")
 
 
 @dataclass(frozen=True)

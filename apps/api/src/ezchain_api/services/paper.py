@@ -62,6 +62,7 @@ from ezchain_core.ledger import (
     position_account,
     sell_entries,
 )
+from ezchain_core.money import MONEY_QUANTUM, quantize_money
 from ezchain_core.reason_codes import RISK_REASON_MESSAGES
 
 from ..actor import (
@@ -150,7 +151,6 @@ def requires_automation_gate(placed_by: OrderActor) -> bool:
 
 
 POSITION_PREFIX = "position:"
-MONEY_QUANTUM = Decimal("0.00000001")
 SHARE_QUANTUM = Decimal("0.01")
 # The ledger sums money exactly. Python's default decimal context carries 28 significant
 # digits, which is a display precision: SQLite stores money as TEXT and keeps the
@@ -1947,6 +1947,10 @@ async def place_order(
         else:
             fill_quantity = quote.amount_out
             notional = quote.amount_in
+        # Every USD figure the journal writes is a whole minor unit. A partial sell
+        # derives its notional from quantity * price, so quantize it once here, at the
+        # ledger boundary, half-even (docs/LEDGER.md).
+        notional = quantize_money(notional, field="notional_usd")
 
         order, created = _claim_or_existing(session, payload, placed_by)
         if not created:
@@ -1994,7 +1998,7 @@ async def place_order(
             limits=limits_from_settings(settings, requested_profile),
             equity_usd=equity_for_risk,
         )
-        fee = _fill_fee(notional, quote, settings)
+        fee = quantize_money(_fill_fee(notional, quote, settings), field="fee_usd")
         funded_shortfall = Decimal(0)
         if allowed and payload.side == "buy" and replay.cash < notional + fee:
             if settings.paper_no_risk:
@@ -2125,7 +2129,9 @@ async def place_order(
             if fill_quantity == held_qty:
                 basis = held_cost
             else:
-                basis = min((fill_quantity * avg_cost).quantize(MONEY_QUANTUM), held_cost)
+                basis = min(
+                    quantize_money(fill_quantity * avg_cost, field="cost_basis_usd"), held_cost
+                )
             entries = sell_entries(
                 chain=payload.chain,
                 token_address=payload.token_address,

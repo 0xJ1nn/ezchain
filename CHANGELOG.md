@@ -93,6 +93,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   profile would refuse, discloses a loosening inline, and shows the server's verdict
   (never a browser-calculated one). Migration `0023_strategy_risk_profile` adds one
   nullable `strategies.risk_profile` column and is additive.
+- **Ledger hardening: exact minor-unit money, zero drift, and a tamper-evident tape
+  (PAPER).** The ledger now has one documented money policy: USD is written as an
+  integer number of 1e-8 minor units, computed values (derived notionals, bps fees, cost
+  bases, partial-sell proceeds) are rounded half-even once at the ledger boundary, and
+  explicit sub-minor values or floats fail closed with `SubQuantumError` /
+  `FloatMoneyError` instead of being silently adjusted. A journal group balances to
+  exactly zero minor units with no tolerance. The ordered tape gains a chained SHA-256
+  seal (`seal_entries` / `verify_seal`) and a canonical `replay_balances`, so changing
+  any entry changes the head and the same tape always replays the same ledger. The
+  policy and the bank-style control matrix (double-entry completeness, reconciliation,
+  immutability evidence and replay determinism implemented; period locks, on-chain
+  verification with quarantine and the forensic audit command still open under GH-155)
+  live in `docs/LEDGER.md` (ADR-0046).
 - **Agent orders wait for a person, per user (PAPER).** Automation is now a per-user
   setting: `manual` (the default) holds every agent order in a durable approval queue,
   and `full_auto` executes it with no approval. `full_auto` requires acknowledging a

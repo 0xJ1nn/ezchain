@@ -1455,3 +1455,44 @@ The paper order service is untouched: it has no signer, and its fill-window read
 refuses an armed buy before any fill is booked, so manual paper orders behave exactly as
 before. The cost is one extra read crossing the process boundary per buying intent, paid
 only when a signing boundary is configured.
+
+---
+
+## ADR-0046 — Ledger money is integer minor units; the boundary rounds half-even and fails closed
+
+**Date:** 2026-11-14 · **Status:** Accepted
+
+**Context:** ADR-0011 declared `Money` = integer minor units, but the ledger wrote
+`Decimal` USD with no documented rounding rule and balanced a group with a 1e-6
+tolerance. A group one minor unit out could pass; a float could reach `<` comparisons; a
+derived notional could be journaled at 28 digits while an explicit one was not
+normalized; and the tape had no evidence of its own order. GH-155 requires bank-grade
+bookkeeping to the cent.
+
+**Options:** (a) migrate every ledger column to integer cents and change every read model;
+(b) keep `Decimal` but define a single settlement quantum, a boundary rounding rule and a
+tolerance-free invariant; (c) leave the tolerance and add a report that flags drift.
+
+**Decision:** (b). USD is accounted as a whole number of minor units at scale 8
+(`MONEY_QUANTUM = 0.00000001`), which the existing `NUMERIC(38, 8)` columns already
+represent exactly. Computed values (a `quantity * price` notional, a bps fee, a derived
+cost basis, a partial sell's proceeds, the paper service's notional/fee/basis) are
+quantized **once, half-even**, at the ledger boundary by `quantize_money`. Explicit values
+must already be whole minor units; otherwise `SubQuantumError` is raised. `LedgerEntry`
+rejects floats and non-finite values, `assert_balanced` sums integer minor units and
+requires exactly zero, and reads compare money via `to_minor_units`. The ordered tape also
+gains a chained SHA-256 seal (`seal_entries`/`verify_seal`) and a canonical
+`replay_balances`; both are deterministic for the same tape. The full policy and the
+control matrix are in [`LEDGER.md`](LEDGER.md).
+
+**Consequences:** exact conservation is testable as integer equality, and a one-minor-unit
+imbalance is now a hard failure instead of tolerated noise. A caller who hands the ledger
+an explicit USD value with more than eight decimals receives a typed refusal rather than a
+silently adjusted journal; adapters must quantize at their own boundary first. No schema
+migration is needed, and existing rows already satisfy the quantum because the columns are
+scale 8. The seal is computed over a supplied tape and is not yet persisted or anchored,
+so it is tamper-evidence within one process/export until that follow-up lands. Period
+locks, the asynchronous on-chain verification service with drift alerts and quarantine,
+and the forensic audit command remain open under GH-155; the replay, balance and seal
+primitives they need are now in core.
+>>>>>>> cf64d74 (feat(core): harden ledger with minor-unit money and tamper-evident replay)
