@@ -202,6 +202,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **The risk dashboard reads a mark's freshness from the server, not from a 60s rule
+  (GH-115).** `/risk` re-derived stale/fresh from `source.observed_at` with a client-side
+  `STALE_AFTER_SECONDS = 60`, while the API ages the mark with the configured
+  `max_mark_age_seconds`; a mark fresh to the page could be stale to the order gate, and a
+  stale mark (whose price the server withholds) was counted as an unknown mark. The page now
+  labels and counts every row from `PositionView.mark_status` and `mark_age_seconds`, and
+  the unknown count uses `mark_status == "unknown"` so a withheld stale price is not
+  reported as a missing one. The web fixtures carry the server's verdict explicitly instead
+  of computing it from an age, and one row demonstrates the divergence (45s old, server
+  says stale). ARCHITECTURE §4.5 now names `mark_age_seconds` as the field on the wire.
 - **A quote timeout counts against the provider's breaker, and a cancelled market scan
   releases its half-open permit.** The router's attempt deadline cancels the inner quote,
   which reaches the provider as cancellation; the breaker recorded no failure for it, so a

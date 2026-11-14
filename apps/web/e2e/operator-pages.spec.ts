@@ -166,6 +166,9 @@ test("risk labels stale and fresh marks from the same server rows", async ({ pag
 	await page.goto("/risk");
 
 	const table = page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Mark source" }) });
+	// SCAM was observed 45s ago and the server says stale: the configured mark budget,
+	// not a client-side 60s rule, decides. A page that re-derived freshness from
+	// `observed_at` would call this row fresh.
 	const scam = table.locator("tbody tr").filter({ hasText: "SCAM" });
 	await expect(scam.locator(".badge")).toHaveText("stale · dexscreener");
 	const bonk = table.locator("tbody tr").filter({ hasText: "BONK" });

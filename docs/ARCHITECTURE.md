@@ -259,8 +259,10 @@ persisted before side effects (outbox).
 ### 4.5 Valuation
 
 `PositionView` is assembled by one projector from ledger + market events. It carries
-`mark_status`, `mark_age`, `source`, and `paper|live`. The UI formats, never computes.
-Stale mark → label, not a stale number presented as live.
+`mark_status` (`fresh|stale|unknown|future`), `mark_age_seconds`, and `source`. Both the
+status and the age are computed server-side from the configured mark budget, so a UI
+never re-derives staleness from an observation timestamp and a threshold of its own.
+The UI formats, never computes. Stale mark → label, not a stale number presented as live.
 
 ## 5. Persistence
 

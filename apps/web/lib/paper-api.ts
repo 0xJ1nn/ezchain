@@ -515,12 +515,6 @@ export const fixturePaperAccountFlat: PaperAccount = {
 	mode: "paper",
 };
 
-/** Mirrors the API's rule for a fixture observation age; the server computes the real one. */
-function markOf(secondsAgo: number | null): Pick<PaperPosition, "mark_status" | "mark_age_seconds"> {
-	if (secondsAgo === null) return { mark_status: "unknown", mark_age_seconds: null };
-	return { mark_status: secondsAgo > 60 ? "stale" : "fresh", mark_age_seconds: secondsAgo };
-}
-
 function manyPosition(chain: string, token: string, symbol: string, secondsAgo: number): PaperPosition {
 	return {
 		chain,
@@ -533,7 +527,8 @@ function manyPosition(chain: string, token: string, symbol: string, secondsAgo: 
 		unrealized_usd: "0.00",
 		realized_usd: "0.00",
 		source: { name: "dexscreener", observed_at: observed(secondsAgo) },
-		...markOf(secondsAgo),
+		mark_status: "fresh",
+		mark_age_seconds: secondsAgo,
 		mode: "paper",
 	};
 }
@@ -696,7 +691,8 @@ export const fixturePaperAccountSingle: PaperAccount = {
 			unrealized_usd: "5.00",
 			realized_usd: "0.00",
 			source: { name: "dexscreener", observed_at: observed(2) },
-			...markOf(2),
+			mark_status: "fresh",
+			mark_age_seconds: 2,
 			mode: "paper",
 		},
 	],
@@ -729,7 +725,8 @@ function fixturePositions(): PaperPosition[] {
 			unrealized_usd: "19.22",
 			realized_usd: "18.90",
 			source: { name: "jupiter", observed_at: observed(2) },
-			...markOf(2),
+			mark_status: "fresh",
+			mark_age_seconds: 2,
 			mode: "paper",
 		},
 		{
@@ -743,7 +740,8 @@ function fixturePositions(): PaperPosition[] {
 			unrealized_usd: "-6.12",
 			realized_usd: "0.00",
 			source: { name: "dexscreener", observed_at: observed(3) },
-			...markOf(3),
+			mark_status: "fresh",
+			mark_age_seconds: 3,
 			mode: "paper",
 		},
 		{
@@ -757,7 +755,8 @@ function fixturePositions(): PaperPosition[] {
 			unrealized_usd: null,
 			realized_usd: "0.00",
 			source: null,
-			...markOf(null),
+			mark_status: "unknown",
+			mark_age_seconds: null,
 			mode: "paper",
 		},
 		{
@@ -770,8 +769,11 @@ function fixturePositions(): PaperPosition[] {
 			market_value_usd: "5.70",
 			unrealized_usd: "-142.30",
 			realized_usd: "0.00",
-			source: { name: "dexscreener", observed_at: observed(125) },
-			...markOf(125),
+			// 45s old but stale: the deployment's mark budget is shorter than the old
+			// client-side 60s, and only the server's verdict may label this row.
+			source: { name: "dexscreener", observed_at: observed(45) },
+			mark_status: "stale",
+			mark_age_seconds: 45,
 			mode: "paper",
 		},
 	];

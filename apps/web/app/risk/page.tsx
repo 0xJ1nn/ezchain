@@ -3,25 +3,26 @@ import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
 import { getPaperLimits } from "@/lib/account-api";
-import { ageSeconds, formatUsd, formatUsdPrice, quoteKindLabel, shortAddress } from "@/lib/live-format";
+import { formatUsd, formatUsdPrice, quoteKindLabel, shortAddress } from "@/lib/live-format";
 import {
 	getKillSwitch,
 	getPaperOrders,
 	getPaperSnapshot,
+	type PaperMarkStatus,
 	type PaperOrderRecord,
 } from "@/lib/paper-api";
 import { KillSwitchControl } from "./kill-switch";
 
 export const dynamic = "force-dynamic";
 
-const STALE_AFTER_SECONDS = 60;
-
-function markStatus(observedAt: string | null | undefined): "fresh" | "stale" | "future" | "unknown" {
-	const age = ageSeconds(observedAt);
-	if (age === null) return "unknown";
-	if (age < 0) return "future";
-	if (age > STALE_AFTER_SECONDS) return "stale";
-	return "fresh";
+/**
+ * A mark's freshness is the server's verdict. This page never turns an observation
+ * timestamp into its own stale/fresh label: the budget is configuration and the same
+ * row can be fresh for one deployment and stale for another.
+ */
+function markBadgeLabel(status: PaperMarkStatus, sourceName: string | null): string {
+	if (status === "unknown" || sourceName === null) return status;
+	return `${status} · ${sourceName}`;
 }
 
 function markCountLabel(count: number) {
@@ -59,8 +60,10 @@ export default async function RiskPage() {
 		: !snapshot.positions.ok
 			? snapshot.positions.error
 			: null;
-	const stale = positions.filter((position) => markStatus(position.source?.observed_at) === "stale");
-	const unknown = positions.filter((position) => position.mark_usd === null);
+	const stale = positions.filter((position) => position.mark_status === "stale");
+	// A stale mark is withheld from every money number too, so counting `mark_usd` nulls
+	// would report stale rows as unknown. The status is the only distinction.
+	const unknown = positions.filter((position) => position.mark_status === "unknown");
 
 	return (
 		<AppShell active="risk">
@@ -159,7 +162,7 @@ export default async function RiskPage() {
 					label="Stale marks"
 					value={snapshot.positions.ok ? String(stale.length) : "—"}
 					tone={stale.length > 0 ? "err" : undefined}
-					meta={`older than ${STALE_AFTER_SECONDS}s`}
+					meta="server verdict · not executable"
 				/>
 				<Stat
 					label="Unknown marks"
@@ -223,7 +226,6 @@ export default async function RiskPage() {
 										</thead>
 										<tbody>
 											{positions.map((position) => {
-												const status = markStatus(position.source?.observed_at);
 												return (
 													<tr key={`${position.chain}:${position.token_address}`}>
 														<td>
@@ -250,13 +252,12 @@ export default async function RiskPage() {
 															{formatUsd(position.unrealized_usd)}
 														</td>
 														<td>
-															{position.source ? (
-																<Badge tone={status === "fresh" ? "ghost" : "warn"}>
-																	{status} · {position.source.name}
-																</Badge>
-															) : (
-																<Badge tone="warn">unknown</Badge>
-															)}
+															<Badge tone={position.mark_status === "fresh" ? "ghost" : "warn"}>
+																{markBadgeLabel(
+																	position.mark_status,
+																	position.source?.name ?? null,
+																)}
+															</Badge>
 														</td>
 													</tr>
 												);
