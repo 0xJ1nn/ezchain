@@ -2,26 +2,50 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel } from "@/components/ui";
 import { getAllStrategyRuns, getStrategies, webMode } from "@/lib/paper-api";
+import { AutomationsView } from "../automations-view";
 import { StrategiesClient } from "../strategies-client";
 import styles from "../strategies.module.css";
 
 export const dynamic = "force-dynamic";
 
-export default async function StrategiesPage() {
+const TABS = [
+	{ id: "strategies", href: "/strategies", label: "Strategies" },
+	{ id: "automations", href: "/strategies?view=automations", label: "Automations" },
+];
+
+export default async function StrategiesPage({
+	searchParams,
+}: {
+	searchParams: Promise<{ view?: string }>;
+}) {
+	const { view } = await searchParams;
+	// One surface, two views: `?view=automations` is the scheduler view of the same
+	// strategies, and /automations redirects here instead of existing as a second copy.
+	const automations = view === "automations";
 	const mode = webMode();
-	const [strategies, runs] = await Promise.all([getStrategies(), getAllStrategyRuns()]);
 
 	return (
 		<AppShell active="strategies">
 			<header className="page-head">
 				<div className="titles">
-					<div className="crumbs">Automate / Strategies</div>
-					<h1>Strategies</h1>
+					<div className="crumbs">Automate / {automations ? "Automations" : "Strategies"}</div>
+					<h1>{automations ? "Automations" : "Strategies"}</h1>
 					<p className="sub">
-						User-defined strategies are declarative configuration: a chain, a token, a
-						kind and numeric params. There is no strategy code in ezCHAIN and nothing is
-						bundled by default. Every decision is evaluated by the engine in{" "}
-						<strong>paper</strong> mode and logged with its reason.
+						{automations ? (
+							<>
+								Installed strategies are the automations this build actually schedules. Each
+								row shows its persisted status, its configured interval and the last run
+								timestamp the API returned. There is no separate automation builder in this
+								branch.
+							</>
+						) : (
+							<>
+								User-defined strategies are declarative configuration: a chain, a token, a
+								kind and numeric params. There is no strategy code in ezCHAIN and nothing is
+								bundled by default. Every decision is evaluated by the engine in{" "}
+								<strong>paper</strong> mode and logged with its reason.
+							</>
+						)}
 					</p>
 				</div>
 				<div className="page-actions">
@@ -34,12 +58,41 @@ export default async function StrategiesPage() {
 					<Link className="btn" href="/strategies/builder">
 						New visual strategy
 					</Link>
-					<a className="btn primary" href="#new-strategy">
-						New strategy
-					</a>
+					{!automations && (
+						<a className="btn primary" href="#new-strategy">
+							New strategy
+						</a>
+					)}
 				</div>
 			</header>
 
+			<div className="tabs mb-12" role="group" aria-label="Strategy views">
+				{TABS.map((tab) => {
+					const on = tab.id === (automations ? "automations" : "strategies");
+					return (
+						<Link
+							key={tab.id}
+							className={`tab${on ? " on" : ""}`}
+							href={tab.href}
+							aria-current={on ? "page" : undefined}
+						>
+							{tab.label}
+						</Link>
+					);
+				})}
+			</div>
+
+			{automations ? <AutomationsView /> : <StrategiesListView />}
+		</AppShell>
+	);
+}
+
+async function StrategiesListView() {
+	const mode = webMode();
+	const [strategies, runs] = await Promise.all([getStrategies(), getAllStrategyRuns()]);
+
+	return (
+		<>
 			{!strategies.ok ? (
 				<Panel
 					className={styles.statePanel}
@@ -82,6 +135,6 @@ export default async function StrategiesPage() {
 					</div>
 				</>
 			)}
-		</AppShell>
+		</>
 	);
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { Panel } from "@/components/ui";
+import { referenceSurfacesEnabled } from "@/lib/runtime";
 
 export default function NotFound() {
 	return (
@@ -20,9 +21,12 @@ export default function NotFound() {
 					<Link className="btn primary" href="/">
 						Dashboard
 					</Link>
-					<Link className="btn" href="/states">
-						State gallery
-					</Link>
+					{/* The state gallery is design documentation; it only exists in development. */}
+					{referenceSurfacesEnabled() && (
+						<Link className="btn" href="/states">
+							State gallery
+						</Link>
+					)}
 				</div>
 			</Panel>
 		</AppShell>

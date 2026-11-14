@@ -1,6 +1,8 @@
+import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { FixtureBadge } from "@/components/ops";
 import { Badge, Panel, Stat, TokenAvatar } from "@/components/ui";
+import { referenceSurfacesEnabled } from "@/lib/runtime";
 
 const nav = [
 	{ label: "Home", glyph: "▤", on: true },
@@ -11,6 +13,9 @@ const nav = [
 ];
 
 export default function MobilePage() {
+	// Design documentation: reachable in the development (fixture) build only.
+	if (!referenceSurfacesEnabled()) notFound();
+
 	return (
 		<AppShell active="mobile">
 			<header className="page-head">

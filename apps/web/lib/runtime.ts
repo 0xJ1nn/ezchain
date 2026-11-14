@@ -9,6 +9,15 @@ export function webMode(): WebMode {
 	return process.env.EZCHAIN_WEB_MODE === "fixture" ? "fixture" : "live";
 }
 
+/**
+ * Reference galleries (`/states`, `/components`, `/mobile`) are design documentation.
+ * They follow the one mode switch the app already has: a fixture build is the
+ * development surface, live is the production one. Nothing else gates them.
+ */
+export function referenceSurfacesEnabled(): boolean {
+	return webMode() === "fixture";
+}
+
 function origin(): URL {
 	const raw = (process.env.EZCHAIN_API_URL ?? "http://127.0.0.1:8000").trim();
 	try {

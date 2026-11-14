@@ -37,7 +37,6 @@ const nav = [
 	{
 		label: "Automate",
 		items: [
-			{ id: "automations", href: "/automations", label: "Automations", glyph: "⟳" },
 			{ id: "strategies", href: "/strategies", label: "Strategies", glyph: "◇" },
 			{ id: "backtests", href: "/backtests", label: "Backtests", glyph: "∿" },
 		],
