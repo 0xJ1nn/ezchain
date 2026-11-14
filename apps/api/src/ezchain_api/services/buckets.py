@@ -220,13 +220,24 @@ def set_cap(
     }
 
 
-def list_buckets(session: Session, bucket_cash: dict[str, Decimal]) -> list[dict[str, Any]]:
+def list_buckets(
+    session: Session,
+    bucket_cash: dict[str, Decimal],
+    *,
+    agent_id: str | None = None,
+) -> list[dict[str, Any]]:
     """Every capped agent, with its cap and the deployment replayed from the ledger.
 
     Only agents whose owner set a cap have a row; an uncapped agent is absent rather than
     reported as a zero cap, because a zero cap would mean "may deploy nothing".
+
+    ``agent_id`` narrows the answer to one agent, which is what an agent key is allowed to
+    read: its own row, never the room its neighbours have left.
     """
-    rows = list(session.scalars(select(AgentBucketRow).order_by(AgentBucketRow.agent_id)))
+    query = select(AgentBucketRow).order_by(AgentBucketRow.agent_id)
+    if agent_id is not None:
+        query = query.where(AgentBucketRow.agent_id == agent_id)
+    rows = list(session.scalars(query))
     return [view(row, bucket_cash.get(row.agent_id, Decimal(0))) for row in rows]
 
 

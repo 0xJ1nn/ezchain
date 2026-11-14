@@ -15,6 +15,11 @@ The interactive schema under ``/docs``, ``/redoc`` and ``/openapi.json`` is a de
 surface and is loopback-only. ``/api/v1/agent/state`` aggregates the whole workspace, so it
 needs a principal even when ordinary reads are open.
 
+A few reads answer per caller: ``/api/v1/agent/buckets`` shows a person every capped agent and
+a scoped key only its own row. Those routes stay open, but a credential that is supplied is
+resolved so the answer is scoped to it. An absent credential reads the workspace view, which
+is what keeps a self-hosted deployment without a token working exactly as before.
+
 The client address is the TCP peer. ``X-Forwarded-For`` is read only when that peer is
 loopback or listed in ``EZCHAIN_TRUSTED_PROXY_CIDRS``, which is empty by default; the
 rightmost address the nearest proxy did not add is the client. A remote client cannot
@@ -67,7 +72,20 @@ OPERATIONAL_PATHS = frozenset({"/health", "/metrics"})
 LOOPBACK_ONLY_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 # Reads that aggregate the workspace need a principal even when ordinary reads are open.
 AUTHENTICATED_READ_PATHS = frozenset({"/api/v1/agent/state"})
+# Reads whose answer depends on *who* is asking. They stay open like any other read — a
+# self-hosted workspace must keep working without a token — but a credential that is
+# supplied is resolved, because the answer is scoped to it. Without that step the route
+# would answer for the whole workspace to a key that may only see its own row.
+PRINCIPAL_READ_PREFIXES = ("/api/v1/agent/buckets",)
 _warned_missing_token = False
+
+
+def reads_as_principal(method: str, path: str) -> bool:
+    """True for a read whose answer is scoped to the resolved principal."""
+    if method.upper() not in READ_METHODS:
+        return False
+    key = _path_key(path)
+    return any(key == prefix or key.startswith(f"{prefix}/") for prefix in PRINCIPAL_READ_PREFIXES)
 
 
 def _path_key(path: str) -> str:
@@ -249,6 +267,14 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         if key in OPERATIONAL_PATHS and loopback:
             return await call_next(request)
         if not requires_auth(request.method, path, self._settings):
+            if not reads_as_principal(request.method, path):
+                return await call_next(request)
+            # A read whose answer is scoped to the caller: resolve the credential, but do
+            # not turn a missing or unusable one into a 401 on a route that is otherwise
+            # open. An absent principal reads the workspace view, as it did before.
+            principal = self._read_principal(request)
+            if principal is not None:
+                request.state.principal = principal
             return await call_next(request)
         # A remote operational request always needs a credential, even when auth is
         # explicitly disabled for the rest of the process.
@@ -261,20 +287,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             else self._settings.api_token.get_secret_value()
         )
         supplied = _bearer_token(request.headers.get("authorization"))
-
-        principal: api_keys.Principal | None = None
-        if (
-            supplied is not None
-            and expected is not None
-            and hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
-        ):
-            principal = api_keys.Principal(
-                subject="deployment",
-                scopes=frozenset(api_keys.SCOPES),
-                legacy=True,
-            )
-        elif supplied is not None:
-            principal = self._resolve_key(supplied)
+        principal = self._principal(supplied, expected)
 
         if principal is None:
             if supplied is not None:
@@ -300,6 +313,36 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             return _forbidden(scope)
         request.state.principal = principal
         return await call_next(request)
+
+    def _principal(self, supplied: str | None, expected: str | None) -> api_keys.Principal | None:
+        """The principal a bearer token names, or ``None`` when it names none."""
+        if supplied is None:
+            return None
+        if expected is not None and hmac.compare_digest(
+            supplied.encode("utf-8"), expected.encode("utf-8")
+        ):
+            return api_keys.Principal(
+                subject="deployment",
+                scopes=frozenset(api_keys.SCOPES),
+                legacy=True,
+            )
+        return self._resolve_key(supplied)
+
+    def _read_principal(self, request: Request) -> api_keys.Principal | None:
+        """The principal for an open read, or ``None`` when the caller brought no credential.
+
+        A read is open by default, so an absent credential is not an error here: it reads the
+        workspace view. A credential that is supplied but does not resolve is also treated as
+        absent rather than refused, which keeps an open route open and leaves every
+        ``401`` on the routes that require a principal. The response it gets is the one an
+        anonymous caller gets, never a workspace-wide answer on a scoped key's behalf.
+        """
+        expected = (
+            None
+            if self._settings.api_token is None
+            else self._settings.api_token.get_secret_value()
+        )
+        return self._principal(_bearer_token(request.headers.get("authorization")), expected)
 
     def _resolve_key(self, token: str) -> api_keys.Principal | None:
         if self._session_factory is None:
@@ -328,6 +371,7 @@ __all__ = [
     "AUTHENTICATED_READ_PATHS",
     "LOOPBACK_ONLY_PATHS",
     "OPERATIONAL_PATHS",
+    "PRINCIPAL_READ_PREFIXES",
     "PROTECTED_PREFIX",
     "READ_METHODS",
     "READ_ONLY_POST_PATHS",
@@ -340,6 +384,7 @@ __all__ = [
     "client_host",
     "is_loopback_client",
     "is_protected_request",
+    "reads_as_principal",
     "required_scope",
     "requires_auth",
 ]

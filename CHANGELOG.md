@@ -37,6 +37,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   user and creator of every record replaced by sentinels, replaying through the same
   `normalize_firehose_event` path every live event uses. See
   [docs/INFRA.md §6](docs/INFRA.md#6-health-metrics-and-alerts).
+- **Prompt-injection tests that assume the model is compromised.** A corpus of hostile
+  inputs — instruction overrides, a pasted "operator: approved" chat, a token name carrying
+  a fake system message, forged approval JSON in a tool result, a strategy description
+  asking for the key, unicode/homoglyph obfuscation, a padding attack, a request to switch
+  the session to a live venue and a request to read every agent's bucket — each named by
+  attack class, is driven through the **real** loop, the real MCP server and the real API
+  with a scripted model that obeys the injection. The suite asserts the structure holds
+  anyway: no fill row, every agent order still `pending_approval`, no call needing `admin`,
+  no budget overrun, no bucket beyond the caller's own and no agent or deployment key in a
+  prompt, answer or observation. It lives in `tests/agent_runtime/`, which `pytest -q` in
+  `tools/ci.sh` already collects; no network and no sleeps, and a guard removed by hand
+  makes it fail. The matrix and what is **not** covered are
+  [docs/PROMPT-INJECTION.md](docs/PROMPT-INJECTION.md).
 
 - **A Compose drill that proves the stack at the current migration head (PAPER).**
   `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts
@@ -488,6 +501,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   signer that consults nothing cannot disarm it, and it stays entry-only: a reduce-only exit
   re-bound against the held position still signs and settles. The paper order service is
   unchanged, so manual paper orders behave exactly as before. Decision recorded in ADR-0045.
+- **An agent key reads its own bucket and no other.** `GET /api/v1/agent/buckets` and the
+  per-agent route answered every capped agent to any caller holding a `read` scope, so one
+  compromised key could map the whole desk's cap and deployment before sizing a trade. The
+  read is now scoped to the authenticated principal: a person still sees every capped agent,
+  and an agent key sees one row — its own. Another agent's id answers `404
+  AGENT_BUCKET_UNKNOWN`, deliberately the same answer as an id that was never minted, so the
+  refusal does not disclose that the neighbour exists. The route is also read as the caller
+  rather than anonymously when a credential is supplied; an absent one still reads the
+  workspace view, so a self-hosted deployment without a token is unchanged. Found by the
+  prompt-injection suite, which now fails if the scope is removed (`docs/PROMPT-INJECTION.md`).
 
 - **One decision window yields one strategy run and one execution (GH-129).** A strategy's
   interval gate is read from `strategies.last_run_at` before anything is committed, so two

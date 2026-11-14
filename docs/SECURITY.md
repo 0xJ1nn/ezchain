@@ -170,6 +170,7 @@ as a security sandbox. The executor remains the only key holder (ADR-0026).
 | Replay/double-spend | intent idempotency, nonce tracking, receipt checks | chain reorg can reorder; adapter handles confirmation depth |
 | DoS | rate limits, bounded queues, timeouts, backpressure | public instance needs a reverse-proxy/WAF |
 | Data loss | verified backups, restore drill, forward-only migrations | vault key loss is unrecoverable by design |
+| Prompt injection into an agent | scoped key, no approve/arm/mint tool, automation gate queues every agent order, hard budgets, no key in the loop, bucket reads scoped to the calling key | a compromised model that only lies in its prose: no structural control catches prose, so read the platform record — see [PROMPT-INJECTION.md](PROMPT-INJECTION.md) |
 
 ## 9. Reporting
 
