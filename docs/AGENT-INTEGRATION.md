@@ -164,16 +164,17 @@ account it can ever reach. An agent key's orders draw only from the cash its own
 aside for that agent, capped per agent (keyed on the key id, not the workspace). An order
 that would take the deployment past the cap is refused `AGENT_BUCKET_EXCEEDED` before the
 quote, with the cap, the deployment, the remaining room and the worst case in dollars.
-`GET /api/v1/agent/buckets` reports the cap and the ledger-derived deployment; a person sets
-it with `PUT /api/v1/agent/buckets/{agent_id}`, and an agent key attempting that is
-`403 AGENT_BUCKET_REQUIRES_PERSON`. The agent must already exist when its cap is set
-(`404 AGENT_BUCKET_UNKNOWN` otherwise), so nobody can pre-set a cap on a key that has not
-been minted. An agent whose owner set no cap is unbounded by the bucket and governed by the
-account's other gates. The gate is entry-only: a cap lowered below what is deployed stops
-new buys and never traps an exit, so returned cash is what brings the deployment back inside
-it. A cash leg belongs to the bucket that owns the position it settles, never to whoever
-placed the order: a person exiting an agent's position returns the agent's cash, and an agent
-selling a position no bucket owns is credited nothing.
+`GET /api/v1/agent/buckets` reports the cap and the ledger-derived deployment (an agent key
+sees its own bucket only, and another agent's id is a `404`, so a key cannot map the desk's
+room); a person sets it with `PUT /api/v1/agent/buckets/{agent_id}`, and an agent key
+attempting that is `403 AGENT_BUCKET_REQUIRES_PERSON`. The agent must already exist when its
+cap is set (`404 AGENT_BUCKET_UNKNOWN` otherwise), so nobody can pre-set a cap on a key that
+has not been minted. An agent whose owner set no cap is unbounded by the bucket and governed
+by the account's other gates. The gate is entry-only: a cap lowered below what is deployed
+stops new buys and never traps an exit, so returned cash is what brings the deployment back
+inside it. A cash leg belongs to the bucket that owns the position it settles, never to
+whoever placed the order: a person exiting an agent's position returns the agent's cash, and
+an agent selling a position no bucket owns is credited nothing.
 
 ## 4. Scoped agent keys
 

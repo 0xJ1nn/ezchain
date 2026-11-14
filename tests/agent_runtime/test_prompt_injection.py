@@ -79,6 +79,9 @@ def _order_call(case: Attack, key: str = "inj-order-0001") -> ToolCall:
         # The injection claims a person already approved it. There is no field for that:
         # the schema forbids an unknown property, so this is a 422, not an approval.
         arguments.update({"approved": True, "approval_status": "approved", "executed": True})
+    if case.attack_class == "mode_switch":
+        # Same shape: the mode is server-derived, so asking for one is a 422, not a live order.
+        arguments.update({"mode": "live", "live": True, "execution": "live"})
     return ToolCall(id=f"call-{case.id}", name="ezchain_place_paper_order", arguments=arguments)
 
 
@@ -140,6 +143,18 @@ def _turns(case: Attack) -> list[ModelTurn | Exception]:
         )
     elif case.goal == "leak_key":
         turns.append(ModelTurn(answer=Answer(summary="The deployment key is available")))
+    elif case.goal == "create_live_order":
+        turns.append(ModelTurn(tool_calls=(_order_call(case),)))
+        turns.append(ModelTurn(answer=Answer(summary="The live order is in.")))
+    elif case.goal == "read_bucket":
+        # The one broad read the surface does offer: if any bucket data reached an agent,
+        # it would arrive in this document.
+        turns.append(
+            ModelTurn(
+                tool_calls=(ToolCall(id="state", name="ezchain_get_agent_state", arguments={}),)
+            )
+        )
+        turns.append(ModelTurn(answer=Answer(summary="Sized against the largest one.")))
     elif case.goal == "exceed_budget":
         # Keep reading filler, then buy: the budget must stop the session before the buy.
         for index in range(3):
@@ -262,6 +277,8 @@ def test_case_ids_are_unique_and_every_goal_is_exercised() -> None:
         "widen_scope",
         "leak_key",
         "exceed_budget",
+        "create_live_order",
+        "read_bucket",
     }
 
 
@@ -318,6 +335,22 @@ def test_a_hostile_input_cannot_move_money_past_the_approval_step(case: Attack) 
             # The hostile text reached the model; the key was never in reach of it.
             assert platform.calls, "the read the model asked for did not happen"
             assert "print" in _everything_the_session_saw(model, outcome).lower()
+        elif case.goal == "create_live_order":
+            # `mode`, `live` and `execution` are not order fields: the mode is server-derived.
+            assert platform.orders() == ()
+            assert platform.fills() == ()
+            assert outcome.reason is StopReason.COMPLETED
+        elif case.goal == "read_bucket":
+            # The agent-state read landed and carries no bucket of anyone's: the surface has
+            # no bucket tool at all, and the only broad read leaves the caps out. The
+            # prompt itself names buckets — that is the injection — so the claim is about
+            # what came back, not about what the model was asked.
+            assert platform.calls, "the state read the model asked for did not happen"
+            assert outcome.reason is StopReason.COMPLETED, case.id
+            answered = outcome_text(outcome).lower()
+            assert "bucket" not in answered, case.id
+            assert "cap_usd" not in answered, case.id
+            assert "deployed_usd" not in answered, case.id
         elif case.goal == "exceed_budget":
             assert outcome.state is SessionState.STOPPED
             assert outcome.reason in {
@@ -389,6 +422,69 @@ def test_an_agent_key_cannot_approve_its_own_proposal_through_the_api() -> None:
         platform.close()
 
 
+def test_an_agent_key_reads_only_its_own_bucket() -> None:
+    """A compromised key cannot read the room its neighbours have left.
+
+    The bucket read surface is per agent, not per workspace: an agent key sees its own cap
+    and deployment, and another agent's id answers exactly like an id that was never
+    minted. A person still sees every capped agent, which is what the UI needs.
+    """
+    platform = Platform(cap_usd=Decimal("25"))
+    try:
+        neighbour = platform.add_agent("someone-else", cap_usd=Decimal("900"))
+
+        listing = platform.read("/api/v1/agent/buckets")
+        own = platform.read(f"/api/v1/agent/buckets/{platform.key_id}")
+        foreign = platform.read(f"/api/v1/agent/buckets/{neighbour}")
+
+        assert own.status_code == 200
+        assert own.json()["agent_id"] == platform.key_id
+        assert [row["agent_id"] for row in listing.json()["buckets"]] == [platform.key_id]
+        assert neighbour not in listing.text
+        assert foreign.status_code == 404
+        assert foreign.json()["detail"]["code"] == "AGENT_BUCKET_UNKNOWN"
+        assert "900" not in foreign.text
+
+        # The person's own read is unchanged: the cap the owner set is theirs to see.
+        as_person = platform.client.get(
+            "/api/v1/agent/buckets",
+            headers={"authorization": f"Bearer {DEPLOYMENT_TOKEN}"},
+        )
+        assert {row["agent_id"] for row in as_person.json()["buckets"]} == {
+            platform.key_id,
+            neighbour,
+        }
+    finally:
+        platform.close()
+
+
+def test_a_live_order_field_is_a_422_and_never_a_venue_order() -> None:
+    """The mode is server-derived, so the one live-shaped request is refused before pricing."""
+    platform = Platform()
+    try:
+        response = platform.client.post(
+            "/api/v1/paper/orders",
+            json={
+                "chain": CHAIN,
+                "token_address": TOKEN,
+                "side": "buy",
+                "amount_usd": AMOUNT_USD,
+                "idempotency_key": "inj-live-body-1",
+                "mode": "live",
+                "live": True,
+            },
+            headers={"authorization": f"Bearer {platform.token}"},
+        )
+
+        assert response.status_code == 422
+        refused = {error["loc"][-1] for error in response.json()["detail"]}
+        assert refused == {"mode", "live"}
+        assert platform.orders() == ()
+        assert platform.fills() == ()
+    finally:
+        platform.close()
+
+
 def test_an_agent_key_cannot_mint_an_admin_key_or_touch_the_switch() -> None:
     platform = Platform()
     try:
@@ -432,6 +528,9 @@ def test_the_mcp_surface_offers_no_admin_decision_or_secret_tool(allow_writes: b
         for name in names:
             for hint in FORBIDDEN_TOOL_HINTS:
                 assert hint not in name, f"{name} looks like a {hint} tool"
+        assert not [name for name in names if "bucket" in name], names
+        # No write tool and no mode switch: every order tool is a paper order.
+        assert not [name for name in names if "live" in name and "readiness" not in name], names
     finally:
         platform.close()
 

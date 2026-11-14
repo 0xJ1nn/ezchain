@@ -32,6 +32,7 @@ import ezchain_api.models  # noqa: F401  (register tables on Base.metadata)
 from ezchain_adapters import QuoteRequest, QuoteRouter
 from ezchain_adapters.registry import CHAINS, PROVIDERS
 from ezchain_agent_runtime import McpError, McpTool, ToolResult
+from ezchain_api.actor import ACTOR_HUMAN, OrderActor
 from ezchain_api.auth import BearerAuthMiddleware, required_scope
 from ezchain_api.config import Settings
 from ezchain_api.db import Base
@@ -45,11 +46,13 @@ from ezchain_api.models import (
     StrategyRow,
     SystemFlagRow,
 )
+from ezchain_api.routers import agent as agent_router
 from ezchain_api.routers import approvals as approvals_router
+from ezchain_api.routers import buckets as buckets_router
 from ezchain_api.routers import markets as markets_router
 from ezchain_api.routers import paper as paper_router
 from ezchain_api.routers import strategies as strategies_router
-from ezchain_api.services import api_keys
+from ezchain_api.services import api_keys, buckets
 from ezchain_core import PairInfo, Quote, SourceRef, TokenSnapshot
 from ezchain_mcp.client import EzchainClient
 from ezchain_mcp.credentials import Credential
@@ -153,6 +156,7 @@ class Platform:
         symbol: str = "MoonCoin",
         scopes: Sequence[str] = AGENT_SCOPES,
         strategy: Mapping[str, Any] | None = None,
+        cap_usd: Decimal | None = None,
     ) -> None:
         self.engine = create_engine(
             "sqlite+pysqlite:///:memory:",
@@ -186,6 +190,8 @@ class Platform:
             approvals_router.router,
             markets_router.router,
             strategies_router.router,
+            buckets_router.router,
+            agent_router.router,
         ):
             self.app.include_router(router)
         self.app.dependency_overrides[get_session] = self._session
@@ -201,6 +207,13 @@ class Platform:
                 pepper=PEPPER,
             )
             self.key_id = row.id
+            if cap_usd is not None:
+                buckets.set_cap(
+                    session,
+                    row.id,
+                    cap_usd,
+                    actor=OrderActor(ACTOR_HUMAN, "hermes", owner="hermes"),
+                )
             if strategy is not None:
                 session.add(
                     StrategyRow(
@@ -249,6 +262,29 @@ class Platform:
         client = EzchainClient("http://test", token or self.token, transport=self.transport())
         credential = Credential("scoped") if allow_writes else None
         return McpServer(client, allow_writes=allow_writes, credential=credential)
+
+    # -- another agent's money ------------------------------------------------
+    def add_agent(self, subject: str, *, cap_usd: Decimal) -> str:
+        """Mint a second agent key (owned by ``subject``) with a bucket, and return its id."""
+        with self.factory() as session:
+            row, _ = api_keys.create_key(
+                session,
+                subject=subject,
+                scopes=list(AGENT_SCOPES),
+                expires_in_days=30,
+                pepper=PEPPER,
+            )
+            buckets.set_cap(
+                session,
+                row.id,
+                cap_usd,
+                actor=OrderActor(ACTOR_HUMAN, subject, owner=subject),
+            )
+            return row.id
+
+    def read(self, path: str) -> httpx.Response:
+        """One request as the agent key, over the same middleware the MCP server uses."""
+        return self.client.get(path, headers={"authorization": f"Bearer {self.token}"})
 
     # -- what actually happened to the money ---------------------------------
     def fills(self) -> tuple[PaperFillRow, ...]:

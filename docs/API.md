@@ -392,6 +392,13 @@ consumes another agent's room.
 is absent, which means "no bucket limit", not "a zero cap". `GET /api/v1/agent/buckets/{agent_id}`
 returns one, `404 AGENT_BUCKET_UNKNOWN` when the agent has none.
 
+The read is scoped to the caller. A person — or an open deployment where reads carry no
+credential, which is the self-hosted default — sees every capped agent. An **agent key sees
+its own row only**: its list holds that one bucket, and any other agent's id answers
+`404 AGENT_BUCKET_UNKNOWN` — the same answer as an id that was never minted, so the refusal
+does not itself disclose that another agent exists. That is how one compromised key is kept
+from measuring the room its neighbours have left.
+
 ```json
 {
   "agent_id": "3f6c…",
