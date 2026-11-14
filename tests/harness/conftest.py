@@ -11,9 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from providers_helpers import KEY
 
 from ezchain_agent_runtime import PROCESS_SPEND
+
+from .providers_helpers import KEY
 
 
 @pytest.fixture(autouse=True)

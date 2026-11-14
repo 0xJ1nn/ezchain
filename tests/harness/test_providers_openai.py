@@ -9,7 +9,10 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from providers_helpers import (
+from ezchain_agent_runtime import Message, ModelRequest, ModelTurn, ToolCall
+from ezchain_harness import HttpResponse, OpenAICompatibleClient
+
+from .providers_helpers import (
     OPENAI_MODEL,
     PRICING,
     ScriptedTransport,
@@ -17,9 +20,6 @@ from providers_helpers import (
     openai_tool_call,
     record,
 )
-
-from ezchain_agent_runtime import Message, ModelRequest, ModelTurn, ToolCall
-from ezchain_harness import HttpResponse, OpenAICompatibleClient
 
 TOOLS: tuple[dict[str, object], ...] = (
     {
