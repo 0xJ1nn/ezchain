@@ -12,7 +12,15 @@ import json
 import os
 from decimal import Decimal
 
-from providers_helpers import (
+from ezchain_agent_runtime import Message, ModelRequest
+from ezchain_harness import (
+    AnthropicClient,
+    OpenAICompatibleClient,
+    SessionRecord,
+)
+from ezchain_harness.factory import MODEL_ENV, build, model_from_env
+
+from .providers_helpers import (
     OPENAI_MODEL,
     PINNED_MODEL,
     PRICING,
@@ -21,14 +29,6 @@ from providers_helpers import (
     openai_text,
     record,
 )
-
-from ezchain_agent_runtime import Message, ModelRequest
-from ezchain_harness import (
-    AnthropicClient,
-    OpenAICompatibleClient,
-    SessionRecord,
-)
-from ezchain_harness.factory import MODEL_ENV, build, model_from_env
 
 REQUEST = ModelRequest(messages=(Message(role="user", content="hello"),), tools=())
 

@@ -13,18 +13,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from providers_helpers import (
-    PINNED_MODEL,
-    PLACE_ORDER,
-    PRICING,
-    FakeMcp,
-    FixedClock,
-    ScriptedTransport,
-    anthropic_text,
-    anthropic_tool_use,
-    make_limits,
-    record,
-)
 
 from ezchain_agent_runtime import (
     AgentLoop,
@@ -39,6 +27,19 @@ from ezchain_harness import (
     HttpResponse,
     ProviderTimeout,
     ProviderTransportError,
+)
+
+from .providers_helpers import (
+    PINNED_MODEL,
+    PLACE_ORDER,
+    PRICING,
+    FakeMcp,
+    FixedClock,
+    ScriptedTransport,
+    anthropic_text,
+    anthropic_tool_use,
+    make_limits,
+    record,
 )
 
 ORDER_ACCEPTED = ToolResult(

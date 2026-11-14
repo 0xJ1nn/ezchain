@@ -20,6 +20,20 @@ from __future__ import annotations
 from .answer import ANSWER_CONTRACT, parse_answer
 from .anthropic import AnthropicClient
 from .base import DEFAULT_TIMEOUT_SECONDS, ProviderClient
+from .cli import (
+    DEFAULT_LIMITS,
+    ConfigError,
+    ExitCode,
+    RunResult,
+    build_limits,
+    build_parser,
+    exit_code,
+    load_model,
+    load_toolbox,
+    main,
+    resolve_prompt,
+    run_session,
+)
 from .credentials import Credential
 from .errors import (
     CredentialError,
@@ -35,23 +49,8 @@ from .openai import OpenAICompatibleClient
 from .pricing import ModelPricing
 from .record import RECORD_SCHEMA, RecordedTurn, SessionRecord
 from .redact import REDACTED, redact
-from .transport import HttpRequest, HttpResponse, HttpxTransport, Transport
-
-from .cli import (
-    DEFAULT_LIMITS,
-    ConfigError,
-    ExitCode,
-    RunResult,
-    build_limits,
-    build_parser,
-    exit_code,
-    load_model,
-    load_toolbox,
-    main,
-    resolve_prompt,
-    run_session,
-)
 from .trace import PREFIX, Trace, TracedModel, TracedToolbox, summarize
+from .transport import HttpRequest, HttpResponse, HttpxTransport, Transport
 
 __all__ = [
     "ANSWER_CONTRACT",

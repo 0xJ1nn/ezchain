@@ -14,15 +14,6 @@ import logging
 from pathlib import Path
 
 import pytest
-from providers_helpers import (
-    KEY,
-    PINNED_MODEL,
-    PRICING,
-    ScriptedTransport,
-    anthropic_text,
-    anthropic_tool_use,
-    record,
-)
 
 from ezchain_agent_runtime import Message, ModelRequest
 from ezchain_harness import (
@@ -34,6 +25,16 @@ from ezchain_harness import (
     ProviderClient,
     ProviderHTTPError,
     redact,
+)
+
+from .providers_helpers import (
+    KEY,
+    PINNED_MODEL,
+    PRICING,
+    ScriptedTransport,
+    anthropic_text,
+    anthropic_tool_use,
+    record,
 )
 
 REQUEST = ModelRequest(messages=(Message(role="user", content="hi"),), tools=())

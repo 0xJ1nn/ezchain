@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from providers_helpers import (
+from ezchain_agent_runtime import Message, ModelRequest, ModelTurn, ToolCall
+from ezchain_harness import AnthropicClient, HttpResponse
+
+from .providers_helpers import (
     PINNED_MODEL,
     PRICING,
     ScriptedTransport,
@@ -16,9 +19,6 @@ from providers_helpers import (
     anthropic_tool_use,
     record,
 )
-
-from ezchain_agent_runtime import Message, ModelRequest, ModelTurn, ToolCall
-from ezchain_harness import AnthropicClient, HttpResponse
 
 TOOLS: tuple[dict[str, object], ...] = (
     {
