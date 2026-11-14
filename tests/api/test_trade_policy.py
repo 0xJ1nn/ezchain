@@ -271,6 +271,106 @@ def test_opting_into_a_profile_where_there_was_none_is_a_tightening(
     assert response.json()["source"] == "strategy"
 
 
+def test_opting_into_a_profile_above_the_deployment_ceiling_needs_the_ack(
+    client_for: Any, session: Session
+) -> None:
+    """With no deployment profile, its own limits are the "before" a change is measured on.
+
+    A deployment capped at $100 per order is loosened by ``high`` ($250), so accepting it
+    without the acknowledgement would silently widen a fund-affecting limit.
+    """
+    strategy_id = _add_strategy(session)
+    client = _client(
+        client_for,
+        _settings(trade_risk_profile=None, max_order_usd=Decimal("100")),
+    )
+
+    refused = client.put(
+        f"/api/v1/trade-policy/strategies/{strategy_id}",
+        json={"risk_profile": "high"},
+    )
+
+    assert refused.status_code == 422
+    assert refused.json()["detail"]["code"] == "RISK_ACK_REQUIRED"
+    assert session.get(StrategyRow, strategy_id).risk_profile is None
+
+    accepted = client.put(
+        f"/api/v1/trade-policy/strategies/{strategy_id}",
+        json={"risk_profile": "high", "acknowledge_risk": True},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["risk_profile"] == "high"
+
+
+def test_a_profile_inside_the_deployment_ceiling_is_still_an_opt_in(
+    client_for: Any, session: Session
+) -> None:
+    """A profile whose ceiling cannot exceed the deployment's adds gates only."""
+    strategy_id = _add_strategy(session)
+    client = _client(
+        client_for,
+        _settings(trade_risk_profile=None, max_order_usd=Decimal("1000")),
+    )
+
+    response = client.put(
+        f"/api/v1/trade-policy/strategies/{strategy_id}",
+        json={"risk_profile": "mid"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["risk_profile"] == "mid"
+
+
+def test_the_audit_records_both_values_the_actor_and_the_acknowledgement(
+    client_for: Any, session: Session
+) -> None:
+    strategy_id = _add_strategy(session, risk_profile="low")
+    client = _client(client_for, _settings(trade_risk_profile="low"))
+
+    response = client.put(
+        f"/api/v1/trade-policy/strategies/{strategy_id}",
+        json={"risk_profile": "high", "acknowledge_risk": True},
+    )
+    assert response.status_code == 200
+
+    run = session.scalars(
+        select(StrategyRunRow).where(StrategyRunRow.strategy_id == strategy_id)
+    ).one()
+    assert run.inputs["before"] == "low"
+    assert run.inputs["after"] == "high"
+    assert run.inputs["before_effective"] == "low"
+    assert run.inputs["after_effective"] == "high"
+    assert run.inputs["acknowledged"] is True
+    assert "actor" in run.inputs
+
+
+def test_clearing_an_override_that_widened_the_ceiling_needs_the_ack(
+    client_for: Any, session: Session
+) -> None:
+    """Clearing restores the deployment ceiling, so it loosens when that ceiling is wider."""
+    strategy_id = _add_strategy(session, risk_profile="high")
+    client = _client(
+        client_for,
+        _settings(trade_risk_profile=None, max_order_usd=Decimal("1000")),
+    )
+
+    refused = client.put(
+        f"/api/v1/trade-policy/strategies/{strategy_id}",
+        json={"risk_profile": None},
+    )
+
+    assert refused.status_code == 422
+    assert refused.json()["detail"]["code"] == "RISK_ACK_REQUIRED"
+    assert session.get(StrategyRow, strategy_id).risk_profile == "high"
+
+    accepted = client.put(
+        f"/api/v1/trade-policy/strategies/{strategy_id}",
+        json={"risk_profile": None, "acknowledge_risk": True},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["risk_profile"] is None
+
+
 def test_clearing_an_override_returns_the_strategy_to_the_default(
     client_for: Any, session: Session
 ) -> None:
@@ -288,9 +388,7 @@ def test_clearing_an_override_returns_the_strategy_to_the_default(
     assert response.json()["effective_profile"] == "mid"
 
 
-def test_unknown_strategy_and_profile_are_typed_refusals(
-    client_for: Any, session: Session
-) -> None:
+def test_unknown_strategy_and_profile_are_typed_refusals(client_for: Any, session: Session) -> None:
     strategy_id = _add_strategy(session)
     client = _client(client_for, _settings(trade_risk_profile="mid"))
 

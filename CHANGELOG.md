@@ -209,6 +209,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   `GET /paper/limits` resolves `max_order_usd` through the same function, so the number
   the UI shows is the one the order gate enforces.
 
+- **A strategy's profile is enforced, not advisory (api).** The order gate read the
+  requested profile from the payload only, so an order naming a strategy pinned to `low`
+  could still be placed at `high` through the route or a direct `paper.place_order` call.
+  Precedence is now decided once, in `paper.resolve_order_profile`: the strategy row's
+  profile is the bound, a per-order `risk_profile` may only tighten it, and
+  `settings.trade_risk_profile` is the default when neither names one. A looser per-order
+  profile on an entry is refused as `PROFILE_LOOSENS_STRATEGY` (a stored rejection on the
+  order row, not an HTTP error); a sell is exempt because the bound is an entry gate. A
+  strategy with no profile still follows the deployment settings.
+
+- **Opting into a profile is measured against the deployment ceiling (api).** A change was
+  compared to "no profile", which read as the fewest gates, so a strategy with no profile
+  could take `high` ($250) over a deployment capped at $100 per order with no
+  acknowledgement. The loosening test now compares the enforced per-order ceiling, with
+  `None` meaning the deployment's own `max_order_usd`, so a profile that admits a larger
+  order needs `RISK_ACK_REQUIRED`. Every other profile field only adds a gate (a minimum, a
+  percent-of-equity ceiling, a per-token cap), and `max_position_usd` /
+  `max_price_impact_pct` keep applying beside a profile, so neither is widened by one. The
+  `TRADE_POLICY_UPDATED` audit entry now records the stored override before and after, both
+  effective profiles, the principal and whether the loosening was acknowledged. The
+  settings page mirrors the same rule and asks for the acknowledgement when it cannot prove
+  a change only tightens.
+
 - **A page offset is bounded (api).** `GET /paper/orders`, `GET /paper/fills` and
   `GET /paper/ledger` accept `offset` up to 10000; a larger value is `422`. The newest
   page and every page the UI offers stay reachable, and a paging client cannot ask the

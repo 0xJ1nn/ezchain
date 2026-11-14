@@ -389,8 +389,9 @@ class OrderRequest:
     # order service sets this only after it has bounded the quantity to what is held;
     # risk then knows the intent is an exit and does not apply entry-only gates.
     reduce_only: bool = False
-    # Optional requested trade risk profile. The server allows it only when it matches
-    # the account's configured profile.
+    # Optional requested trade risk profile. Precedence is decided by the order gate, not
+    # here: a strategy's pinned profile is the bound, this request may only tighten it, and
+    # the deployment profile is the default. A looser request on an entry is refused.
     risk_profile: str | None = None
 
 

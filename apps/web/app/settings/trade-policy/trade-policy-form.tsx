@@ -28,8 +28,10 @@ function isLoosening(
 	const before = row.effective_profile;
 	const after = newEffective(row, draft, activeProfile);
 	if (before === after) return false;
-	// Choosing a profile where there was none only adds gates.
-	if (before === null) return false;
+	// No effective profile means the deployment's own limits are the "before". This page
+	// does not receive them, so it cannot prove the change only tightens: ask for the
+	// acknowledgement and let the server, which does hold them, accept or refuse it.
+	if (before === null) return true;
 	if (after === null) return true;
 	return (PROFILE_RANK[after] ?? 3) > (PROFILE_RANK[before] ?? 3);
 }

@@ -8,6 +8,13 @@ A strategy may carry its own profile. The write is a server-side decision: the p
 name is validated, a change that loosens a fund-affecting limit needs an acknowledgement,
 and the change is appended to the strategy's run log as an audit entry. Null inherits the
 deployment default, so a strategy that never opts in keeps its current behaviour.
+
+Precedence is the same here as at the order gate (``paper.resolve_order_profile``), and it
+is stated once: a strategy's pinned profile is the floor on risk for its orders, a
+per-order ``risk_profile`` may only tighten it (a looser one on an entry is refused as
+``PROFILE_LOOSENS_STRATEGY``), and ``settings.trade_risk_profile`` is the default when
+neither names one. "No profile" therefore means the deployment's own limits, not the
+fewest gates, which is what the loosening test compares against.
 """
 
 from __future__ import annotations
@@ -133,9 +140,7 @@ def strategy_row(row: StrategyRow, settings: Settings) -> dict[str, Any]:
 def describe(session: Session, settings: Settings) -> dict[str, Any]:
     """Every declared profile, the active one, and each strategy's effective policy."""
     profiles = [profile_document(TRADE_RISK_PROFILES[name]) for name in PROFILE_ORDER]
-    strategies = session.scalars(
-        select(StrategyRow).order_by(StrategyRow.created_at.desc())
-    ).all()
+    strategies = session.scalars(select(StrategyRow).order_by(StrategyRow.created_at.desc())).all()
     active = settings.trade_risk_profile
     active_profile = profile_for(active)
     fields = (
@@ -177,20 +182,32 @@ def preview(
     }
 
 
-def _loosens(before: str | None, after: str | None) -> bool:
-    """Whether moving to ``after`` admits more risk than ``before``.
+def _order_ceiling(name: str | None, settings: Settings) -> Decimal:
+    """The absolute per-order ceiling the gate enforces for this profile, or the deployment.
 
-    No profile is the fewest gates; ``low`` adds the tightest bundle, then ``mid`` and
-    ``high``. Choosing a profile where the deployment had none only adds gates (a
-    minimum, a percent-of-equity bound, a per-token cap and a slippage ceiling), so
-    opting in is never a loosening. Removing the last profile removes those gates.
+    ``None`` is not "no gate": it is the deployment's own ``settings.max_order_usd``, which
+    is what an order is measured against when no profile shapes it. A declared profile's
+    ceiling replaces that value rather than adding to it (``paper.effective_max_order_usd``),
+    which is the one bound a profile can widen.
     """
-    if before is None:
-        return False
-    if after is None:
-        return True
-    rank = {"low": 1, "mid": 2, "high": 3}
-    return rank.get(after, 3) > rank.get(before, 3)
+    profile = profile_for(name)
+    return settings.max_order_usd if profile is None else profile.max_order_usd
+
+
+def _loosens(before: str | None, after: str | None, settings: Settings) -> bool:
+    """Whether moving to ``after`` admits a larger order than ``before``.
+
+    The comparison is of the enforced order ceilings, with ``None`` meaning the
+    deployment's own limits — because a strategy with no profile is already bounded by
+    them. So opting into ``high`` ($250) where the deployment caps orders at $100 widens
+    the order a strategy may place and needs the acknowledgement.
+
+    Every other profile field only *adds* a gate: a minimum size, a percent-of-equity
+    ceiling and a per-token cap are absent from a deployment with no profile, and the
+    deployment's ``max_position_usd`` and ``max_price_impact_pct`` keep applying beside a
+    profile, so neither can be widened by one.
+    """
+    return _order_ceiling(after, settings) > _order_ceiling(before, settings)
 
 
 def update_strategy(
@@ -206,6 +223,14 @@ def update_strategy(
 
     ``None`` clears the override; the deployment default applies again. A profile the
     registry does not define is ``PROFILE_UNKNOWN``, never a silent fallback.
+
+    A change that admits a larger order than the strategy's current effective policy needs
+    ``acknowledge_risk``; the comparison is of the enforced order ceilings, with ``None``
+    meaning the deployment's own ``max_order_usd`` (see :func:`_loosens`).
+
+    The audit entry carries the stored override before and after, the effective profile
+    each resolved to, the principal that made the change and whether the loosening was
+    acknowledged, so the entry is the whole decision rather than a truncated name.
     """
     row = session.get(StrategyRow, strategy_id)
     if row is None:
@@ -214,7 +239,8 @@ def update_strategy(
 
     before = _effective(row, settings)
     after = risk_profile if risk_profile is not None else settings.trade_risk_profile
-    if _loosens(before, after) and not acknowledge_risk:
+    loosens = _loosens(before, after, settings)
+    if loosens and not acknowledge_risk:
         raise PolicyError(
             "RISK_ACK_REQUIRED",
             (
@@ -230,7 +256,15 @@ def update_strategy(
             strategy_id=row.id,
             action="hold",
             reason=AUDIT_REASON,
-            inputs={"before": previous, "after": risk_profile, "actor": actor},
+            inputs={
+                "before": previous,
+                "after": risk_profile,
+                "before_effective": before,
+                "after_effective": after,
+                "loosens": loosens,
+                "acknowledged": acknowledge_risk,
+                "actor": actor,
+            },
         )
     )
     session.commit()

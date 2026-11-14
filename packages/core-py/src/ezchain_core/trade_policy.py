@@ -23,6 +23,10 @@ PolicyKind = Literal["decimal", "integer", "ratio"]
 
 PROFILE_ORDER: tuple[ProfileName, ...] = ("low", "mid", "high")
 
+# How loose a declared profile is: ``low`` 1, ``mid`` 2, ``high`` 3, no profile 0. The
+# registry is ordered from tightest to loosest, so a higher rank admits more risk.
+PROFILE_RANK: dict[str, int] = {"low": 1, "mid": 2, "high": 3}
+
 PROFILE_LABELS: dict[str, str] = {
     "low": "Low risk",
     "mid": "Mid risk",
@@ -247,13 +251,9 @@ def preview_size(
         raise PolicyError("PROFILE_UNKNOWN", "a sizing preview needs a risk profile")
     limits = risk_limits_for(profile)
     reasons = tuple(size_reasons(amount_usd, limits, equity_usd))
-    percent_cap = (
-        None if equity_usd is None else equity_usd * profile.max_order_pct_of_equity
-    )
+    percent_cap = None if equity_usd is None else equity_usd * profile.max_order_pct_of_equity
     effective_max = (
-        profile.max_order_usd
-        if percent_cap is None
-        else min(profile.max_order_usd, percent_cap)
+        profile.max_order_usd if percent_cap is None else min(profile.max_order_usd, percent_cap)
     )
     return SizingPreview(
         allowed=not reasons,

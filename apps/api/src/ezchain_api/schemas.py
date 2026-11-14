@@ -339,9 +339,10 @@ class PaperOrderIn(BaseModel):
     # A sell that exists to reduce the open position. Entry-only risk gates do not apply;
     # the position bound, quote freshness and an executable route still do.
     reduce_only: bool = False
-    # Optional requested risk profile. Any defined profile is accepted (the owner's own
-    # risk choice); the deployment profile is the default. An unknown name is a typed
-    # rejection.
+    # Optional requested risk profile. Precedence is the gate's: a strategy's pinned
+    # profile is the bound, this request may only tighten it, and the deployment profile is
+    # the default when neither names one. An unknown name and a looser-than-pinned entry
+    # are both typed rejections.
     risk_profile: str | None = None
     trade_risk_profile: str | None = None
     profile: str | None = None
