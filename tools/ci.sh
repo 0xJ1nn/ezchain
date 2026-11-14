@@ -73,6 +73,31 @@ if [ -n "${EZCHAIN_TEST_DATABASE_URL:-}" ]; then
   bash tools/check-migrations.sh
   ran=1
 fi
+# The Compose drill is explicitly opt-in and is never part of the default gate: `run`
+# builds images and needs a Docker daemon, so a host without one would turn the gate red
+# for a reason that has nothing to do with the diff. `static` validates the compose file
+# and the migration chain without a daemon; `run` is the full drill. Anything else is a
+# mistake in the caller's environment, not a skip.
+case "${EZCHAIN_GATE_DRILL:-off}" in
+  off)
+    echo "drill: skipped (set EZCHAIN_GATE_DRILL=static for the daemon-free checks, or =run for the full stack)"
+    ;;
+  static|run)
+    if [ ! -x .venv/bin/python ]; then
+      echo "not present yet: drill (no .venv — run bash tools/setup-python.sh)"
+    elif [ "$EZCHAIN_GATE_DRILL" = "static" ]; then
+      EZCHAIN_PYTHON=.venv/bin/python bash tools/ops/drill.sh --static-only
+      ran=1
+    else
+      EZCHAIN_PYTHON=.venv/bin/python bash tools/ops/drill.sh
+      ran=1
+    fi
+    ;;
+  *)
+    echo "EZCHAIN_GATE_DRILL must be off, static or run (got ${EZCHAIN_GATE_DRILL})" >&2
+    exit 2
+    ;;
+esac
 # The browser suite is the slow part of the gate. Run it when the diff can
 # affect the web app, or when explicitly requested; a backend-only or docs
 # diff still runs every Python, lint and migration check.

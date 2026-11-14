@@ -1,11 +1,13 @@
-"""``python -m tools.ops`` — backup, restore and the timed restore rehearsal.
+"""``python -m tools.ops`` — backup, restore, the timed restore rehearsal and the drill.
 
 Exit codes are part of the contract, because the runbook and any future cron both read
 them:
 
 * ``0`` — the command did what it says and every verification passed;
-* ``1`` — a verification failed (different rows, a failed reconciliation, a short restore);
-* ``2`` — the command refused to run, or an external tool failed.
+* ``1`` — a verification failed (different rows, a failed reconciliation, a short restore,
+  a drill phase that did not pass);
+* ``2`` — the command refused to run, or an external tool failed (no Docker daemon, an
+  unusable env file, a refused target).
 
 ``--json`` prints the machine-readable document; the default output is a short operator
 summary. Nothing printed contains a password.
@@ -20,9 +22,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .backup import backup
+from .drill import DEFAULT_CHAIN, DEFAULT_PROJECT, DEFAULT_TOKEN, drill, migration_chain
 from .pg import OpsError, PgTarget
 from .rehearse import rehearse, write_report
 from .restore import drop_target, restore, verify_fingerprint
+
+EXIT_REFUSED = 2
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _print(payload: dict[str, object], as_json: bool) -> None:
@@ -122,6 +128,57 @@ def _drop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _drill(args: argparse.Namespace) -> int:
+    result = drill(
+        root=ROOT,
+        compose=Path(args.compose),
+        env_file=Path(args.env_file),
+        project=args.project,
+        base_url=args.base_url,
+        docker=args.docker,
+        timeout=args.timeout,
+        build_timeout=args.build_timeout,
+        dest=None if args.dest is None else Path(args.dest),
+        keep=args.keep,
+        static_only=args.static_only,
+        chain=args.chain,
+        token=args.token,
+    )
+    if getattr(args, "json", False):
+        # The machine-readable document is the whole of stdout: a caller parses it with
+        # json.load, so the operator's one-line verdict goes to stderr.
+        _print(result.document, True)
+        stream = sys.stderr
+    else:
+        stream = sys.stdout
+        for phase in result.phases:
+            print(f"  {phase.status:<7} {phase.name}: {phase.detail}")
+    if result.status == "passed":
+        print(
+            f"drill: ok ({result.document['mode']}) at {result.document['head_revision']}",
+            file=stream,
+        )
+        return 0
+    if result.status == "skipped":
+        print(f"drill: NOT RUN — {result.document['refusal']}", file=sys.stderr)
+        print("drill: this is a refusal, not a pass", file=sys.stderr)
+        return EXIT_REFUSED
+    print(f"drill: FAILED — {result.document['failure']}", file=sys.stderr)
+    return 1
+
+
+def _chain(args: argparse.Namespace) -> int:
+    head, count, problems = migration_chain()
+    document = {"head": head, "revisions": count, "problems": problems}
+    stream = sys.stderr if getattr(args, "json", False) else sys.stdout
+    _print(document, getattr(args, "json", False))
+    if problems:
+        print(f"chain: FAILED — {len(problems)} problem(s)", file=sys.stderr)
+        return 1
+    print(f"chain: ok — {count} revisions, head {head}", file=stream)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m tools.ops")
     # ``--json`` is accepted before or after the subcommand: an operator writing a
@@ -192,6 +249,46 @@ def build_parser() -> argparse.ArgumentParser:
         "--database", required=True, help="database URL (name must look disposable)"
     )
     p_drop.set_defaults(func=_drop)
+
+    p_drill = sub.add_parser(
+        "drill",
+        parents=[common],
+        help="re-drill the Compose stack at this checkout's migration head",
+    )
+    p_drill.add_argument(
+        "--compose", default=str(ROOT / "infra" / "compose.yaml"), help="compose file to drill"
+    )
+    p_drill.add_argument(
+        "--env-file",
+        default=str(ROOT / "infra" / ".env"),
+        help="Compose env file holding POSTGRES_PASSWORD and EZCHAIN_API_TOKEN",
+    )
+    p_drill.add_argument("--project", default=DEFAULT_PROJECT, help="Compose project name")
+    p_drill.add_argument(
+        "--base-url", default=None, help="edge URL (default: EZCHAIN_PUBLIC_URL from the env file)"
+    )
+    p_drill.add_argument("--docker", default=None, help="docker binary (default: docker on PATH)")
+    p_drill.add_argument(
+        "--timeout", type=float, default=180.0, help="seconds to wait for readiness"
+    )
+    p_drill.add_argument(
+        "--build-timeout", type=float, default=1800.0, help="seconds allowed for compose up --build"
+    )
+    p_drill.add_argument("--dest", default=None, help="directory for the dump (default: temp dir)")
+    p_drill.add_argument("--keep", action="store_true", help="leave the project running")
+    p_drill.add_argument(
+        "--static-only",
+        action="store_true",
+        help="validate the compose file and migration chain; never start a container",
+    )
+    p_drill.add_argument("--chain", default=DEFAULT_CHAIN, help="chain for the paper order")
+    p_drill.add_argument("--token", default=DEFAULT_TOKEN, help="token for the paper order")
+    p_drill.set_defaults(func=_drill)
+
+    p_chain = sub.add_parser(
+        "chain", parents=[common], help="check the Alembic chain has exactly one head"
+    )
+    p_chain.set_defaults(func=_chain)
     return parser
 
 
