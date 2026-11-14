@@ -9,5 +9,15 @@ description = "ezCHAIN market/chain data acquisition and normalization"
 requires-python = ">=3.11"
 dependencies = ["ezchain-core>=0.1.0"]
 
+# The live pump.fun seam imports ``pumpfire``; retention, replay, the store and the adapter
+# do not. Keeping it an extra leaves the API image free of the source package while an
+# operator who runs the firehose installs it deliberately:
+#   pip install "ezchain-ingest[firehose]"
+# The extra pins the firehose repo's release tag; that tag must be pushed for a clone.
+[project.optional-dependencies]
+firehose = [
+    "pumpfun-firehose @ git+https://github.com/0xJ1nn/pumpfun-firehose.git@v0.5.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]

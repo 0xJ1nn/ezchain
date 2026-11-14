@@ -101,6 +101,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **The live pump.fun source is an opt-in extra, so the API image stays free of it
+  (ingest).** `pumpfun-firehose` was pinned in `requirements.txt` and
+  `requirements-runtime.txt`, which made every consumer — the API image included — install a
+  package it never imports. The adapter duck-types its events, so the dependency now lives
+  only in `ezchain-ingest`'s `firehose` extra (`pip install "ezchain-ingest[firehose]"`),
+  pinned to the firehose repository's `v0.5.0` release tag rather than a pull-request head.
+  `ezchain_ingest` imports and the retention CLI runs with no `pumpfire` installed; the
+  live `FirehoseSource` imports it on first construction and names the extra when it is
+  missing. The firehose fixture tests skip when the extra is absent.
+
 - **Owner history pages past the newest slice (api).** `GET /paper/orders`,
   `GET /paper/fills` and `GET /paper/ledger` accepted only `limit`, so the newest 200/500
   rows were all an owner could ever read back. All three now accept `offset` alongside

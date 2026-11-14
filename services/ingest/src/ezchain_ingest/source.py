@@ -23,15 +23,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from pumpfire.health import (
-    EventQueue,
-    GateDecision,
-    QueueCensus,
-    StalenessGate,
-)
 from sqlalchemy.engine import Connection
+
+if TYPE_CHECKING:
+    from pumpfire.health import EventQueue, GateDecision, QueueCensus, StalenessGate
 
 from ezchain_adapters.firehose import (
     DEFAULT_STALE_BUDGET_SECONDS,
@@ -43,6 +41,22 @@ from .eventlog import read_events, write_events
 from .store import record_events
 
 Listener = Callable[[object], None]
+
+EXTRA = "ezchain-ingest[firehose]"
+
+
+def _health() -> ModuleType:
+    """Import ``pumpfire.health`` on first use. The package is an optional extra."""
+    try:
+        from pumpfire import health
+    except ModuleNotFoundError as exc:
+        if exc.name is None or not (exc.name == "pumpfire" or exc.name.startswith("pumpfire.")):
+            raise
+        raise ModuleNotFoundError(
+            f"the live firehose source needs pumpfun-firehose; install {EXTRA}",
+            name="pumpfire",
+        ) from exc
+    return cast(ModuleType, health)
 
 
 class FirehoseClient(Protocol):
@@ -68,8 +82,9 @@ class FirehoseSource:
         pending_limit: int = 10_000,
         gate: StalenessGate | None = None,
     ) -> None:
-        self._gate = StalenessGate(stale_after_s) if gate is None else gate
-        self._queue: EventQueue[FirehoseEvent] = EventQueue(pending_limit)
+        health = _health()
+        self._gate = health.StalenessGate(stale_after_s) if gate is None else gate
+        self._queue: EventQueue[FirehoseEvent] = health.EventQueue(pending_limit)
         self._received = 0
         self._rejected = 0
         self._client = client

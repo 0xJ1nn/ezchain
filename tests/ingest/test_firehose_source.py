@@ -14,13 +14,18 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from pumpfire.health import StaleStream
 from sqlalchemy.orm import Session, sessionmaker
 
 from ezchain_api.db import Base
 from ezchain_api.models import MarketEventRow
 from ezchain_core import MarketEvent
 from ezchain_ingest import FirehoseSource, load_events, read_events
+
+pytest.importorskip(
+    "pumpfire.health", reason="the live firehose source is the ezchain-ingest[firehose] extra"
+)
+
+from pumpfire.health import StaleStream  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).parents[1] / "adapters" / "fixtures"
 STALE_AFTER = 60.0
