@@ -9,3 +9,6 @@ pydantic-settings>=2.4,<3
 httpx>=0.27,<1
 alembic>=1.15,<2
 packaging>=23
+# pump.fun market source, pinned to the reviewed commit. Install editable from a local
+# checkout for development: pip install -e ../pumpfun-firehose
+pumpfun-firehose @ git+https://github.com/0xJ1nn/pumpfun-firehose.git@73bb4b5a54b3549ca7dc2d3ab5bee963eeac9269

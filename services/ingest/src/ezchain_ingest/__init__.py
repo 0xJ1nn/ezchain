@@ -8,6 +8,7 @@ idempotency identity.
 from .eventlog import EventLogError, read_events, write_events
 from .replay import PairObservation, ReplayHarness, ReplayState, derive_state
 from .retention import RetentionPolicy, RetentionPolicyError, RetentionResult, prune
+from .source import FirehoseClient, FirehoseSource
 from .store import (
     MARKET_EVENT_TOPIC,
     MarketStoreError,
@@ -21,6 +22,8 @@ from .store import (
 
 __all__ = [
     "EventLogError",
+    "FirehoseClient",
+    "FirehoseSource",
     "MARKET_EVENT_TOPIC",
     "MarketStoreError",
     "PairObservation",
