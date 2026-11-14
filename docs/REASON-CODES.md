@@ -474,6 +474,7 @@ define them. It found the following, all resolved in the same change.
 | One code, two contracts | `PROFILE_UNKNOWN` is both a `ValueError` argument and a persisted order reason. | Documented as one code with one meaning; the raise site is unchanged (no behaviour change). |
 | Codes that never cross HTTP | 157 of 254 never appear as an HTTP error (executor custody codes, engine holds, read-model reasons). | The registry's `http_status` is `None` for each, so nobody invents a status for them. |
 | An undocumented UI expectation | `apps/web/e2e/kill-switch-topbar.spec.ts` asserts `KILL_SWITCH_REASON_REQUIRED`, which no Python code emits. | Recorded as an open follow-up (§8); the taxonomy does not invent the code. |
+| A message with no emitter | `APPROVAL_REQUIRED` was a key in `RISK_REASON_MESSAGES` that no code emits; the queue emits `AWAITING_APPROVAL`. | The derived dict keeps only codes the code base emits, so the phantom key is dropped rather than given a row. |
 
 **What was deliberately not unified:** `RiskReason` (a `str` subclass returned from a
 decision) and `ExecutionResult.reason` (a free-form field) still carry plain strings. They

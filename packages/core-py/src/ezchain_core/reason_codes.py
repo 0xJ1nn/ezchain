@@ -389,7 +389,7 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "core",
         "ezchain_core/vault.py",
         "An unattended run has no consent record for that user and automation.",
-        "Automation consent is required for unattended orders.",
+        "Full auto needs an acknowledged risk disclosure.",
         severity="critical",
     ),
     # ------------------------------------------------------------ core: signing
