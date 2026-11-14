@@ -60,6 +60,14 @@ def load_fixture() -> Callable[[str], Any]:
 
 
 @pytest.fixture
+def firehose_sample(load_fixture: Callable[[str], Any]) -> list[dict[str, Any]]:
+    """The recorded wire events, without the fixture's provenance header."""
+    raw = load_fixture("firehose_sample.json")
+    assert isinstance(raw, dict) and isinstance(raw["events"], list)
+    return raw["events"]
+
+
+@pytest.fixture
 def fast_limiter(clock: FakeClock) -> TokenBucket:
     return TokenBucket(rate_per_second=10_000.0, burst=10_000, clock=clock, sleep=clock.sleep)
 
