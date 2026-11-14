@@ -1,7 +1,9 @@
-"""Each test starts and ends with an empty day, and imports this checkout.
+"""Each test starts and ends with an empty day, no ambient trace key, and imports this checkout.
 
 The daily ledger is process-scoped by design, so tests that share a process must clear it
-between cases or they would inherit one another's spend.
+between cases or they would inherit one another's spend. The trace key comes from the
+environment when a store is not given one, so it is removed here too: a developer with
+``EZCHAIN_TRACE_KEY`` exported would otherwise run a different suite from CI.
 
 The import path is pinned before the first package import because this suite's whole claim
 is that it drives **this** checkout's loop, MCP server and API. The development venv
@@ -27,6 +29,7 @@ SOURCE_ROOTS = (
     "apps/api/src",
     "apps/mcp/src",
     "services/agent-runtime/src",
+    "services/harness/src",
 )
 
 for _relative in reversed(SOURCE_ROOTS):
@@ -35,10 +38,12 @@ for _relative in reversed(SOURCE_ROOTS):
         sys.path.insert(0, _path)
 
 from ezchain_agent_runtime import PROCESS_SPEND  # noqa: E402  (after the path pin)
+from ezchain_agent_runtime.trace import TRACE_KEY_ENV  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _empty_day() -> Iterator[None]:
+def _empty_day(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.delenv(TRACE_KEY_ENV, raising=False)
     PROCESS_SPEND.clear()
     yield
     PROCESS_SPEND.clear()

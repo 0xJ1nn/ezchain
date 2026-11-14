@@ -120,6 +120,15 @@ data stay unknown, never zero.
   operator: key material never appears in the web bundle, API responses,
   logs, traces or strategy plugins
   ([docs/CONTRACT.md](docs/CONTRACT.md)).
+- **The agent runtime's session trace is tamper-evident only when it is keyed.** Each
+  session writes an append-only, hash-chained trace
+  ([services/agent-runtime/README.md](services/agent-runtime/README.md), ADR-0042). With
+  `EZCHAIN_TRACE_KEY` set outside the trace directory, every event's digest is an HMAC, so a
+  forged tail or a rewritten chain is refused; with no key, which is the default, the digest
+  is a bare checksum that detects corruption and proves nothing about who wrote the file —
+  anyone who can write it can recompute the chain. In either mode a truncation is caught only
+  by an anchor persisted elsewhere, and neither mode notarises time. The docs state this
+  exactly and nowhere claim more.
 - **No bundled strategy and no measured live edge.** The platform is the
   product; any edge lives in a plugin the operator installs and validates in
   PAPER mode first.

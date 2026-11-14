@@ -62,6 +62,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   never exits `0`. The suite scripts both seams, so it makes no network call and needs no
   provider key. See [docs/AGENT-INTEGRATION.md §9.1](docs/AGENT-INTEGRATION.md#91-the-headless-command).
 
+- **The agent runtime keeps an append-only, tamper-evident session trace, and replay
+- **The agent runtime keeps an append-only, hash-chained session trace, and replay
+  (PAPER).** `services/agent-runtime` now writes one trace per session through a `TraceSink`
+  whose only writing operation is `append` (beside the sealing `key` it uses): no update,
+  delete or rewrite exists in the API, and a session id with events on disk cannot be started
+  a second time. Every turn, tool call (name, arguments digest, result status and digest,
+  latency, refusal code), budget debit, kill-switch observation and the terminal outcome is
+  recorded, with the prompt stored as a hash, known credential shapes redacted on write and
+  tool data stored as digests. Each event carries the previous event's digest, taken over a
+  canonical JSON encoding with sorted keys rather than a delimiter join (the lesson of the
+  ledger seal review), so `1` and `"1"` cannot collide, a field containing `|` cannot move a
+  boundary and a tuple or float is refused; the digest is an HMAC when the store holds a key
+  and a bare SHA-256 when it does not.
+  `verify_events` names the event and the reason for a mutated, reordered, dropped or
+  duplicated event. `replay` verifies the chain and reconstructs the session summary from the
+  events alone, and the suite pins replay equal to the live summary across a completed
+  session, a budget stop, a kill-switch stop, an approval stop, a tool error and a model
+  failure. Storage is a file (`FileTraceLog`, one JSON-lines file per session) or the
+  in-memory sink behind the same interface, so the runtime's ADR-0042 boundary is unchanged:
+  no database, no platform import.
+- **What that chain proves, stated plainly, and what it does not (the threat model).** An
+  unkeyed hash chain is a checksum: whoever can write the file can also recompute every
+  digest. Security review reproduced two forgeries against the unkeyed chain — truncate the
+  tail and append a fabricated `outcome` whose `prev` is the last real digest, and a full
+  rewrite from GENESIS — both of which verified. The chain is therefore keyed when a key is
+  configured (`EZCHAIN_TRACE_KEY`, a key file outside the trace directory, or a key passed to
+  `FileTraceLog`), the digest becomes `hmac-sha256:<hex>`, and both attacks are rejected;
+  verification also refuses a keyed trace without its key and an unkeyed trace when a key is
+  given, so a rewrite cannot shed the prefix. No key is the default and is documented as
+  chain-only: corruption detection, no authorship. Truncation is not forgery and a key does
+  not catch it, so `anchor_of` (session, event count, head digest) is persisted outside the
+  trace directory and checked by `verify_events`/`replay`. Neither mode notarises time. The
+  ADR, the service README and this entry say exactly this and no more.
+- **One writer per session, and a reader that cannot mutate the log.** The file store creates
+  a session `O_EXCL` and runs read-last-then-append under an exclusive `flock`, so two
+  concurrent writers can no longer both append step 1 and leave a permanently unverifiable
+  file, and a second process cannot continue a session it did not record.
+  `MemoryTraceLog.read` deep-copies, so a caller cannot rewrite stored events without an
+  append. A turn is debited in the trace before the budget is charged, so a trace failure
+  never bills a turn the file did not record; the session then ends on a dangling prefix that
+  `replay` reports as `TraceIncomplete`.
 - **A Compose drill that proves the stack at the current migration head (PAPER).**
   `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts
   `infra/compose.yaml` under an isolated project, then requires `/readyz` to report
