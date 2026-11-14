@@ -20,6 +20,7 @@ from .answers import (
     resolve_answer,
 )
 from .budget import (
+    PROCESS_SPEND,
     BudgetExhausted,
     BudgetLimits,
     Clock,
@@ -29,7 +30,7 @@ from .budget import (
     utcnow,
 )
 from .killswitch import InMemoryKillSwitch, KillSwitch
-from .loop import DEFAULT_SYSTEM_PROMPT, AgentLoop, RuntimeConfig, SessionOutcome
+from .loop import DEFAULT_SYSTEM_PROMPT, KILL_SWITCH_CODES, AgentLoop, RuntimeConfig, SessionOutcome
 from .mcp import (
     McpError,
     McpTool,
@@ -52,6 +53,8 @@ from .session import (
 
 __all__ = [
     "DEFAULT_SYSTEM_PROMPT",
+    "KILL_SWITCH_CODES",
+    "PROCESS_SPEND",
     "TERMINAL_STATES",
     "TRANSITIONS",
     "AgentLoop",

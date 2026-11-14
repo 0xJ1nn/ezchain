@@ -1181,6 +1181,15 @@ rolls its transaction back before the refusal is written.
 sourced answers); the stdio transport, the session trace store, the panel and the headless
 command remain planned, not built.
 
+**Amendment (review round 1, budgets).** "Per day" is per process, not per loop: the loop is
+built per session, so the daily counters live in a process-scoped store keyed by
+`(agent, UTC date)` (`budget.PROCESS_SPEND`) and every session in one day spends from one
+budget. A multi-process runtime injects a persisted mapping through `DailyLedger(spend=...)`.
+A turn is paid for after the pre-turn gate, so the budget is re-checked immediately after
+consumption: reaching a limit exactly still delivers that turn's answer, crossing one stops
+the session with the typed reason and discards the answer — a session that crossed a limit
+never reports `COMPLETED`.
+
 **Context:** the agent surface today is the MCP server in `apps/mcp`; the process that calls
 it belongs to the user. The product's own agent is the next piece to build — one loop, a
 model, the platform's tools, a panel and a headless command — and an owner may instead bring

@@ -54,6 +54,12 @@ def _new_session_id() -> str:
     return uuid4().hex
 
 
+# ADR-0042 forbids this service from importing ezchain_core, so the platform's refusal codes
+# travel as plain strings (the format the MCP result already carries) and the two the loop
+# acts on live in this local table. A test pins them against the platform's own list.
+KILL_SWITCH_CODES: frozenset[str] = frozenset({"KILL_SWITCH_ACTIVE", "KILL_SWITCH_ARMED"})
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, default=str, sort_keys=True, separators=(",", ":"))
 
@@ -97,6 +103,7 @@ class AgentLoop:
         toolbox: McpToolbox,
         limits: BudgetLimits,
         daily: DailyLedger | None = None,
+        agent: str | None = None,
         kill_switch: KillSwitch | None = None,
         clock: Clock = utcnow,
         config: RuntimeConfig | None = None,
@@ -105,7 +112,15 @@ class AgentLoop:
         self._toolbox = toolbox
         self._limits = limits
         self._clock = clock
-        self._daily = daily if daily is not None else DailyLedger(limits, clock=clock)
+        # The day's spend is process-scoped and keyed by agent, never owned by the loop: a
+        # loop is built per session, so a loop-local ledger would reset the day's budget on
+        # every session.
+        if daily is None:
+            self._daily = DailyLedger(agent=agent or "default", clock=clock)
+        elif agent is not None and daily.agent != agent:
+            raise ValueError(f"daily ledger is for {daily.agent!r}, not {agent!r}")
+        else:
+            self._daily = daily
         self._kill_switch: KillSwitch = kill_switch or InMemoryKillSwitch()
         self._config = config or RuntimeConfig()
 
@@ -152,6 +167,13 @@ class AgentLoop:
                 tokens=turn.usage.total_tokens,
                 cost_usd=turn.usage.cost_usd,
             )
+            # The gate above ran before this turn was paid for, so a turn that crosses a
+            # limit is only visible here. Refusing now keeps a budget overrun from
+            # producing an answer: a session that crossed a limit never reports COMPLETED.
+            overrun = budget.overtaken()
+            if overrun is not None:
+                session.fire(SessionEvent.STOP)
+                return self._outcome(session, overrun.reason, str(overrun), budget, observations)
 
             if turn.tool_calls and turn.answer is not None:
                 session.fire(SessionEvent.FAIL)
@@ -200,7 +222,7 @@ class AgentLoop:
                         )
                     )
                     refusal = _refusal_code(result.data) if result.is_error else None
-                    if refusal in {"KILL_SWITCH_ACTIVE", "KILL_SWITCH_ARMED"}:
+                    if refusal in KILL_SWITCH_CODES:
                         session.fire(SessionEvent.STOP)
                         return self._outcome(
                             session,

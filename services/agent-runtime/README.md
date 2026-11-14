@@ -10,6 +10,12 @@ only door to ezCHAIN is an injected MCP toolbox — one child `ezchain-mcp` over
 tool surface is built from the server's own `tools/list` response; a name the server did
 not list cannot be called.
 
+The ADR-0042 import boundary holds: this service imports no `ezchain_core`, `ezchain_api`,
+`ezchain_engine` or `ezchain_executor`, not even for the refusal codes. Those codes arrive as
+plain strings inside the MCP result (the wire format the platform already sends), the two the
+loop acts on are the local `KILL_SWITCH_CODES` table, and a test pins that table to
+`RISK_REASON_MESSAGES` from the outside.
+
 **One loop.** `AgentLoop.run(prompt)` returns a `SessionOutcome`:
 
 | Field | Meaning |
@@ -24,9 +30,15 @@ The lifecycle edges live in one table, `session.TRANSITIONS`. The loop consults 
 `Session.fire`; there is no second definition.
 
 **Budgets.** `BudgetLimits` carries six limits: turns, tokens and cost for the session and
-for the day. `DailyLedger` is shared across sessions and rolls at UTC midnight.
-`SessionBudget.guard()` is called before every model turn and every tool call; reaching a
-limit stops the session with the matching typed reason, it never clamps silently.
+for the day. The day's counters are process-scoped, keyed by `(agent, UTC date)` in
+`PROCESS_SPEND`, so every session an agent starts on the same day spends from one budget —
+a loop is built per session, and a loop-local ledger would reset the day. A runtime run as
+several processes injects a persisted mapping through `DailyLedger(spend=...)` with the same
+`consume`/`used` contract. `SessionBudget.guard()` is called before every model turn and
+every tool call, and `SessionBudget.overtaken()` re-checks immediately after a turn is paid
+for: reaching a limit exactly still lets that turn deliver its answer, crossing one stops the
+session with the matching typed reason instead of returning `COMPLETED`. Neither is clamped
+silently.
 
 **Kill switch.** The runtime checks its own `KillSwitch` before each turn and tool call. A
 platform refusal carrying `KILL_SWITCH_ACTIVE`/`KILL_SWITCH_ARMED` stops the session the
