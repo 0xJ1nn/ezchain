@@ -10,6 +10,29 @@ The last recorded Compose drill was at `0003_paper_fill_order`
 ([p0-production/docker-up.md](../p0-production/docker-up.md)); the head is now
 `0023_strategy_risk_profile`, twenty-three revisions later.
 
+## Addendum — re-measured at head `0025_strategy_run_window` (2026-11-14, later the same day)
+
+Two migrations landed after the drill above (`0024_agent_buckets`, `0025_strategy_run_window`),
+so the daemon-free phase was re-run rather than left to rot. Same host, same absence of a
+Docker CLI and daemon.
+
+```bash
+bash tools/ops/drill.sh --static-only
+#   passed  static: compose valid (7 services); 25 migrations, head 0025_strategy_run_window
+# drill: ok (static-only) at 0025_strategy_run_window
+# exit=0
+
+.venv/bin/python -m tools.ops chain --json
+#   "problems": [], "revisions": 25
+```
+
+The static phase is the whole of what this host can prove, and it still proves it at the
+current head: seven services, the four long-running ones healthy-checked, one published
+port, `migrate` ahead of `api`, 25 revisions in a single unbranched chain. **No container was
+started here**, so the acceptance criteria that need a running stack — a paper buy through the
+edge, reconciliation green, restart and backup — remain unexercised and this issue stays open
+on that basis rather than closing on the static result.
+
 ## Environment
 
 macOS 27.2.1 (Darwin, arm64), Apple M3, 8 GB RAM. Python 3.11.18 in the project venv,
