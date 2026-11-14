@@ -15,6 +15,8 @@ from ezchain_api.models import (
     MarketSnapshotRow,
     PaperFillRow,
     PaperOrderRow,
+    StrategyRow,
+    StrategyRunRow,
     new_id,
 )
 from ezchain_api.schemas import ReconciliationOut
@@ -28,6 +30,7 @@ MINOR_UNIT = Decimal("0.00000001")
 NEW_CHECK_IDS = {
     "genesis.accounted_once",
     "ledger.groups_linked",
+    "strategy.runs_linked",
     "positions.fills_match",
     "fills.ledger_values_match",
     "equity.identity",
@@ -650,3 +653,134 @@ def test_sub_minor_group_value_is_reported_not_absorbed(session: Session) -> Non
     check = _checks(report)["ledger.groups_balanced"]
     assert check["ok"] is False
     assert "sub-minor-group" in str(check["detail"])
+
+def _strategy(session: Session, strategy_id: str) -> None:
+    session.add(
+        StrategyRow(
+            id=strategy_id,
+            name=strategy_id,
+            chain=CHAIN,
+            token_address=TOKEN,
+            token_symbol="TEST",
+            kind="momentum",
+            params={"order_usd": 10, "interval_minutes": 60},
+            status="active",
+            created_by_kind="human",
+            created_by_id="deployment",
+            created_by_owner="deployment",
+        )
+    )
+
+
+def test_a_strategy_order_names_the_run_row_that_decided_it(session: Session, settings) -> None:
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    _strategy(session, "strategy-linked")
+    session.add(
+        PaperOrderRow(
+            id="strategy-order-linked",
+            idempotency_key="strategy-linked-1",
+            chain=CHAIN,
+            token_address=TOKEN,
+            side="buy",
+            amount_usd=Decimal("10"),
+            status="pending",
+            strategy_id="strategy-linked",
+        )
+    )
+    session.add(
+        StrategyRunRow(
+            id="run-linked",
+            strategy_id="strategy-linked",
+            action="buy",
+            reason="MOMENTUM_ENTRY",
+            inputs={},
+            order_id="strategy-order-linked",
+        )
+    )
+    session.commit()
+
+    report = reconciliation(session)
+
+    assert _checks(report)["strategy.runs_linked"]["ok"] is True
+
+
+def test_an_order_no_run_row_names_is_reported(session: Session, settings) -> None:
+    """A crash between the order and the run log leaves money with no reasoning."""
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    _strategy(session, "strategy-orphan-run")
+    session.add(
+        PaperOrderRow(
+            id="strategy-order-orphaned",
+            idempotency_key="strategy-orphan-1",
+            chain=CHAIN,
+            token_address=TOKEN,
+            side="buy",
+            amount_usd=Decimal("10"),
+            status="pending",
+            strategy_id="strategy-orphan-run",
+        )
+    )
+    session.commit()
+
+    report = reconciliation(session)
+
+    checks = _checks(report)
+    assert checks["strategy.runs_linked"]["ok"] is False
+    assert "strategy-order-orphaned" in checks["strategy.runs_linked"]["detail"]
+    assert report["ok"] is False
+
+
+def test_an_order_named_by_several_refusals_is_not_drift(session: Session, settings) -> None:
+    """A refusal releases its window, so a retry logs its own row naming the same order."""
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    _strategy(session, "strategy-double-run")
+    session.add(
+        PaperOrderRow(
+            id="strategy-order-double",
+            idempotency_key="strategy-double-1",
+            chain=CHAIN,
+            token_address=TOKEN,
+            side="buy",
+            amount_usd=Decimal("10"),
+            status="pending_approval",
+            strategy_id="strategy-double-run",
+        )
+    )
+    for index in (1, 2):
+        session.add(
+            StrategyRunRow(
+                id=f"run-double-{index}",
+                strategy_id="strategy-double-run",
+                action="hold",
+                reason="ORDER_REJECTED",
+                inputs={},
+                order_id="strategy-order-double",
+            )
+        )
+    session.commit()
+
+    report = reconciliation(session)
+
+    assert _checks(report)["strategy.runs_linked"]["ok"] is True
+
+
+def test_a_deleted_strategys_order_is_not_reported(session: Session, settings) -> None:
+    """ADR-0022 removes the decision log with the strategy, so its orders are exempt."""
+    paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+    session.add(
+        PaperOrderRow(
+            id="strategy-order-deleted",
+            idempotency_key="strategy-deleted-1",
+            chain=CHAIN,
+            token_address=TOKEN,
+            side="buy",
+            amount_usd=Decimal("10"),
+            status="pending",
+            strategy_id="strategy-gone",
+        )
+    )
+    session.commit()
+
+    report = reconciliation(session)
+
+    assert _checks(report)["strategy.runs_linked"]["ok"] is True

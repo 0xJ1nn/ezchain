@@ -350,7 +350,21 @@ class StrategyRow(Base):
 
 
 class StrategyRunRow(Base):
+    """One decision record. At most one row may claim a strategy's decision window.
+
+    ``decision_window`` names the interval bucket a row decided in, and the unique
+    ``(strategy_id, decision_window)`` pair is what makes the append-only log the decision
+    claim itself: two evaluators that both passed the interval gate race on this insert,
+    and the loser returns the winner's row instead of logging a second decision for one
+    window. A row that does not consume the window (interval not elapsed, a fail-closed
+    hold) leaves it NULL, and NULLs never collide, so a retry inside the window stays
+    possible.
+    """
+
     __tablename__ = "strategy_runs"
+    __table_args__ = (
+        UniqueConstraint("strategy_id", "decision_window", name="uq_strategy_run_window"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id"), index=True)
@@ -358,6 +372,9 @@ class StrategyRunRow(Base):
     reason: Mapped[str] = mapped_column(String(64))
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Same interval bucket the order idempotency key names, so a run row and the order it
+    # produced describe the same window in the same spelling.
+    decision_window: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 

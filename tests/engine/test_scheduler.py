@@ -21,6 +21,7 @@ from ezchain_engine import (
     KillSwitchExecutor,
     OrderRejected,
     StrategyScheduler,
+    decision_window,
     evaluate_strategy,
     idempotency_key,
     position_state,
@@ -163,6 +164,73 @@ async def test_one_decision_per_interval(
     assert allowed.action == "buy"
     assert len(executor.requests) == 2
     assert len(runs_for(session_factory, strategy_id)) == 3
+
+
+async def test_a_run_that_does_not_consume_the_window_leaves_it_open(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    """Only the decision that consumes the interval claims ``decision_window``.
+
+    The window is the claim, so a row that consumed nothing must leave it NULL: an
+    interval that has not elapsed, or a market read that failed closed, is retryable
+    inside the same window and two of them never collide (CONTRACT I3, I9).
+    """
+    strategy_id = add_strategy(params={"interval_minutes": 60})
+    executor = FakeExecutor(order_id="ord-window")
+    first = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+
+    await run_once(session_factory, strategy_id, FakeSource(), executor, now=first)
+    blocked = await run_once(
+        session_factory, strategy_id, FakeSource(), executor, now=first + timedelta(minutes=5)
+    )
+    failed = await run_once(
+        session_factory,
+        strategy_id,
+        FakeSource(error=RuntimeError("429")),
+        executor,
+        now=first + timedelta(minutes=60),
+    )
+
+    assert blocked.reason == "INTERVAL_NOT_ELAPSED"
+    assert failed.reason == "MARKET_DATA_UNAVAILABLE"
+    rows = runs_for(session_factory, strategy_id)
+    assert [row.action for row in rows] == ["buy", "hold", "hold"]
+    assert rows[0].decision_window == decision_window(strategy_id, first, 60)
+    assert rows[1].decision_window is None
+    assert rows[2].decision_window is None
+
+
+async def test_a_forced_run_inside_a_decided_window_reports_that_decision(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    """A wait consumes the window, so an owner's manual run reports it instead of repeating.
+
+    The wait is the window's decision: two evaluations of one window (a tick and a manual
+    run, or two ticks that both cleared the gate) must leave one row and place one order.
+    """
+    strategy_id = add_strategy(params={"interval_minutes": 60})
+    executor = FakeExecutor(order_id="ord-wait")
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
+    source = FakeSource(make_snapshot(change_h1="1"))
+
+    with session_factory() as session:
+        strategy = session.get(StrategyRow, strategy_id)
+        assert strategy is not None
+        first = await evaluate_strategy(session, strategy, source, executor, now=now)
+    with session_factory() as session:
+        strategy = session.get(StrategyRow, strategy_id)
+        assert strategy is not None
+        again = await evaluate_strategy(
+            session, strategy, source, executor, now=now + timedelta(minutes=1), force=True
+        )
+
+    assert first.action == again.action == "hold"
+    assert first.reason == "MOMENTUM_WAIT"
+    assert first.run_id == again.run_id
+    assert executor.requests == []
+    rows = runs_for(session_factory, strategy_id)
+    assert len(rows) == 1
+    assert rows[0].decision_window == decision_window(strategy_id, now, 60)
 
 
 async def test_paused_strategy_skips_fetch_and_execution(
