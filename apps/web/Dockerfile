@@ -7,7 +7,14 @@
 # The API base and bearer token are runtime-only. Server components and the
 # /api/[...path] route handler read them from the container environment.
 
-FROM node:22-alpine AS base
+# Base image pinned by manifest-list digest, resolved 2026-11-14.
+#   node:22-alpine -> sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+# The digest is the multi-arch index, so the same line resolves to the right child on
+# amd64, arm64 and the rest. `:22-alpine` is kept in the reference because it is the tag a
+# human reads to update it; Docker builds the digest, never the tag. To move it:
+#   docker buildx imagetools inspect node:22-alpine   # take the top-level Digest
+# then change the digest below and this comment together, in one commit.
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS base
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     PNPM_HOME=/pnpm \
@@ -36,7 +43,8 @@ COPY packages/ui ./packages/ui
 
 RUN pnpm --filter @ezchain/web build
 
-FROM node:22-alpine AS runtime
+# Same base, same digest as `base` above; keep the two in step.
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS runtime
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
