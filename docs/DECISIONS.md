@@ -1171,3 +1171,118 @@ strategy's creator — not to `workspace_id`, so one user's `full_auto` cannot a
 another user's agent orders. A stored `full_auto` whose consent record is missing refuses
 `AUTOMATION_CONSENT_REQUIRED` instead of being read as `manual`, and an unreadable queue
 rolls its transaction back before the refusal is written.
+
+---
+
+## ADR-0042 — The built-in agent runtime is its own service that speaks only MCP
+
+**Status:** accepted 2026-11-14.
+
+**Context:** the agent surface today is the MCP server in `apps/mcp`; the process that calls
+it belongs to the user. The product's own agent is the next piece to build — one loop, a
+model, the platform's tools, a panel and a headless command — and an owner may instead bring
+an external agent over the Agent Client Protocol, a path that is planned and not built. All
+of that is untrusted code driving money-adjacent tools: a model turns market text and tool
+output into the next call, so its input is attacker-influenced by construction. Hosting that
+loop inside the API or the engine, or letting it open the database, would put model output
+next to the ledger, the keys and the admin surface. The other side of the boundary is
+already decided: custody is the user's (ADR-0040), automation is a per-user
+`manual`/`full_auto` choice (ADR-0041), and the platform has one execution path (invariant
+I2).
+
+**Options:** (a) host the loop inside `apps/api` or `services/engine`, beside the order
+service and the database; (b) a separate `services/agent-runtime` whose only egress is a
+child `ezchain-mcp` process holding a scoped `read`/`trade` key; (c) ship no built-in
+runtime and support external harnesses only; (d) a separate runtime with a direct API client,
+its own database reads and its own view of the ledger.
+
+**Decision:** (b). The built-in runtime is its own service. It owns the loop, the model
+clients, the budgets (turns, tokens and cost per session and per day) and its own session
+trace; it owns nothing that moves money. Its only path to ezCHAIN is the MCP server over
+stdio, with a scoped agent key minted for the session's owner. It has no REST client of its
+own, no database connection, no message-bus client, and no shared process or filesystem with
+the API, engine, executor or ingest. The external-agent path from option (c) remains
+available through the same seam: an external agent is a different process implementing the
+same contract, with the same tools and the same approvals, so the boundary is not
+runtime-specific.
+
+**What the runtime is.** On the platform side its capabilities are exactly the paths a
+scoped agent key may drive: the `/api/v1/paper` order and approval routes, the strategy,
+run and backtest routes, the agent read models, and behind them the engine's strategy host
+and the executor's single `Intent → RiskDecision → Quote → Order → Fill → Journal` path. The
+runtime adds no capability; it composes those paths through MCP. A route with no MCP tool
+does not exist for it, and a new write tool widens the runtime's capability and is reviewed
+as such. The runtime is not the engine, not a strategy host and not a key holder.
+
+**Where agent code runs.** In the runtime, only the loop, the model clients, the budgets and
+the trace. No strategy code runs there: a strategy is an external SDK package (invariant I5)
+loaded by the engine's supervised worker, and the runtime can only ask the platform to
+create, change or run a strategy record the platform validates. The model receives exactly
+the MCP tools for the key's scope — no shell, URL fetch, filesystem, subprocess or generic
+code execution. The runtime never loads a user-supplied executable into its own process.
+
+**What an agent may and may not do.** The key is `read` plus `trade`, never `admin` and never
+the deployment token.
+
+| May | May not |
+|---|---|
+| Read state, markets, account, positions, orders, fills, ledger, reconciliation, strategies, plugins, backtests and readiness | Place a live order, choose an execution mode or reach the executor |
+| Propose a paper order, create, change or delete a strategy record (`trade` scope; `ezchain_delete_strategy` is destructive and keeps order history), pause or resume a strategy, run a strategy or backtest | Approve or reject its own proposal, change the automation tier or supply the consent |
+| Read the approval queue and its own tier | Arm or release the kill switch, reload plugins, mint or revoke keys |
+| — | Read or write key material, the vault or a key handle |
+
+Under `manual` (the default) an agent order is stored as `pending_approval` and nothing is
+journaled; only a person decides, and an agent that tries gets `APPROVAL_REQUIRES_PERSON`
+(ADR-0041). Under `full_auto` the user's recorded consent authorises the fill, and the
+runtime still cannot turn the tier up. An armed kill switch refuses the next entry at
+`place_order` (ADR-0034), so a session stops on the refusal; it cannot route around the
+switch.
+
+**The trust boundary.** The runtime never sees a wallet key, seed, passphrase, `KeyHandle` or
+the vault. A paper order needs no signature; when the executor's live path exists, the vault
+signs one prepared transaction for the owner's handle after the approval digest check
+(ADR-0038, ADR-0040), and the runtime receives the order, fill and ledger outcome, never the
+bytes or the key. There is no tool that signs or exports anything. An order placed through
+the runtime is `agent`, addressed by the key id (ADR-0037); no route accepts an actor field,
+so the runtime cannot claim an identity.
+
+Model-provider credentials are the runtime's alone: read from its own environment at start,
+never stored in the platform, the vault, the MCP server, a trace, a log line or the browser,
+and a missing one stops the runtime at boot. Venue, chain and market-data credentials are the
+platform's: they live in the operator's encrypted provider-key store (ADR-0033) or the
+executor, and the runtime holds none. The one platform credential the runtime holds is the
+scoped agent key — an API bearer token, not a signing key — and it never enters a prompt, a
+tool argument, the trace or the model context.
+
+**The audit trail.** The runtime will write one append-only trace per session in its own
+store, never in the platform database: session, step, prompt hash, model id, tool, arguments,
+result summary, latency, tokens, cost and approval id, redacted on write and replayable
+against the recorded results. That store belongs to a service that is decided, not built: the
+runtime-side audit log is planned, not built, and the platform holds no trace today. The
+platform keeps the money record it already had: the order row and every journal leg carry
+the agent principal (ADR-0037); `order_approvals` carries the server's own risk evidence and
+`decided_by`; the executor's pipeline decodes the transaction bytes and compares every bound
+field with the approved intent and its digest before any signer is called (ADR-0038).
+**Attribution of switch changes — not yet implemented.** The kill-switch row stores only its
+active flag, reason and update time, and `set_kill_switch` takes no principal, so who armed
+it is a required future capability. The two records join on approval id, order id and the
+acting key id, and neither substitutes for the other. Every money number an answer states is
+read from a tool result, never computed by the model.
+
+**Consequences:** a compromised runtime costs a read/trade key, not the platform. It cannot
+write the database, hold admin or sign, and under `manual` it cannot turn a proposal into a
+fill — there the person's decision is the authority, and under `full_auto` the user's prior
+consent is, never the runtime's. Revocation is immediate and the kill switch still refuses
+entries. The runtime is not a system of record: its trace explains a session, the ledger
+explains the money. The MCP tool surface becomes the runtime's security boundary, so write
+tools and their annotations are reviewed with that in mind and no admin tool is ever added.
+The runtime must mint one key per session owner rather than share a key, and an unreachable
+MCP server fails closed — there is no fallback direct-API path. The import boundary is
+documented: `services/agent-runtime` must import no `ezchain_core`, `ezchain_api`,
+`ezchain_engine` or `ezchain_executor`, and nothing else under `services/` may import it. Its
+mechanical enforcement — an import-linter contract and service isolation — is planned work;
+neither the service nor the lint configuration exists yet, so the boundary is held by review
+until both land. Provider-credential rotation is the runtime operator's job, not the
+platform's. A panel and a headless command are two entry points to the same loop and the
+same approval path, and the BYO-agent adapter inherits this boundary rather than defining a
+second one.
