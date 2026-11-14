@@ -59,6 +59,97 @@ test("dashboard renders from fixtures with no external requests", async ({ page 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
+// The card used to read "Risk OPEN" from the strategy-level switch, which reads as "all
+// new risk is allowed" while the /risk page says exits still settle and manual orders are
+// a separate concern. The card must name the switch, both levels the flag governs, and say
+// what each gates — the levels coming from the API's own `scopes` list.
+test("the kill switch card names the switch and both of its levels", async ({ page }) => {
+	test.skip(live, fixtureOnly);
+	await page.goto("/");
+
+	const card = page.getByTestId("dashboard-kill-switch");
+	await expect(card).toBeVisible();
+	await expect(card.getByText("RELEASED", { exact: true })).toBeVisible();
+	await expect(card).toContainText("Kill switch");
+	// "Risk" is the whole picture, not this switch: the KPI band carries no such verdict.
+	const labels = await page
+		.locator('section.kpi-band[aria-label="Paper account"] .stat .label')
+		.allTextContents();
+	expect(labels.map((label) => label.trim())).not.toContain("Risk");
+	expect(labels.map((label) => label.trim())).toContain("Kill switch");
+	// The band names the switch state, never a deployment-wide "HALTED"/"OPEN" verdict.
+	const band = page.locator('section.kpi-band[aria-label="Paper account"]');
+	await expect(band.getByText("HALTED", { exact: true })).toHaveCount(0);
+	await expect(band.getByText("OPEN", { exact: true })).toHaveCount(0);
+	await expect(
+		band.locator(".stat").filter({ hasText: /^Kill switch/ }).locator(".value"),
+	).toHaveText("RELEASED");
+
+	// One persisted flag, two levels, each with the API's own name and what it gates.
+	await expect(card).toContainText("global and strategy levels");
+	const global = card.getByTestId("kill-switch-level-global");
+	await expect(global).toContainText("Global");
+	await expect(global).toContainText("every new entry");
+	await expect(global.getByText("OPEN", { exact: true })).toBeVisible();
+	const strategy = card.getByTestId("kill-switch-level-strategy");
+	await expect(strategy).toContainText("Strategy");
+	await expect(strategy).toContainText("KILL_SWITCH_ACTIVE");
+	await expect(strategy.getByText("OPEN", { exact: true })).toBeVisible();
+
+	// A manual paper order is an entry, so it is refused while armed. The card says so and
+	// links to the page that spells out what the switch does not do.
+	await expect(card).toContainText("Manual paper orders are entries");
+	await expect(card.getByRole("link", { name: /What it does not do/ })).toHaveAttribute(
+		"href",
+		"/risk",
+	);
+});
+
+// Arming from any control must move the card, and an armed switch is not "all risk
+// allowed": both levels read BLOCKS while the card keeps its manual-order caveat.
+test("an armed switch blocks both levels and keeps the manual-order caveat", async ({ page }) => {
+	test.skip(live, fixtureOnly);
+	await page.route("**/api/v1/system/kill-switch", async (route) => {
+		if (route.request().method() !== "POST") {
+			await route.continue();
+			return;
+		}
+		const body = route.request().postDataJSON() as { active: boolean; reason: string };
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				active: body.active,
+				reason: body.reason,
+				updated_at: "2026-11-13T12:09:00Z",
+				scope: "global",
+				scopes: ["global", "strategy"],
+			}),
+		});
+	});
+
+	await page.goto("/");
+	const card = page.getByTestId("dashboard-kill-switch");
+	await expect(card.getByText("RELEASED", { exact: true })).toBeVisible();
+
+	const control = page.locator(".topbar").getByRole("button", { name: /Kill switch:/ });
+	await control.click();
+	const dialog = page.getByRole("dialog", { name: "Arm the kill switch?" });
+	await dialog.getByLabel("Reason for the operator log").fill("e2e: risk card scope");
+	await dialog.getByRole("button", { name: "Confirm arm" }).click();
+
+	await expect(card.getByText("ARMED", { exact: true })).toBeVisible();
+	for (const level of ["global", "strategy"]) {
+		const row = card.getByTestId(`kill-switch-level-${level}`);
+		await expect(row.getByText("BLOCKS", { exact: true })).toBeVisible();
+		await expect(row.getByText("OPEN", { exact: true })).toHaveCount(0);
+	}
+	// Armed does not mean exits are blocked, and the card keeps saying so.
+	await expect(card).toContainText("exits, stops and reduce-only sells still settle");
+	await expect(card).toContainText("Manual paper orders are entries");
+	await expect(page.getByText("HALTED", { exact: true })).toHaveCount(0);
+});
+
 test("dashboard renders a complete server composition with shares", async ({ page }) => {
 	await page.goto("/?state=complete");
 

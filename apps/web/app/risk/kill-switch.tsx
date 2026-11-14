@@ -29,6 +29,15 @@ function useKillSwitchEvents(apply: KillSwitchListener) {
 	}, [apply]);
 }
 
+// Any surface that shows the switch reads it this way: the server snapshot is the first
+// paint, and a mutation from any control publishes its response here. The dashboard card
+// uses it so it cannot show an armed switch released after the topbar arms it.
+export function useKillSwitchState(initial: KillSwitchState | null) {
+	const [state, setState] = useState<KillSwitchState | null>(initial);
+	useKillSwitchEvents(setState);
+	return state;
+}
+
 export function KillSwitchControl({
 	initial,
 	initialError,

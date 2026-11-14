@@ -9,6 +9,7 @@ import {
 	getPaperOrders,
 } from "@/lib/account-api";
 import { asApiError, getChains, getLaunches, getMarkets, LAUNCH_WINDOW_MINUTES } from "@/lib/api";
+import { killSwitchLevels, killSwitchScopeSummary } from "@/lib/kill-switch-copy";
 import {
 	getExecutionMode,
 	type ExecutionMode,
@@ -33,9 +34,11 @@ import {
 	fixturePaperAccountMany,
 	fixturePaperAccountSingle,
 	fixturePaperAccountUnpricedSource,
+	getKillSwitch,
 	getPaperSnapshot,
 	getStrategies,
 } from "@/lib/paper-api";
+import { DashboardKillSwitchCard } from "./kill-switch-card";
 
 type Failure = {
 	ok: false;
@@ -114,6 +117,7 @@ export default async function DashboardPage({
 		orders,
 		overview,
 		executionMode,
+		killSwitchResult,
 	] = await Promise.all([
 			getPaperSnapshot(),
 			getStrategies(),
@@ -131,6 +135,7 @@ export default async function DashboardPage({
 			getPaperOrders(5),
 			getMarketOverview(),
 			getExecutionMode(),
+			getKillSwitch(),
 		]);
 
 	const live = snapshot.mode === "live";
@@ -169,7 +174,18 @@ export default async function DashboardPage({
 	const orderRows = orders.ok ? orders.data : [];
 	const chainTotal = overview.ok ? overview.data.totals.chains : chainRows.length;
 	const chainCovered = overview.ok ? overview.data.totals.covered : null;
-	const killSwitch = limitRows?.kill_switch.active ?? false;
+	// The switch is read on its own so the card keeps the API's level list even when the
+	// limits read fails; the fixture build answers a released state, never a guess.
+	const killSwitch = killSwitchResult.ok ? killSwitchResult.data : null;
+	const killSwitchError = killSwitchResult.ok ? null : killSwitchResult.error.message;
+	// The levels come from the response. An empty list stays empty so the copy says the
+	// read did not report them instead of printing a dangling plural.
+	const killSwitchScope = killSwitch ? killSwitchScopeSummary(killSwitch.scopes) : null;
+	const killSwitchMeta = killSwitch
+		? killSwitchLevels(killSwitch.scopes).length > 0
+			? `${killSwitchScope} levels`
+			: killSwitchScope
+		: "switch state unavailable";
 
 	return (
 		<AppShell active="dashboard">
@@ -394,10 +410,15 @@ export default async function DashboardPage({
 					}
 				/>
 				<Stat
-					label="Risk"
-					value={killSwitch ? "HALTED" : limitRows ? "OPEN" : "—"}
-					tone={killSwitch ? "err" : "ok"}
-					meta={limitRows ? "kill switch · global and strategy scope" : "limits unavailable"}
+					label="Kill switch"
+					value={killSwitch ? (killSwitch.active ? "ARMED" : "RELEASED") : "—"}
+					tone={killSwitch?.active ? "err" : "ok"}
+					meta={killSwitchMeta}
+					title={
+						killSwitch
+							? `Persisted operator switch · ${killSwitchScope}. It halts new entries; it does not sell or close a position.`
+							: `Kill switch unavailable · ${killSwitchError ?? "the API did not return it"}`
+					}
 				/>
 				<Stat
 					label="Mode"
@@ -701,14 +722,14 @@ export default async function DashboardPage({
 
 				<div className="stack">
 					<Panel
-						title="Risk"
+						title="Server limits"
 						sub={
-							limitRows ? `server limits${modeNote(executionMode)}` : "limits unavailable"
+							limitRows ? `configured${modeNote(executionMode)}` : "limits unavailable"
 						}
 						action={<><SectionBadge mode={executionMode} /><ButtonLink href="/risk" size="sm">Risk</ButtonLink></>}
 					>
 						{!limits.ok ? (
-							<div className="panel-body">{failure(limits)}</div>
+							failure(limits)
 						) : limitRows ? (
 							<div className="stack-sm">
 								<div className="between small"><span>Max order</span><span className="mono">{formatUsd(limitRows.max_order_usd)}</span></div>
@@ -716,17 +737,16 @@ export default async function DashboardPage({
 								<div className="between small"><span>Max open positions</span><span className="mono">{limitRows.max_open_positions}</span></div>
 								<div className="between small"><span>Daily loss cap</span><span className="mono">{formatUsd(limitRows.max_daily_loss_usd)}</span></div>
 								<div className="between small"><span>Paper fee</span><span className="mono">{limitRows.paper_fee_bps} bps</span></div>
-								<div className="hr" />
-								<div className="list-row">
-									<Badge tone={killSwitch ? "err" : "ok"}>{killSwitch ? "ARMED" : "OFF"}</Badge>
-									<span className="grow">
-										<span className="title">Kill switch</span>
-										<span className="sub">strategy-originated execution</span>
-									</span>
-									<ButtonLink href="/risk" size="sm">Open</ButtonLink>
-								</div>
 							</div>
 						) : null}
+					</Panel>
+
+					<Panel
+						title="Kill switch"
+						sub="one persisted flag · two levels"
+						action={<ButtonLink href="/risk" size="sm">Risk</ButtonLink>}
+					>
+						<DashboardKillSwitchCard initial={killSwitch} initialError={killSwitchError} />
 					</Panel>
 
 					<Panel

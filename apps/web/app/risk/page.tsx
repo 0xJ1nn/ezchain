@@ -5,6 +5,12 @@ import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
 import { getPaperLimits } from "@/lib/account-api";
 import { formatUsd, formatUsdPrice, quoteKindLabel, shortAddress } from "@/lib/live-format";
 import {
+	KILL_SWITCH_LEVELS,
+	KILL_SWITCH_LEVEL_ORDER,
+	KILL_SWITCH_MANUAL_ORDER_NOTE,
+	killSwitchScopeSummary,
+} from "@/lib/kill-switch-copy";
+import {
 	getKillSwitch,
 	getPaperOrders,
 	getPaperSnapshot,
@@ -115,17 +121,25 @@ export default async function RiskPage() {
 				<div className="hr" />
 				<div className="grid cols-2">
 					<div className="note">
-						<strong>What arming does:</strong> every new risk-increasing order is rejected
-						before a quote, whoever places it, with reason{" "}
-						<span className="mono">KILL_SWITCH_ARMED</span>. Strategy-attributed intents are
-						also held by the engine with <span className="mono">KILL_SWITCH_ACTIVE</span>. The
-						state is persisted in the API database and survives a restart.
+						<strong>What arming does.</strong> One persisted flag governs these levels (
+						<span className="mono">{killSwitchScopeSummary(killSwitch?.scopes)}</span>):
+						<ul className="small mt-8" style={{ paddingLeft: 18 }}>
+							{KILL_SWITCH_LEVEL_ORDER.map((level) => (
+								<li key={level}>
+									<span className="strong">{KILL_SWITCH_LEVELS[level].label}</span> —{" "}
+									{KILL_SWITCH_LEVELS[level].gates}
+								</li>
+							))}
+						</ul>
+						The refusal code on a rejected order is{" "}
+						<span className="mono">KILL_SWITCH_ARMED</span>; the engine&apos;s own hold is{" "}
+						<span className="mono">KILL_SWITCH_ACTIVE</span>. The state is persisted in the API
+						database and survives a restart.
 					</div>
 					<div className="note warn">
-						<strong>What it does not do:</strong> it does not sell, close or mark a position.
+						<strong>What it does not do.</strong> It does not sell, close or mark a position.
 						Exits, stops and reduce-only sells still settle, because blocking them would trap
-						funds. Scope is <span className="mono">global</span> and{" "}
-						<span className="mono">strategy</span>.
+						funds. {KILL_SWITCH_MANUAL_ORDER_NOTE}
 					</div>
 				</div>
 				{mode === "fixture" && (
