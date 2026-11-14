@@ -27,9 +27,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import (
-    BUCKET_CAP_INVALID,
-    BUCKET_REQUIRES_PERSON,
-    BUCKET_UNREADABLE,
+    AGENT_BUCKET_CAP_INVALID,
+    AGENT_BUCKET_REQUIRES_PERSON,
+    AGENT_BUCKET_UNKNOWN,
+    AGENT_BUCKET_UNREADABLE,
     BucketState,
     bucket_state,
     check_bucket,
@@ -60,21 +61,28 @@ class BucketRequiresPerson(BucketError):
     status_code = 403
 
     def __init__(self, message: str = "only the agent's owner may set its bucket cap") -> None:
-        super().__init__(BUCKET_REQUIRES_PERSON, message, 403)
+        super().__init__(AGENT_BUCKET_REQUIRES_PERSON, message, 403)
 
 
 class BucketCapInvalid(BucketError):
     status_code = 422
 
     def __init__(self, message: str = "an agent's bucket cap must be zero or greater") -> None:
-        super().__init__(BUCKET_CAP_INVALID, message, 422)
+        super().__init__(AGENT_BUCKET_CAP_INVALID, message, 422)
 
 
 class BucketUnreadable(BucketError):
     status_code = 409
 
     def __init__(self, message: str = "the agent bucket could not be read") -> None:
-        super().__init__(BUCKET_UNREADABLE, message, 409)
+        super().__init__(AGENT_BUCKET_UNREADABLE, message, 409)
+
+
+class BucketAgentUnknown(BucketError):
+    status_code = 404
+
+    def __init__(self, message: str = "no such agent key") -> None:
+        super().__init__(AGENT_BUCKET_UNKNOWN, message, 404)
 
 
 def agent_bucket_key(session: Session, actor: OrderActor) -> str | None:
@@ -153,7 +161,7 @@ def check(
     except Exception:  # noqa: BLE001 - an unreadable bucket must refuse the entry
         # The persisted refusal names the agent, never the driver's own message: an order
         # row is read by the UI and the CSV export, and a database error can carry a DSN.
-        return RiskReason(BUCKET_UNREADABLE, detail={"agent_id": agent_id})
+        return RiskReason(AGENT_BUCKET_UNREADABLE, detail={"agent_id": agent_id})
     return check_bucket(state, requested_usd, fee_usd=fee_usd)
 
 
@@ -167,10 +175,11 @@ def set_cap(
 ) -> dict[str, Any]:
     """Set an agent's cap. Only the owning person may, and nothing is written on refusal.
 
-    Ownership comes from the agent key when it exists, so one user cannot move another
-    user's money boundary. When no key row exists yet (the owner provisions a cap before
-    minting the key), the first setting person becomes the owner and a later change must
-    come from that same user.
+    The agent must already exist: its ``api_keys`` row is what names the owner, so a cap is
+    only ever set on a minted key. Accepting an id with no key would let any person write a
+    cap — a zero one included — against a key that does not exist yet, and refuse the real
+    owner once it is minted. The owner is therefore read from the key, never inferred from
+    whoever asked first.
     """
     if actor.kind != ACTOR_HUMAN:
         raise BucketRequiresPerson()
@@ -184,8 +193,10 @@ def set_cap(
         raise BucketRequiresPerson()
 
     key = session.get(ApiKeyRow, agent_id)
+    if key is None:
+        raise BucketAgentUnknown()
     row = session.get(AgentBucketRow, agent_id)
-    if key is not None and key.subject != person:
+    if key.subject != person:
         raise BucketRequiresPerson("only the agent's owner may set its bucket cap")
     if row is not None and row.owner != person:
         raise BucketRequiresPerson("only the agent's owner may set its bucket cap")
@@ -224,6 +235,7 @@ def _iso(value: datetime | None) -> str | None:
 
 
 __all__ = [
+    "BucketAgentUnknown",
     "BucketCapInvalid",
     "BucketError",
     "BucketRequiresPerson",

@@ -203,3 +203,45 @@ def test_an_unknown_agent_has_no_bucket(
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "AGENT_BUCKET_UNKNOWN"
+
+
+def test_a_cap_cannot_be_pre_set_on_an_unminted_key(
+    authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
+) -> None:
+    """No key row means no cap: nobody can fence off a key before its owner mints it."""
+    client = _client(authed_settings, session, key_factory)
+
+    response = client.put(
+        "/api/v1/agent/buckets/not-minted-yet",
+        json={"cap_usd": "0"},
+        headers=_bearer(DEPLOYMENT),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "AGENT_BUCKET_UNKNOWN"
+    assert session.get(AgentBucketRow, "not-minted-yet") is None
+
+
+def test_an_unreadable_list_refusal_never_echoes_the_driver_message(
+    authed_settings: Settings,
+    session: Session,
+    key_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed read is a typed 409 whose message names no connection string."""
+    key_id, _ = _agent_token(key_factory)
+    client = _client(authed_settings, session, key_factory)
+
+    def explode(_session: Session) -> Any:
+        raise RuntimeError("could not connect: postgresql://alice:hunter2@db.internal:5432/ezchain")
+
+    monkeypatch.setattr(buckets_router.paper, "ledger_rows", explode)
+
+    response = client.get("/api/v1/agent/buckets", headers=_bearer(DEPLOYMENT))
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "AGENT_BUCKET_UNREADABLE"
+    assert "postgresql://" not in detail["message"]
+    assert "hunter2" not in detail["message"]
+    assert key_id not in response.text

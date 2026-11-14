@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 259 codes across 17 categories, 6 layers.
+**Scale:** 264 codes across 17 categories, 6 layers.
 
 ---
 
@@ -93,7 +93,7 @@ or a process-local refusal).
 | `INVALID_FILTER` | api | 422 | no | warning | A query filter is not a valid value for its field. |
 | `INVALID_PRECONDITION` | api | 400 | no | warning | The If-Match header is not an integer arm version. |
 
-### Risk gate and order refusals (33)
+### Risk gate and order refusals (37)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -130,6 +130,11 @@ or a process-local refusal).
 | `PROFILE_UNKNOWN` | api | — | no | warning | The requested risk profile is not allowed for this account. |
 | `WALLET_UNKNOWN` | api | — | no | warning | No paper wallet settles this chain. |
 | `SETTLEMENT_ASSET_UNKNOWN` | api | — | no | warning | The paper wallet does not settle in the ledger asset. |
+| `AGENT_BUCKET_EXCEEDED` | api | 409 | no | warning | The entry would take the agent's net cash deployment past its cap. |
+| `AGENT_BUCKET_UNREADABLE` | api | 409 | no | critical | The cap or the journal could not be read, so the cap is unknown. |
+| `AGENT_BUCKET_UNKNOWN` | api | 404 | no | info | The agent has no bucket cap row; no cap was ever set for it. |
+| `AGENT_BUCKET_REQUIRES_PERSON` | api | 403 | no | warning | An agent principal tried to set a bucket cap. |
+| `AGENT_BUCKET_CAP_INVALID` | api | 422 | no | warning | The cap is negative or larger than the absolute maximum. |
 
 ### Market data, quotes and routes (6)
 
@@ -418,6 +423,7 @@ A code never invents a state; it explains the transition that occurred.
 | `Intent` → `denied` (risk) | every `risk` category code, `MISSING_RISK_INPUTS`, `RISK_DENIED` | The order row is still persisted with `status: "rejected"`; the attempt is replayable. |
 | `Intent` → `expired` (quote) | `QUOTE_STALE`, `NO_QUOTE`, `QUOTE_TIMEOUT`, `SNAPSHOT_STALE`, `MARKET_DATA_UNAVAILABLE` | No order was submitted; nothing is booked. |
 | `Intent` → `rejected` (identity/divergence) | `SIGNING_BOUNDARY_REQUIRED`, every `TRANSACTION_*`, `CUSTODY_OWNER_MISMATCH`, `VAULT_*`, `AUTOMATION_CONSENT_REQUIRED` | No signature, no submission. Real money fails closed. |
+| `Order` → `rejected` (bucket) | `AGENT_BUCKET_EXCEEDED`, `AGENT_BUCKET_UNREADABLE` | Entry refused before a quote; an exit is never refused by a cap. |
 | `quoting` → `expired` (no route) | `NO_ROUTE`, `NO_SELL_ROUTE`, `EXIT_NO_ROUTE` | A `Position` with a held token and no route is `unsellable`, never `closed`. |
 | `submitting` → `failed` (broadcast) | `VENUE_ERROR`, `VENUE_REJECTED`, `TIMEOUT`, `QUOTE_SIZE_MISMATCH` | No fill. The journal writes nothing. |
 | `submitted` → `filled` / `partially_filled` | `UNBOOKABLE_RECEIPT`, `RECEIPT_EXCEEDS_ORDER` on failure; no code on success | A receipt that cannot be booked is a failure, never a zero fill. |

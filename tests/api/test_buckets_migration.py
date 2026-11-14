@@ -103,18 +103,33 @@ def test_the_upgrade_keeps_existing_cash_unchanged(tmp_path: Path) -> None:
 
 
 def test_a_cap_row_round_trips_an_exact_decimal(tmp_path: Path) -> None:
-    """SQLite stores money as TEXT, so the cap keeps every digit it was given."""
+    """SQLite stores money as TEXT, so the cap keeps every digit it was given.
+
+    The value has 18 significant digits on purpose. ``NUMERIC`` on SQLite is ``REAL``, a
+    binary float: it would store ``999999999.12345678`` as ``999999999.1234568``, so this
+    assertion fails outright if the column is not the exact-money variant.
+    """
+    cap = Decimal("999999999.12345678")
     engine, config = _at_0022(tmp_path, "cap_roundtrip.db")
     command.upgrade(config, "head")
     try:
+        declared = {
+            column["name"]: str(column["type"])
+            for column in inspect(engine).get_columns("agent_buckets")
+        }
+        assert declared["cap_usd"].upper() == "TEXT"
         with Session(engine) as session:
-            session.add(
-                AgentBucketRow(agent_id="key-1", owner="alice", cap_usd=Decimal("1234.56789012"))
-            )
+            session.add(AgentBucketRow(agent_id="key-1", owner="alice", cap_usd=cap))
             session.commit()
             stored = session.get(AgentBucketRow, "key-1")
             assert stored is not None
-            assert Decimal(str(stored.cap_usd)) == Decimal("1234.56789012")
+            assert Decimal(str(stored.cap_usd)) == cap
+        # Read the raw column too, so an ORM-side conversion cannot mask a lossy store.
+        with engine.connect() as connection:
+            raw = connection.execute(
+                text("SELECT cap_usd FROM agent_buckets WHERE agent_id = 'key-1'")
+            ).scalar_one()
+        assert Decimal(str(raw)) == cap
     finally:
         engine.dispose()
 

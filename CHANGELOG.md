@@ -36,7 +36,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   stops new buys and never refuses a sell, because a cap may not trap a position — the exit
   returns cash and brings the deployment back inside it. The fill fee counts as deployment.
   An agent-created strategy resolves to its creator's bucket, so wrapping automation in a
-  strategy does not escape the cap; a person's order draws from no bucket. An agent with no
+  strategy does not escape the cap; a person's order draws from no bucket. A cash leg is
+  attributed to the bucket that **owns the position it settles**, never to whoever placed
+  the order: a person closing an agent's position returns the agent's cash, and an agent
+  selling a position no bucket owns is credited nothing. An agent with no
   cap has no bucket limit, which is the unchanged behaviour. Only a person, and only the
   agent's own owner, may set a cap — an agent key is `403 AGENT_BUCKET_REQUIRES_PERSON` —
   and an unreadable bucket state refuses `AGENT_BUCKET_UNREADABLE` rather than reading as
@@ -44,6 +47,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   runs again. New routes: `GET /api/v1/agent/buckets`, `GET /api/v1/agent/buckets/{agent_id}`
   and `PUT /api/v1/agent/buckets/{agent_id}`. Migration `0024_agent_buckets` is additive,
   sitting on `0022_strategy_creator`; nothing is backfilled.
+  agent's own owner, may set a cap — an agent key is `403 AGENT_BUCKET_REQUIRES_PERSON`,
+  and a cap for an id with no minted key is `404 AGENT_BUCKET_UNKNOWN`, so nobody can
+  pre-set one — and an unreadable bucket state refuses `AGENT_BUCKET_UNREADABLE` rather than
+  reading as unlimited. Approval is not a bypass: approving re-enters `place_order`, so the
+  bucket gate runs again. New routes: `GET /api/v1/agent/buckets`,
+  `GET /api/v1/agent/buckets/{agent_id}` and `PUT /api/v1/agent/buckets/{agent_id}`.
+  Migration `0023_agent_buckets` is additive, sitting on `0022_strategy_creator`; nothing
+  is backfilled, and `cap_usd` keeps the exact-decimal type on both backends (`NUMERIC` on
+  Postgres, `TEXT` on SQLite, whose `NUMERIC` is a lossy `REAL`). Recorded as ADR-0044.
 - **A tested backup: scripted, idempotent, and restored with a measured recovery time
   (PAPER).** `python -m tools.ops` adds `backup`, `restore`, `verify`, `rehearse` and
   `drop`. A backup writes the `pg_dump` and a manifest that records the dump's SHA-256 plus

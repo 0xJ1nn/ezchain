@@ -15,14 +15,22 @@ from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from ezchain_api.actor import ACTOR_AGENT, ACTOR_HUMAN, OrderActor
-from ezchain_api.models import AgentBucketRow, Base, LedgerEntryRow, OrderApprovalRow, StrategyRow
+from ezchain_api.models import (
+    AgentBucketRow,
+    ApiKeyRow,
+    Base,
+    LedgerEntryRow,
+    OrderApprovalRow,
+    StrategyRow,
+)
 from ezchain_api.services import approvals, buckets, paper
 from ezchain_core.ledger import cash_account
 
 from .conftest import (
+    TOKEN,
     FakeDexScreener,
     FakeJupiter,
     make_request,
@@ -70,7 +78,22 @@ def full_auto(session: Session, settings: Any) -> None:
         )
 
 
+def _mint(session: Session, agent_id: str, subject: str) -> None:
+    """A cap may only be set for an agent that exists, so the key row comes first."""
+    if session.get(ApiKeyRow, agent_id) is None:
+        session.add(
+            ApiKeyRow(
+                id=agent_id,
+                subject=subject,
+                token_hash=f"hash-{agent_id}",
+                scopes=["trade"],
+            )
+        )
+        session.commit()
+
+
 def _cap(session: Session, actor: OrderActor, amount: str, person: OrderActor = ALICE) -> None:
+    _mint(session, actor.id or "", person.principal)
     buckets.set_cap(session, actor.id or "", Decimal(amount), actor=person)
 
 
@@ -615,3 +638,245 @@ def test_an_unreadable_bucket_refuses_a_buy_and_still_settles_a_sell(
     assert blocked.status == "rejected"
     assert blocked.reason == "AGENT_BUCKET_UNREADABLE"
     assert exited.status == "filled"
+
+
+# --- attribution follows the position, never the caller ---------------------
+
+
+def test_an_agent_selling_a_persons_position_gets_no_credit(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """The cap-escape probe: an agent cannot mint room by selling cash it never put up.
+
+    A person opens a $200 position; the agent (cap 100) sells all of it. Crediting the
+    agent's bucket with the proceeds would drive its deployment negative and let it buy
+    far more than the cap — so the exit of a position no bucket owns credits no bucket.
+    """
+    _mint(session, "key-agent-1", "alice")
+    _cap(session, AGENT, "100")
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    person = asyncio.run(
+        paper.place_order(
+            session,
+            make_request(amount_usd="200", key="foreign-open"),
+            settings,
+            dex,
+            make_router(dex, jupiter),
+            actor=ALICE,
+        )
+    )
+    assert person.status == "filled"
+    assert _deployed(session, "key-agent-1") == Decimal("0")
+
+    dex.set(make_snapshot(price=Decimal("4"), liquidity=Decimal("500000")))
+    sold = _place_agent(
+        session,
+        settings,
+        dex,
+        jupiter,
+        make_request(side="sell", amount_usd="500", reduce_only=True, key="foreign-exit"),
+    )
+
+    assert sold.status == "filled"
+    # The person's $400 of proceeds are not the agent's money: the bucket stays at zero
+    # and its room is exactly its cap, in whole dollars.
+    assert _deployed(session, "key-agent-1") == Decimal("0")
+    assert _bucket_legs(session, "key-agent-1") == []
+    assert buckets.cap_for(session, "key-agent-1") == Decimal("100")
+
+
+def test_a_person_exiting_an_agents_position_returns_the_agents_cash(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """A person closing an agent's position must credit the agent, or the cap traps it."""
+    _mint(session, "key-agent-1", "alice")
+    _cap(session, AGENT, "100")
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    _place_agent(session, settings, dex, jupiter, make_request(amount_usd="100", key="own-buy"))
+    assert _deployed(session, "key-agent-1") == Decimal("100")
+
+    dex.set(make_snapshot(price=Decimal("3"), liquidity=Decimal("500000")))
+    exited = asyncio.run(
+        paper.place_order(
+            session,
+            make_request(
+                side="sell",
+                amount_usd="100",
+                quantity="50",
+                reduce_only=True,
+                key="person-exit",
+            ),
+            settings,
+            dex,
+            make_router(dex, jupiter),
+            actor=ALICE,
+        )
+    )
+
+    assert exited.status == "filled"
+    # -100 deployed + 150 returned = the bucket is 50 in credit, and can re-enter.
+    assert _deployed(session, "key-agent-1") == Decimal("-50")
+    again = _place_agent(
+        session, settings, dex, jupiter, make_request(amount_usd="60", key="person-exit-re")
+    )
+    assert again.status == "filled"
+
+
+def test_a_protection_exit_with_no_actor_still_credits_the_positions_bucket(
+    session: Session, settings: Any, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """An armed protection exit carries no principal; the position still names the bucket."""
+    from ezchain_api.actor import UNKNOWN_ACTOR
+
+    _mint(session, "key-agent-1", "alice")
+    _cap(session, AGENT, "100")
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    _place_agent(session, settings, dex, jupiter, make_request(amount_usd="100", key="arm-buy"))
+
+    dex.set(make_snapshot(price=Decimal("3"), liquidity=Decimal("500000")))
+    armed = asyncio.run(
+        paper.place_order(
+            session,
+            make_request(
+                side="sell",
+                amount_usd="100",
+                quantity="50",
+                reduce_only=True,
+                key="arm-exit",
+            ),
+            settings,
+            dex,
+            make_router(dex, jupiter),
+            actor=UNKNOWN_ACTOR,
+        )
+    )
+
+    assert armed.status == "filled"
+    assert _deployed(session, "key-agent-1") == Decimal("-50")
+
+
+# --- the no-risk top-up is not the agent's own cash returning ----------------
+
+
+def test_a_no_risk_funding_leg_does_not_credit_the_bucket(
+    session: Session, dex: FakeDexScreener, jupiter: FakeJupiter
+) -> None:
+    """Funded cash is minted capital, so it must not shrink what the bucket deployed.
+
+    A positive cash leg attributed to the bucket lowers the deployment. With a $10
+    starting balance and a $90 buy, that would count only $10 of a $90 ticket — five $90
+    buys would fit a $100 cap. The bucket is charged the whole notional instead.
+    """
+    settings = make_settings(
+        paper_no_risk=True, paper_fee_bps=0, paper_starting_cash_usd=Decimal("10")
+    )
+    approvals.set_tier(
+        session, tier="full_auto", actor=ALICE, settings=settings, acknowledge_risk=True
+    )
+    _mint(session, "key-agent-1", "alice")
+    _cap(session, AGENT, "100")
+    dex.set(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+
+    filled = _place_agent(
+        session, settings, dex, jupiter, make_request(amount_usd="90", key="no-risk-1")
+    )
+    assert filled.status == "filled"
+    assert filled.reason == "SHORTFALL_FUNDED"
+    # $90 of notional deployed, not the $10 of cash that actually left the account.
+    assert _deployed(session, "key-agent-1") == Decimal("90")
+    funding_rows = [
+        row
+        for row in paper.ledger_rows(session)
+        if row.group_id == f"funding:{filled.id}" and row.account == cash_account()
+    ]
+    assert funding_rows and all(row.bucket_id is None for row in funding_rows)
+
+    second = _place_agent(
+        session, settings, dex, jupiter, make_request(amount_usd="90", key="no-risk-2")
+    )
+    assert second.status == "rejected"
+    assert second.reason == "AGENT_BUCKET_EXCEEDED"
+    assert _deployed(session, "key-agent-1") == Decimal("90")
+
+
+# --- a cap belongs to a minted key -------------------------------------------
+
+
+def test_a_cap_cannot_be_set_for_an_agent_that_does_not_exist(session: Session) -> None:
+    """No key row, no cap: nobody pre-sets a zero cap on a key that is not minted yet."""
+    with pytest.raises(buckets.BucketAgentUnknown) as caught:
+        buckets.set_cap(session, "never-minted", Decimal("0"), actor=ALICE)
+
+    assert caught.value.code == "AGENT_BUCKET_UNKNOWN"
+    assert session.get(AgentBucketRow, "never-minted") is None
+
+
+# --- the cap holds under concurrency ----------------------------------------
+
+
+def test_two_threads_cannot_both_spend_the_same_room(tmp_path: Path) -> None:
+    """A threaded race on one bucket: the fill-window gate sees the winner's journal.
+
+    Two buyers each ask for $60 against a $100 cap. They quote outside the fill window and
+    then race inside it; the second gate re-reads the replayed deployment under the lock,
+    so exactly one fills and the deployment never passes the cap.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    url = f"sqlite+pysqlite:///{tmp_path / 'bucket-race.db'}"
+    engine = create_engine(url, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = make_settings(paper_fee_bps=0)
+    dex = FakeDexScreener(make_snapshot(price=Decimal("2"), liquidity=Decimal("500000")))
+    jupiter = FakeJupiter()
+
+    with maker() as session:
+        approvals.set_tier(
+            session, tier="full_auto", actor=ALICE, settings=settings, acknowledge_risk=True
+        )
+        _mint(session, "key-agent-1", "alice")
+        _cap(session, AGENT, "100")
+
+    barrier = Barrier(2)
+    errors: list[BaseException] = []
+
+    def buy(index: int) -> str:
+        try:
+            with maker() as session:
+                barrier.wait(timeout=10)
+                order = asyncio.run(
+                    paper.place_order(
+                        session,
+                        make_request(
+                            amount_usd="60",
+                            token=TOKEN,
+                            key=f"race-bucket-{index}",
+                        ),
+                        settings,
+                        dex,
+                        make_router(dex, jupiter),
+                        actor=AGENT,
+                    )
+                )
+                return order.status
+        except BaseException as exc:  # noqa: BLE001 - a thread failure is the test failing
+            errors.append(exc)
+            return "error"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(buy, range(2)))
+
+    assert not errors, errors
+    assert sorted(statuses) == ["filled", "rejected"], statuses
+    with maker() as session:
+        replay = paper.project_ledger(paper.ledger_rows(session))
+        assert -replay.bucket_cash["key-agent-1"] == Decimal("60")
+        # The loser never journaled a fill: one order group, one cash outflow.
+        assert [
+            row.usd_value
+            for row in paper.ledger_rows(session)
+            if row.bucket_id == "key-agent-1" and row.kind == "buy"
+        ] == [Decimal("-60")]
+    engine.dispose()

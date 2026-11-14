@@ -10,8 +10,10 @@ deployed is replayed from the journal (CONTRACT I1) rather than stored as a bala
 
 Nothing is backfilled and no existing row is rewritten: a leg written before this revision
 has no bucket, and a bucket's deployment is exactly the sum of the legs that name it.
-``cap_usd`` is NUMERIC(38, 8) on Postgres and TEXT on SQLite, matching every other money
-column so an exact decimal round-trips on both.
+``cap_usd`` is exactly the money type the model declares — ``NUMERIC(38, 8)`` on Postgres,
+``TEXT`` on SQLite, because SQLite has no decimal type and stores ``NUMERIC`` as ``REAL``,
+which silently rounds a value past 15 significant digits. The variant is chosen per dialect
+here, exactly as ``0020_market_events`` does for its money columns.
 """
 
 from __future__ import annotations
@@ -27,6 +29,9 @@ branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
 LEDGER_BUCKET_INDEX = "ix_ledger_entries_bucket_id"
+# The same exact-money type ``ezchain_api.models.MONEY`` declares. SQLite keeps the decimal
+# as text so a cap round-trips every digit; Postgres keeps its native numeric.
+EXACT_MONEY = sa.Numeric(precision=38, scale=8).with_variant(sa.Text(), "sqlite")
 
 
 def upgrade() -> None:
@@ -41,7 +46,7 @@ def upgrade() -> None:
             "agent_buckets",
             sa.Column("agent_id", sa.String(120), primary_key=True),
             sa.Column("owner", sa.String(120), nullable=False),
-            sa.Column("cap_usd", sa.Numeric(precision=38, scale=8), nullable=False),
+            sa.Column("cap_usd", EXACT_MONEY, nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_by_kind", sa.String(16), nullable=True),
             sa.Column("updated_by_id", sa.String(120), nullable=True),

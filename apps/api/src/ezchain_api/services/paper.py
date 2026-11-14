@@ -390,6 +390,59 @@ class Replay:
     # attribution belongs to no bucket: only an agent's attributed legs move its
     # deployment, and a person's cash is never charged to an agent.
     bucket_cash: dict[str, Decimal]
+    # Open shares of each position account, per owner, derived from the journal: a buy's
+    # shares belong to the bucket its cash legs name (``None`` for no bucket — a person's
+    # own position), and an exit consumes the shares it sells. This is what decides who
+    # receives an exit's cash: the bucket that owns the position, never the caller.
+    position_claims: dict[str, dict[str | None, Decimal]]
+
+
+def _sell_attribution(claims: dict[str | None, Decimal], quantity: Decimal) -> str | None:
+    """The bucket that receives this exit's proceeds, or ``None`` for an unowned exit.
+
+    Attribution follows the position, not the placing actor. A position one bucket owns
+    credits that bucket however the exit was placed — a person closing an agent's position,
+    another agent closing it, or a protection arm whose actor is unknown. A position no
+    bucket owns credits nobody, so an agent that sells a person's position cannot spend
+    cash it never put up.
+
+    A sale spanning two owners has no honest single recipient, so its proceeds are left
+    unattributed: the deployment stays high and the cap stays tight, which is the
+    fail-closed answer when the money cannot be assigned to one bucket.
+    """
+    if quantity <= 0:
+        return None
+    covering = [
+        owner
+        for owner, held in claims.items()
+        if owner is not None and held >= quantity - MONEY_QUANTUM
+    ]
+    return covering[0] if len(covering) == 1 else None
+
+
+def _apply_sale(
+    claims: dict[str | None, Decimal], quantity: Decimal, bucket_id: str | None
+) -> None:
+    """Book a sale of ``quantity`` shares against the owner the proceeds went to.
+
+    The attributed bucket gives up the shares it sold, so its claim never outlives its
+    position. An unattributed sale spends the unowned shares first and then the buckets in
+    a fixed order: a sale the books cannot attribute must not leave a bucket holding shares
+    it no longer has, or a later exit would credit it cash it never put up.
+    """
+    remaining = quantity
+    order: list[str | None] = [bucket_id] if bucket_id is not None else []
+    order.append(None)
+    order.extend(sorted(owner for owner in claims if owner is not None and owner != bucket_id))
+    for owner in order:
+        if remaining <= 0:
+            return
+        held = claims.get(owner, Decimal(0))
+        if held <= 0:
+            continue
+        take = min(held, remaining)
+        claims[owner] = held - take
+        remaining -= take
 
 
 def group_position_delta(rows: list[LedgerEntryRow]) -> Decimal:
@@ -451,6 +504,28 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
 
     positions = {account: replay_position(entries) for account, entries in position_entries.items()}
 
+    # Who owns the open shares of each position. The journal already decided it: a group's
+    # cash legs name the bucket, and that is the bucket whose trade the shares belong to.
+    # Replaying this is what makes an exit's attribution a fact about the position rather
+    # than about the caller, and it survives a restart because it reads the same rows.
+    position_claims: dict[str, dict[str | None, Decimal]] = {}
+    for group in groups.values():
+        position_rows = [row for row in group if row.account.startswith(POSITION_PREFIX)]
+        if not position_rows:
+            continue
+        named = {
+            row.bucket_id
+            for row in group
+            if row.account == cash_account() and row.bucket_id is not None
+        }
+        bucket_id = named.pop() if len(named) == 1 else None
+        for row in position_rows:
+            claims = position_claims.setdefault(row.account, {})
+            if row.amount > 0:
+                claims[bucket_id] = claims.get(bucket_id, Decimal(0)) + row.amount
+            elif row.amount < 0:
+                _apply_sale(claims, -row.amount, bucket_id)
+
     realized_by_account: dict[str, Decimal] = {}
     daily = Decimal(0)
     for group in groups.values():
@@ -476,6 +551,7 @@ def _replay(rows: list[LedgerEntryRow], *, day_start: datetime | None = None) ->
         realized_by_account=realized_by_account,
         wallet_cash=wallet_cash,
         bucket_cash=bucket_cash,
+        position_claims=position_claims,
     )
 
 
@@ -2014,12 +2090,26 @@ async def place_order(
                 # no wallet id.
                 if row["account"] == cash_account():
                     row["wallet_id"] = SETTLEMENT_WALLET_ID
-                    # Funded cash is deployed on this agent's behalf, so it counts against
-                    # the bucket exactly like settlement cash does.
-                    row["bucket_id"] = bucket_key
+                    # The top-up is settlement capital from outside the account, not the
+                    # agent's own cash coming back. It carries no bucket: the trade's own
+                    # cash legs already charge the bucket the full ticket, and crediting
+                    # the top-up here would cancel part of that charge — room the bucket
+                    # never had. Only an exit returns cash to a bucket.
+                    row["bucket_id"] = None
                 row["actor_kind"] = placed_by.kind
                 row["actor_id"] = placed_by.id
                 session.add(LedgerEntryRow(**row))
+        # Who owns the position this fill touches decides who its cash belongs to. A buy
+        # opens shares for the bucket that will own them (the caller's, or none for a
+        # person). An exit credits the bucket that owns the shares — never the caller, so a
+        # person closing an agent's position returns the agent's cash, a protection arm
+        # with no actor returns it too, and an agent selling a person's position gets no
+        # credit it never earned.
+        cash_bucket = (
+            bucket_key
+            if payload.side == "buy"
+            else _sell_attribution(replay.position_claims.get(account, {}), fill_quantity)
+        )
         if payload.side == "buy":
             entries = buy_entries(
                 chain=payload.chain,
@@ -2067,11 +2157,11 @@ async def place_order(
             row = entry.to_row(order.id, created_at=stamp)
             if row["account"] == cash_account():
                 row["wallet_id"] = settlement_wallet_id
-                # A cash leg an agent's order wrote is attributed to that agent's bucket.
-                # Only cash moves the deployment; a position or fee leg names none, so the
-                # replay charges the bucket for what left the account and credits it for
-                # what an exit returned.
-                row["bucket_id"] = bucket_key
+                # A cash leg is attributed to the bucket that owns the position it settles,
+                # not to whoever placed the order. Only cash moves the deployment; a
+                # position or fee leg names none, so the replay charges the bucket for what
+                # left the account and credits it for what an exit returned.
+                row["bucket_id"] = cash_bucket
             # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
             # learns who placed the order, without joining back to ``paper_orders``.
             row["actor_kind"] = placed_by.kind

@@ -391,11 +391,20 @@ returns one, `404 AGENT_BUCKET_UNKNOWN` when the agent has none.
 `deployed_usd` is not stored: it is the net cash the agent's journal legs moved, replayed
 from the append-only ledger (CONTRACT I1). `available_usd` is the cap minus that figure.
 
+A cash leg is attributed to the bucket that **owns the position it settles**, never to
+whoever placed the order. A buy opens shares for the placing agent's bucket; an exit credits
+the bucket that already owns the shares, so a person closing an agent's position returns the
+agent's cash and a protection arm whose actor is unknown does too. An agent selling a
+position no bucket owns gets no credit, and a sale spanning two owners is left unattributed:
+both directions keep the deployment high rather than invent room the bucket never had.
+
 `PUT /api/v1/agent/buckets/{agent_id}` takes `{"cap_usd": "250"}`; it is the only settable
 field, so a body cannot carry a balance or a different agent id. Only a person may set a
-cap, and only the agent's own owner (the `api_keys.subject` the key was minted for). An
-agent key is refused `403 AGENT_BUCKET_REQUIRES_PERSON`, which is how an agent raising its
-own cap is made impossible; a negative or absurd cap is `422 AGENT_BUCKET_CAP_INVALID`.
+cap, and only the agent's own owner (the `api_keys.subject` the key was minted for). The
+agent must already exist: a cap for an id with no key row is `404 AGENT_BUCKET_UNKNOWN`, so
+nobody can pre-set a cap — least of all a zero one — on a key that has not been minted.
+An agent key is refused `403 AGENT_BUCKET_REQUIRES_PERSON`, which is how an agent raising
+its own cap is made impossible; a negative or absurd cap is `422 AGENT_BUCKET_CAP_INVALID`.
 
 An order that would take the deployment past the cap is a stored rejection with
 `AGENT_BUCKET_EXCEEDED`, refused **before the market read and the quote**. Its `reasons[0].detail`

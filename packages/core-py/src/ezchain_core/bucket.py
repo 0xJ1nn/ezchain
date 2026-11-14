@@ -23,15 +23,14 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from .reason_codes import (
+    AGENT_BUCKET_CAP_INVALID,
+    AGENT_BUCKET_EXCEEDED,
+    AGENT_BUCKET_REQUIRES_PERSON,
+    AGENT_BUCKET_UNKNOWN,
+    AGENT_BUCKET_UNREADABLE,
+)
 from .types import RiskReason
-
-# One stable code per refusal (CONTRACT I3 / ADR-0019). The message lives in
-# ``RISK_REASON_MESSAGES`` with every other reason code.
-BUCKET_EXCEEDED = "AGENT_BUCKET_EXCEEDED"
-BUCKET_UNREADABLE = "AGENT_BUCKET_UNREADABLE"
-BUCKET_UNKNOWN = "AGENT_BUCKET_UNKNOWN"
-BUCKET_REQUIRES_PERSON = "AGENT_BUCKET_REQUIRES_PERSON"
-BUCKET_CAP_INVALID = "AGENT_BUCKET_CAP_INVALID"
 
 
 @dataclass(frozen=True)
@@ -104,7 +103,7 @@ def check_bucket(
     if worst_case <= available:
         return None
     return RiskReason(
-        BUCKET_EXCEEDED,
+        AGENT_BUCKET_EXCEEDED,
         detail={
             "agent_id": state.agent_id,
             "cap_usd": str(state.cap_usd),
@@ -119,11 +118,11 @@ def check_bucket(
 
 
 __all__ = [
-    "BUCKET_CAP_INVALID",
-    "BUCKET_EXCEEDED",
-    "BUCKET_REQUIRES_PERSON",
-    "BUCKET_UNKNOWN",
-    "BUCKET_UNREADABLE",
+    "AGENT_BUCKET_CAP_INVALID",
+    "AGENT_BUCKET_EXCEEDED",
+    "AGENT_BUCKET_REQUIRES_PERSON",
+    "AGENT_BUCKET_UNKNOWN",
+    "AGENT_BUCKET_UNREADABLE",
     "BucketState",
     "bucket_state",
     "check_bucket",

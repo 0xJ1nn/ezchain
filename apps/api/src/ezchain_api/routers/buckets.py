@@ -15,7 +15,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
@@ -50,23 +49,17 @@ def list_agent_buckets(session: Session = Depends(get_session)) -> AgentBucketsO
 
     A failure to read the journal is a typed ``409`` rather than an empty list: an empty
     list would read as "nothing is capped", which is the one answer this surface must not
-    invent.
+    invent. The refusal carries its own message and never the driver's, which can name a
+    DSN.
     """
     try:
         replay = paper.project_ledger(paper.ledger_rows(session))
-        rows = list(session.scalars(select(AgentBucketRow).order_by(AgentBucketRow.agent_id)))
+        rows = buckets.list_buckets(session, replay.bucket_cash)
     except Exception as exc:  # noqa: BLE001 - an unreadable bucket state is a typed refusal
-        raise _refusal(
-            buckets.BucketUnreadable(f"the agent buckets could not be read: {exc}")
-        ) from exc
+        raise _refusal(buckets.BucketUnreadable("the agent buckets could not be read")) from exc
     return AgentBucketsOut(
         as_of=utcnow().isoformat(),
-        buckets=[
-            AgentBucketOut.model_validate(
-                buckets.view(row, replay.bucket_cash.get(row.agent_id, Decimal(0)))
-            )
-            for row in rows
-        ],
+        buckets=[AgentBucketOut.model_validate(row) for row in rows],
     )
 
 
@@ -74,14 +67,7 @@ def list_agent_buckets(session: Session = Depends(get_session)) -> AgentBucketsO
 def get_agent_bucket(agent_id: str, session: Session = Depends(get_session)) -> AgentBucketOut:
     row = session.get(AgentBucketRow, agent_id)
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "AGENT_BUCKET_UNKNOWN",
-                "message": "this agent has no bucket cap",
-                "retryable": False,
-            },
-        )
+        raise _refusal(buckets.BucketAgentUnknown("this agent has no bucket cap"))
     return _read(session, row)
 
 
