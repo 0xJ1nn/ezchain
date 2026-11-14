@@ -1581,3 +1581,54 @@ Two pieces are deliberately left out of this change. The Launches page still rea
 objects and a safety verdict instead of bare numbers) and is a separate UI change with its
 own screenshot evidence. And the feed window stays a module constant until `Settings` gains a
 discovery section.
+## ADR-0048 — One decision window is claimed by the run log, before execution
+
+**Date:** 2026-11-14 · **Status:** Accepted
+
+**Context:** a strategy's interval gate is read from `strategies.last_run_at` before any
+row is committed, so two evaluators of one strategy — two scheduler ticks, an inline tick
+and a manual run, or a process that restarted while holding a row whose `last_run_at` it
+still believes is `None` — can both pass the gate and both decide. The order idempotency
+key collapsed the *fill*, so no extra money moved, but the decision log reported two
+decisions for one order and one evaluation's reasoning was written as though it had
+happened. ADR-0022 makes that log the only record of why a strategy traded, and CONTRACT
+I9 requires the recorded reasoning to be the reasoning that ran.
+
+**Options:** (a) rely on the order key and de-duplicate the log at read time; (b) take a
+row lock on `strategies` for the whole evaluation; (c) make the run insert itself the
+claim, under a unique `(strategy_id, decision_window)` pair.
+
+**Decision:** (c). `strategy_runs.decision_window` names the interval bucket a decision
+consumes, spelled exactly as the order idempotency key's bucket. The unique pair means the
+insert is the claim: only one evaluator can commit the row for a window, and the loser
+reads the winner's row and reports *that* decision instead of its own. The claim commits
+before the order is placed, so the evaluator that loses never reaches the executor — this
+is what makes it one window, one execution, rather than one window, one surviving order.
+`last_run_at` moves in the same transaction as the claim, so a claim that did not commit
+consumed nothing.
+
+A row that does not consume the interval leaves the window NULL, and NULL never collides
+in a unique constraint on either backend: an interval that has not elapsed and a market
+read that failed closed stay retryable inside the same window (CONTRACT I3). A refusal
+that fails closed after the claim (`KILL_SWITCH_ACTIVE`, `ORDER_REJECTED`,
+`EXECUTION_FAILED`, `ORDER_EXECUTOR_UNAVAILABLE`) turns the claim into the hold it became
+and releases the window, restoring `last_run_at`, so releasing the cause retries
+immediately instead of waiting an interval. A wait is the window's decision and keeps the
+claim: two ticks cannot each log one.
+
+**Consequences:** the decision log can no longer overstate activity, and the execution
+trail and the reasoning trail name the same window. The cost is a narrow liveness window:
+a hard crash between the claim and the order commits loses that window with a run row and
+no order, and the strategy resumes at the next interval — money is never at risk, and
+`strategy.runs_linked` reconciliation reports the opposite crash (an order whose run row
+never learned its id) rather than repairing either. `RunResult.amount_usd` is `None` for a
+caller that lost the window, because the log holds no resolved size for it and an unknown
+amount is not zero. Reconciliation's `strategy.runs_linked` requires that every live
+strategy's order is named by *at least* one run row: a released window is retried, so a
+rejected order is named by each attempt's own refusal row, and several rows for one order
+is the log working, not drift.
+
+Migration `0025_strategy_run_window` adds the nullable column and the unique pair, and
+backfills nothing: existing rows pre-date the claim and keep NULL. On SQLite the constraint
+is added through a batch rebuild, so the table's own indexes are preserved (checked in
+`tests/api/test_strategy_run_window_migration.py`).

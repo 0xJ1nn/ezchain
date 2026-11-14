@@ -11,7 +11,9 @@ Each check has one source of truth:
   carries exactly the two legs paper writes for the shortfall;
 * the fill's quantity, notional and fee must equal its journal legs;
 * position quantities must equal the sum of the fills that created them;
-* cash and equity must agree with genesis plus the fill cash flows, at the current marks.
+* cash and equity must agree with genesis plus the fill cash flows, at the current marks;
+* every strategy order must be named by a run row, so a crash between the order and the run
+  log is reported instead of leaving an execution with no reasoning behind it.
 
 A position without a mark makes equity unknown. The check fails closed with the account
 named rather than valuing the position at zero.
@@ -40,7 +42,14 @@ from ezchain_core.money import (
     to_minor_units,
 )
 
-from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow
+from ..models import (
+    LedgerEntryRow,
+    MarketSnapshotRow,
+    PaperFillRow,
+    PaperOrderRow,
+    StrategyRow,
+    StrategyRunRow,
+)
 
 # Quantities are token amounts, not money: they are stored at 18 decimals and a dust
 # difference below one storage step is arithmetic noise, not a missing leg. Money is
@@ -515,6 +524,41 @@ def _check_equity(
     )
 
 
+def _check_strategy_runs(
+    orders: list[Any], runs: list[Any], strategy_ids: set[str]
+) -> dict[str, Any]:
+    """Every live strategy's execution names at least one run row that reasoned about it.
+
+    The engine commits the decision claim before it places the order and records the
+    order id on that row afterwards, so a crash in between leaves an order whose run row
+    never learned its id. That gap is reported, not repaired: the money is real and the
+    reasoning behind it is missing (CONTRACT I9). An order whose strategy was deleted is
+    skipped, because deleting a strategy intentionally removes its decision log (ADR-0022).
+
+    Several rows naming one order is the log working, not drift: a refused execution
+    releases its window, so each retry of the same order reasons about it again and leaves
+    its own refusal behind.
+    """
+    named = {run.order_id for run in runs if run.order_id is not None}
+    live = [
+        order
+        for order in orders
+        if order.strategy_id is not None and order.strategy_id in strategy_ids
+    ]
+    unreconciled = [order.id for order in live if order.id not in named]
+    if unreconciled:
+        return _check(
+            "strategy.runs_linked",
+            False,
+            f"{len(unreconciled)} strategy order(s) no run row names: {_sample(unreconciled)}",
+        )
+    return _check(
+        "strategy.runs_linked",
+        True,
+        f"{len(live)} strategy order(s) each named by a run row",
+    )
+
+
 def reconciliation(session: Session) -> dict[str, Any]:
     """Compute the reconciliation report. Never writes to the database."""
     # Load only the columns the report reads. The endpoint is polled by the dashboard,
@@ -550,8 +594,13 @@ def reconciliation(session: Session) -> dict[str, Any]:
             PaperOrderRow.side,
             PaperOrderRow.status,
             PaperOrderRow.amount_usd,
+            PaperOrderRow.strategy_id,
         )
     ).all()
+    runs = session.execute(
+        select(StrategyRunRow.order_id).where(StrategyRunRow.order_id.is_not(None))
+    ).all()
+    strategy_ids = set(session.scalars(select(StrategyRow.id)).all())
     marks = {
         (row.chain, row.token_address): (
             None if row.price_usd is None else Decimal(str(row.price_usd))
@@ -657,6 +706,7 @@ def reconciliation(session: Session) -> dict[str, Any]:
             ),
         ),
         _check_groups_linked(by_group, orders_by_id, fills_by_order, list(fills)),
+        _check_strategy_runs(list(orders), list(runs), strategy_ids),
         _check(
             "cash.fills_match",
             cash_matches,

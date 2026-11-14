@@ -458,6 +458,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   re-bound against the held position still signs and settles. The paper order service is
   unchanged, so manual paper orders behave exactly as before. Decision recorded in ADR-0045.
 
+- **One decision window yields one strategy run and one execution (GH-129).** A strategy's
+  interval gate is read from `strategies.last_run_at` before anything is committed, so two
+  evaluators of one strategy — two scheduler ticks, an inline tick and a manual run, or a
+  process restarted while still holding a row that believes `last_run_at` is null — could
+  both clear it and both decide. The order idempotency key collapsed the fill, so no extra
+  money moved, but `strategy_runs` reported two decisions for one order and a second
+  evaluation's reasoning was logged as though it had run. The run insert is now the claim:
+  `strategy_runs.decision_window` names the interval bucket and the unique
+  `(strategy_id, decision_window)` pair lets exactly one evaluator commit it, before the
+  order is placed. The evaluator that loses the claim never reaches the executor and
+  reports the winner's record instead of its own; `last_run_at` moves in the claim's
+  transaction, so a claim that did not commit consumed nothing. A row that consumes no
+  interval — `INTERVAL_NOT_ELAPSED`, `MARKET_DATA_UNAVAILABLE` — leaves the window null and
+  stays retryable inside it, a fail-closed refusal (`KILL_SWITCH_ACTIVE`,
+  `ORDER_REJECTED`, `EXECUTION_FAILED`, `ORDER_EXECUTOR_UNAVAILABLE`) releases the claim it
+  took and restores `last_run_at`, and a wait keeps it because the wait is the window's
+  decision. `RunResult.amount_usd` is `None` for a caller that lost the window: the log
+  holds no resolved size for it, and an unknown amount is not zero. Reconciliation gains
+  `strategy.runs_linked`, which reports a live strategy's order that no run row names (a
+  crash between the order and the log) and treats several rows for one released window as
+  the log working. Migration `0025_strategy_run_window` is additive on
+  `0024_agent_buckets`, backfills nothing, and preserves the table's indexes through the
+  SQLite batch rebuild. Decision recorded in ADR-0046.
+
 - **Discovery claims only the coverage it has, and labels trending by its true scope
   (GH-119).** Solana had no entry in `SEED_TOKENS`, so its discovery depended on the
   promotional profile/boost/takeover feeds while `chain=all` looked like a seeded scan of
