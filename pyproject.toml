@@ -23,6 +23,12 @@ warn_unused_ignores = true
 mypy_path = "packages/core-py/src:packages/adapters/src:packages/sdk-py/src:apps/api/src:apps/mcp/src:services/engine/src:services/executor/src:services/ingest/src"
 explicit_package_bases = true
 
+[[tool.mypy.overrides]]
+module = "pumpfire.*"
+# The firehose client is an optional extra (ezchain-ingest[firehose]); a
+# checkout without it installed still type-checks.
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests", "packages", "apps/api", "services/engine", "services/ingest"]

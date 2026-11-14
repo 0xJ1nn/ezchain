@@ -9,3 +9,6 @@ pydantic-settings>=2.4,<3
 httpx>=0.27,<1
 alembic>=1.15,<2
 packaging>=23
+# The pump.fun market source is NOT installed here: the API never imports pumpfire, and the
+# ingest adapter duck-types its events. The live source is the ingest service's optional
+# extra (`pip install "ezchain-ingest[firehose]"`), so the API image stays free of it.

@@ -12,3 +12,6 @@ respx>=0.21
 ruff>=0.6
 mypy>=1.11
 packaging>=23
+# The live pump.fun source is the ingest package's optional extra, not a base pin:
+#   pip install -e "services/ingest[firehose]"
+# Everything else (retention, replay, the store, the duck-typed adapter) runs without it.
