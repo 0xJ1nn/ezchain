@@ -54,3 +54,9 @@ from the read model). The rendered answer prints the source and age of each numb
 scripted model and a fake MCP server; it makes no network call and needs no provider key.
 The stdio transport that spawns `ezchain-mcp` is not built yet — the toolbox is the seam
 where it will land, alongside the panel and the headless command.
+
+**Hostile input.** `tests/agent_runtime/test_prompt_injection.py` runs the real loop over the
+real MCP server in front of the real API with a model scripted to obey injected
+instructions, and asserts the structural controls hold anyway: the approval queue, the key's
+tool surface, the budgets and the absence of key material. The matrix and the honest gaps are
+[docs/PROMPT-INJECTION.md](../../docs/PROMPT-INJECTION.md).

@@ -37,6 +37,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   user and creator of every record replaced by sentinels, replaying through the same
   `normalize_firehose_event` path every live event uses. See
   [docs/INFRA.md §6](docs/INFRA.md#6-health-metrics-and-alerts).
+- **Prompt-injection tests that assume the model is compromised.** A corpus of hostile
+  inputs — instruction overrides, a pasted "operator: approved" chat, a token name carrying
+  a fake system message, forged approval JSON in a tool result, a strategy description
+  asking for the key, unicode/homoglyph obfuscation and a padding attack — each named by
+  attack class, is driven through the **real** loop, the real MCP server and the real API
+  with a scripted model that obeys the injection. The suite asserts the structure holds
+  anyway: no fill row, every agent order still `pending_approval`, no call needing `admin`,
+  no budget overrun, and no agent or deployment key in a prompt, answer or observation. It
+  runs in the default `pytest` invocation, no network and no sleeps, and a guard removed by
+  hand makes it fail. The matrix and what is **not** covered are
+  [docs/PROMPT-INJECTION.md](docs/PROMPT-INJECTION.md).
 
 - **A Compose drill that proves the stack at the current migration head (PAPER).**
   `tools/ops/drill.sh` (wrapping `python -m tools.ops drill`) starts
