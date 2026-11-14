@@ -98,12 +98,15 @@ def _csv_response(filename: str, columns: tuple[str, ...], rows: list[dict[str, 
 @router.get("/ledger", response_model=list[LedgerEntryOut])
 def ledger_entries(
     limit: int = Query(default=200, ge=1, le=500),
+    # Bounded so a paging client cannot ask the database to skip an unbounded number
+    # of rows; the oldest page is reachable well inside this ceiling.
+    offset: int = Query(default=0, ge=0, le=10000),
     account: str | None = Query(default=None, max_length=160),
     kind: str | None = Query(default=None, max_length=32),
     session: Session = Depends(get_session),
 ) -> list[LedgerEntryOut]:
-    """Newest-first journal slice, optionally filtered by account and entry kind."""
-    rows = account_read.ledger(session, limit=limit, account=account, kind=kind)
+    """Newest-first journal slice, filterable by account and kind, pageable by offset."""
+    rows = account_read.ledger(session, limit=limit, offset=offset, account=account, kind=kind)
     return [LedgerEntryOut.model_validate(row) for row in rows]
 
 

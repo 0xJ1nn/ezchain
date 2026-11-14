@@ -63,16 +63,21 @@ def ledger(
     session: Session,
     *,
     limit: int = 200,
+    offset: int = 0,
     account: str | None = None,
     kind: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Newest-first journal slice. Filters are exact so a caller cannot invent a query."""
+    """Newest-first journal slice. Filters are exact so a caller cannot invent a query.
+
+    ``seq`` is unique and monotonic, so ``offset`` pages deterministically past the newest
+    slice: the owner can reach entries older than the first page.
+    """
     query = select(LedgerEntryRow).order_by(LedgerEntryRow.seq.desc())
     if account is not None:
         query = query.where(LedgerEntryRow.account == account)
     if kind is not None:
         query = query.where(LedgerEntryRow.kind == kind)
-    rows = session.scalars(query.limit(limit)).all()
+    rows = session.scalars(query.offset(offset).limit(limit)).all()
     return [
         {
             "id": row.id,
@@ -267,12 +272,21 @@ def attribution(session: Session) -> list[dict[str, Any]]:
 
 
 def limits(session: Session, settings: Settings) -> dict[str, Any]:
-    """The UI-visible risk limits plus the persisted operator switch. No secrets."""
+    """The UI-visible risk limits plus the persisted operator switch. No secrets.
+
+    ``max_order_usd`` is the effective ceiling an order is actually measured against,
+    resolved by the same function the order gate calls: a chosen profile owns its own
+    bound, and the deployment setting is only the fallback when none is configured.
+    """
+    from ezchain_core import TRADE_RISK_PROFILES
+
     state = read_kill_switch(session, settings)
     profile_name = settings.trade_risk_profile
+    profile = TRADE_RISK_PROFILES.get(profile_name) if profile_name is not None else None
+    effective = paper.effective_max_order_usd(settings, profile)
     base = {
         "mode": "paper",
-        "max_order_usd": _num(settings.max_order_usd),
+        "max_order_usd": _num(effective),
         "max_position_usd": _num(settings.max_position_usd),
         "max_open_positions": settings.max_open_positions,
         "max_daily_loss_usd": _num(settings.max_daily_loss_usd),
@@ -283,11 +297,6 @@ def limits(session: Session, settings: Settings) -> dict[str, Any]:
         "max_quote_age_seconds": settings.max_quote_age_seconds,
         "kill_switch": state.to_dict(),
     }
-    if profile_name is None:
-        return base
-    from ezchain_core import TRADE_RISK_PROFILES
-
-    profile = TRADE_RISK_PROFILES.get(profile_name)
     if profile is None:
         return base
     base.update(
@@ -298,7 +307,7 @@ def limits(session: Session, settings: Settings) -> dict[str, Any]:
             "active_profile": profile_name,
             "profile": profile_name,
             "min_order_usd": _num(profile.min_order_usd),
-            "max_trade_usd": _num(profile.max_order_usd),
+            "max_trade_usd": _num(effective),
             "max_order_pct_of_equity": str(profile.max_order_pct_of_equity),
             "per_token_cap_usd": _num(profile.per_token_cap_usd),
             "max_slippage_bps": profile.max_slippage_bps,

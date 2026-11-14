@@ -335,8 +335,9 @@ class PaperOrderIn(BaseModel):
     # A sell that exists to reduce the open position. Entry-only risk gates do not apply;
     # the position bound, quote freshness and an executable route still do.
     reduce_only: bool = False
-    # Optional requested risk profile. The server allows it only when it matches the
-    # account's configured profile; any other value is a typed rejection.
+    # Optional requested risk profile. Any defined profile is accepted (the owner's own
+    # risk choice); the deployment profile is the default. An unknown name is a typed
+    # rejection.
     risk_profile: str | None = None
     trade_risk_profile: str | None = None
     profile: str | None = None
@@ -625,17 +626,17 @@ class KillSwitchOut(BaseModel):
 
 
 class KillSwitchIn(BaseModel):
+    """One switch, one step, in either direction.
+
+    Arming and releasing are symmetric: both accept an optional reason and both store it
+    when supplied. The reason is operator bookkeeping, not a protection for a key or an
+    outsider, so requiring it on release alone gated the owner's own trading.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     active: bool
     reason: str | None = Field(default=None, max_length=200)
-
-    @model_validator(mode="after")
-    def release_needs_reason(self) -> KillSwitchIn:
-        """Disarming is a deliberate act: it needs a recorded reason (RUNBOOK §10)."""
-        if not self.active and not (self.reason or "").strip():
-            raise ValueError("releasing the kill switch requires a reason")
-        return self
 
 
 class StrategyIn(BaseModel):

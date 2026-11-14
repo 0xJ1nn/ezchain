@@ -94,7 +94,7 @@ operator action.
 | GET | `/metrics` | public | Prometheus text; keep it on loopback |
 | GET | `/api/v1/chains` | read | Registry, capabilities and paper/live flags |
 | GET | `/api/v1/system/kill-switch` | read | Persisted operator switch, global and strategy levels |
-| POST | `/api/v1/system/kill-switch` | admin | `{active, reason}`: arm or release the switch |
+| POST | `/api/v1/system/kill-switch` | admin | `{active, reason?}`: arm or release the switch in one step |
 
 ### Markets, tokens and quotes
 
@@ -164,10 +164,10 @@ its source, age, stale state and reason; it never draws a fabricated line.
 | GET | `/api/v1/paper/account` | read | Cash, equity, realized/unrealized PnL and composition |
 | GET | `/api/v1/paper/wallets` | read | Paper wallets and the unallocated cash bucket |
 | GET | `/api/v1/paper/positions` | read | One server-computed `PositionView` per open position |
-| GET | `/api/v1/paper/orders?limit=` | read | Order attempts, including rejected orders and reasons |
+| GET | `/api/v1/paper/orders?limit=&offset=` | read | Order attempts, including rejected orders and reasons, newest first |
 | POST | `/api/v1/paper/orders` | trade | Submit one paper order |
-| GET | `/api/v1/paper/fills?limit=` | read | Fills with quantity, price, notional and fee |
-| GET | `/api/v1/paper/ledger?limit=&account=&kind=` | read | Append-only journal entries |
+| GET | `/api/v1/paper/fills?limit=&offset=` | read | Fills with quantity, price, notional and fee, newest first |
+| GET | `/api/v1/paper/ledger?limit=&offset=&account=&kind=` | read | Append-only journal entries, newest first |
 | GET | `/api/v1/paper/performance` | read | Paper performance summary and daily realized series |
 | GET | `/api/v1/paper/attribution` | read | Per-token paper attribution |
 | GET | `/api/v1/paper/limits` | read | Server limits in force for this account |
@@ -197,6 +197,18 @@ is the record of the attempt. Example reasons: `ORDER_LIMIT`, `PAPER_MARK_LIMIT`
 `MARK_TIMESTAMP_FUTURE`,
 `LIQUIDITY_UNKNOWN`, `LIQUIDITY_TOO_LOW`, `PAIR_AGE_UNKNOWN`, `PAIR_TOO_YOUNG`, `NO_ROUTE`,
 `NO_SELL_ROUTE`, `PRICE_IMPACT_TOO_HIGH` and `KILL_SWITCH_ARMED`.
+
+An order may name a risk profile (`risk_profile`, also spelled `trade_risk_profile` or
+`profile`): any of `low`/`mid`/`high` is accepted, the deployment profile is only the
+default, and an unknown name is a stored `PROFILE_UNKNOWN` rejection. The profile owns its
+own order ceiling — `high` is $250 — and the profile's percent-of-equity, per-token and
+slippage policy applies with it. `GET /paper/limits` reports that same effective ceiling in
+`max_order_usd`, so the displayed limit is the one the gate enforces.
+
+The history reads (`/paper/orders`, `/paper/fills`, `/paper/ledger`) accept `offset`
+alongside `limit` so history older than the newest page stays reachable. `offset` is
+bounded to `10000`; a larger value is `422`, so a paging client cannot ask the database to
+skip an unbounded number of rows.
 
 `QUOTE_STALE` and `SNAPSHOT_STALE` mean a price was too old to trust: the venue quote and
 the market mark respectively. `MARK_TIMESTAMP_FUTURE` means a timestamp ran further ahead
@@ -314,8 +326,11 @@ recorded; a null is never attributed after the fact.
 
 Strategy create and patch validate parameters against the strategy kind. A bad parameter
 is `422` with `STRATEGY_PARAM_TYPE`, `STRATEGY_PARAM_RANGE`, `STRATEGY_PARAM_MISSING` or
-`STRATEGY_PARAM_UNKNOWN`. An unknown strategy is `404 STRATEGY_NOT_FOUND`; a paused
-strategy refuses a manual run with `409 STRATEGY_PAUSED`.
+`STRATEGY_PARAM_UNKNOWN`. An unknown strategy is `404 STRATEGY_NOT_FOUND`. `POST
+/strategies/{strategy_id}/run` is an explicit manual request, so it evaluates exactly one
+cycle even for a paused strategy (and even inside the strategy's interval) and leaves the
+strategy paused: the pause gates automatic scheduling only. Resuming separately is what
+re-enables the scheduler.
 
 ### Graph and backtests
 

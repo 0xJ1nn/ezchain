@@ -33,16 +33,86 @@ function stamp(iso: string | null) {
 	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}Z`;
 }
 
+const PAGE_SIZE = 100;
+// Mirrors the API's own row-offset bound, so a page the API would refuse is never offered.
+const MAX_PAGE = 10000 / PAGE_SIZE;
+
+function readPage(value: string | undefined): number {
+	const parsed = Number.parseInt(value ?? "", 10);
+	if (!Number.isFinite(parsed) || parsed <= 1) return 1;
+	return Math.min(parsed, MAX_PAGE);
+}
+
+function pageHref(
+	params: { state?: string; orders?: string; fills?: string },
+	patch: { orders?: number; fills?: number },
+): string {
+	const query = new URLSearchParams();
+	if (params.state) query.set("state", params.state);
+	const orders = patch.orders ?? readPage(params.orders);
+	const fills = patch.fills ?? readPage(params.fills);
+	if (orders > 1) query.set("orders", String(orders));
+	if (fills > 1) query.set("fills", String(fills));
+	const qs = query.toString();
+	return qs ? `/ledger?${qs}` : "/ledger";
+}
+
+function Pager({
+	label,
+	page,
+	returned,
+	prevHref,
+	nextHref,
+}: {
+	label: string;
+	page: number;
+	returned: number;
+	prevHref: string;
+	nextHref: string;
+}) {
+	const canNext = returned === PAGE_SIZE && page < MAX_PAGE;
+	return (
+		<div className="row mt-12" role="navigation" aria-label={`${label} pages`}>
+			{page > 1 ? (
+				<Link className="btn sm" rel="prev" href={prevHref}>
+					← Prev
+				</Link>
+			) : (
+				<span className="btn sm" aria-disabled="true">
+					← Prev
+				</span>
+			)}
+			<span className="btn sm" aria-current="page">
+				Page {page}
+			</span>
+			{canNext ? (
+				<Link className="btn sm" rel="next" href={nextHref}>
+					Next →
+				</Link>
+			) : (
+				<span className="btn sm" aria-disabled="true">
+					Next →
+				</span>
+			)}
+		</div>
+	);
+}
+
 export default async function LedgerPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ state?: string }>;
+	searchParams: Promise<{ state?: string; orders?: string; fills?: string }>;
 }) {
-	const { state } = await searchParams;
+	const params = await searchParams;
+	const { state } = params;
+	const ordersPage = readPage(params.orders);
+	const fillsPage = readPage(params.fills);
+	const ordersOffset = (ordersPage - 1) * PAGE_SIZE;
+	const fillsOffset = (fillsPage - 1) * PAGE_SIZE;
 	const mode = process.env.EZCHAIN_WEB_MODE === "fixture" ? "fixture" : "live";
 	const [ordersResult, fillsResult, ledgerResult] = await Promise.all([
-		getPaperOrders(100),
-		getPaperFills(100),
+		getPaperOrders(PAGE_SIZE, ordersOffset),
+		getPaperFills(PAGE_SIZE, fillsOffset),
 		getPaperLedger(200),
 	]);
 	const demo = mode === "fixture" ? state : undefined;
@@ -64,7 +134,13 @@ export default async function LedgerPage({
 	const ledgerRows: LedgerEntry[] = ledgerResult.ok ? ledgerResult.data : [];
 	const rejected = orderRows.filter((order) => order.status === "rejected");
 	const error = !orders.ok ? orders.error : !fills.ok ? fills.error : null;
-	const empty = orders.ok && fills.ok && orderRows.length === 0 && fillRows.length === 0;
+	const empty =
+		orders.ok &&
+		fills.ok &&
+		ordersOffset === 0 &&
+		fillsOffset === 0 &&
+		orderRows.length === 0 &&
+		fillRows.length === 0;
 
 	return (
 		<AppShell active="ledger">
@@ -112,12 +188,18 @@ export default async function LedgerPage({
 				<div className="stat">
 					<div className="label">Orders</div>
 					<div className="value sm">{orders.ok ? orderRows.length : "—"}</div>
-					<div className="meta">{orders.ok ? "last 100 · API" : "unavailable"}</div>
+					<div className="meta">
+						{orders.ok
+							? `page ${ordersPage} · ${orderRows.length} rows · API`
+							: "unavailable"}
+					</div>
 				</div>
 				<div className="stat">
 					<div className="label">Fills</div>
 					<div className="value sm">{fills.ok ? fillRows.length : "—"}</div>
-					<div className="meta">{fills.ok ? "last 100 · API" : "unavailable"}</div>
+					<div className="meta">
+						{fills.ok ? `page ${fillsPage} · ${fillRows.length} rows · API` : "unavailable"}
+					</div>
 				</div>
 				<div className="stat">
 					<div className="label">Rejected</div>
@@ -156,7 +238,21 @@ export default async function LedgerPage({
 						sub={orders.ok ? `${orderRows.length} · newest first` : "unavailable"}
 						action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">LIVE</Badge>}
 						flush
-						footer="A rejected order is a real attempt recorded by the API. The reason field is rendered verbatim; it is never rewritten into a generic error."
+						footer={
+							<>
+								<span>
+									A rejected order is a real attempt recorded by the API. The reason field is
+									rendered verbatim; it is never rewritten into a generic error.
+								</span>
+								<Pager
+									label="Order"
+									page={ordersPage}
+									returned={orderRows.length}
+									prevHref={pageHref(params, { orders: Math.max(1, ordersPage - 1) })}
+									nextHref={pageHref(params, { orders: ordersPage + 1 })}
+								/>
+							</>
+						}
 					>
 						{orders.ok ? (
 							orderRows.length > 0 ? (
@@ -232,7 +328,21 @@ export default async function LedgerPage({
 						sub={fills.ok ? `${fillRows.length} · newest first` : "unavailable"}
 						action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">LIVE</Badge>}
 						flush
-						footer="Fills are written by the paper execution service. Prices, fees and notionals are server values; the UI does not recompute them."
+						footer={
+							<>
+								<span>
+									Fills are written by the paper execution service. Prices, fees and notionals
+									are server values; the UI does not recompute them.
+								</span>
+								<Pager
+									label="Fill"
+									page={fillsPage}
+									returned={fillRows.length}
+									prevHref={pageHref(params, { fills: Math.max(1, fillsPage - 1) })}
+									nextHref={pageHref(params, { fills: fillsPage + 1 })}
+								/>
+							</>
+						}
 					>
 						{fills.ok ? (
 							fillRows.length > 0 ? (

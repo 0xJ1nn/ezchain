@@ -76,6 +76,57 @@ test("the top bar shows the persisted state and arms in place", async ({ page })
 	expect(posts).toEqual([{ active: true, reason: "e2e arm" }]);
 });
 
+// Releasing is one step: the API accepts an optional reason, so a blank one must not be
+// refused client-side. The request is sent, and the persisted state is reported back.
+test("releasing accepts a blank reason in one step", async ({ page }) => {
+	test.skip(live, fixtureOnly);
+	const posts: Array<{ active: boolean; reason: string | null }> = [];
+	let armed = false;
+	await page.route("**/api/v1/system/kill-switch", async (route) => {
+		if (route.request().method() !== "POST") {
+			await route.continue();
+			return;
+		}
+		const body = route.request().postDataJSON() as {
+			active: boolean;
+			reason: string | null;
+		};
+		posts.push(body);
+		armed = body.active;
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				active: armed,
+				reason: body.reason ?? null,
+				updated_at: "2026-11-13T12:07:00Z",
+				scope: "global",
+				scopes: ["global", "strategy"],
+			}),
+		});
+	});
+
+	await page.goto("/");
+
+	await control(page).click();
+	let dialog = page.getByRole("dialog", { name: "Arm the kill switch?" });
+	await dialog.getByLabel("Reason for the operator log").fill("e2e arm");
+	await dialog.getByRole("button", { name: "Confirm arm" }).click();
+	await expect(label(page)).toContainText("ARMED");
+
+	await control(page).click();
+	dialog = page.getByRole("dialog", { name: "Release the kill switch?" });
+	await expect(dialog.getByLabel("Reason (optional) for the operator log")).toHaveValue("");
+	await dialog.getByRole("button", { name: "Confirm release" }).click();
+
+	await expect(dialog).toHaveCount(0);
+	await expect(label(page)).toContainText("RELEASED");
+	expect(posts).toEqual([
+		{ active: true, reason: "e2e arm" },
+		{ active: false, reason: null },
+	]);
+});
+
 // The topbar is rendered by the shell from a server snapshot. A mutation on the risk page
 // changes the same persisted flag, so the launcher must follow it in place instead of
 // showing the RELEASED state the page loaded with.

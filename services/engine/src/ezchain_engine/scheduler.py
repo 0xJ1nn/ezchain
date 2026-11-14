@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Protocol, cast, runtime_checkable
@@ -280,6 +280,7 @@ async def evaluate_strategy(
     plugin_registry: PluginRegistry | None = None,
     now: datetime | None = None,
     max_mark_age_seconds: float | None = None,
+    force: bool = False,
 ) -> RunResult:
     """Run one strategy once.
 
@@ -288,13 +289,17 @@ async def evaluate_strategy(
     touching ``last_run_at``; an interval that has not elapsed is logged as a hold so a
     manual run is still auditable.
 
+    ``force`` marks an explicit owner request rather than a scheduled tick: it runs the
+    cycle even when the strategy is paused and even inside its interval. The row's status
+    is not changed, so the scheduler keeps skipping a paused strategy afterwards.
+
     ``max_mark_age_seconds`` is the mark budget every engine read carries, so an old
     observation is flagged ``stale`` instead of arriving as a constant ``False``. The
     composition root wires it from the same setting the API uses; ``None`` keeps the
     adapter's unbudgeted behaviour and is only for a caller that does not price risk.
     """
     now = now or utcnow()
-    if strategy.status != "active":
+    if strategy.status != "active" and not force:
         return RunResult(
             strategy_id=strategy.id,
             action="hold",
@@ -322,7 +327,7 @@ async def evaluate_strategy(
         return _result(strategy, decision, row)
 
     last_run_at = strategy.last_run_at
-    if not should_run(last_run_at, now, interval):
+    if not force and not should_run(last_run_at, now, interval):
         elapsed = (
             None
             if last_run_at is None
@@ -435,8 +440,14 @@ async def evaluate_strategy(
         position = position_state(
             session, strategy.chain, strategy.token_address, strategy.token_symbol
         )
+        spec = spec_from_row(strategy)
+        if force:
+            # The pure evaluator re-reads the pause flag and its own interval from the
+            # spec, so an explicit manual run is presented as active and due for this
+            # one call. The persisted row is untouched and keeps the strategy paused.
+            spec = replace(spec, status="active", last_run_at=None)
         decision = evaluate_plan(
-            spec_from_row(strategy),
+            spec,
             snapshot,
             position_quantity=position.quantity,
             position_avg_cost_usd=position.avg_cost_usd,

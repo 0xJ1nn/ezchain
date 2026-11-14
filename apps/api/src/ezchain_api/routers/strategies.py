@@ -274,16 +274,13 @@ async def run_strategy(
     session: Session = Depends(get_session),
     dexscreener: DexScreenerClient = Depends(get_dexscreener),
 ) -> StrategyRunOut:
+    """Run one cycle now, at the owner's explicit request.
+
+    Pause gates automatic scheduling, not a manual run: a paused strategy executes this
+    one cycle (even inside its interval) and stays paused, so the scheduler keeps
+    skipping it afterwards. Resuming separately is what re-enables scheduling.
+    """
     row = get_or_404(session, strategy_id)
-    if row.status != "active":
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "STRATEGY_PAUSED",
-                "message": "paused strategies never run; resume first",
-                "retryable": False,
-            },
-        )
     result = await run_strategy_once(
         session,
         row,
@@ -293,6 +290,7 @@ async def run_strategy(
         plugin_runtime=_plugin_runtime(request),
         plugin_host=getattr(request.app.state, "plugin_host", None),
         plugin_registry=getattr(request.app.state, "plugin_registry", None),
+        force=row.status != "active",
     )
     if result.run_id is None or result.created_at is None:
         raise HTTPException(

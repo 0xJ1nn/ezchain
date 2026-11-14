@@ -115,8 +115,8 @@ class Settings(BaseSettings):
     # Execution-cost ceiling for a new position, as a ratio (0.05 = 5%). Applies to
     # executable quotes only; a paper_mark reports no impact and a sell is never blocked.
     max_price_impact_pct: Decimal = Field(default=Decimal("0.05"), ge=0, le=1)
-    # Server-side trade risk profile. A client may request this profile by name only
-    # when the server allows it for the account; the active profile is configuration.
+    # Default trade risk profile. This is only the default: an order may name any
+    # defined profile, which shapes that order's gates for its owner.
     trade_risk_profile: Literal["low", "mid", "high"] | None = Field(
         default=None,
         validation_alias=AliasChoices("trade_risk_profile", "risk_profile", "trade_profile"),

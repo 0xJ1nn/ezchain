@@ -317,7 +317,7 @@ RISK_REASON_MESSAGES: dict[str, str] = {
     "SIZE_BELOW_MIN": "Order size is below the configured minimum.",
     "SIZE_ABOVE_MAX": "Order size is above the configured maximum.",
     "EQUITY_UNKNOWN": "Account equity is unknown; cannot size against it.",
-    "PROFILE_UNKNOWN": "The requested risk profile is not allowed for this account.",
+    "PROFILE_UNKNOWN": "The requested risk profile is unknown; use low, mid or high.",
     "PAPER_MARK_LIMIT": "Order size exceeds the paper-mark limit.",
     "PRICE_IMPACT_TOO_HIGH": "Price impact exceeds the configured ceiling.",
     "QUOTE_STALE": "Quote is too old to trust.",

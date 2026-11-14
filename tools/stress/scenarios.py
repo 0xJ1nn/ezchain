@@ -787,21 +787,22 @@ def _strategy_lifecycle(
                 check_strategy(paused_payload, scenario=scenario, expected_status="paused")
             )
 
+        # Pause gates automatic scheduling, not an explicit owner request: one manual
+        # cycle runs and the strategy stays paused afterwards.
         paused_run = harness.request(
             "POST",
             f"{path}/run",
             scenario=scenario,
-            expected=(409,),
-            allow_status=(409,),
+            expected=(200,),
         )
-        if paused_run is not None and paused_run.status_code != 409:
+        if paused_run is not None and paused_run.status_code != 200:
             harness.add_finding(
                 Finding(
-                    code="STRATEGY_PAUSED_RUN_ALLOWED",
+                    code="STRATEGY_PAUSED_RUN_REFUSED",
                     scenario=scenario,
                     invariant="strategies.crud",
-                    summary="a paused strategy accepted a manual run",
-                    expected="HTTP 409 STRATEGY_PAUSED",
+                    summary="a paused strategy refused an explicit manual run",
+                    expected="HTTP 200",
                     actual=f"HTTP {paused_run.status_code}",
                 )
             )

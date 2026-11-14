@@ -87,24 +87,37 @@ def test_first_boot_seeds_the_flag_from_settings(session: Session) -> None:
     assert session_state.active is True
 
 
-def test_release_requires_a_reason(client_for) -> None:
+def test_arm_and_release_are_symmetric_single_step_actions(client_for) -> None:
+    """The switch is one click in either direction; the reason is optional bookkeeping.
+
+    Arming is the risk-reducing direction and releasing is the owner getting their own
+    trading back, so a mandatory reason on release alone gated the wrong way. A supplied
+    reason is still stored in either direction.
+    """
     client: TestClient = client_for(system.router)
 
-    rejected = client.post("/api/v1/system/kill-switch", json={"active": False})
-    assert rejected.status_code == 422
+    armed = client.post("/api/v1/system/kill-switch", json={"active": True})
+    assert armed.status_code == 200
+    assert armed.json()["reason"] is None
 
-    blank = client.post("/api/v1/system/kill-switch", json={"active": False, "reason": "   "})
-    assert blank.status_code == 422
+    released = client.post("/api/v1/system/kill-switch", json={"active": False})
+    assert released.status_code == 200
+    assert released.json()["active"] is False
+    assert released.json()["reason"] is None
 
-    # Arming still works without a reason; releasing with one works.
-    assert client.post("/api/v1/system/kill-switch", json={"active": True}).status_code == 200
-    assert (
-        client.post(
-            "/api/v1/system/kill-switch",
-            json={"active": False, "reason": "drill complete"},
-        ).status_code
-        == 200
+    # A reason is optional, not forbidden: it is accepted and stored in both directions.
+    armed = client.post(
+        "/api/v1/system/kill-switch", json={"active": True, "reason": "incident drill"}
     )
+    assert armed.status_code == 200
+    assert armed.json()["reason"] == "incident drill"
+    assert client.get("/api/v1/system/kill-switch").json()["reason"] == "incident drill"
+
+    released = client.post(
+        "/api/v1/system/kill-switch", json={"active": False, "reason": "drill complete"}
+    )
+    assert released.status_code == 200
+    assert released.json()["reason"] == "drill complete"
 
 
 def test_an_unknown_field_is_refused_and_leaves_the_switch_untouched(client_for) -> None:

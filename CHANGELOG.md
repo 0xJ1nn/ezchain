@@ -84,6 +84,56 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Changed
 
+- **Owner history pages past the newest slice (api).** `GET /paper/orders`,
+  `GET /paper/fills` and `GET /paper/ledger` accepted only `limit`, so the newest 200/500
+  rows were all an owner could ever read back. All three now accept `offset` alongside
+  `limit`; orders and fills break a `created_at` tie by id so pages neither overlap nor
+  skip a row, and the ledger pages on its unique `seq`.
+
+- **An order may name any defined risk profile (api).** `POST /paper/orders` used to
+  accept a profile only when it equalled the deployment's, so the client offered a choice
+  the server refused. Any of `low`/`mid`/`high` now shapes that order's gates; the
+  deployment profile is only the default when the request names none, and an unknown
+  name is still `PROFILE_UNKNOWN`. The profile the owner chose owns its own order bound —
+  `high` refuses an order above $250 — and its percent-of-equity, per-token and slippage
+  policy applies with it. The deployment's `max_order_usd` is the ceiling only for an
+  order no profile shapes; it is never `min()`-combined with a profile, so choosing a
+  profile neither silently widens the preset nor shrinks a ceiling above it.
+  `GET /paper/limits` resolves `max_order_usd` through the same function, so the number
+  the UI shows is the one the order gate enforces.
+
+- **A page offset is bounded (api).** `GET /paper/orders`, `GET /paper/fills` and
+  `GET /paper/ledger` accept `offset` up to 10000; a larger value is `422`. The newest
+  page and every page the UI offers stay reachable, and a paging client cannot ask the
+  database to skip an unbounded row count.
+
+- **The kill-switch GUI releases in one step (web).** The Risk card and the top-bar
+  control required a non-blank reason before either direction, so releasing — the
+  direction that gives the owner their trading back — was gated in the browser while the
+  API accepts an optional reason in both. Arming still asks for a note as bookkeeping;
+  releasing sends at once, and a blank reason is sent as `null`.
+
+- **Run-now works on a paused strategy (web).** The list disabled the control whenever a
+  strategy was paused, hiding the API's manual cycle. It stays enabled and is labelled
+  "Run one cycle (manual)": one cycle runs, the strategy stays paused, and resuming is
+  still what re-enables the scheduler.
+
+- **Activity pages its orders and fills (web).** The ledger view read the newest 100 rows
+  with no way forward and now carries Prev/Next for its orders and fills tables, using
+  independent offsets that the API bounds. `getPaperOrders`/`getPaperFills` send `offset`
+  in live mode and slice the same way in fixture mode.
+
+- **A manual run is not a scheduled tick (api).** "Run now" on a paused strategy used to
+  refuse with `409 STRATEGY_PAUSED`. The pause now gates automatic scheduling only: an
+  explicit owner request runs exactly one cycle (even inside its interval), and the
+  strategy stays paused, so the scheduler keeps skipping it. Resuming separately is still
+  what re-enables scheduling.
+
+- **The kill switch arms and releases symmetrically (api).** Releasing required a reason
+  while arming did not, gating the direction that gives the owner their trading back. Both
+  directions are now one step with an optional reason, which is stored when supplied; the
+  admin scope and bearer requirement are unchanged.
+
 - **The topbar kill switch follows the persisted state instead of the page snapshot
   (web).** The shell read the flag once when a page rendered, so arming or releasing
   from the Risk page left the topbar showing the state it had loaded with, and the two

@@ -928,17 +928,31 @@ def daily_realized_pnl(session: Session) -> Decimal:
     return _replay(_ledger_rows(session), day_start=_day_start()).daily_realized
 
 
-def orders(session: Session, limit: int = 50) -> list[PaperOrderRow]:
+def orders(session: Session, limit: int = 50, offset: int = 0) -> list[PaperOrderRow]:
+    """Newest-first order history. ``offset`` pages past the newest ``limit`` rows.
+
+    ``id`` breaks a ``created_at`` tie so consecutive pages never overlap or skip a row
+    when two orders share a timestamp.
+    """
     return list(
         session.scalars(
-            select(PaperOrderRow).order_by(PaperOrderRow.created_at.desc()).limit(limit)
+            select(PaperOrderRow)
+            .order_by(PaperOrderRow.created_at.desc(), PaperOrderRow.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
     )
 
 
-def fills(session: Session, limit: int = 50) -> list[PaperFillRow]:
+def fills(session: Session, limit: int = 50, offset: int = 0) -> list[PaperFillRow]:
+    """Newest-first fill history; ``offset`` pages past the newest ``limit`` rows."""
     return list(
-        session.scalars(select(PaperFillRow).order_by(PaperFillRow.created_at.desc()).limit(limit))
+        session.scalars(
+            select(PaperFillRow)
+            .order_by(PaperFillRow.created_at.desc(), PaperFillRow.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
     )
 
 
@@ -950,17 +964,19 @@ def fills(session: Session, limit: int = 50) -> list[PaperFillRow]:
 def trade_profile_from_settings(
     settings: Settings, requested: str | None = None
 ) -> TradeRiskProfile | None:
+    """The profile that shapes one order.
+
+    A requested profile is the owner's own risk choice, so any defined profile is
+    accepted; the deployment profile is only the default when the request names none.
+    An unknown name stays a typed rejection and never falls back silently.
+    """
     name = requested if requested is not None else settings.trade_risk_profile
     if name is None:
         return None
-    if name not in TRADE_RISK_PROFILES:
+    profile = TRADE_RISK_PROFILES.get(name)
+    if profile is None:
         raise ValueError("PROFILE_UNKNOWN")
-    allowed = {settings.trade_risk_profile}
-    if name not in allowed:
-        raise ValueError("PROFILE_UNKNOWN")
-    if name is None:
-        return None
-    return TRADE_RISK_PROFILES[name]
+    return profile
 
 
 def freshness_from_settings(settings: Settings) -> FreshnessPolicy:
@@ -979,14 +995,30 @@ def freshness_from_settings(settings: Settings) -> FreshnessPolicy:
     )
 
 
-def limits_from_settings(settings: Settings) -> RiskLimits:
-    profile = None
-    if settings.trade_risk_profile is not None:
-        profile = (
-            TRADE_RISK_PROFILES.get(settings.trade_risk_profile)
-            if settings.trade_risk_profile is not None
-            else None
-        )
+def effective_max_order_usd(settings: Settings, profile: TradeRiskProfile | None) -> Decimal:
+    """The one absolute order ceiling enforced for this order.
+
+    A profile the owner chose owns its own bound: ``high`` means $250, the number the
+    profile defines, so an order above it is refused. The deployment's ``max_order_usd``
+    is only the fallback used when no profile shapes the order — it is never a cross-cap
+    that silently widens (or narrows) a profile's bound. Enforcement and the
+    ``/paper/limits`` read model both call this function, so the displayed limit cannot
+    diverge from the one the gate applies.
+    """
+    if profile is not None:
+        return profile.max_order_usd
+    return settings.max_order_usd
+
+
+def limits_from_settings(settings: Settings, requested: str | None = None) -> RiskLimits:
+    """The limits enforced for one order, with the profile the owner chose.
+
+    ``requested`` selects the profile for this order; the deployment profile is the
+    default. A profile shapes the trade (minimum size, its own maximum, percent of
+    equity, per-token cap, slippage). With no profile at all the deployment's settings
+    are the whole policy.
+    """
+    profile = trade_profile_from_settings(settings, requested)
     if profile is None:
         return RiskLimits(
             max_order_usd=settings.max_order_usd,
@@ -1002,7 +1034,7 @@ def limits_from_settings(settings: Settings) -> RiskLimits:
         )
     return RiskLimits(
         min_order_usd=profile.min_order_usd,
-        max_order_usd=min(settings.max_order_usd, profile.max_order_usd),
+        max_order_usd=effective_max_order_usd(settings, profile),
         max_order_pct_of_equity=profile.max_order_pct_of_equity,
         per_token_cap_usd=profile.per_token_cap_usd,
         max_slippage_bps=profile.max_slippage_bps,
@@ -1438,27 +1470,21 @@ async def place_order(
             wallet.id if wallet is not None and wallet_reason is None else SETTLEMENT_WALLET_ID
         )
 
-    # Profile selection is server-side. An unknown or disallowed profile is a typed
-    # rejection and never falls back to the active profile.
+    # Profile selection is the owner's risk choice: any defined profile applies to this
+    # order, and the deployment profile is only the default when the request names none.
+    # An unknown name is a typed rejection and never falls back silently.
     requested_profile = payload.risk_profile
-    if requested_profile is not None:
-        try:
-            trade_profile_from_settings(settings, requested_profile)
-        except ValueError:
-            return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
+    try:
+        profile = trade_profile_from_settings(settings, requested_profile)
+    except ValueError:
+        return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
 
-    if payload.side == "buy" and settings.trade_risk_profile is not None:
-        profile = (
-            TRADE_RISK_PROFILES.get(settings.trade_risk_profile)
-            if settings.trade_risk_profile is not None
-            else None
-        )
-        if profile is None:
-            return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
-        # Minimum size and (absolute) maximum size apply before any quote.
-        if payload.amount_usd < profile.min_order_usd:
+    if payload.side == "buy" and profile is not None:
+        limits = limits_from_settings(settings, requested_profile)
+        # Minimum size and the absolute maximum size apply before any quote.
+        if payload.amount_usd < limits.min_order_usd:
             return _reject_new(session, payload, "SIZE_BELOW_MIN", actor=placed_by)
-        if payload.amount_usd > profile.max_order_usd:
+        if payload.amount_usd > limits.max_order_usd:
             return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
         # Percent of equity, fail-closed on unknown marks. The sum is priced by the same
         # freshness policy as the account read: a stale or unknown mark on any held token
@@ -1470,7 +1496,7 @@ async def place_order(
         )
         if equity is None:
             return _reject_new(session, payload, "EQUITY_UNKNOWN", actor=placed_by)
-        cap = equity * profile.max_order_pct_of_equity
+        cap = equity * limits.max_order_pct_of_equity
         if payload.amount_usd > cap:
             return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
         # Per-token cap including the proposed order.
@@ -1482,7 +1508,7 @@ async def place_order(
         mark = snap.price_usd if snap is not None else None
         if mark is not None:
             existing_value = held_qty * mark
-        if existing_value + payload.amount_usd > profile.per_token_cap_usd:
+        if existing_value + payload.amount_usd > limits.per_token_cap_usd:
             return _reject_new(session, payload, "POSITION_LIMIT", actor=placed_by)
 
     account = position_account(payload.chain, payload.token_address)
@@ -1702,7 +1728,7 @@ async def place_order(
             current_position_value_usd=held_qty * position_mark,
             open_positions=_open_positions(replay),
             daily_realized_pnl_usd=replay.daily_realized,
-            limits=limits_from_settings(settings),
+            limits=limits_from_settings(settings, requested_profile),
             equity_usd=equity_for_risk,
         )
         fee = _fill_fee(notional, quote, settings)
