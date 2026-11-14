@@ -96,16 +96,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 - **Ledger hardening: exact minor-unit money, zero drift, and a tamper-evident tape
   (PAPER).** The ledger now has one documented money policy: USD is written as an
   integer number of 1e-8 minor units, computed values (derived notionals, bps fees, cost
-  bases, partial-sell proceeds) are rounded half-even once at the ledger boundary, and
-  explicit sub-minor values or floats fail closed with `SubQuantumError` /
-  `FloatMoneyError` instead of being silently adjusted. A journal group balances to
-  exactly zero minor units with no tolerance. The ordered tape gains a chained SHA-256
-  seal (`seal_entries` / `verify_seal`) and a canonical `replay_balances`, so changing
-  any entry changes the head and the same tape always replays the same ledger. The
+  bases, partial-sell proceeds, the cost preview's worst case) are rounded half-even once
+  at the ledger boundary, and explicit sub-minor values or floats fail closed with
+  `SubQuantumError` / `FloatMoneyError` instead of being silently adjusted. Every
+  conversion and sum derives its decimal precision from its operands; the ambient
+  28-digit default is never trusted, so a notional with more digits than that converts
+  exactly instead of rounding a minor unit away. A journal group balances to exactly zero
+  minor units with no tolerance, and the reconciliation read model compares money as
+  exact integers — a persisted row off the quantum is reported, never compared at a
+  coarser scale. The ordered tape gains a chained SHA-256 seal (`seal_entries` /
+  `verify_seal`) over canonical JSON (`ezchain.ledger/v2`) that covers group, timestamp,
+  wallet and actor, so no two distinct entries can serialize alike, plus a canonical
+  `replay_balances`; changing any entry changes the head and the same tape always replays
+  the same ledger. **The bps fee quantum moves from 1e-6 to 1e-8, so some fees previously
+  journaled under the old rule change — and not only dust:** any fee whose exact
+  `notional * fee_bps / 10_000` carries more than six decimals moves (30 bps of
+  `0.000412` was `0.000001` and is now `0.00000124`; 30 bps of `0.0000033333` was
+  `0.000000` and is now `0.00000001`). A fee already on a whole micro-dollar is unchanged
+  (`0.30` stays `0.30`), and existing rows are not rewritten (the ledger is append-only).
+  The worked table is in `docs/LEDGER.md` §2.1. The
   policy and the bank-style control matrix (double-entry completeness, reconciliation,
   immutability evidence and replay determinism implemented; period locks, on-chain
-  verification with quarantine and the forensic audit command still open under GH-155)
-  live in `docs/LEDGER.md` (ADR-0046).
+  verification with quarantine, the forensic audit command and — because no such path
+  exists yet — a withdrawal/transfer journal, still open under GH-155) live in
+  `docs/LEDGER.md` (ADR-0046).
 - **Agent orders wait for a person, per user (PAPER).** Automation is now a per-user
   setting: `manual` (the default) holds every agent order in a durable approval queue,
   and `full_auto` executes it with no approval. `full_auto` requires acknowledging a

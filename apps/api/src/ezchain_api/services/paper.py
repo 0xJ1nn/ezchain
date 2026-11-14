@@ -59,6 +59,7 @@ from ezchain_core import (
 from ezchain_core.ledger import (
     buy_entries,
     cash_account,
+    funding_entries,
     position_account,
     sell_entries,
 )
@@ -2079,30 +2080,27 @@ async def place_order(
         stamp = utcnow()
         if funded_shortfall > 0:
             funding_group = f"funding:{order.id}"
-            funding_entries = (
-                LedgerEntry(cash_account(), "USD", funded_shortfall, funded_shortfall, "funding"),
-                LedgerEntry("funding:USD", "USD", -funded_shortfall, -funded_shortfall, "funding"),
-            )
-            from ezchain_core.ledger import assert_balanced
-
-            assert_balanced(funding_entries)
-            for entry in funding_entries:
-                row = entry.to_row(funding_group, created_at=stamp)
+            funding_legs = funding_entries(funded_shortfall)
+            for entry in funding_legs:
                 # The no-risk top-up is settlement capital, not a venue settlement: its
                 # cash leg names the settlement wallet so the journal says where the money
                 # went. The ``funding:USD`` contra leg is not a cash account and carries
-                # no wallet id.
-                if row["account"] == cash_account():
-                    row["wallet_id"] = SETTLEMENT_WALLET_ID
-                    # The top-up is settlement capital from outside the account, not the
-                    # agent's own cash coming back. It carries no bucket: the trade's own
-                    # cash legs already charge the bucket the full ticket, and crediting
-                    # the top-up here would cancel part of that charge — room the bucket
-                    # never had. Only an exit returns cash to a bucket.
-                    row["bucket_id"] = None
-                row["actor_kind"] = placed_by.kind
-                row["actor_id"] = placed_by.id
-                session.add(LedgerEntryRow(**row))
+                # no wallet id. The attribution is part of the entry itself, so the seal
+                # taken over the persisted tape covers it. The top-up is settlement
+                # capital from outside the account, not the agent's own cash coming back,
+                # so it carries no bucket: the trade's own cash legs already charge the
+                # bucket the full ticket, and crediting the top-up here would cancel part
+                # of that charge — room the bucket never had. Only an exit returns cash
+                # to a bucket.
+                stamped = replace(
+                    entry,
+                    group_id=funding_group,
+                    created_at=stamp,
+                    wallet_id=SETTLEMENT_WALLET_ID if entry.account == cash_account() else None,
+                    actor_kind=placed_by.kind,
+                    actor_id=placed_by.id,
+                )
+                session.add(LedgerEntryRow(**stamped.to_row(funding_group)))
         # Who owns the position this fill touches decides who its cash belongs to. A buy
         # opens shares for the bucket that will own them (the caller's, or none for a
         # person). An exit credits the bucket that owns the shares — never the caller, so a
@@ -2160,19 +2158,24 @@ async def place_order(
             )
         )
         for entry in entries:
-            row = entry.to_row(order.id, created_at=stamp)
-            if row["account"] == cash_account():
-                row["wallet_id"] = settlement_wallet_id
-                # A cash leg is attributed to the bucket that owns the position it settles,
-                # not to whoever placed the order. Only cash moves the deployment; a
-                # position or fee leg names none, so the replay charges the bucket for what
-                # left the account and credits it for what an exit returned.
-                row["bucket_id"] = cash_bucket
             # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
-            # learns who placed the order, without joining back to ``paper_orders``.
-            row["actor_kind"] = placed_by.kind
-            row["actor_id"] = placed_by.id
-            session.add(LedgerEntryRow(**row))
+            # learns who placed the order, without joining back to ``paper_orders``. It is
+            # carried on the entry, so the seal over the persisted tape covers it too.
+            cash = entry.account == cash_account()
+            # A cash leg is attributed to the bucket that owns the position it settles,
+            # not to whoever placed the order. Only cash moves the deployment; a
+            # position or fee leg names none, so the replay charges the bucket for what
+            # left the account and credits it for what an exit returned.
+            stamped = replace(
+                entry,
+                group_id=order.id,
+                created_at=stamp,
+                wallet_id=settlement_wallet_id if cash else None,
+                bucket_id=cash_bucket if cash else None,
+                actor_kind=placed_by.kind,
+                actor_id=placed_by.id,
+            )
+            session.add(LedgerEntryRow(**stamped.to_row(order.id)))
 
         order.status = "filled"
         order.filled_at = stamp

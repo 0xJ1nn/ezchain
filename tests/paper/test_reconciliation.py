@@ -19,9 +19,11 @@ from ezchain_api.models import (
 )
 from ezchain_api.schemas import ReconciliationOut
 from ezchain_api.services import paper
-from ezchain_api.services.reconciliation import TOLERANCE, reconciliation
+from ezchain_api.services.reconciliation import reconciliation
 
 from .conftest import CHAIN, TOKEN, make_request, make_settings, make_snapshot, place
+
+MINOR_UNIT = Decimal("0.00000001")
 
 NEW_CHECK_IDS = {
     "genesis.accounted_once",
@@ -589,20 +591,62 @@ def test_negative_cash_and_negative_position_are_reported(session: Session, sett
     assert report["totals"]["negative_positions"] == 1
 
 
-def test_group_tolerance_is_one_micro_dollar(session: Session) -> None:
+def test_one_minor_unit_of_group_drift_is_reported(session: Session) -> None:
+    """A group one 1e-8 unit out is a failure: the read model has no epsilon."""
     session.add(
         LedgerEntryRow(
-            id="tiny-drift",
+            id="one-minor-drift",
             group_id="tiny-group",
             account="cash:USD",
             asset="USD",
-            amount=TOLERANCE,
-            usd_value=TOLERANCE,
+            amount=MINOR_UNIT,
+            usd_value=MINOR_UNIT,
             kind="rounding",
         )
     )
     session.commit()
 
     report = reconciliation(session)
-    assert _checks(report)["ledger.groups_balanced"]["ok"] is True
-    assert session.scalar(select(LedgerEntryRow.id)) == "tiny-drift"
+    checks = _checks(report)
+    assert checks["ledger.groups_balanced"]["ok"] is False
+    assert "tiny-group" in str(checks["ledger.groups_balanced"]["detail"])
+    assert session.scalar(select(LedgerEntryRow.id)) == "one-minor-drift"
+
+
+def test_sub_minor_order_and_fill_notional_is_reported_not_matched(
+    session: Session, settings, dex, jupiter
+) -> None:
+    """A pair that is unrepresentable on *both* sides is a failure, not `None == None`."""
+    order = _buy(session, settings, dex, jupiter)
+    fill = session.scalar(select(PaperFillRow).where(PaperFillRow.order_id == order.id))
+    assert fill is not None
+    off_quantum = MINOR_UNIT / 10
+    order.amount_usd = off_quantum
+    fill.notional_usd = off_quantum
+    session.commit()
+
+    checks = _checks(reconciliation(session))
+    assert checks["ledger.groups_linked"]["ok"] is False
+    assert "minor units" in checks["ledger.groups_linked"]["detail"]
+    assert checks["fills.ledger_values_match"]["ok"] is False
+
+
+def test_sub_minor_group_value_is_reported_not_absorbed(session: Session) -> None:
+    """A row off the quantum cannot be summed, so it is named instead of rounded in."""
+    session.add(
+        LedgerEntryRow(
+            id="sub-minor",
+            group_id="sub-minor-group",
+            account="cash:USD",
+            asset="USD",
+            amount=MINOR_UNIT / 10,
+            usd_value=MINOR_UNIT / 10,
+            kind="rounding",
+        )
+    )
+    session.commit()
+
+    report = reconciliation(session)
+    check = _checks(report)["ledger.groups_balanced"]
+    assert check["ok"] is False
+    assert "sub-minor-group" in str(check["detail"])

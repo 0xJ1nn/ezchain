@@ -1480,19 +1480,29 @@ cost basis, a partial sell's proceeds, the paper service's notional/fee/basis) a
 quantized **once, half-even**, at the ledger boundary by `quantize_money`. Explicit values
 must already be whole minor units; otherwise `SubQuantumError` is raised. `LedgerEntry`
 rejects floats and non-finite values, `assert_balanced` sums integer minor units and
-requires exactly zero, and reads compare money via `to_minor_units`. The ordered tape also
-gains a chained SHA-256 seal (`seal_entries`/`verify_seal`) and a canonical
-`replay_balances`; both are deterministic for the same tape. The full policy and the
-control matrix are in [`LEDGER.md`](LEDGER.md).
+requires exactly zero, and reads compare money via `to_minor_units`. Every conversion and
+sum derives its precision from its operands (`exact_precision`, `exact_sum`): the ambient
+28-digit default is never trusted, because a notional with more digits than that would
+otherwise round a minor unit away before the balance check saw it. The ordered tape also
+gains a chained SHA-256 seal (`seal_entries`/`verify_seal`) over canonical JSON
+(`ezchain.ledger/v2`) covering index, account, asset, amount, USD value, kind, `group_id`,
+`created_at`, `wallet_id` and actor, plus a canonical `replay_balances`; both are
+deterministic for the same tape, and no two distinct entries can serialize to the same
+payload. The full policy and the control matrix are in [`LEDGER.md`](LEDGER.md).
 
 **Consequences:** exact conservation is testable as integer equality, and a one-minor-unit
 imbalance is now a hard failure instead of tolerated noise. A caller who hands the ledger
 an explicit USD value with more than eight decimals receives a typed refusal rather than a
-silently adjusted journal; adapters must quantize at their own boundary first. No schema
-migration is needed, and existing rows already satisfy the quantum because the columns are
-scale 8. The seal is computed over a supplied tape and is not yet persisted or anchored,
-so it is tamper-evidence within one process/export until that follow-up lands. Period
-locks, the asynchronous on-chain verification service with drift alerts and quarantine,
-and the forensic audit command remain open under GH-155; the replay, balance and seal
-primitives they need are now in core.
->>>>>>> cf64d74 (feat(core): harden ledger with minor-unit money and tamper-evident replay)
+silently adjusted journal; adapters must quantize at their own boundary first. **The fee
+quantum moved from 1e-6 to 1e-8, so every fee whose exact `notional * fee_bps / 10_000`
+carries more than six decimals changes — not only dust:** 30 bps of `0.000412` was
+`0.000001` and is now `0.00000124`, and 30 bps of `0.0000033333` was `0.000000` and is now
+`0.00000001`; a fee already on a whole micro-dollar is unchanged. `LEDGER.md` §2.1 has the
+worked table, and published rows are not rewritten. No schema migration is
+needed, and existing rows already satisfy the quantum because the columns are scale 8. The
+seal is computed over a supplied tape and is not yet persisted or anchored, so it is
+tamper-evidence within one process/export until that follow-up lands. Period locks, the
+asynchronous on-chain verification service with drift alerts and quarantine, and the
+forensic audit command remain open under GH-155; there is no withdrawal or transfer
+journal in this slice at all, so hardening one is not deferred work but a missing path.
+The replay, balance and seal primitives the others need are now in core.

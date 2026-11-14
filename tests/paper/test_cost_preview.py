@@ -105,7 +105,7 @@ def test_paper_mark_pays_the_flat_fee_and_has_no_window() -> None:
 def test_worst_case_out_is_inside_the_slippage_window() -> None:
     preview = _preview(amount_out=Decimal("100"))
     assert preview.slippage_bps == DEFAULT_SLIPPAGE_BPS
-    assert preview.worst_case_out == Decimal("99.500000")
+    assert preview.worst_case_out == Decimal("99.50000000")
 
 
 def test_negative_fee_bps_and_nonpositive_notional_fail() -> None:
