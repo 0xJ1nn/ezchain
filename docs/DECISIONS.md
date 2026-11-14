@@ -1415,3 +1415,43 @@ SQLite has no decimal type and maps `NUMERIC` to `REAL`, which silently rounds a
 value. The registration, not the backend, decides the type. The two routes are
 `GET /api/v1/agent/buckets` and `PUT /api/v1/agent/buckets/{agent_id}`. The GUI follows the
 settings policy in a later change; the API and this document are the documented shape.
+
+---
+
+## ADR-0045 — The kill switch binds at sign time, before the key is used
+
+**Date:** 2026-11-14 · **Status:** Accepted
+
+**Context:** ADR-0034 made the switch global at the order edge, and the executor reads it
+before the venue, after the quote and once after the signature. A post-signature read
+satisfies "the venue never sees it", but not "the executor honours the switch": by then the
+signer has already spent the key on an order the operator had stopped. The gap is real
+because building the transaction awaits — `adapter.prepare` is a round-trip to the chain —
+so an arm can land in the window between the quote and the signature, which is exactly the
+window a scheduling tick spans.
+
+**Options:** (a) rely on the post-signature read and discard the signature; (b) let each
+signer consult the switch itself; (c) read the switch in the pipeline immediately after the
+built transaction is decoded and verified, before the signer is called.
+
+**Decision:** (c). The sign-time read belongs to the pipeline, not the signer, so a signer
+that verifies nothing (or ships without a switch handle) cannot disarm it. It sits after the
+decode and the binding check — there is nothing left to decide that could refuse cheaply
+later — and immediately before `boundary.signer.sign`. The read is entry-only like every
+other; a sell re-bound against the held position still settles, because blocking it would
+trap funds. An unreadable state at that point refuses `KILL_SWITCH_UNAVAILABLE`, never
+"off". A refusal produces no signature, no submit and no journal group. The post-signature
+read stays as the last gate before the venue: it costs nothing and closes the window a
+signer that awaits opens.
+
+**Consequences:** a buy now crosses the switch four times per intent when a signing
+boundary is configured — before the quote, after the quote, before the key and before the
+submit — and three times on a pipeline with no signer, which never reaches the key read.
+A test measures the four-read order and count as an event sequence, so a dropped read is
+visible rather than inferred. The reason codes are unchanged: `KILL_SWITCH_ACTIVE` and
+`KILL_SWITCH_UNAVAILABLE` already name these
+refusals, and adding a "refused at sign time" code would split one fact into two strings.
+The paper order service is untouched: it has no signer, and its fill-window read already
+refuses an armed buy before any fill is booked, so manual paper orders behave exactly as
+before. The cost is one extra read crossing the process boundary per buying intent, paid
+only when a signing boundary is configured.

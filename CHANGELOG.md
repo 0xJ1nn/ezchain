@@ -414,6 +414,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **The executor honours the kill switch at sign time, before the key is used (PAPER/GH-227).**
+  The pipeline read the switch before the venue, after the quote and once after the
+  signature, so an arm that landed while the unsigned transaction was being built was
+  obeyed only by discarding a signature the signer had already produced. The read now also
+  runs after the decoded transaction is verified and immediately before the signer is
+  called, so an intent already in the pipeline at the moment of arming is refused with
+  `KILL_SWITCH_ACTIVE` (or `KILL_SWITCH_UNAVAILABLE` when the state cannot be read) without
+  a signature existing at all. The gate sits in the pipeline rather than in the signer, so a
+  signer that consults nothing cannot disarm it, and it stays entry-only: a reduce-only exit
+  re-bound against the held position still signs and settles. The paper order service is
+  unchanged, so manual paper orders behave exactly as before. Decision recorded in ADR-0045.
+
 - **Discovery claims only the coverage it has, and labels trending by its true scope
   (GH-119).** Solana had no entry in `SEED_TOKENS`, so its discovery depended on the
   promotional profile/boost/takeover feeds while `chain=all` looked like a seeded scan of

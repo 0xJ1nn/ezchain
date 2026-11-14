@@ -756,6 +756,165 @@ async def test_an_armed_switch_settles_an_exit_and_refuses_an_entry_in_the_same_
     assert len(journal.groups) == 1
 
 
+@dataclass
+class ArmingPrepareVenue(FakeVenue):
+    """Changes the switch while the unsigned transaction is being built.
+
+    This is the window between the quote and the signature: the intent has been priced
+    and risk-approved, the builder is awaiting, and the operator arms. Every read and
+    every stage call is appended to ``events`` in order, so a test can prove *where* the
+    read that refused the order sat.
+    """
+
+    arms_to: str = "armed"
+    state: dict[str, str] = field(default_factory=lambda: {"mode": "released"})
+    events: list[str] = field(default_factory=list)
+
+    async def quote(self, intent):  # type: ignore[no-untyped-def]
+        self.events.append("quote")
+        return await super().quote(intent)
+
+    async def prepare(self, approved):  # type: ignore[no-untyped-def]
+        raw = await super().prepare(approved)
+        self.events.append("prepare")
+        self.state["mode"] = self.arms_to
+        return raw
+
+    async def submit(self, order, signed=None):  # type: ignore[no-untyped-def]
+        self.events.append("submit")
+        return await super().submit(order, signed)
+
+
+@dataclass
+class RecordingKeyRing:
+    """A keyring that records when a signature was produced."""
+
+    events: list[str]
+    calls: int = 0
+
+    def sign(self, payload: bytes) -> bytes:
+        self.events.append("sign")
+        self.calls += 1
+        return b"test-signature"
+
+
+def _switch_read(venue: ArmingPrepareVenue):  # type: ignore[no-untyped-def]
+    """A reader over the venue's mode: armed, released, or unreadable."""
+
+    def read() -> bool:
+        venue.events.append("read")
+        mode = venue.state["mode"]
+        if mode == "unreadable":
+            raise RuntimeError("system_flags unreadable")
+        return mode == "armed"
+
+    return read
+
+
+def _signing_pipeline(venue: ArmingPrepareVenue):  # type: ignore[no-untyped-def]
+    keyring = RecordingKeyRing(venue.events)
+    pipe, _, journal = pipeline(venue, kill_switch=KillSwitch(read=_switch_read(venue)))
+    pipe.signing = SigningBoundary(
+        cluster="devnet",
+        recipient="Wallet11111111111111111111111111111111111111",
+        program_id="JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+        adapter=venue,
+        signer=LocalTransactionSigner(keyring),
+    )
+    return pipe, keyring, journal
+
+
+@pytest.mark.asyncio
+async def test_one_buying_intent_crosses_the_switch_four_times_inside_one_intent() -> None:
+    # "Within one scheduling tick, measured": the count is the measurement. Every stage
+    # that waits — the quote, the builder, the signer, the venue — is bracketed by a fresh
+    # read, so the value that decides is never older than the stage it gates. This test
+    # measures one intent, not one tick; the tick property is
+    # tests/engine/test_scheduler.py::test_an_arm_inside_a_tick_is_obeyed_by_that_same_tick.
+    venue = ArmingPrepareVenue(arms_to="released")
+    pipe, keyring, journal = _signing_pipeline(venue)
+
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "filled"
+    assert keyring.calls == 1
+    assert venue.events == ["read", "quote", "read", "prepare", "read", "sign", "read", "submit"]
+    assert venue.events.count("read") == 4
+    assert journal.groups != ()
+
+
+@pytest.mark.asyncio
+async def test_an_arm_between_quote_and_sign_refuses_before_the_key_is_touched() -> None:
+    # The arm lands after the quote and before the signature. A read taken only after
+    # signing cannot help: the key would already have been spent. The refusing read must
+    # therefore sit after the builder round-trip and before the signer call.
+    venue = ArmingPrepareVenue()
+    pipe, keyring, journal = _signing_pipeline(venue)
+
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert keyring.calls == 0  # no signature exists
+    assert "sign" not in venue.events
+    assert venue.events[-1] == "read"  # the read after the build is the one that refused
+    assert venue.events[venue.events.index("prepare") + 1] == "read"
+    assert result.status == "denied"
+    assert result.reason == "KILL_SWITCH_ACTIVE"
+    assert result.order is None
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_switch_between_quote_and_sign_refuses_before_the_key() -> None:
+    # An unreadable switch at sign time is a refusal, never "off".
+    venue = ArmingPrepareVenue(arms_to="unreadable")
+    pipe, keyring, journal = _signing_pipeline(venue)
+
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert venue.prepare_calls == 1
+    assert keyring.calls == 0
+    assert result.status == "denied"
+    assert result.reason == "KILL_SWITCH_UNAVAILABLE"
+    assert venue.submit_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_an_exit_armed_between_quote_and_sign_still_signs_and_settles() -> None:
+    # The sign-time gate is entry-only, like every other kill-switch read: an exit is
+    # bounded by the held quantity and may not be recalled, or an arm would trap funds.
+    venue = ArmingPrepareVenue()
+    pipe, _, journal = pipeline(
+        venue, kill_switch=KillSwitch(read=lambda: venue.state["mode"] == "armed")
+    )
+    pipe.signing = SigningBoundary(
+        cluster="devnet",
+        recipient="Wallet11111111111111111111111111111111111111",
+        program_id="JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+        adapter=venue,
+        signer=LocalTransactionSigner(_RecordingKeyRing()),
+    )
+
+    result = await pipe.run(sell(), snapshot=make_snapshot(), position=position("10", "20"))
+
+    assert result.status == "filled"
+    assert result.reason is None
+    assert venue.submit_calls == 1
+    assert journal.groups != ()
+
+
+@dataclass
+class _RecordingKeyRing:
+    """A keyring that only counts; it never arms anything."""
+
+    calls: int = 0
+
+    def sign(self, payload: bytes) -> bytes:
+        self.calls += 1
+        return b"test-signature"
+
+
 @pytest.mark.asyncio
 async def test_a_buy_armed_during_signing_is_refused_before_the_venue_submit() -> None:
     # Signing awaits too: an arm that lands there must refuse the submit, not the next

@@ -9,10 +9,13 @@ this file keeps:
 * Fail closed on money. A missing snapshot or stale quote refuses both sides at the
   re-risk stage; a missing or malformed quote, or an unknown risk verdict, produces no
   order. Entry-only gates never block a reduce-only exit.
-* The kill switch is read before any venue contact, again after the quote, and once more
-  between the pre-submit position re-bound and the signature, so an arm lands within the
-  same intent rather than on the next one. Every read gates new entries only: a sell is
-  bounded by the held position and cannot open a short, so an armed switch refuses the
+* The kill switch is read before any venue contact, again after the quote, once more
+  immediately before the signature, and finally before the submit, so an arm lands
+  within the same intent rather than on the next one. The read before the signature is
+  what makes the switch bind at sign time: building the transaction awaits, so an arm
+  can land between the quote and the key, and a signature produced from that state would
+  be an order the operator had already stopped. Every read gates new entries only: a sell
+  is bounded by the held position and cannot open a short, so an armed switch refuses the
   buy and still settles a reduce-only exit. An unreadable switch refuses a new entry.
 * The order is priced by the quote only when the quote's size is the risk-approved size;
   the journal is built from the venue's receipt, never from either.
@@ -444,6 +447,16 @@ class ExecutionPipeline:
         code = verify_prepared_transaction(prepared, approved)
         if code is not None:
             return _refused_before_submit(_intent_from_order(order), order, reason=code)
+        # The sign-time gate. Building the transaction awaits, so an arm can land between
+        # the quote and here; reading the switch after the signature would already have
+        # spent the key. The read sits immediately before the signer call, in the
+        # pipeline, so a signer that consults nothing cannot outlive it. It is entry-only,
+        # like every other read: a sell only reduces the held position.
+        blocked = self._kill_switch_denial(
+            _intent_from_order(order), order.risk_decision, quote=order.quote
+        )
+        if blocked is not None:
+            return blocked
         try:
             signed = boundary.signer.sign(prepared, approved)
         except SigningRefused as exc:
