@@ -86,13 +86,57 @@ Assume funds are at risk; speed over elegance.
 
 ## 8. Restore drill / disaster recovery
 
+The PAPER stack has a scripted, idempotent drill. Run it after any change to the schema, a
+long-running deployment, or before an upgrade you cannot reverse — a backup nobody has
+restored is not a backup. §12.4 documents the commands; this section is the procedure and
+what to do when it fails.
+
 1. Provision a clean host and the same image digests.
-2. Restore the newest dump whose `SHA256SUMS` verifies; restore artifacts.
-3. Run `ezchain-admin verify` (schema, ledger invariant, artifact hashes).
-4. Start in `read-only`, compare balances at the restore block, then enable paper.
-5. Record the drill: date, dump id, duration, drift result, operator.
+2. `python -m tools.ops backup --database "$EZCHAIN_DATABASE_URL" --dest backups/` — this
+   writes `<label>.dump` and `<label>.manifest.json`. The manifest is the evidence: the
+   dump's SHA-256 plus a row digest of the ledger at the same exported snapshot.
+3. `python -m tools.ops rehearse --admin-database "$ADMIN_URL" --dest backups/<drill> --report backups/<drill>/report.json`
+   on a machine with the database server. It builds a source database, fills it through the
+   real order path, backs it up, **drops the source**, restores into a second fresh
+   database, verifies, and records the elapsed recovery time.
+4. Restore into a scratch database and verify before replacing anything live
+   (`python -m tools.ops restore --database "$SCRATCH_URL" --manifest …`).
+5. Start the API against the verified restore in `read-only`, confirm
+   `GET /api/v1/paper/reconciliation` is `ok: true`, then enable paper.
+6. Record the drill: date, dump SHA-256, recovery seconds, reconciliation result, operator.
+   The 2026-11-14 run is in
+   [docs/evidence/release-gate/backup-restore-rehearsal.md](evidence/release-gate/backup-restore-rehearsal.md).
 
 A restore that cannot reproduce the ledger to the last entry is a failed drill.
+
+### 8.1 When the restore is short
+
+A "short" restore is a load that completes but does not reproduce the ledger: fewer rows,
+the same count with different rows, or reconciliation failing. The tool names which of
+those it is; do not proceed past a difference.
+
+```bash
+python -m tools.ops restore --database "$SCRATCH_URL" --manifest backups/<label>.manifest.json
+# restore: FAILED — 2 difference(s)
+#   - paper_fills: 7 row(s) in source, 5 in restore
+#   - reconciliation: equity.identity: ledger equity … != genesis + fill effects …
+# exit 1
+```
+
+Read the difference before doing anything else:
+
+| Difference | Meaning | Next action |
+|---|---|---|
+| `N row(s) in source, M in restore` | the load lost rows | do **not** promote it. Re-restore from an older dump whose digest verifies. If the dump itself is bad, the last good dump is the recovery point — reconcile the gap from `paper_orders`/`paper_fills` evidence rather than hand-editing |
+| `same row count (N) but different rows` | rows changed or were replaced | treat as a different database, not a restore: restore again and re-run `verify` before using it |
+| `missing in restore` | a table did not load (often a schema the dump's migration did not create) | run `ezchain-api migrate` against the restored database, then `python -m tools.ops verify` |
+| `schema: restored database is at …, backup was …` | the restored schema is behind the dump | run `ezchain-api migrate` forward. Never stamp or downgrade `alembic_version` to make a dump fit |
+| `reconciliation: <check>` | rows loaded but the ledger does not balance | the dump is inconsistent. Restore an earlier dump; if none reconciles, stop and escalate with the manifest and the failing check |
+| `dump … does not match its manifest` | the dump file changed after the backup | discard it and take a new backup. Never restore a dump you cannot hash to its manifest |
+
+After a second failed attempt on the same dump, stop. Keep the dump, the manifest and the
+`--json` output as incident evidence, and restore the newest dump that verifies. A restore
+you cannot verify is not a recovery point.
 
 ## 9. Upgrade and rollback
 
@@ -349,9 +393,30 @@ backward-compatible for one minor release.
 
 ### 12.4 Backup and restore
 
-Use the `pg_dump`/`pg_restore` commands in
-[`docs/INFRA.md`](INFRA.md#7-storage-backup-and-restore). Always restore into
-`ezchain_restore` first and verify row counts and
+Prefer the scripted path, which records the fingerprint of the ledger it dumped and can
+verify a restore against it:
+
+```bash
+# dump + manifest (idempotent: a second run reuses the verified dump)
+python -m tools.ops backup --database "$EZCHAIN_DATABASE_URL" --dest backups/
+# load into a FRESH disposable database and verify (drops + recreates the target)
+python -m tools.ops restore --database "$SCRATCH_URL" \
+  --manifest backups/<label>.manifest.json
+# compare an existing database to a manifest without touching it
+python -m tools.ops verify --database "$SCRATCH_URL" \
+  --manifest backups/<label>.manifest.json
+```
+
+Exit codes: `0` verified, `1` a verification failed (the differences are printed), `2`
+refused or an external tool failed. A target database name must contain `test`, `scratch`
+or `_ci`, the same rule `tools/check-migrations.sh` applies; the command refuses anything
+else before it drops a database. The practitioner procedure and the failure table are
+[§8](#8-restore-drill--disaster-recovery).
+
+The raw `pg_dump`/`pg_restore` commands in
+[`docs/INFRA.md`](INFRA.md#7-storage-backup-and-restore) remain valid for a hand drill, but
+they do not write a manifest, so nothing can verify the result against the dump. If you
+use them, still restore into `ezchain_restore` first and check
 `GET /api/v1/paper/reconciliation` before replacing the live database.
 
 `docker compose down` keeps named volumes. `docker compose down -v` deletes `pgdata` and

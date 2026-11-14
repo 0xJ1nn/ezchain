@@ -198,6 +198,23 @@ docker compose -f infra/compose.yaml exec -T postgres sh -c \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "ezchain-$(date +%F).dump"
 ```
 
+The repository ships a scripted path that also records what the dump contained, so a
+restore can be proven rather than assumed:
+
+```bash
+python -m tools.ops backup --database "$EZCHAIN_DATABASE_URL" --dest backups/
+python -m tools.ops restore --database "$SCRATCH_URL" --manifest backups/<label>.manifest.json
+python -m tools.ops rehearse --admin-database "$ADMIN_URL" --dest backups/<drill> --report backups/<drill>/report.json
+```
+
+`backup` writes the dump and a manifest holding its SHA-256 plus a per-table row digest
+taken from the same exported snapshot. `restore` rebuilds a fresh database (the name must
+contain `test`, `scratch` or `_ci`), then requires every ledger table to match the manifest
+row-for-row and the API's reconciliation report to be `ok: true`; it exits `1` when a
+restore is short. `rehearse` runs the whole drill — build, back up, drop the source,
+restore, verify — and records the elapsed recovery time. The procedure and the failure
+table are in [RUNBOOK §8](RUNBOOK.md#8-restore-drill--disaster-recovery).
+
 Restore drill (non-destructive: restore into a scratch database first):
 
 ```bash
@@ -211,6 +228,13 @@ Verify the scratch database (row counts, ledger reconciliation) before replacing
 live one. A disaster restore into `ezchain` is a deliberate, audited action: stop `api`
 and `web`, restore, then start `migrate` and `api` again. A restore that cannot reproduce
 the ledger to the last entry is a failed drill.
+
+The Docker path is **not verified** for the scripted tooling: the authoring host had no
+Docker daemon. The tooling runs against the host `pg_dump`/`pg_restore` client binaries and
+any reachable Postgres; inside the Compose stack those binaries are in the `postgres`
+container, so run the commands there or with `PGHOST` pointing at it. The measured drill in
+[evidence](evidence/release-gate/backup-restore-rehearsal.md) used a local Postgres 16, not
+the Compose stack.
 
 ## 8. Upgrade and rollback
 
