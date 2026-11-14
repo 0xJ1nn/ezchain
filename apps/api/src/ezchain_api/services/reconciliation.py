@@ -20,8 +20,9 @@ named rather than valuing the position at zero.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from datetime import UTC
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import Any
 
 from sqlalchemy import select
@@ -29,10 +30,21 @@ from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
 from ezchain_core.ledger import cash_account, fee_account, position_account
+from ezchain_core.money import (
+    MONEY_SCALE,
+    MoneyError,
+    exact_precision,
+    exact_sum,
+    from_minor_units,
+    quantize_money,
+    to_minor_units,
+)
 
 from ..models import LedgerEntryRow, MarketSnapshotRow, PaperFillRow, PaperOrderRow
 
-TOLERANCE = Decimal("0.000001")
+# Quantities are token amounts, not money: they are stored at 18 decimals and a dust
+# difference below one storage step is arithmetic noise, not a missing leg. Money is
+# never compared this way — it is compared as exact integer minor units.
 QUANTITY_TOLERANCE = Decimal("0.00000001")
 POSITION_PREFIX = "position:"
 GENESIS_ACCOUNT = "equity:genesis"
@@ -41,6 +53,49 @@ GENESIS_GROUP = "genesis"
 
 FUNDING_PREFIX = "funding:"
 FUNDING_ACCOUNT = "funding:USD"
+
+
+def _minor(value: object) -> int | None:
+    """Exact integer minor units, or ``None`` when the value is not exact money.
+
+    A persisted row that is not a whole number of minor units is itself the finding: the
+    caller reports it instead of comparing it. There is no epsilon here (LEDGER.md §2.6).
+    """
+    try:
+        return to_minor_units(Decimal(str(value)))
+    except MoneyError:
+        return None
+
+
+def _minor_sum(values: Sequence[object]) -> tuple[int, int]:
+    """(exact minor-unit sum, number of values that could not be represented exactly)."""
+    total = 0
+    inexact = 0
+    for value in values:
+        minor = _minor(value)
+        if minor is None:
+            inexact += 1
+        else:
+            total += minor
+    return total, inexact
+
+
+def _computed_minor(value: Decimal) -> int:
+    """A *computed* USD figure rounded once at the boundary, then read exactly.
+
+    A position value (``quantity * mark``) is not a journaled amount, so it is rounded
+    half-even once to the ledger minor unit — the same boundary rule the journal uses —
+    and compared as an integer afterwards. No epsilon survives the comparison.
+    """
+    return to_minor_units(quantize_money(value, field="computed_usd"))
+
+
+def _position_value_minor(quantity: Decimal, mark: Decimal) -> int:
+    """``quantity * mark`` evaluated exactly, then rounded once at the ledger boundary."""
+    with localcontext() as context:
+        context.prec = exact_precision(quantity, mark, extra=MONEY_SCALE)
+        value = quantity * mark
+    return _computed_minor(value)
 
 
 def _is_funding_group(group_id: str, rows: list[Any], orders_by_id: dict[str, Any]) -> bool:
@@ -63,8 +118,11 @@ def _is_funding_group(group_id: str, rows: list[Any], orders_by_id: dict[str, An
     cash_row, funding_row = cash_rows[0], funding_rows[0]
     if any(getattr(row, "kind", None) != "funding" for row in (cash_row, funding_row)):
         return False
-    funded = Decimal(str(cash_row.usd_value))
-    return funded > 0 and abs(funded + Decimal(str(funding_row.usd_value))) <= TOLERANCE
+    funded = _minor(cash_row.usd_value)
+    contra = _minor(funding_row.usd_value)
+    if funded is None or contra is None:
+        return False
+    return funded > 0 and funded + contra == 0
 
 
 # The journal each order side must leave behind. A buy books two cash legs (trade and
@@ -80,7 +138,14 @@ def _money(value: Decimal) -> str:
     """Canonical decimal string with no exponent and no float round-trip."""
     if value == 0:
         return "0"
-    return format(value.normalize(), "f")
+    with localcontext() as context:
+        context.prec = exact_precision(value, extra=MONEY_SCALE)
+        return format(value.normalize(), "f")
+
+
+def _usd(minor: int) -> str:
+    """Report an integer minor-unit total as exact USD."""
+    return _money(from_minor_units(minor))
 
 
 def _sample(items: list[str], limit: int = 5) -> str:
@@ -97,17 +162,26 @@ def _split_position(account: str) -> tuple[str, str]:
     return chain, token
 
 
-def _fills_cash(fills: list[Any], genesis: Decimal) -> Decimal:
-    """Cash projected from genesis plus every persisted fill: sells add, buys subtract."""
-    total = genesis
+def _fills_cash_minor(fills: Sequence[Any], genesis_minor: int) -> tuple[int, int]:
+    """(projected cash in minor units, fills whose figures are not exact money).
+
+    Cash is projected from genesis plus every persisted fill as *integer* minor units:
+    sells add proceeds, buys subtract notional, every fill pays its fee. A fill figure
+    that does not land on the quantum is counted, never rounded into the projection.
+    """
+    total = genesis_minor
+    inexact = 0
     for fill in fills:
-        notional = Decimal(str(fill.notional_usd))
-        fee = Decimal(str(fill.fee_usd))
+        notional = _minor(fill.notional_usd)
+        fee = _minor(fill.fee_usd)
+        if notional is None or fee is None:
+            inexact += 1
+            continue
         if fill.side == "sell":
             total += notional - fee
         else:
             total -= notional + fee
-    return total
+    return total, inexact
 
 
 def _check_genesis(ledger: list[Any], fills: list[Any]) -> dict[str, Any]:
@@ -150,16 +224,29 @@ def _check_genesis(ledger: list[Any], fills: list[Any]) -> dict[str, Any]:
             ),
         )
     cash_row = cash_rows[0]
-    if abs(marker.usd_value + cash_row.usd_value) > TOLERANCE:
+    marker_minor = _minor(marker.usd_value)
+    cash_minor = _minor(cash_row.usd_value)
+    if marker_minor is None or cash_minor is None:
+        return _check(
+            "genesis.accounted_once",
+            False,
+            (
+                f"genesis legs are not exact money: cash {_money(cash_row.usd_value)}, "
+                f"equity {_money(marker.usd_value)}"
+            ),
+        )
+    if marker_minor + cash_minor != 0:
         return _check(
             "genesis.accounted_once",
             False,
             (
                 f"genesis legs do not offset: cash {_money(cash_row.usd_value)}, "
-                f"equity {_money(marker.usd_value)}"
+                f"equity {_money(marker.usd_value)}, "
+                f"{marker_minor + cash_minor} minor units out"
             ),
         )
-    if abs(marker.amount - marker.usd_value) > TOLERANCE:
+    amount_minor = _minor(marker.amount)
+    if amount_minor != marker_minor:
         return _check(
             "genesis.accounted_once",
             False,
@@ -213,7 +300,15 @@ def _check_groups_linked(
             or fill.token_address != order.token_address
         ):
             order_mismatches.append(f"{group_id} order and fill disagree")
-        if abs(Decimal(str(order.amount_usd)) - Decimal(str(fill.notional_usd))) > TOLERANCE:
+        # Two values that are not exact money are not "equal" either: `None == None` would
+        # read a sub-minor pair as a match, so an unrepresentable figure fails the check.
+        order_notional = _minor(order.amount_usd)
+        fill_notional = _minor(fill.notional_usd)
+        if order_notional is None or fill_notional is None:
+            order_mismatches.append(
+                f"{group_id} order notional or fill notional is not a whole number of minor units"
+            )
+        elif order_notional != fill_notional:
             order_mismatches.append(f"{group_id} order notional and fill notional disagree")
         expected = EXPECTED_KINDS.get(order.side)
         if expected is None or Counter(row.kind for row in rows) != expected:
@@ -261,46 +356,53 @@ def _check_groups_linked(
 
 
 def _check_fill_values(fills: list[Any], by_group: dict[str, list[Any]]) -> dict[str, Any]:
-    """Each fill's quantity, notional and fee equal the journal legs it claims."""
+    """Each fill's quantity, notional and fee equal the journal legs it claims.
+
+    Money is compared as exact integer minor units; a fill whose persisted figure is not
+    on the quantum is itself a failure and is named rather than compared.
+    """
     problems: list[str] = []
     for fill in fills:
         rows = by_group.get(fill.order_id)
         if not rows:
             problems.append(f"{fill.id}: no journal group {fill.order_id}")
             continue
-        notional = Decimal(str(fill.notional_usd))
-        fee = Decimal(str(fill.fee_usd))
+        notional = _minor(fill.notional_usd)
+        fee = _minor(fill.fee_usd)
         quantity = Decimal(str(fill.quantity))
+        if notional is None or fee is None:
+            problems.append(f"{fill.id}: notional or fee is not a whole number of minor units")
+            continue
         cash_rows = [row for row in rows if row.account == cash_account()]
-        trade_cash = sum(
-            (Decimal(str(row.usd_value)) for row in cash_rows if row.kind == fill.side),
-            Decimal(0),
+        trade_cash, trade_inexact = _minor_sum(
+            [row.usd_value for row in cash_rows if row.kind == fill.side]
         )
-        cash_delta = sum((Decimal(str(row.usd_value)) for row in cash_rows), Decimal(0))
-        fee_total = sum(
-            (Decimal(str(row.usd_value)) for row in rows if row.account == fee_account()),
-            Decimal(0),
+        cash_delta, cash_inexact = _minor_sum([row.usd_value for row in cash_rows])
+        fee_total, fee_inexact = _minor_sum(
+            [row.usd_value for row in rows if row.account == fee_account()]
         )
         position_rows = [
             row for row in rows if row.account == position_account(fill.chain, fill.token_address)
         ]
-        ledger_quantity = sum((Decimal(str(row.amount)) for row in position_rows), Decimal(0))
+        ledger_quantity = exact_sum([row.amount for row in position_rows])
 
         if fill.side == "sell":
             expected_trade_cash = notional
             expected_cash = notional - fee
-            expected_quantity = -quantity
+            expected_quantity = quantity.copy_negate()
         else:
             expected_trade_cash = -notional
             expected_cash = -notional - fee
             expected_quantity = quantity
         differences: list[str] = []
-        if abs(trade_cash - expected_trade_cash) > TOLERANCE:
-            differences.append(f"trade cash {_money(trade_cash)} != {_money(expected_trade_cash)}")
-        if abs(cash_delta - expected_cash) > TOLERANCE:
-            differences.append(f"cash delta {_money(cash_delta)} != {_money(expected_cash)}")
-        if abs(fee_total - fee) > TOLERANCE:
-            differences.append(f"fee {_money(fee_total)} != {_money(fee)}")
+        if trade_inexact or cash_inexact or fee_inexact:
+            differences.append("journal cash or fee leg is not a whole number of minor units")
+        if not trade_inexact and trade_cash != expected_trade_cash:
+            differences.append(f"trade cash {_usd(trade_cash)} != {_usd(expected_trade_cash)}")
+        if not cash_inexact and cash_delta != expected_cash:
+            differences.append(f"cash delta {_usd(cash_delta)} != {_usd(expected_cash)}")
+        if not fee_inexact and fee_total != fee:
+            differences.append(f"fee {_usd(fee_total)} != {_usd(fee)}")
         if abs(ledger_quantity - expected_quantity) > QUANTITY_TOLERANCE:
             differences.append(f"quantity {_money(ledger_quantity)} != {_money(expected_quantity)}")
         if differences:
@@ -345,9 +447,9 @@ def _check_position_quantities(
 
 
 def _check_equity(
-    cash_total: Decimal,
-    fills_cash: Decimal,
-    genesis: Decimal,
+    cash_minor: int,
+    fills_cash_minor: int,
+    genesis_minor: int,
     position_quantities: dict[str, Decimal],
     from_fills: dict[str, Decimal],
     fill_count: int,
@@ -359,9 +461,13 @@ def _check_equity(
     the current mark. The two sides are computed from independent rows: cash and
     quantities from the journal, cash and quantities from the fills. An open position
     without a mark is unknown, never zero, so the check fails closed and names it.
+
+    Both sides are accumulated as integer minor units. A marked position value is a
+    *computed* figure, so it is rounded once at the ledger boundary (half-even) before it
+    is added; the comparison itself is exact integer equality, with no epsilon.
     """
     unmarked: list[str] = []
-    ledger_value = Decimal(0)
+    ledger_value_minor = 0
     for account, quantity in position_quantities.items():
         if abs(quantity) <= QUANTITY_TOLERANCE:
             continue
@@ -369,8 +475,8 @@ def _check_equity(
         if mark is None or mark <= 0:
             unmarked.append(account)
         else:
-            ledger_value += quantity * mark
-    fill_value = Decimal(0)
+            ledger_value_minor += _position_value_minor(quantity, mark)
+    fill_value_minor = 0
     for account, quantity in from_fills.items():
         if abs(quantity) <= QUANTITY_TOLERANCE:
             continue
@@ -379,7 +485,7 @@ def _check_equity(
             if account not in unmarked:
                 unmarked.append(account)
         else:
-            fill_value += quantity * mark
+            fill_value_minor += _position_value_minor(quantity, mark)
 
     if unmarked:
         return _check(
@@ -387,23 +493,23 @@ def _check_equity(
             False,
             f"equity unknown: no mark for {len(unmarked)} position(s): {_sample(unmarked)}",
         )
-    equity_ledger = cash_total + ledger_value
-    equity_fills = fills_cash + fill_value
-    difference = equity_ledger - equity_fills
-    if abs(difference) > TOLERANCE:
+    equity_ledger_minor = cash_minor + ledger_value_minor
+    equity_fills_minor = fills_cash_minor + fill_value_minor
+    difference = equity_ledger_minor - equity_fills_minor
+    if difference != 0:
         return _check(
             "equity.identity",
             False,
             (
-                f"ledger equity {_money(equity_ledger)} != genesis + fill effects "
-                f"{_money(equity_fills)} (difference {_money(difference)})"
+                f"ledger equity {_usd(equity_ledger_minor)} != genesis + fill effects "
+                f"{_usd(equity_fills_minor)} (difference {_usd(difference)})"
             ),
         )
     return _check(
         "equity.identity",
         True,
         (
-            f"ledger equity {_money(equity_ledger)} equals genesis {_money(genesis)} "
+            f"ledger equity {_usd(equity_ledger_minor)} equals genesis {_usd(genesis_minor)} "
             f"plus {fill_count} fill effects"
         ),
     )
@@ -459,52 +565,72 @@ def reconciliation(session: Session) -> dict[str, Any]:
         )
     }
 
-    group_totals: dict[str, Decimal] = defaultdict(Decimal)
+    # Money is accumulated as integer minor units. A persisted value that is not a whole
+    # number of minor units is not compared: it is recorded as inexact and reported, so a
+    # sub-quantum row can never hide inside a sum (LEDGER.md §2.6).
+    group_totals: dict[str, int] = defaultdict(int)
+    group_inexact: set[str] = set()
     by_group: dict[str, list[Any]] = defaultdict(list)
-    cash_total = Decimal(0)
-    genesis = Decimal(0)
-    position_quantities: dict[str, Decimal] = defaultdict(Decimal)
+    cash_minor = 0
+    genesis_minor = 0
+    position_amounts: dict[str, list[Any]] = defaultdict(list)
     orders_by_id = {order.id: order for order in orders}
 
     for row in ledger:
-        value = Decimal(str(row.usd_value))
-        amount = Decimal(str(row.amount))
-        group_totals[row.group_id] += value
         by_group[row.group_id].append(row)
+        if row.account.startswith(POSITION_PREFIX):
+            # A position quantity is a quantity, not money: it is summed for every row,
+            # whatever its USD value is, so an inexact money leg cannot shrink the
+            # position the ledger actually holds.
+            position_amounts[row.account].append(row.amount)
+        value = _minor(row.usd_value)
+        if value is None:
+            group_inexact.add(row.group_id)
+            continue
+        group_totals[row.group_id] += value
         if row.account == cash_account():
-            cash_total += value
+            cash_minor += value
         elif row.account == GENESIS_ACCOUNT:
             # The genesis equity leg is the negative of the starting cash.
-            genesis -= value
-        if row.account.startswith(POSITION_PREFIX):
-            position_quantities[row.account] += amount
+            genesis_minor -= value
+
+    # Quantities are summed exactly, with a precision derived from the operands, so the
+    # result does not depend on the ambient context or on the row order.
+    position_quantities: dict[str, Decimal] = {
+        account: exact_sum(amounts) for account, amounts in position_amounts.items()
+    }
 
     # Only a funding group tied to a real order adds to projected cash. A group that
     # merely looks like funding is left to the orphan and cash checks to report.
-    funding_cash = sum(
-        (
-            Decimal(str(row.usd_value))
-            for group_id, rows in by_group.items()
-            if _is_funding_group(group_id, rows, orders_by_id)
-            for row in rows
-            if row.account == cash_account()
-        ),
-        Decimal(0),
-    )
+    funding_minor = 0
+    for group_id, rows in by_group.items():
+        if not _is_funding_group(group_id, rows, orders_by_id):
+            continue
+        for row in rows:
+            if row.account == cash_account():
+                # `_is_funding_group` already refused a leg that is not exact money, so a
+                # funding group that reaches here contributes an integer, never a None.
+                funding_minor += _minor(row.usd_value) or 0
 
     # Independently project cash from genesis plus the persisted fill cash flow:
     # sells add proceeds, buys subtract notional, every fill pays its fee.
-    fills_cash = _fills_cash(list(fills), genesis) + funding_cash
+    fills_cash_minor, fills_inexact = _fills_cash_minor(fills, genesis_minor)
+    fills_cash_minor += funding_minor
 
     fills_by_order: dict[str, list[Any]] = defaultdict(list)
-    position_from_fills: dict[str, Decimal] = defaultdict(Decimal)
+    fill_amounts: dict[str, list[Any]] = defaultdict(list)
     for fill in fills:
         fills_by_order[fill.order_id].append(fill)
         account = position_account(fill.chain, fill.token_address)
-        quantity = Decimal(str(fill.quantity))
-        position_from_fills[account] += quantity if fill.side == "buy" else -quantity
+        signed = Decimal(str(fill.quantity))
+        fill_amounts[account].append(signed if fill.side == "buy" else -signed)
+    position_from_fills = {account: exact_sum(amounts) for account, amounts in fill_amounts.items()}
 
-    unbalanced = [group_id for group_id, total in group_totals.items() if abs(total) > TOLERANCE]
+    unbalanced = sorted(
+        group_id
+        for group_id in by_group
+        if group_totals.get(group_id, 0) != 0 or group_id in group_inexact
+    )
     negative_positions = sorted(
         account for account, quantity in position_quantities.items() if quantity < 0
     )
@@ -518,13 +644,14 @@ def reconciliation(session: Session) -> dict[str, Any]:
     )
     quote_kinds = Counter(fill.quote_kind for fill in fills)
 
+    cash_matches = cash_minor == fills_cash_minor and not fills_inexact
     checks = [
         _check_genesis(list(ledger), list(fills)),
         _check(
             "ledger.groups_balanced",
             not unbalanced,
             (
-                f"{len(group_totals)} groups checked; all sums within {TOLERANCE}"
+                f"{len(group_totals)} groups checked; every sum is exactly zero minor units"
                 if not unbalanced
                 else f"{len(unbalanced)} unbalanced groups: {_sample(unbalanced)}"
             ),
@@ -532,13 +659,14 @@ def reconciliation(session: Session) -> dict[str, Any]:
         _check_groups_linked(by_group, orders_by_id, fills_by_order, list(fills)),
         _check(
             "cash.fills_match",
-            abs(cash_total - fills_cash) <= TOLERANCE,
-            f"ledger cash {_money(cash_total)}; genesis + fills {_money(fills_cash)}",
+            cash_matches,
+            f"ledger cash {_usd(cash_minor)}; genesis + fills {_usd(fills_cash_minor)}"
+            + (f" ({fills_inexact} fill figures are not exact money)" if fills_inexact else ""),
         ),
         _check(
             "cash.non_negative",
-            cash_total >= 0,
-            f"cash account sum {_money(cash_total)}",
+            cash_minor >= 0,
+            f"cash account sum {_usd(cash_minor)}",
         ),
         _check(
             "positions.non_negative",
@@ -571,9 +699,9 @@ def reconciliation(session: Session) -> dict[str, Any]:
         ),
         _check_fill_values(list(fills), by_group),
         _check_equity(
-            cash_total,
-            fills_cash,
-            genesis,
+            cash_minor,
+            fills_cash_minor,
+            genesis_minor,
             position_quantities,
             position_from_fills,
             len(fills),
@@ -582,15 +710,15 @@ def reconciliation(session: Session) -> dict[str, Any]:
     ]
 
     totals = {
-        "genesis_usd": _money(genesis),
-        "cash_usd": _money(cash_total),
-        "fills_cash_usd": _money(fills_cash),
+        "genesis_usd": _usd(genesis_minor),
+        "cash_usd": _usd(cash_minor),
+        "fills_cash_usd": _usd(fills_cash_minor),
         "open_positions": open_positions,
         "fills": len(fills),
         "filled_orders": len(filled_orders),
         "orphan_fills": len(orphan_fills),
         "filled_orders_without_single_fill": len(orders_without_single_fill),
-        "negative_cash": 1 if cash_total < 0 else 0,
+        "negative_cash": 1 if cash_minor < 0 else 0,
         "negative_positions": len(negative_positions),
         "quote_kinds": dict(sorted(quote_kinds.items())),
     }
@@ -602,4 +730,4 @@ def reconciliation(session: Session) -> dict[str, Any]:
     }
 
 
-__all__ = ["QUANTITY_TOLERANCE", "TOLERANCE", "reconciliation"]
+__all__ = ["QUANTITY_TOLERANCE", "reconciliation"]

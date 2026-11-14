@@ -152,8 +152,8 @@ values and token quantities use `NUMERIC(38,18)`. No floats cross a money path.
 ## Execution hardening
 
 - **Reconciliation is a read model.** `GET /paper/reconciliation` derives everything
-  from persisted `ledger_entries`, `paper_fills` and `paper_orders`: per-group
-  `SUM(usd_value)` within `0.000001`, ledger cash against an independent
+  from persisted `ledger_entries`, `paper_fills` and `paper_orders`: per-group exact
+  integer minor-unit sums (zero, with no tolerance), ledger cash against an independent
   `genesis + Σ(sell notional − buy notional − fee)` projection, open positions,
   fill/order counts, orphan fills, filled orders without exactly one fill, negative cash
   and negative position quantities, and fill counts by `quote_kind`. Genesis comes from

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from collections import Counter, defaultdict
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 from sqlalchemy import func, select
@@ -20,6 +20,7 @@ from ezchain_api.services import paper
 from ezchain_api.services.reconciliation import reconciliation
 from ezchain_core import buy_entries, sell_entries
 from ezchain_core.ledger import bps_fee
+from ezchain_core.money import quantize_money
 
 from .conftest import FakeDexScreener, FakeJupiter, make_request, make_snapshot, place
 
@@ -33,6 +34,12 @@ WALK_TOKENS = (
     "0x00000000000000000000000000000000000000d4",
 )
 MONEY_QUANTUM = Decimal("0.00000001")
+# Every token quantity the real path journals comes from raw on-chain units divided by
+# 10**decimals, so it is exactly representable at the 18-decimal storage scale. The walk
+# quantizes its own derived quantities to that scale for the same reason: an unquantized
+# ``notional / price`` leaves a 1e-27 residue that is not a ledger defect but a division
+# result the journal could never hold.
+QUANTITY_QUANTUM = Decimal("0.000000000000000001")
 
 
 def _group_sums(session: Session) -> dict[str, Decimal]:
@@ -47,8 +54,13 @@ def _position_quantities(session: Session) -> dict[str, Decimal]:
     rows = session.scalars(
         select(LedgerEntryRow).where(LedgerEntryRow.account.like("position:%"))
     ).all()
-    for row in rows:
-        balances[row.account] += row.amount
+    # Quantities are exact divisions; summing them at the display precision would round
+    # the total and could report a phantom negative dust position. Sum at the ledger's
+    # own precision, like ``replay_position`` does.
+    with localcontext() as context:
+        context.prec = paper.LEDGER_PRECISION
+        for row in rows:
+            balances[row.account] += row.amount
     return balances
 
 
@@ -146,7 +158,7 @@ def test_reconciliation_identity_holds_on_a_multi_token_random_walk(
         order_id = new_id()
         if side == "buy":
             notional = amount
-            quantity = notional / price
+            quantity = (notional / price).quantize(QUANTITY_QUANTUM)
             fee = bps_fee(notional, settings.paper_fee_bps)
             entries = buy_entries(
                 chain="blast",
@@ -159,8 +171,10 @@ def test_reconciliation_identity_holds_on_a_multi_token_random_walk(
             )
             positions[token] = (held_qty + quantity, held_cost + notional)
         else:
-            quantity = min(amount / price, held_qty)
-            notional = quantity * price
+            quantity = min((amount / price).quantize(QUANTITY_QUANTUM), held_qty)
+            # The order path quantizes a derived USD notional once at the ledger boundary;
+            # this walk mirrors it so the persisted fill and journal agree exactly.
+            notional = quantize_money(quantity * price)
             fee = bps_fee(notional, settings.paper_fee_bps)
             average = held_cost / held_qty
             basis = (

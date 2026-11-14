@@ -14,7 +14,9 @@ commit atomically.
 
 *Enforced by:* `packages/core-py/ledger` + property test `ledger_invariants`
 (balance = sum, no negative unapproved accounts, every fill balances), repository layer
-forbids direct balance updates.
+forbids direct balance updates. Money is written in integer minor units at 1e-8 USD with
+no float and no balancing tolerance; the half-even boundary policy and its proofs live in
+[`LEDGER.md`](LEDGER.md) and `tests/paper/test_ledger_hardening.py`.
 
 *Learned from:* pumpbot's `balance() == SUM(wallet_rows.amount_usd)` was its best idea;
 v2's fire-and-forget `loop.create_task(_write_ledger())` let the cache drift; v1/v3

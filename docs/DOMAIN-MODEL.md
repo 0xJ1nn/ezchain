@@ -19,14 +19,17 @@ member is invited.
 
 ## 2. Money and units
 
-- `Money` = integer minor units + ISO-4217 currency (`USD`, `EUR`). Never float.
+- `Money` = integer minor units + ISO-4217 currency (`USD`, `EUR`). Never float. The
+  ledger settles USD at scale 8 (`0.00000001`), one quantum finer than a cent; see
+  [`LEDGER.md`](LEDGER.md).
 - `TokenAmount` = raw integer string (u128-safe) + `decimals` + `mint`. Display formats;
   math uses raw units with explicit decimals.
 - `Price` = `Decimal` with a declared quote (`USD`, `SOL`, `ETH`, …).
 - Market events carry `units: {base, quote, scale}` and are rejected if a consumer's
   expected units differ. No implicit lamports/token-unit coercion (v3 incident).
-- Rounding: half-even, at presentation only. Persist full precision; quantize at the
-  adapter boundary with a recorded `qty_rounding` reason.
+- Rounding: half-even, once, at the ledger boundary for every *computed* money value.
+  Explicit values must already be whole minor units and fail closed otherwise; floats are
+  refused. Persist full precision; see the policy in [`LEDGER.md`](LEDGER.md).
 
 ## 3. Entities
 

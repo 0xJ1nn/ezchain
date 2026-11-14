@@ -16,6 +16,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from .ledger import LedgerEntry, buy_entries, sell_entries
+from .money import quantize_money
 from .risk import RiskLimits, evaluate_order
 from .types import (
     OrderRequest,
@@ -275,9 +276,18 @@ def journal_from_fill(
     avg_cost_usd: Decimal = Decimal(0),
     cost_basis_usd: Decimal | None = None,
 ) -> Journal:
-    """Build the ledger journal from the venue receipt, never from the intent."""
+    """Build the ledger journal from the venue receipt, never from the intent.
+
+    The receipt is a *computed* value, not an explicit one: a partial fill's
+    ``notional_usd`` is ``quantity * price`` and a venue's ``fee_usd`` can carry more
+    decimals than the ledger's unit. Both are quantized exactly once here, half-even, at
+    this boundary (``docs/LEDGER.md`` §2), so a repeating-decimal notional is journaled
+    rather than refused as sub-quantum by the ledger's explicit-value rule.
+    """
     if not fill.bookable:
         raise ValueError("a journal is built only from an accepted, sized fill")
+    notional = quantize_money(fill.notional_usd, field="notional_usd")
+    fee = quantize_money(fill.fee_usd, field="fee_usd")
     if fill.side == "buy":
         entries = buy_entries(
             chain=chain,
@@ -285,8 +295,8 @@ def journal_from_fill(
             quantity=fill.quantity,
             price_usd=fill.price_usd,
             fee_bps=0,
-            notional_usd=fill.notional_usd,
-            fee_usd=fill.fee_usd,
+            notional_usd=notional,
+            fee_usd=fee,
         )
     else:
         entries = sell_entries(
@@ -296,9 +306,9 @@ def journal_from_fill(
             price_usd=fill.price_usd,
             avg_cost_usd=avg_cost_usd,
             fee_bps=0,
-            proceeds_usd=fill.notional_usd,
+            proceeds_usd=notional,
             cost_basis_usd=cost_basis_usd,
-            fee_usd=fill.fee_usd,
+            fee_usd=fee,
         )
     return Journal(group_id=f"fill:{fill.order_id}", entries=tuple(entries), fill=fill)
 

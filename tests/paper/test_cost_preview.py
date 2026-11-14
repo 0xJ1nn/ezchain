@@ -105,7 +105,7 @@ def test_paper_mark_pays_the_flat_fee_and_has_no_window() -> None:
 def test_worst_case_out_is_inside_the_slippage_window() -> None:
     preview = _preview(amount_out=Decimal("100"))
     assert preview.slippage_bps == DEFAULT_SLIPPAGE_BPS
-    assert preview.worst_case_out == Decimal("99.500000")
+    assert preview.worst_case_out == Decimal("99.50000000")
 
 
 def test_negative_fee_bps_and_nonpositive_notional_fail() -> None:
@@ -136,7 +136,9 @@ def test_filled_order_records_the_preview_that_equals_the_journal_fee(
     order = _place(session, settings, dex, "1.50")
     assert order.status == "filled"
     assert order.quote_json is not None
-    assert order.quote_json["cost_preview"]["fill_fee_usd"] == "1.50"
+    # Eight decimals, not two: the fill fee is quantized at the ledger boundary, so the
+    # previewed string is exactly the value the journal wrote.
+    assert order.quote_json["cost_preview"]["fill_fee_usd"] == "1.50000000"
     assert order.quote_json["cost_preview"]["platform_fee_usd"] == "0"
     assert order.quote_json["cost_preview"]["network_fee_usd"] is None
     # The recorded preview is the intent's, and the journal fee equals it exactly.
@@ -153,7 +155,7 @@ def test_rejected_after_quote_still_records_the_preview(
     assert order.status == "rejected"
     assert "ORDER_LIMIT" in (order.reason or "")
     assert order.quote_json is not None
-    assert order.quote_json["cost_preview"]["fill_fee_usd"] == "1.50"
+    assert order.quote_json["cost_preview"]["fill_fee_usd"] == "1.50000000"
 
 
 def test_preview_on_the_order_never_on_the_strategy(session: Session, dex: FakeDexScreener) -> None:

@@ -27,23 +27,25 @@ export interface CostModelView {
 	fill_fee_usd: string;
 }
 
-function round6(value: number): number {
-	return Math.round(value * 1e6) / 1e6;
+function round8(value: number): number {
+	return Math.round(value * 1e8) / 1e8;
 }
 
 function text(value: number): string {
-	return String(round6(value));
+	return String(round8(value));
 }
 
-/** Six-decimal quantize, exactly like Python's bps_fee. */
+/** Eight-decimal quantize, exactly like Python's bps_fee at the ledger quantum. */
 export function bpsFee(notionalUsd: string, feeBps: number): number {
 	const notional = Number(notionalUsd);
-	return round6((notional * feeBps) / 10_000);
+	return round8((notional * feeBps) / 10_000);
 }
 
 export function previewCost(input: CostModelInput): CostModelView {
 	const paperLeg = bpsFee(input.notional_usd, FIXTURE_PAPER_FEE_BPS);
-	const venueFee = Number(input.venue_fee_usd);
+	// The venue leg is a receipt figure: quantize it before the max, exactly as the
+	// server does, so `fill_fee_usd` is the fee the journal books.
+	const venueFee = round8(Number(input.venue_fee_usd));
 	const fillFee = input.kind === "paper_mark" ? paperLeg : Math.max(paperLeg, venueFee);
 	const slippageBps = input.kind === "paper_mark" ? null : FIXTURE_SLIPPAGE_BPS;
 	const amountOut = input.amount_out === null ? null : Number(input.amount_out);
