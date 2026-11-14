@@ -432,8 +432,14 @@ Squash-merge focused branches. The squash subject is the conventional commit; th
 keeps the PR summary and verification. Delete the branch after merge. Never merge a red
 PR "to unblock".
 
-Money-path PRs (ledger, risk, executor, venue adapters) need two reviewers, or one
-reviewer plus the maintainer's explicit approval in the thread.
+A money-path PR needs two distinct approvers; every other PR needs one. A diff is
+money-path when it touches `packages/core-py/`, `apps/api/alembic/`,
+`services/engine/`, `services/executor/` or `packages/adapters/`.
+`tools/check_reviews.py` decides this from the diff and the thread, and the merge gate
+runs it, so the rule is enforced rather than intended. An approver is one login — an
+`APPROVED` review or a maintainer comment whose line begins with `approved` — and an
+unreadable thread is a refusal. [WORKFLOW §3](docs/WORKFLOW.md) states the evidence
+exactly.
 
 ---
 
