@@ -542,6 +542,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **The stored markets page is a bounded read (GH-104).** `GET /api/v1/markets/stored`
+  fetched up to 100,000 rows, filtered them in Python and sliced a page out of the result,
+  so one page view read tens of megabytes once a scan had stored a few thousand tokens. The
+  chain, dex, liquidity, volume, 24h change and pair-age filters are now SQL predicates, the
+  page is a `LIMIT`/`OFFSET` or keyset statement on the same anchor the cursor already
+  carried, and `total` plus each filter's unknown count come back as one aggregate row
+  instead of being counted row by row. The cursor's encoding and its filter-match refusals
+  are unchanged, and an anchor that is no longer in the filtered set is refused rather than
+  resuming from a different row. Unknown liquidity, volume and change are still excluded
+  from a filter and counted under `unknown_excluded`, never compared as zero. Migration
+  `0026_market_stored_order` adds the two expression indexes the ordering needs
+  (`liquidity_usd IS NULL, liquidity_usd DESC, observed_at DESC, id DESC`, once globally and
+  once led by `chain`); the cost is two index entries per upserted observation.
 - **The executor honours the kill switch at sign time, before the key is used (PAPER/GH-227).**
   The pipeline read the switch before the venue, after the quote and once after the
   signature, so an arm that landed while the unsigned transaction was being built was

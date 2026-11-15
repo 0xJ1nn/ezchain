@@ -470,6 +470,9 @@ class MarketSnapshotRow(Base):
     ``market_snapshots.record_snapshot`` upserts on that key, so concurrent writers
     converge on one row. ``observed_at`` orders observations: a write never moves the
     stored mark backwards, and a timestamp ahead of the writer's clock never replaces one.
+
+    The two ``ix_market_snapshot_*_liquidity_order`` indexes carry the stored list's order,
+    which is why it can be a bounded read (GH-104); see the note under this class.
     """
 
     __tablename__ = "market_snapshots"
@@ -504,6 +507,32 @@ class MarketSnapshotRow(Base):
     pair_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+
+
+# Declared after the class so the ordering keys are real mapped columns. They are the stored
+# list's order and lead with ``liquidity_usd IS NULL`` instead of ``NULLS LAST``, which the
+# two dialects spell differently: one expression both can index and both can order by.
+#
+# Two of them, because a chain filter and the all-chain page want different leading keys. A
+# page for one chain walks the chain-leading one and never looks at another chain's rows; a
+# page for every chain walks the global one. Each costs one B-tree entry per upserted row,
+# so a market scan now maintains two ordering entries on top of the ``(chain, token_address)``
+# key it already maintained.
+Index(
+    "ix_market_snapshot_liquidity_order",
+    MarketSnapshotRow.liquidity_usd.is_(None),
+    MarketSnapshotRow.liquidity_usd.desc(),
+    MarketSnapshotRow.observed_at.desc(),
+    MarketSnapshotRow.id.desc(),
+)
+Index(
+    "ix_market_snapshot_chain_liquidity_order",
+    MarketSnapshotRow.chain,
+    MarketSnapshotRow.liquidity_usd.is_(None),
+    MarketSnapshotRow.liquidity_usd.desc(),
+    MarketSnapshotRow.observed_at.desc(),
+    MarketSnapshotRow.id.desc(),
+)
 
 
 class MarketCandleRow(Base):

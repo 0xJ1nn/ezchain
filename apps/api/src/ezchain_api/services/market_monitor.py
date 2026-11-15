@@ -18,11 +18,11 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
-from sqlalchemy import func, select
+from sqlalchemy import Numeric, and_, case, cast, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import CHAINS, ChainCoverage, CircuitBreaker, SortMode, UpstreamError
@@ -38,6 +38,15 @@ CHAIN_STATUSES = ("ok", "stale", "no_data", "error", "scanning")
 MIN_SCAN_INTERVAL_SECONDS = 30.0
 STALE_MARGIN_SECONDS = 15.0
 MAX_ERROR_TEXT = 240
+
+# The stored list's ordering, and the one migration 0026 indexes. ``id`` is the tie-break:
+# keyset paging needs a total order, and two rows of one scan share a timestamp.
+STORED_ORDER = (
+    MarketSnapshotRow.liquidity_usd.is_(None),
+    MarketSnapshotRow.liquidity_usd.desc(),
+    MarketSnapshotRow.observed_at.desc(),
+    MarketSnapshotRow.id.desc(),
+)
 
 
 @runtime_checkable
@@ -733,23 +742,213 @@ def count_stored_snapshots(session: Session, *, chain: str = "all") -> int:
     return int(session.scalar(statement) or 0)
 
 
+@dataclass(frozen=True)
+class StoredFilters:
+    """Which rows the stored list shows, as values SQL can answer.
+
+    Every field here is also carried by the response's ``applied_filters`` and by the
+    cursor, so this is the request's filter set and nothing derived from the rows.
+    """
+
+    chain: str = "all"
+    dex: str | None = None
+    min_liquidity_usd: Decimal | None = None
+    min_volume_24h_usd: Decimal | None = None
+    min_change_h24: Decimal | None = None
+    max_change_h24: Decimal | None = None
+    min_pair_age_minutes: int | None = None
+    max_pair_age_minutes: int | None = None
+
+
+def _money(column: Any, dialect: str) -> Any:
+    """The money column as a number, so a filter compares values and not digit strings.
+
+    Postgres stores these columns as ``NUMERIC`` and compares them exactly as written.
+    SQLite stores the same exact value as its decimal string (``_ExactDecimal``), where
+    ``'500' >= '10000'`` is true because text compares character by character, so the
+    comparison casts first. Only the filter casts: ordering keeps the column's own type,
+    because that is what the published order means on each dialect.
+
+    The cast is the one place this read is not exact. SQLite runs a cast through a double,
+    so above about fifteen significant digits a floor can decide a row by a rounding step;
+    that needs an amount past 10^15 with a fractional part at once, which a stored USD
+    liquidity or volume is not. Postgres, the deployed database, compares the exact numbers.
+    """
+    return cast(column, Numeric(38, 8)) if dialect == "sqlite" else column
+
+
+def _stored_predicates(
+    filters: StoredFilters, now: datetime, dialect: str
+) -> tuple[list[Any], dict[str, Any]]:
+    """The SQL conditions these filters mean, and the row set each unknown field counts.
+
+    A filter that names a value a row does not carry drops the row, and the row is counted
+    under the field it was missing: unknown is never read as zero, and a row missing two
+    fields is counted under both. Unknown is decided before any comparison, as the Python
+    pass this replaces decided it, so a row missing a value is counted as unknown even when
+    another filter would also have dropped it.
+    """
+    unknown: dict[str, Any] = {}
+    kept: list[Any] = []
+    if filters.min_liquidity_usd is not None:
+        unknown["liquidity_usd"] = MarketSnapshotRow.liquidity_usd.is_(None)
+        kept.append(_money(MarketSnapshotRow.liquidity_usd, dialect) >= filters.min_liquidity_usd)
+    if filters.min_volume_24h_usd is not None:
+        unknown["volume_24h_usd"] = MarketSnapshotRow.volume_24h_usd.is_(None)
+        kept.append(_money(MarketSnapshotRow.volume_24h_usd, dialect) >= filters.min_volume_24h_usd)
+    if filters.min_change_h24 is not None or filters.max_change_h24 is not None:
+        unknown["price_change_h24"] = MarketSnapshotRow.price_change_h24.is_(None)
+        if filters.min_change_h24 is not None:
+            kept.append(
+                _money(MarketSnapshotRow.price_change_h24, dialect) >= filters.min_change_h24
+            )
+        if filters.max_change_h24 is not None:
+            kept.append(
+                _money(MarketSnapshotRow.price_change_h24, dialect) <= filters.max_change_h24
+            )
+    if filters.min_pair_age_minutes is not None or filters.max_pair_age_minutes is not None:
+        unknown["pair_created_at"] = MarketSnapshotRow.pair_created_at.is_(None)
+        # Age is floored at zero at read time, so a pair dated in the future is zero minutes
+        # old: a floor of zero constrains nothing, and a ceiling of zero keeps it.
+        if filters.min_pair_age_minutes:
+            kept.append(
+                MarketSnapshotRow.pair_created_at
+                <= now - timedelta(minutes=filters.min_pair_age_minutes)
+            )
+        if filters.max_pair_age_minutes is not None:
+            kept.append(
+                MarketSnapshotRow.pair_created_at
+                >= now - timedelta(minutes=filters.max_pair_age_minutes)
+            )
+    if filters.dex is not None:
+        # A row with no venue has no matching venue. Folding is ASCII-only in SQL, and every
+        # venue identifier the adapters report is ASCII.
+        kept.append(func.lower(MarketSnapshotRow.dex) == filters.dex.casefold())
+    if unknown:
+        kept.append(not_(or_(*unknown.values())))
+    return kept, unknown
+
+
+def _restrict(statement: Any, filters: StoredFilters, now: datetime, dialect: str) -> Any:
+    if filters.chain != "all":
+        statement = statement.where(MarketSnapshotRow.chain == filters.chain)
+    kept, _ = _stored_predicates(filters, now, dialect)
+    for clause in kept:
+        statement = statement.where(clause)
+    return statement
+
+
+def stored_snapshot_totals(
+    session: Session, filters: StoredFilters, now: datetime
+) -> tuple[int, dict[str, int]]:
+    """The filtered row count and the per-field unknown counts, in one aggregate read.
+
+    Both numbers describe the whole filtered population, so the database has to visit it;
+    it returns one row of counters instead of one row per token, which is the difference
+    between a count and the list this endpoint used to materialise.
+    """
+    dialect = session.get_bind().dialect.name
+    kept, unknown = _stored_predicates(filters, now, dialect)
+    kept_mask = and_(*kept) if kept else None
+    columns: list[Any] = [
+        func.sum(case((kept_mask, 1), else_=0))
+        if kept_mask is not None
+        else func.count(MarketSnapshotRow.id),
+        *(func.sum(case((condition, 1), else_=0)) for condition in unknown.values()),
+    ]
+    statement = select(*columns)
+    if filters.chain != "all":
+        statement = statement.where(MarketSnapshotRow.chain == filters.chain)
+    row = session.execute(statement).one()
+    return int(row[0] or 0), {
+        field: int(value or 0) for field, value in zip(unknown, row[1:], strict=True)
+    }
+
+
+def stored_snapshot_page(
+    session: Session,
+    filters: StoredFilters,
+    now: datetime,
+    *,
+    limit: int,
+    offset: int = 0,
+    after: MarketSnapshotRow | None = None,
+) -> list[MarketSnapshotRow]:
+    """One page of the filtered list, ordered and cut by the database.
+
+    ``after`` is the keyset anchor: the rows that sort after it in :data:`STORED_ORDER`.
+    It and ``offset`` are alternatives, one per request. Either way the statement returns
+    at most ``limit`` rows, so a page's cost does not grow with the table.
+    """
+    statement = _restrict(select(MarketSnapshotRow), filters, now, session.get_bind().dialect.name)
+    if after is not None:
+        statement = statement.where(_after_anchor(after))
+    statement = statement.order_by(*STORED_ORDER).limit(limit).offset(max(0, offset))
+    return list(session.scalars(statement))
+
+
+def stored_snapshot_with_id(
+    session: Session, filters: StoredFilters, now: datetime, row_id: str
+) -> MarketSnapshotRow | None:
+    """The cursor's anchor row, but only while it still matches this request's filters."""
+    statement = _restrict(
+        select(MarketSnapshotRow).where(MarketSnapshotRow.id == row_id),
+        filters,
+        now,
+        session.get_bind().dialect.name,
+    )
+    return session.scalars(statement.limit(1)).first()
+
+
+def stored_snapshot_position(
+    session: Session, filters: StoredFilters, now: datetime, anchor: MarketSnapshotRow
+) -> int:
+    """How many filtered rows sort at or before ``anchor``: the offset of the row after it.
+
+    The response reports ``offset`` and ``next_offset``, so a keyset page still has to know
+    where it sits. This counts the page's prefix, the same rows an ``OFFSET`` page would
+    have walked, and materialises none of them.
+    """
+    statement = _restrict(
+        select(func.count()).where(not_(_after_anchor(anchor))),
+        filters,
+        now,
+        session.get_bind().dialect.name,
+    )
+    return int(session.scalar(statement) or 0)
+
+
+def _after_anchor(anchor: MarketSnapshotRow) -> Any:
+    """Rows that sort strictly after ``anchor`` in :data:`STORED_ORDER`.
+
+    Spelled out rather than written as a row-value comparison because a row value holding
+    a NULL compares to unknown. Every row with unknown liquidity sorts after every row with
+    a known one, so that whole group is one branch when the anchor's liquidity is known.
+    """
+    liquidity = MarketSnapshotRow.liquidity_usd
+    tie = or_(
+        MarketSnapshotRow.observed_at < anchor.observed_at,
+        and_(
+            MarketSnapshotRow.observed_at == anchor.observed_at,
+            MarketSnapshotRow.id < anchor.id,
+        ),
+    )
+    if anchor.liquidity_usd is None:
+        return and_(liquidity.is_(None), tie)
+    return or_(
+        liquidity.is_(None),
+        liquidity < anchor.liquidity_usd,
+        and_(liquidity == anchor.liquidity_usd, tie),
+    )
+
+
 def stored_snapshots(
     session: Session, *, chain: str = "all", limit: int = 50, offset: int = 0
 ) -> list[MarketSnapshotRow]:
     """Latest persisted observation per token, deepest liquidity first, nulls last."""
-    statement = select(MarketSnapshotRow)
-    if chain != "all":
-        statement = statement.where(MarketSnapshotRow.chain == chain)
-    statement = (
-        statement.order_by(
-            MarketSnapshotRow.liquidity_usd.is_(None),
-            MarketSnapshotRow.liquidity_usd.desc(),
-            MarketSnapshotRow.observed_at.desc(),
-        )
-        .limit(limit)
-        .offset(max(0, offset))
+    return stored_snapshot_page(
+        session, StoredFilters(chain=chain), datetime.now(UTC), limit=limit, offset=offset
     )
-    return list(session.scalars(statement))
 
 
 __all__ = [
@@ -758,8 +957,14 @@ __all__ = [
     "MarketMonitor",
     "MarketSource",
     "ScanResult",
+    "STORED_ORDER",
+    "StoredFilters",
     "build_overview",
     "stale_after_seconds",
     "count_stored_snapshots",
+    "stored_snapshot_page",
+    "stored_snapshot_position",
+    "stored_snapshot_totals",
+    "stored_snapshot_with_id",
     "stored_snapshots",
 ]
