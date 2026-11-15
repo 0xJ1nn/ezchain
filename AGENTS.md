@@ -240,6 +240,21 @@ One active implementer per branch. Do not let multiple agents (OpenCode, Claude,
 Hermes) edit the same files simultaneously. Use worktrees and separate branches for
 parallel work.
 
+## Delegation
+
+One subagent owns one **field** end to end — a package, a service, a lane like `apps/api` or
+`apps/web` — and runs it to completion: every open item in its own files, implementation, that
+field's tests, that field's docs, one after another with no report in between. A field worker
+stops only when the field is finished or every remaining item is blocked on a decision.
+
+Fields partition the files, so two workers never edit one file. Do not split a field into a
+stream of small task subagents, and do not hand a subagent a subtask of another's work or a
+fragment of one commit: a one-command fix, a rebase, a commit rewording or merging a green
+pull request is done by the agent already running.
+
+Two to four field workers at a time. Longer briefs are expected; a short brief that only makes
+sense after three earlier ones is the failure mode.
+
 ---
 
 ## Verification without vision
