@@ -252,8 +252,9 @@ stream of small task subagents, and do not hand a subagent a subtask of another'
 fragment of one commit: a one-command fix, a rebase, a commit rewording or merging a green
 pull request is done by the agent already running.
 
-Two to four field workers at a time. Longer briefs are expected; a short brief that only makes
-sense after three earlier ones is the failure mode.
+Two field workers at a time, never a swarm — each child pays its own orientation cost, so fan-out
+buys parallel discovery rather than parallel work. Longer briefs are expected; a short brief that
+only makes sense after three earlier ones is the failure mode.
 
 ---
 
