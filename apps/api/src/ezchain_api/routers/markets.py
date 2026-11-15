@@ -54,8 +54,12 @@ from ..schemas import (
 from ..services.candles import get_candles
 from ..services.market_monitor import (
     MarketMonitor,
+    StoredFilters,
     build_overview,
-    stored_snapshots,
+    stored_snapshot_page,
+    stored_snapshot_position,
+    stored_snapshot_totals,
+    stored_snapshot_with_id,
 )
 from ..services.market_reads import provenance, source_ref
 
@@ -343,65 +347,6 @@ def _stored(row: MarketSnapshotRow, now: datetime) -> StoredSnapshotOut:
     )
 
 
-def _apply_stored_filters(
-    rows: list[MarketSnapshotRow],
-    *,
-    dex: str | None,
-    min_liquidity_usd: Decimal | None,
-    min_volume_24h_usd: Decimal | None,
-    min_change_h24: Decimal | None,
-    max_change_h24: Decimal | None,
-    min_pair_age_minutes: int | None,
-    max_pair_age_minutes: int | None,
-    now: datetime,
-) -> tuple[list[MarketSnapshotRow], dict[str, int]]:
-    unknown: dict[str, int] = {}
-    kept: list[MarketSnapshotRow] = []
-    for row in rows:
-        unknown_fields: set[str] = set()
-        if min_liquidity_usd is not None and row.liquidity_usd is None:
-            unknown_fields.add("liquidity_usd")
-        if min_volume_24h_usd is not None and row.volume_24h_usd is None:
-            unknown_fields.add("volume_24h_usd")
-        if (min_change_h24 is not None or max_change_h24 is not None) and (
-            row.price_change_h24 is None
-        ):
-            unknown_fields.add("price_change_h24")
-        if (min_pair_age_minutes is not None or max_pair_age_minutes is not None) and (
-            row.pair_created_at is None
-        ):
-            unknown_fields.add("pair_created_at")
-        if unknown_fields:
-            for field in unknown_fields:
-                unknown[field] = unknown.get(field, 0) + 1
-            continue
-        if min_liquidity_usd is not None and row.liquidity_usd is not None:
-            if row.liquidity_usd < min_liquidity_usd:
-                continue
-        if min_volume_24h_usd is not None and row.volume_24h_usd is not None:
-            if row.volume_24h_usd < min_volume_24h_usd:
-                continue
-        if min_change_h24 is not None and row.price_change_h24 is not None:
-            if row.price_change_h24 < min_change_h24:
-                continue
-        if max_change_h24 is not None and row.price_change_h24 is not None:
-            if row.price_change_h24 > max_change_h24:
-                continue
-        if row.pair_created_at is not None and (
-            min_pair_age_minutes is not None or max_pair_age_minutes is not None
-        ):
-            age_minutes = max(0.0, (now - _aware(row.pair_created_at)).total_seconds() / 60.0)
-            if min_pair_age_minutes is not None and age_minutes < min_pair_age_minutes:
-                continue
-            if max_pair_age_minutes is not None and age_minutes > max_pair_age_minutes:
-                continue
-        if dex is not None:
-            if row.dex is None or row.dex.casefold() != dex.casefold():
-                continue
-        kept.append(row)
-    return kept, unknown
-
-
 def _stored_filters_payload(
     chain: str,
     q: str | None,
@@ -531,9 +476,8 @@ def market_stored(
 
     now = datetime.now(UTC)
     effective_cursor = cursor or page_cursor or after
-    all_rows = stored_snapshots(session, chain=chain, limit=100000, offset=0)
-    filtered, unknown = _apply_stored_filters(
-        all_rows,
+    filters = StoredFilters(
+        chain=chain,
         dex=dex,
         min_liquidity_usd=min_liquidity_usd,
         min_volume_24h_usd=min_volume_24h_usd,
@@ -541,9 +485,8 @@ def market_stored(
         max_change_h24=max_change_h24,
         min_pair_age_minutes=min_pair_age_minutes,
         max_pair_age_minutes=max_pair_age_minutes,
-        now=now,
     )
-    total = len(filtered)
+    total, unknown = stored_snapshot_totals(session, filters, now)
 
     if effective_cursor is not None:
         data = _decode_cursor(effective_cursor)
@@ -567,16 +510,17 @@ def market_stored(
         anchor_id = data.get("id")
         if not isinstance(anchor_id, str):
             _invalid_cursor("cursor is missing its anchor")
-        anchor_index = next(
-            (index for index, row in enumerate(filtered) if str(row.id) == anchor_id), None
-        )
-        if anchor_index is None:
+        # The anchor has to be a row this request still shows. A row that was deleted, or
+        # one a filter now excludes, no longer names a position, so the cursor is refused
+        # rather than silently resuming from a different row.
+        anchor = stored_snapshot_with_id(session, filters, now, anchor_id)
+        if anchor is None:
             _invalid_cursor("cursor refers to a row that no longer exists")
-        start = anchor_index + 1
-        page_rows = filtered[start : start + limit]
+        start = stored_snapshot_position(session, filters, now, anchor)
+        page_rows = stored_snapshot_page(session, filters, now, limit=limit, after=anchor)
     else:
         start = offset
-        page_rows = filtered[start : start + limit]
+        page_rows = stored_snapshot_page(session, filters, now, limit=limit, offset=offset)
 
     returned = len(page_rows)
     has_more = start + returned < total
