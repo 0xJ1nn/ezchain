@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
-import { getPaperLimits } from "@/lib/account-api";
+import { getPaperLimits, getPaperPerformance } from "@/lib/account-api";
 import { formatUsd, formatUsdPrice, quoteKindLabel, shortAddress } from "@/lib/live-format";
 import {
 	KILL_SWITCH_LEVELS,
@@ -47,13 +47,25 @@ function rejectionSummary(orders: PaperOrderRecord[]) {
 }
 
 export default async function RiskPage() {
-	const [snapshot, killSwitchResult, ordersResult, limitsResult] = await Promise.all([
-		getPaperSnapshot(),
-		getKillSwitch(),
-		getPaperOrders(100),
-		getPaperLimits(),
-	]);
+	const [snapshot, killSwitchResult, ordersResult, limitsResult, performanceResult] =
+		await Promise.all([
+			getPaperSnapshot(),
+			getKillSwitch(),
+			getPaperOrders(100),
+			getPaperLimits(),
+			getPaperPerformance(),
+		]);
 	const limits = limitsResult.ok ? limitsResult.data : null;
+	const drawdown =
+		performanceResult.ok
+			? (performanceResult.data.drawdown_series ?? performanceResult.data.series?.drawdown ?? [])
+			: [];
+	// The server sends the points; the browser prints them as returned and never picks a
+	// maximum, averages a bucket or turns a null point into a zero.
+	const drawdownRows = drawdown.slice(-6).map((point) => {
+		const raw: unknown = "drawdown_pct" in point ? point.drawdown_pct : point.value;
+		return { t: point.t, pct: typeof raw === "string" ? raw : null };
+	});
 	const mode = snapshot.mode;
 	const account = snapshot.account.ok ? snapshot.account.data : null;
 	const positions = snapshot.positions.ok ? snapshot.positions.data : [];
@@ -216,6 +228,65 @@ export default async function RiskPage() {
 
 			<div className="split">
 				<div className="stack">
+					<Panel
+						title="Drawdown"
+						sub={
+							performanceResult.ok
+								? `${drawdown.length} server points · latest last`
+								: "series unavailable"
+						}
+						action={
+							performanceResult.ok ? (
+								<Badge tone="ghost">PAPER · SERVER SERIES</Badge>
+							) : (
+								<Badge tone="warn">{performanceResult.code}</Badge>
+							)
+						}
+						flush
+						footer="Each row is a point the API returned, in its own order. No peak, average or maximum is computed in the browser."
+					>
+						{!performanceResult.ok ? (
+							<div className="panel-body">
+								<Unavailable
+									title="Drawdown series unavailable"
+									code={performanceResult.code}
+									message={performanceResult.message}
+								>
+									No drawdown value is substituted when the read is unavailable.
+								</Unavailable>
+							</div>
+						) : drawdownRows.length === 0 ? (
+							<div className="panel-body">
+								<EmptyState title="No drawdown points returned">
+									The server series is empty. Nothing is drawn from an empty series and no peak is
+									inferred from the account snapshot.
+								</EmptyState>
+							</div>
+						) : (
+							<div className="table-wrap">
+								<table className="table compact">
+									<caption className="sr-only">Drawdown points</caption>
+									<thead>
+										<tr>
+											<th scope="col">Bucket</th>
+											<th scope="col" className="num">Drawdown</th>
+										</tr>
+									</thead>
+									<tbody>
+										{drawdownRows.map((point, index) => (
+											<tr key={`${point.t}-${index}`}>
+												<td className="mono">{point.t}</td>
+												<td className={`num mono${point.pct === null ? " muted" : ""}`}>
+													{point.pct === null ? "—" : point.pct}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+					</Panel>
+
 					<Panel
 						title="Exposure by position"
 						sub={snapshot.positions.ok ? `${positions.length} open` : "unavailable"}
