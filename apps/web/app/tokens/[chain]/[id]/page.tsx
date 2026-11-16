@@ -6,6 +6,7 @@ import { CandleChart, CandleEmptyState } from "@/components/candle-chart";
 import { CandleTimeframes } from "@/components/candle-timeframes";
 import { AppShell } from "@/components/shell";
 import { Badge, Panel, Stat } from "@/components/ui";
+import { WatchlistToggle } from "@/components/watchlist-toggle";
 import {
 	asApiError,
 	getChains,
@@ -232,6 +233,12 @@ export default async function TokenPage({
 					</div>
 				</div>
 				<div className="page-actions">
+					<WatchlistToggle
+						chain={chain}
+						baseToken={token.address}
+						symbol={token.symbol}
+						name={token.name}
+					/>
 					<div style={{ textAlign: "right" }}>
 						<div className="mono" style={{ fontSize: 20, fontWeight: 600 }}>
 							{formatUsdPrice(token.price_usd)}

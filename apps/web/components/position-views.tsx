@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui";
+import { WatchlistToggle } from "@/components/watchlist-toggle";
 import { CandleSparkline } from "@/components/token-chart";
 import type { CandleLoad } from "@/lib/candle-view";
 import type { PaperPosition } from "@/lib/paper-api";
@@ -144,7 +145,14 @@ export function PositionList({
 								className={age.stale ? styles.staleRow : undefined}
 							>
 								<td>
-									<TokenCell position={position} query={query} />
+									<div className="row" style={{ gap: 6 }}>
+										<TokenCell position={position} query={query} />
+										<WatchlistToggle
+											chain={position.chain}
+											baseToken={position.token_address}
+											symbol={position.symbol}
+										/>
+									</div>
 								</td>
 								<td className="col-hide-sm">{position.chain}</td>
 								<td className="num mono">{quantity(position.quantity)}</td>
