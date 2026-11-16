@@ -7,6 +7,16 @@ only accountant.
 
 from .journal import JournalSink, MemoryJournal
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
+from .outbox import (
+    AttemptLog,
+    BroadcastAttempt,
+    FileAttemptLog,
+    MemoryAttemptLog,
+    Reconciler,
+    Reconciliation,
+    TransactionStatusVenue,
+    VenueTxStatus,
+)
 from .pipeline import DedupeStore, ExecutionPipeline, IntentRejected
 from .signing import KeyRing, LocalTransactionSigner, SigningBoundary, SigningRefused
 from .vault import (
@@ -23,9 +33,12 @@ from .vault import (
 from .venue import FakeVenue, VenueError
 
 __all__ = [
+    "AttemptLog",
+    "BroadcastAttempt",
     "DedupeStore",
     "ExecutionPipeline",
     "FakeVenue",
+    "FileAttemptLog",
     "HardwareSignerVault",
     "IntentRejected",
     "JournalSink",
@@ -34,7 +47,10 @@ __all__ = [
     "KillSwitchActive",
     "KillSwitchUnavailable",
     "LocalTransactionSigner",
+    "MemoryAttemptLog",
     "MemoryJournal",
+    "Reconciler",
+    "Reconciliation",
     "SignerApprovalDenied",
     "SignerHandleUnknown",
     "SignerLocked",
@@ -44,6 +60,8 @@ __all__ = [
     "SignerUnreachable",
     "SigningBoundary",
     "SigningRefused",
+    "TransactionStatusVenue",
     "VaultTransactionSigner",
     "VenueError",
+    "VenueTxStatus",
 ]
