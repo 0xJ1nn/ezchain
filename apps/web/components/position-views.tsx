@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui";
 import { WatchlistToggle } from "@/components/watchlist-toggle";
 import { CandleSparkline } from "@/components/token-chart";
+import { PositionTile } from "@/components/position-tile";
 import type { CandleLoad } from "@/lib/candle-view";
 import type { PaperPosition } from "@/lib/paper-api";
+import { positionToTile } from "@/lib/position-tile-view";
 import {
 	POSITION_VIEWS,
 	money,
@@ -218,6 +220,30 @@ function Fact({
 		<div className={styles.fact}>
 			<dt>{label}</dt>
 			<dd className={`mono${tone ? ` ${tone}` : ""}`}>{value}</dd>
+		</div>
+	);
+}
+
+/**
+ * The signature 9-zone tile, rendered from server rows.
+ *
+ * `positionToTile` projects a server `PositionView` into the one `PositionTileView` model
+ * the gallery and the dashboard already share. A zone the API does not return (chart,
+ * ladder, hold budget) stays explicitly empty in that model, so this view cannot invent
+ * one. `data-position` keeps the same stable key the list and grid views carry, which is
+ * what lets a test read the same rows out of every view.
+ */
+export function PositionTiles({ positions }: { positions: PaperPosition[] }) {
+	return (
+		<div className="grid cols-3 tiles" data-view="tile">
+			{positions.map((position) => {
+				const tile = positionToTile(position);
+				return (
+					<div key={positionKey(position)} data-position={positionKey(position)}>
+						<PositionTile position={tile} />
+					</div>
+				);
+			})}
 		</div>
 	);
 }
