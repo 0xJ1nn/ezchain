@@ -732,3 +732,31 @@ def test_zero_drift_across_mixed_random_tapes(seed: int) -> None:
     assert seen["explicit_notional"] > 0
     assert seen["full_exit"] > 0
     assert seen["partial_derived"] > 0
+
+
+def test_floor_money_never_lands_above_the_value_it_rounds() -> None:
+    """A ceiling has to stay a ceiling.
+
+    ``quantize_money`` is half-even and can move a derived cap upward: at equity
+    ``1000.0000007`` the 5% cap is ``50.000000035`` and half-even gives ``50.00000004``. A
+    size chosen from that number was then refused by a check against the same cap.
+    """
+    from decimal import Decimal
+
+    from ezchain_core.money import floor_money, quantize_money
+
+    cap = Decimal("50.000000035")
+    assert quantize_money(cap) > cap
+    assert floor_money(cap) <= cap
+    assert floor_money(cap) == Decimal("50.00000003")
+
+
+def test_floor_money_leaves_a_whole_minor_unit_alone() -> None:
+    """A value already on the quantum is returned unchanged, sign included."""
+    from decimal import Decimal
+
+    from ezchain_core.money import floor_money
+
+    assert floor_money(Decimal("50.00000003")) == Decimal("50.00000003")
+    assert floor_money(Decimal(0)) == Decimal(0)
+    assert floor_money(Decimal("-0.000000005")) == Decimal("-0.00000001")

@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import TRADE_RISK_PROFILES
-from ezchain_core.money import exact_product, quantize_money
+from ezchain_core.money import exact_product, floor_money
 from ezchain_core.trade_policy import (
     PROFILE_ORDER,
     PolicyError,
@@ -93,7 +93,10 @@ def resolve_size(
         return ResolvedSize(settings.max_order_usd, None, limits, SIZING_SOURCE)
     if equity_usd is None:
         raise PolicyError("EQUITY_UNKNOWN", "equity is unknown, so no size can be resolved")
-    pct_cap = quantize_money(
+    # Floored, not rounded: half-even can move the cap *above* the value it caps (at equity
+    # 1000.0000007 the 5% ceiling is 50.000000035 and half-even gives 50.00000004), so the
+    # resolver refused the very size it had just chosen.
+    pct_cap = floor_money(
         exact_product(equity_usd, profile.max_order_pct_of_equity), field="resolved_size_usd"
     )
     chosen = max(profile.min_order_usd, min(profile.max_order_usd, pct_cap))
