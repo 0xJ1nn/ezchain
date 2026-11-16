@@ -81,8 +81,8 @@ class EzchainClient:
     def patch(self, path: str, json: dict[str, Any] | None = None) -> Any:
         return self._request("PATCH", path, json=json)
 
-    def delete(self, path: str) -> Any:
-        return self._request("DELETE", path)
+    def delete(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return self._request("DELETE", path, params=params)
 
 
 __all__ = ["ApiError", "EzchainClient"]

@@ -34,6 +34,16 @@ def _object(properties: dict[str, Any], required: list[str] | None = None) -> di
     return schema
 
 
+def _only(args: dict[str, Any], *keys: str) -> dict[str, Any]:
+    """Forward declared fields only.
+
+    The tool schema is a promise to the caller, not an enforced boundary: a caller can put
+    an undeclared field in a tool call. Copying only the declared keys keeps a forged field
+    such as ``mode`` or ``approved`` from ever reaching the API.
+    """
+    return {key: args[key] for key in keys if key in args}
+
+
 Cost = Literal["free", "paid"]
 Effect = Literal["read", "configure", "trade"]
 
@@ -203,12 +213,28 @@ def _dry_run_graph(client: EzchainClient, args: dict[str, Any]) -> Any:
 
 
 def _create_strategy(client: EzchainClient, args: dict[str, Any]) -> Any:
-    return client.post("/api/v1/strategies", json=args)
+    return client.post(
+        "/api/v1/strategies",
+        json=_only(
+            args,
+            "name",
+            "chain",
+            "token_address",
+            "token_symbol",
+            "kind",
+            "params",
+            "plugin_id",
+            "status",
+        ),
+    )
 
 
 def _update_strategy(client: EzchainClient, args: dict[str, Any]) -> Any:
     strategy_id = args.pop("strategy_id")
-    return client.patch(f"/api/v1/strategies/{_seg(strategy_id)}", json=args)
+    return client.patch(
+        f"/api/v1/strategies/{_seg(strategy_id)}",
+        json=_only(args, "name", "params", "status"),
+    )
 
 
 def _set_status(client: EzchainClient, strategy_id: str, status: str) -> Any:
@@ -240,6 +266,9 @@ def _place_paper_order(client: EzchainClient, args: dict[str, Any]) -> Any:
     answer always names both, so an agent cannot mistake "accepted" for "filled"; under
     ``full_auto`` the two fields are null and the order fills like any other.
     """
+    # Unlike other mutations, the order forwards its whole body on purpose: the API's closed
+    # schema refuses a forged field such as `approved` or `mode` with a 422. Stripping it here
+    # would turn that loud refusal into a silently accepted order.
     order = client.post("/api/v1/paper/orders", json=args)
     if isinstance(order, dict):
         approval_id = order.get("approval_id")
@@ -261,7 +290,21 @@ def _place_paper_order(client: EzchainClient, args: dict[str, Any]) -> Any:
 
 
 def _run_backtest(client: EzchainClient, args: dict[str, Any]) -> Any:
-    return client.post("/api/v1/backtests", json=args)
+    return client.post(
+        "/api/v1/backtests",
+        json=_only(
+            args,
+            "graph",
+            "strategy_id",
+            "chain",
+            "token_address",
+            "timeframe",
+            "bars",
+            "fee_bps",
+            "slippage_bps",
+            "starting_cash_usd",
+        ),
+    )
 
 
 def _validate_plugin_config(client: EzchainClient, args: dict[str, Any]) -> Any:
