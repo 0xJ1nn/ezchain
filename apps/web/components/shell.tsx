@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { TopbarKillSwitch } from "@/app/risk/kill-switch";
+import {
+	TopbarQuickTrade,
+	type QuickTradeOption,
+} from "@/components/topbar-quick-trade";
+import { getMarkets, getQuote, type Reason } from "@/lib/api";
 import { getKillSwitch } from "@/lib/paper-api";
 import { getExecutionMode } from "@/lib/system-api";
 import { Sidebar } from "./sidebar";
@@ -16,6 +21,34 @@ async function TopbarKillSwitchState() {
 			initialError={result.ok ? null : result.error.message}
 		/>
 	);
+}
+
+// The quick-trade panel gets its rows and quotes from the server, which knows the data
+// mode. A failed quote becomes a typed reason, never a guessed price or a hidden row.
+async function TopbarQuickTradeState() {
+	const list = await getMarkets({ limit: 12, sort: "trending" }).catch(() => null);
+	const options: QuickTradeOption[] = await Promise.all(
+		(list?.rows ?? []).map(async (row) => {
+			try {
+				const quote = await getQuote({
+					chain: row.chain,
+					token: row.base_token,
+					side: "buy",
+					amountUsd: "100",
+				});
+				return { row, quote, reason: null };
+			} catch (error) {
+				const apiError = error as { code?: string; message?: string; retryable?: boolean };
+				const reason: Reason = {
+					code: apiError.code ?? "QUOTE_UNAVAILABLE",
+					message: apiError.message ?? "No quote was returned for this market.",
+					retryable: apiError.retryable ?? false,
+				};
+				return { row, quote: null, reason };
+			}
+		}),
+	);
+	return <TopbarQuickTrade options={options} />;
 }
 
 // The execution mode is the value the API derived, never a literal. A read that fails or
@@ -80,6 +113,15 @@ export function Topbar() {
 					aria-label="Search markets (symbol, name or address)"
 				/>
 			</form>
+			<Suspense
+				fallback={
+					<button type="button" className="btn sm" disabled>
+						⚡ Quick trade
+					</button>
+				}
+			>
+				<TopbarQuickTradeState />
+			</Suspense>
 			<Suspense fallback={<ModeChipFallback />}>
 				<TopbarModeChip />
 			</Suspense>

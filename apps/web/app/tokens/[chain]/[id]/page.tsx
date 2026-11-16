@@ -42,7 +42,7 @@ import {
 } from "@/lib/live-format";
 import { webMode as protectionWebMode } from "@/lib/protection-api";
 import { PaperTicket } from "./paper-ticket";
-import { QuickTradeBar } from "./quick-trade-bar";
+import { QuickTradeBar } from "@/components/quick-trade-bar";
 import styles from "./token.module.css";
 
 export const dynamic = "force-dynamic";
