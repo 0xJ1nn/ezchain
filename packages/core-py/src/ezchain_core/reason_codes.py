@@ -565,6 +565,15 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         severity="critical",
         retryable=True,
     ),
+    _S(
+        "GATE_NOT_MET",
+        "governance",
+        "api",
+        "ezchain_api/mode.py",
+        "A live start has no verified gate record for this build, so execution is refused.",
+        "The live gate is not met; execution stays in paper.",
+        severity="critical",
+    ),
     # ------------------------------------------------------------ core: graph validation
     _S(
         "GRAPH_SCHEMA",
@@ -2467,6 +2476,7 @@ VAULT_SIGN_FAILED = "VAULT_SIGN_FAILED"
 VAULT_BOUNDARY_REQUIRED = "VAULT_BOUNDARY_REQUIRED"
 CUSTODY_OWNER_MISMATCH = "CUSTODY_OWNER_MISMATCH"
 AUTOMATION_CONSENT_REQUIRED = "AUTOMATION_CONSENT_REQUIRED"
+GATE_NOT_MET = "GATE_NOT_MET"
 
 # An agent's bucket refusals. ``ezchain_core.bucket`` exports the shorter ``BUCKET_*``
 # names it always had; they are aliases of these, never a second spelling.
