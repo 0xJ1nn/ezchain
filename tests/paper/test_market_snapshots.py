@@ -358,3 +358,45 @@ def test_postgres_upsert_converges_and_keeps_the_newest_mark(postgres_database: 
         session.commit()
     assert _one_row(maker).price_usd == Decimal("2000")
     engine.dispose()
+
+
+def test_a_move_pair_address_longer_than_the_old_width_is_stored(
+    postgres_database: str,
+) -> None:
+    """An aptos pair is three 66-character Move addresses joined by ``-`` — 200 characters.
+
+    The column was ``VARCHAR(160)``, so every aptos snapshot raised
+    ``StringDataRightTruncation`` inside the monitor's write, was logged as a warning and
+    dropped. The chain quietly had no marks: no error reached the API, and the only symptom
+    was an absence. Widened in 0031.
+
+    Postgres, not SQLite: SQLite does not enforce ``VARCHAR`` lengths, so the same test
+    against it passes on the broken column and proves nothing.
+    """
+    # The real shape from the failing snapshot.
+    address = "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b"
+    pair = f"{address}-{address}-{address}"
+    assert len(pair) > 160, "the fixture must exceed the old width or it proves nothing"
+
+    engine = create_engine(postgres_database)
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    try:
+        with maker() as session:
+            row = market_snapshots.record_snapshot(
+                session,
+                make_snapshot(address=address, chain="aptos", observed_at=_now_minus(30)),
+            )
+            session.execute(
+                update(MarketSnapshotRow)
+                .where(MarketSnapshotRow.id == row.id)
+                .values(pair_address=pair)
+            )
+            session.commit()
+        with maker() as session:
+            stored = session.scalar(
+                select(MarketSnapshotRow).where(MarketSnapshotRow.chain == "aptos")
+            )
+            assert stored is not None
+            assert stored.pair_address == pair
+    finally:
+        engine.dispose()

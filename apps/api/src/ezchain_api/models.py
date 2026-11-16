@@ -529,7 +529,9 @@ class MarketSnapshotRow(Base):
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Pair identity carried over from the observation. Null when the source did not
     # report it; never inferred from the symbol or the token address.
-    pair_address: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # Two 160-character addresses and a separator. An aptos pair is three 66-character
+    # Move addresses and already 200, so 160 silently dropped the whole chain (0031).
+    pair_address: Mapped[str | None] = mapped_column(String(400), nullable=True)
     dex: Mapped[str | None] = mapped_column(String(40), nullable=True)
     base_token_address: Mapped[str | None] = mapped_column(String(160), nullable=True)
     quote_token_address: Mapped[str | None] = mapped_column(String(160), nullable=True)
