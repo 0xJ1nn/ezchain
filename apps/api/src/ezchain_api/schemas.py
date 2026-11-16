@@ -79,6 +79,35 @@ MarketSort = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
 MarketSortSemantics = Literal["global_sort", "per_chain_sort", "per_chain_round_robin"]
 
 
+class WatchlistIn(BaseModel):
+    """A watched token identity. No price, route or balance may be supplied."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chain: str = Field(min_length=2, max_length=40)
+    base_token: str = Field(min_length=2, max_length=160)
+    symbol: str | None = Field(default=None, max_length=40)
+    name: str | None = Field(default=None, max_length=120)
+
+
+class WatchlistOut(BaseModel):
+    id: str
+    chain: str
+    base_token: str
+    symbol: str | None = None
+    name: str | None = None
+    added_at: str
+
+
+class WatchlistMissingOut(BaseModel):
+    """A watched token with no matching market row; unknown, never dropped."""
+
+    chain: str
+    base_token: str
+    symbol: str | None = None
+    reason: Literal["NO_SNAPSHOT"] = "NO_SNAPSHOT"
+
+
 class MarketCoverageOut(BaseModel):
     """One chain's contribution to a discovery pass; counts are pre-slice.
 
@@ -109,6 +138,7 @@ class MarketFiltersOut(BaseModel):
     min_pair_age_minutes: int | None = None
     max_pair_age_minutes: int | None = None
     unknown_excluded: dict[str, int] = Field(default_factory=dict)
+    watchlist: bool = False
 
 
 class MarketPopulationOut(BaseModel):
@@ -141,6 +171,7 @@ class MarketListOut(BaseModel):
     truncated: bool = False
     applied_filters: MarketFiltersOut | None = None
     population: MarketPopulationOut | None = None
+    watchlist_missing: list[WatchlistMissingOut] = Field(default_factory=list)
 
 
 class StoredMarketListOut(BaseModel):

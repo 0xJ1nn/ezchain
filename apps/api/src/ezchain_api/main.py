@@ -58,6 +58,7 @@ from .routers import (
     strategies,
     system,
     trade_policy,
+    watchlist,
 )
 from .services import provider_keys as provider_key_service
 from .services.executor import PaperOrderExecutor
@@ -260,6 +261,7 @@ def create_app() -> FastAPI:
     app.include_router(protection.router)
     app.include_router(provider_keys.router)
     app.include_router(trade_policy.router)
+    app.include_router(watchlist.router)
     return app
 
 

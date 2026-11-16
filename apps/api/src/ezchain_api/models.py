@@ -148,6 +148,25 @@ class AgentBucketRow(Base):
     updated_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
+class WatchlistRow(Base):
+    """One watched base token on one chain, keyed by the pair the UI shows.
+
+    The row is an identity, not a price: no market value is cached here, so a watched token
+    with no stored snapshot is still a row and can be reported as unknown rather than
+    silently dropped from a filtered read. Adding the same pair again is one row.
+    """
+
+    __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("chain", "base_token", name="uq_watchlist_chain_token"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    chain: Mapped[str] = mapped_column(String(40), index=True)
+    base_token: Mapped[str] = mapped_column(String(160), index=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
 class PaperWalletRow(Base):
     """A paper wallet: one settlement account per chain, plus the genesis wallet.
 

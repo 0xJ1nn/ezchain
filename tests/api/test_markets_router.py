@@ -76,6 +76,18 @@ def client_for(adapter: FakeDiscovery) -> TestClient:
     app.include_router(markets.router)
     app.dependency_overrides[get_dexscreener] = lambda: adapter
     app.dependency_overrides[markets.get_settings] = lambda: Settings(environment="test")
+    # The markets read now also resolves the stored watchlist, so this local client needs
+    # a session like the shared fixture supplies everywhere else.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from ezchain_api.deps import get_session
+    from ezchain_api.models import Base
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine)
+    app.dependency_overrides[get_session] = lambda: maker()
     return TestClient(app)
 
 
