@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell";
 import { CandleChart, CandleEmptyState } from "@/components/candle-chart";
-import { PositionDetailed, PositionGrid, PositionList, PositionViewSwitcher } from "@/components/position-views";
+import { PositionDetailed, PositionGrid, PositionList, PositionTiles, PositionViewSwitcher } from "@/components/position-views";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
 import { asApiError, getCandles, getTokenCandles } from "@/lib/api";
 import { getProtectionArms, getProtectionProfiles } from "@/lib/protection-api";
@@ -188,9 +188,11 @@ export default async function PositionsPage({
 					<p className="sub">
 						Paper account and open positions read from{" "}
 						<span className="mono">GET /api/v1/paper/account</span> and{" "}
-						<span className="mono">/api/v1/paper/positions</span>. List, Grid and Detailed
-						render the same server rows; the view is a URL parameter and every row opens a
-						full position. The page formats the server view model; it never recomputes PnL,
+						<span className="mono">/api/v1/paper/positions</span>. List, Grid, Tile and
+						Detailed render the same server rows; the view is a URL parameter and every row
+						opens a full position. Tile is the signature 9-zone instrument: the zones the
+						API does not return (chart, ladder, hold budget) stay explicitly empty rather
+						than drawn. The page formats the server view model; it never recomputes PnL,
 						cost basis or executable value. An unknown mark is{" "}
 						<span className="mono">—</span>, never zero.
 					</p>
@@ -486,6 +488,8 @@ export default async function PositionsPage({
 					</div>
 				) : view === "grid" ? (
 					<PositionGrid positions={visible} query={query} />
+				) : view === "tile" ? (
+					<PositionTiles positions={visible} />
 				) : view === "detailed" ? (
 					<PositionDetailed
 						positions={visible}

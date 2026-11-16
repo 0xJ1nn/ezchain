@@ -87,6 +87,44 @@ test("list, grid and detailed render the same server rows behind a URL view swit
 	);
 });
 
+test("the tile view renders the signature instrument from the same server rows", async ({
+	page,
+}) => {
+	await page.goto("/positions?view=list");
+	const list = page.locator('[data-view="list"]');
+	const listKeys = await list
+		.locator("[data-position]")
+		.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-position")));
+
+	const switcher = page.getByRole("navigation", { name: "Position view" });
+	await switcher.getByRole("link", { name: "Tile" }).click();
+	await expect(page).toHaveURL(/view=tile/);
+	await expect(switcher.getByRole("link", { name: "Tile" })).toHaveAttribute(
+		"aria-current",
+		"page",
+	);
+
+	const tiles = page.locator('[data-view="tile"]');
+	// Same rows, same order, same keys as the list: the tile is another projection of the
+	// one server model, not a second page with its own data.
+	expect(
+		await tiles
+			.locator("[data-position]")
+			.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-position"))),
+	).toEqual(listKeys);
+	await expect(tiles.locator("article.tile")).toHaveCount(4);
+
+	// A zone the API does not return stays empty, and an unknown mark is —, never zero.
+	const bonk = tiles.locator("article.tile").filter({ hasText: "BONK" });
+	await expect(bonk).toContainText("No chart history returned");
+	await expect(bonk).toContainText("NOT REPORTED");
+	await expect(bonk).toContainText("NO HOLD BUDGET RETURNED");
+	await expect(bonk.locator(".pct")).toHaveText("—");
+	await expect(tiles.locator("article.tile").filter({ hasText: "MOCHI" })).toContainText("unknown");
+
+	await page.screenshot({ path: ".shots/positions-tile-1440.png", fullPage: true });
+});
+
 test("positions reads the paper account and PositionView shape from the typed client", async ({
 	page,
 }) => {
@@ -259,7 +297,7 @@ test("positions modes do not overflow at 390, 768 and 1440", async ({ page }) =>
 	test.setTimeout(240_000);
 	for (const width of [390, 768, 1440]) {
 		await page.setViewportSize({ width, height: 900 });
-		for (const view of ["list", "grid", "detailed"]) {
+		for (const view of ["list", "grid", "tile", "detailed"]) {
 			await page.goto(`/positions?view=${view}`);
 			await expect(page.locator(`[data-view="${view}"]`)).toBeVisible();
 			const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);

@@ -7,17 +7,18 @@ import { MINUS, signedUsd, usd } from "./format";
 import type { PaperPosition } from "./paper-api";
 
 
-export type PositionView = "list" | "grid" | "detailed";
+export type PositionView = "list" | "grid" | "tile" | "detailed";
 
 export const POSITION_VIEWS: { value: PositionView; label: string }[] = [
 	{ value: "list", label: "List" },
 	{ value: "grid", label: "Grid" },
+	{ value: "tile", label: "Tile" },
 	{ value: "detailed", label: "Detailed" },
 ];
 
 export function parsePositionView(value: string | string[] | undefined): PositionView {
 	const raw = Array.isArray(value) ? value[0] : value;
-	return raw === "grid" || raw === "detailed" ? raw : "list";
+	return raw === "grid" || raw === "tile" || raw === "detailed" ? raw : "list";
 }
 
 export type PositionSort = "server" | "value" | "unrealized" | "symbol" | "chain";
