@@ -102,8 +102,8 @@ exists today, so none of that is claimed as working.
 A live workstation is the user's own VPS with the user's own keys, installed by the official
 installer the user runs. ezCHAIN does not hold, store or sign with user keys and does not get
 access to the user's server. That is the owner's hosting decision of 2026-11-11, recorded in
-the private monetization note and reflected in the free-offer policy in `docs/FUNDING.md`.
-The install, firewall, secrets, TLS, backup and the list of what
+the private monetization note and reflected in the free-offer policy in
+[`FUNDING.md`](FUNDING.md). The install, firewall, secrets, TLS, backup and the list of what
 was actually tested are already written in [`SELF-HOSTING.md`](SELF-HOSTING.md); this section
 adds the hardening checklist for *remote* access and does not repeat that guide.
 
