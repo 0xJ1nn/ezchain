@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 264 codes across 17 categories, 6 layers.
+**Scale:** 268 codes across 17 categories, 6 layers.
 
 ---
 
@@ -79,7 +79,7 @@ or a process-local refusal).
 | `PROVIDER_KEY_FORGET_FAILED` | api | 503 | no | warning | The stored credential could not be deleted. |
 | `PROVIDER_KEY_PEPPER_REQUIRED` | api | 503 | no | warning | Provider keys cannot be stored without a pepper. |
 
-### Request validation and not-found (9)
+### Request validation and not-found (11)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -92,8 +92,10 @@ or a process-local refusal).
 | `INVALID_CURSOR` | api | 400 | no | warning | The pagination cursor is not decodable. |
 | `INVALID_FILTER` | api | 422 | no | warning | A query filter is not a valid value for its field. |
 | `INVALID_PRECONDITION` | api | 400 | no | warning | The If-Match header is not an integer arm version. |
+| `WATCHLIST_CHAIN_UNKNOWN` | api | 422 | no | warning | The chain named in a watchlist write is not in the registry. |
+| `WATCHLIST_TOKEN_UNKNOWN` | api | 422 | no | warning | The token named in a watchlist write is not a valid address for its chain. |
 
-### Risk gate and order refusals (37)
+### Risk gate and order refusals (39)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -127,6 +129,7 @@ or a process-local refusal).
 | `POSITION_CHANGED` | api | — | no | warning | The position moved between pricing and submission. |
 | `INSUFFICIENT_POSITION` | api | — | no | warning | A sell asks for more than the position holds. |
 | `INSUFFICIENT_CASH` | api | — | no | warning | The paper wallet cannot fund the buy. |
+| `TOPUP_CAP_REACHED` | api | — | no | warning | The no-risk shortfall is larger than the configured top-up cap. |
 | `PROFILE_UNKNOWN` | api | — | no | warning | The requested risk profile is not allowed for this account. |
 | `WALLET_UNKNOWN` | api | — | no | warning | No paper wallet settles this chain. |
 | `SETTLEMENT_ASSET_UNKNOWN` | api | — | no | warning | The paper wallet does not settle in the ledger asset. |
@@ -356,7 +359,7 @@ or a process-local refusal).
 | `NO_POOL` | adapters | — | no | info | No dex pool exists for this token, so there is no price history. |
 | `SAFETY_NOT_IMPLEMENTED` | adapters | — | no | warning | Token safety screening is not implemented, so safety is unknown. |
 
-### Read model, ledger and alerts (13)
+### Read model, ledger and alerts (14)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -369,6 +372,7 @@ or a process-local refusal).
 | `POSITION_MARK_STALE` | api | — | no | warning | A position mark is older than its budget. |
 | `POSITION_MARK_UNKNOWN` | api | — | no | warning | A position has no usable mark. |
 | `ORDERS_REJECTED` | api | — | no | info | Rejected orders accumulated in the alert window. |
+| `PAPER_TOPUP_CAP_REACHED` | api | — | no | warning | A no-risk demand exceeded the manual top-up cap, so the person is told. |
 | `RECONCILIATION_FAILED` | api | — | no | critical | At least one ledger reconciliation check failed. |
 | `NEGATIVE_CASH` | api | — | no | critical | A cash account sums below zero. |
 | `NEGATIVE_POSITION` | api | — | no | critical | A position account holds a negative quantity. |
