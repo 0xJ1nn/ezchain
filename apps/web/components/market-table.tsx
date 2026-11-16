@@ -50,15 +50,23 @@ export function MarketTable({
 	starredOnly = false,
 	showAllHref,
 	now,
+	heldKeys,
 }: {
 	rows: MarketRow[];
 	chainNames: Record<string, string>;
 	starredOnly?: boolean;
 	showAllHref?: string;
 	now?: number;
+	/**
+	 * `chain:base_token` keys the paper account holds. When present the table gains a
+	 * Position column; when absent it gains no column at all, so a surface that has no
+	 * account read (Markets) keeps the shape its own tests pin.
+	 */
+	heldKeys?: readonly string[];
 }) {
 	const entries = useWatchlist();
 	const clock = now ?? Date.now();
+	const held = heldKeys ? new Set(heldKeys) : null;
 	const labelFor = (id: string) => chainNames[id] ?? id;
 	const starredKeys = new Set(
 		entries.map((entry) => watchlistKey(entry.chain, entry.base_token)),
@@ -133,6 +141,7 @@ export function MarketTable({
 								<th scope="col" className="col-hide-sm">
 									Pair age
 								</th>
+								{held && <th scope="col">Position</th>}
 								<th scope="col">Safety</th>
 							</tr>
 						</thead>
@@ -175,6 +184,17 @@ export function MarketTable({
 									<td className="small muted col-hide-sm">
 										{pairAgeLabel(row.pair_created_at, clock)}
 									</td>
+									{held && (
+										<td>
+											{held.has(watchlistKey(row.chain, row.base_token)) ? (
+												<Badge tone="ok" title="The paper account holds this token">
+													open
+												</Badge>
+											) : (
+												<span className="small muted">—</span>
+											)}
+										</td>
+									)}
 									<td>
 										<Badge tone="warn" title="Safety is not implemented in P0">
 											unknown
