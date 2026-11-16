@@ -75,7 +75,7 @@ def test_the_bucket_migration_adds_the_cap_and_the_ledger_attribution(tmp_path: 
         assert "ix_ledger_entries_bucket_id" in indexes
         with Session(engine) as session:
             assert (
-                database_revision(session) == head_revision() == "0031_pair_address_width"
+                database_revision(session) == head_revision() == "0032_agent_permission_modes"
             )
     finally:
         engine.dispose()

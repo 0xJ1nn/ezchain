@@ -65,6 +65,7 @@ EXPECTED_PROTECTED_ROUTES = (
     ("POST", "/api/v1/system/kill-switch"),
     ("POST", "/api/v1/watchlist"),
     ("PUT", "/api/v1/agent/buckets/{agent_id}"),
+    ("PUT", "/api/v1/agent/permission-mode"),
     ("PUT", "/api/v1/paper/automation"),
     ("PUT", "/api/v1/trade-policy/strategies/{strategy_id}"),
 )
@@ -267,7 +268,11 @@ def test_every_mutating_api_route_is_in_the_protected_list() -> None:
 def test_operational_classification_is_explicit(protected_settings: Settings) -> None:
     assert OPERATIONAL_PATHS == {"/health", "/metrics"}
     assert LOOPBACK_ONLY_PATHS == {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
-    assert AUTHENTICATED_READ_PATHS == {"/api/v1/agent/state"}
+    assert AUTHENTICATED_READ_PATHS == {
+        "/api/v1/agent/state",
+        "/api/v1/agent/permission-mode",
+        "/api/v1/agent/permission-decisions",
+    }
     for path in ("/health", "/metrics"):
         assert requires_auth("GET", path, protected_settings) is True
         assert required_scope("GET", path) == "admin"

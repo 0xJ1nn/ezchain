@@ -44,6 +44,7 @@ from .rate_limit import ReadRateLimitMiddleware
 from .routers import (
     account,
     agent,
+    agent_permissions,
     approvals,
     backtests,
     buckets,
@@ -257,6 +258,7 @@ def create_app() -> FastAPI:
     app.include_router(backtests.router)
     app.include_router(plugins.router)
     app.include_router(agent.router)
+    app.include_router(agent_permissions.router)
     app.include_router(buckets.router)
     app.include_router(protection.router)
     app.include_router(provider_keys.router)

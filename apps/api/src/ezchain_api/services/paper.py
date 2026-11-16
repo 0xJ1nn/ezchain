@@ -87,7 +87,7 @@ from ..models import (
     StrategyRow,
     new_id,
 )
-from . import approvals, buckets, market_snapshots, pnl, trade_policy
+from . import agent_permissions, approvals, buckets, market_snapshots, pnl, trade_policy
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -2170,9 +2170,30 @@ async def place_order(
         # cannot be proven refuses with AUTOMATION_CONSENT_REQUIRED instead of being read
         # as manual.
         if not approved and requires_automation_gate(placed_by):
-            probe = approvals.health(
-                session, settings, approvals.ordering_user(placed_by, settings)
+            mode_user = approvals.ordering_user(placed_by, settings)
+            mode = agent_permissions.mode_for(session, mode_user, settings)
+            permission, permission_code = agent_permissions.decide(
+                mode=mode,
+                effect="trade",
+                amount_usd=payload.amount_usd,
+                limit_usd=settings.max_order_usd,
+                kill_switch_active=read_kill_switch(session, settings).active,
             )
+            agent_permissions.record_decision(
+                session,
+                user=mode_user,
+                effect="trade",
+                mode=mode,
+                outcome=permission,
+                code=permission_code,
+                amount_usd=payload.amount_usd,
+                order_id=order.id,
+            )
+            if permission == "refuse":
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                return _mark_rejected(session, order, permission_code)
+            probe = approvals.health(session, settings, mode_user)
             if not probe.readable:
                 order.quote_kind = quote.kind
                 order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
@@ -2181,7 +2202,7 @@ async def place_order(
                 order.quote_kind = quote.kind
                 order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
                 return _mark_rejected(session, order, "AUTOMATION_CONSENT_REQUIRED")
-            if probe.tier == approvals.MANUAL:
+            if permission == "queue" or probe.tier == approvals.MANUAL:
                 order.quote_kind = quote.kind
                 order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
                 decision = {

@@ -304,6 +304,38 @@ class AutomationSettingRow(Base):
     updated_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
+class AgentPermissionModeRow(Base):
+    """One user's permission mode: ``ask``, ``auto`` or ``read_only``.
+
+    A missing row reads as ``ask``. The mode is the one authority for how an agent call is
+    admitted; it never replaces the automation consent a person gave for unattended orders.
+    """
+
+    __tablename__ = "agent_permission_modes"
+
+    user_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(16), default="ask")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_by_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    updated_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
+class AgentPermissionDecisionRow(Base):
+    """An append-only record of one permission decision on an agent call."""
+
+    __tablename__ = "agent_permission_decisions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(120), index=True)
+    effect: Mapped[str] = mapped_column(String(16))
+    mode: Mapped[str] = mapped_column(String(16))
+    outcome: Mapped[str] = mapped_column(String(16))
+    code: Mapped[str] = mapped_column(String(64))
+    amount_usd: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
 class AutomationConsentRow(Base):
     """An append-only record of a person accepting the full-auto risk disclosure.
 

@@ -71,12 +71,18 @@ OPERATIONAL_PATHS = frozenset({"/health", "/metrics"})
 # The interactive schema reveals every route and is not a product surface.
 LOOPBACK_ONLY_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 # Reads that aggregate the workspace need a principal even when ordinary reads are open.
-AUTHENTICATED_READ_PATHS = frozenset({"/api/v1/agent/state"})
+AUTHENTICATED_READ_PATHS = frozenset(
+    {
+        "/api/v1/agent/state",
+        "/api/v1/agent/permission-mode",
+        "/api/v1/agent/permission-decisions",
+    }
+)
 # Reads whose answer depends on *who* is asking. They stay open like any other read — a
 # self-hosted workspace must keep working without a token — but a credential that is
 # supplied is resolved, because the answer is scoped to it. Without that step the route
 # would answer for the whole workspace to a key that may only see its own row.
-PRINCIPAL_READ_PREFIXES = ("/api/v1/agent/buckets",)
+PRINCIPAL_READ_PREFIXES = ("/api/v1/agent/buckets", "/api/v1/agent/permission")
 _warned_missing_token = False
 
 
