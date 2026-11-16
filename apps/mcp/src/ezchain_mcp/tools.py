@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from .client import EzchainClient
@@ -34,6 +34,10 @@ def _object(properties: dict[str, Any], required: list[str] | None = None) -> di
     return schema
 
 
+Cost = Literal["free", "paid"]
+Effect = Literal["read", "configure", "trade"]
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -43,6 +47,18 @@ class Tool:
     handler: Callable[[EzchainClient, dict[str, Any]], Any]
     read_only: bool = True
     destructive: bool = False
+    cost: Cost = "free"
+    effect: Effect | None = None
+    billed_provider: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.effect is None:
+            # A read-only tool reads; a mutation configures unless it is explicitly a trade.
+            object.__setattr__(self, "effect", "read" if self.read_only else "configure")
+        if self.cost == "paid" and not self.billed_provider:
+            raise ValueError(f"a paid tool must name the provider that bills it: {self.name}")
+        if self.billed_provider is not None and self.cost != "paid":
+            raise ValueError(f"a tool with a billed provider must be paid: {self.name}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -584,6 +600,7 @@ WRITE_TOOLS: tuple[Tool, ...] = (
         ),
         _place_paper_order,
         read_only=False,
+        effect="trade",
     ),
     Tool(
         "ezchain_run_backtest",
@@ -630,11 +647,17 @@ WRITE_TOOLS: tuple[Tool, ...] = (
 
 
 def all_tools(allow_writes: bool) -> tuple[Tool, ...]:
-    return READ_TOOLS + (WRITE_TOOLS if allow_writes else ())
+    # The registry owns the surface; this alias stays for callers that imported it here.
+    from .registry import all_tools as _all_tools
+
+    return _all_tools(allow_writes=allow_writes)
 
 
 def tool_by_name(allow_writes: bool) -> dict[str, Tool]:
-    return {tool.name: tool for tool in all_tools(allow_writes)}
+    # Kept as an alias so old imports still resolve, now including discovered domains.
+    from .registry import tool_by_name as _tool_by_name
+
+    return _tool_by_name(allow_writes=allow_writes)
 
 
 __all__ = ["READ_TOOLS", "WRITE_TOOLS", "Tool", "all_tools", "tool_by_name"]

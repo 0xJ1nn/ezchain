@@ -11,13 +11,13 @@ from typing import Any
 
 from .client import ApiError, EzchainClient
 from .credentials import Credential, refusal_message
+from .registry import tool_by_name, write_tool_names
 from .resources import (
     RESOURCE_TEMPLATES,
     ResourceError,
     list_resources,
     read_resource,
 )
-from .tools import WRITE_TOOLS, tool_by_name
 
 PROTOCOL_VERSION = "2025-11-25"
 SERVER_NAME = "ezchain"
@@ -103,8 +103,8 @@ class McpServer:
             self.write_refusal = write_refusal
         self.name = name
         self.version = version
-        self._tools = tool_by_name(self.allow_writes)
-        self._write_names = {tool.name for tool in WRITE_TOOLS}
+        self._tools = tool_by_name(allow_writes=self.allow_writes)
+        self._write_names = write_tool_names()
         self.instructions = (
             INSTRUCTIONS
             if self.write_refusal is None
