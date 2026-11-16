@@ -491,6 +491,7 @@ def _topup_cap_alerts(session: Session, now: datetime, as_of: str) -> list[dict[
         audit = row.funding_json or {}
         shortfall = audit.get("shortfall_usd", "unknown")
         cap = audit.get("cap_usd", "unknown")
+        seen_at = _aware(row.created_at)
         alerts.append(
             _alert(
                 f"paper.topup_cap.{row.id}",
@@ -499,7 +500,7 @@ def _topup_cap_alerts(session: Session, now: datetime, as_of: str) -> list[dict[
                 "Paper no-risk funding cap reached",
                 f"Order {row.id} needed {shortfall} USD, above the {cap} USD cap. "
                 "It was refused without funding.",
-                _aware(row.created_at).isoformat() if row.created_at is not None else as_of,
+                seen_at.isoformat() if seen_at is not None else as_of,
                 f"paper_order:{row.id}",
             )
         )
