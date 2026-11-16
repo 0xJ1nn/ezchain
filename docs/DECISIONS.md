@@ -3,6 +3,17 @@
 Format: context → options → decision → consequences. Superseded ADRs keep their entry and
 gain a `Superseded by` line.
 
+**Status review (2026-11-16, #39).** ADR-0014, 0015, 0016, 0018 and 0019 were written in a
+background documentation pass and marked Accepted without explicit maintainer review. They
+are now **Proposed** and are not decisions of record; ADR-0017 was already Proposed on spike
+#35. What unblocks each: the maintainer must confirm the "Verified today" matrix convention
+(0014), the Jupiter-first execution plan (0015), the no-browser-key custody boundary (0016),
+watchlists as owned entities (0018), and the one reason-code taxonomy (0019). A review can
+also revise or reject any of them. The M1–M5 roadmap in `ROADMAP.md` carries the same status;
+no code is blocked on #39. Note that ADR-0019's taxonomy is implemented in code (ADR-0043)
+and ADR-0015's executor pipeline exists (ADR-0026) — working code does not turn an unreviewed
+decision into an accepted one.
+
 ---
 
 ## ADR-0001 — Modular monolith plus an isolated executor
@@ -221,7 +232,7 @@ a second styling system silently.
 
 ## ADR-0014 — "Verified" means an adapter contract suite passed, not a plan
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** `docs/CHAINS.md` listed six chains as T1 (live-mainnet verified) and fourteen
 more as T2/T3 while no adapter package, ingest service or executor existed. The M1 audit
@@ -244,7 +255,7 @@ rejected.
 
 ## ADR-0015 — Jupiter first, paper-first, one execution path
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** Solana is the declared first-class chain and Jupiter routes across Raydium
 and PumpSwap. Building three AMM integrations before the pipeline exists would multiply
@@ -267,7 +278,7 @@ path.
 
 ## ADR-0016 — No browser key entry; watch-only by default
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** the onboarding and wallet wireframes disagreed: one refused seed phrases and
 private keys, the other allowed importing an existing key from Security → Vault. No key
@@ -316,7 +327,7 @@ to Accepted.
 
 ## ADR-0018 — Watchlists are first-class, not copy-trading
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** the wireframe shows watchlist toggles and counts, but there is no domain
 entity or API. "Watch to buy" was requested as a product behaviour. Copy-trading is
@@ -335,7 +346,7 @@ preview is removed in M5. No social/copy-trade surface is implied.
 
 ## ADR-0019 — Stable reason codes and fail-closed UI states
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** the wireframe names `MARK_STALE`, `NO_SELL_ROUTE`, `EXECUTOR_DOWN`,
 `RISK_DENIED`, `QUOTE_EXPIRED` and others, but there is no schema, constant set or UI
@@ -499,7 +510,7 @@ Rules that ride with it:
 - A sell is quoted in the sell direction (`token → stable`, sized by quantity); a buy quote
   is never inverted.
 - A buy is only valid when the received size also has a full-size sell quote from the same
-  venue — an entry with no executable exit is not an entry (ADR-0015).
+  venue — an entry with no executable exit is not an entry (ADR-0015, Proposed).
 - Provider fees and gas are declared in `Quote.fee_usd`. The fill pays
   `max(paper_fee_bps, fee_usd)`, never their sum.
 - A buy with a quoted impact above `EZCHAIN_MAX_PRICE_IMPACT_PCT` (default 5%) is rejected

@@ -160,8 +160,9 @@ Each first adapter is gated, in order: a contract suite for `quote`, `build_swap
 `submit` and `status` against live mainnet plus the recorded fixture; a paper fill through the
 same surface that agrees with the adapter's quote; the fail-closed `NO_SELL_ROUTE` behaviour on
 a token with no exit; and only then a §3 matrix promotion backed by the passing evidence. A
-docs-only promotion is rejected, as ADR-0014 requires. Until such a suite exists, no chain is
-T1 in the sense §2 defines.
+a docs-only promotion is rejected: the proposed ADR-0014 rule is that a row may be promoted
+only on a passing contract suite. Until such a suite exists, no chain is T1 in the sense §2
+defines.
 
 ### 3.2 Per-chain capability matrix (registry truth)
 
