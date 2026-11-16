@@ -403,6 +403,21 @@ class RiskReasonOut(BaseModel):
     detail: Any = None
 
 
+class FundingOut(BaseModel):
+    """The audit of a paper no-risk top-up, as persisted on the order.
+
+    Money stays a decimal string. ``cash_after_usd`` equals ``cash_before_usd`` on a
+    cap-refused order: nothing was funded.
+    """
+
+    trigger: str
+    shortfall_usd: str
+    cash_before_usd: str
+    cash_after_usd: str
+    cap_usd: str
+    group_id: str
+
+
 class ActorOut(BaseModel):
     """Who placed an order, as the server recorded it.
 
@@ -427,6 +442,7 @@ class OrderOut(BaseModel):
     status: str
     reason: str | None = None
     reasons: list[RiskReasonOut] = Field(default_factory=list)
+    funding: FundingOut | None = None
     quote_kind: str | None = None
     actor: ActorOut = Field(default_factory=lambda: ActorOut(kind="unknown"))
     # The approval this order waits in or was decided by. Null for a person's own order,

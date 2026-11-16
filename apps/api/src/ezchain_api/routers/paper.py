@@ -19,6 +19,7 @@ from ..models import OrderApprovalRow, PaperFillRow, PaperOrderRow
 from ..schemas import (
     ActorOut,
     FillOut,
+    FundingOut,
     OrderOut,
     PaperAccountOut,
     PaperOrderIn,
@@ -74,6 +75,7 @@ def _order(row: PaperOrderRow, approval: OrderApprovalRow | None = None) -> Orde
             if row.reason is not None
             else []
         ),
+        funding=FundingOut.model_validate(row.funding_json) if row.funding_json else None,
         quote_kind=row.quote_kind,
         actor=_actor(row),
         approval_id=None if approval is None else approval.id,

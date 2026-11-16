@@ -209,6 +209,11 @@ class PaperOrderRow(Base):
     reasons: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONType, nullable=True)
     quote_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     quote_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # Audit of a paper no-risk funding decision: the trigger, the exact shortfall and the
+    # cash before and after the top-up, plus the cap it was measured against. Null when no
+    # funding was attempted. It is evidence, never an account; the journal stays the only
+    # accountant (CONTRACT I1).
+    funding_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     # Who placed the order, decided on the server: ``human`` for the deployment token,
     # ``agent`` for a scoped key (addressed by its key id), ``strategy`` for an engine

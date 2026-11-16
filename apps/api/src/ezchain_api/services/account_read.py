@@ -470,6 +470,42 @@ def _rejection_alerts(session: Session, now: datetime, as_of: str) -> list[dict[
     return alerts
 
 
+def _topup_cap_alerts(session: Session, now: datetime, as_of: str) -> list[dict[str, Any]]:
+    """A dedicated operator alert for every paper top-up that hit the cap.
+
+    The rejection is already in the generic rejection feed; this separate alert names the
+    funding cap explicitly and carries the shortfall and cap from the order's audit record,
+    so the person watching the deployment sees *why* a paper strategy stopped funding.
+    """
+    cutoff = now - REJECTION_WINDOW
+    rows = session.scalars(
+        select(PaperOrderRow)
+        .where(
+            PaperOrderRow.reason == "TOPUP_CAP_REACHED",
+            PaperOrderRow.created_at >= cutoff,
+        )
+        .order_by(PaperOrderRow.created_at)
+    ).all()
+    alerts: list[dict[str, Any]] = []
+    for row in rows:
+        audit = row.funding_json or {}
+        shortfall = audit.get("shortfall_usd", "unknown")
+        cap = audit.get("cap_usd", "unknown")
+        alerts.append(
+            _alert(
+                f"paper.topup_cap.{row.id}",
+                "PAPER_TOPUP_CAP_REACHED",
+                "warning",
+                "Paper no-risk funding cap reached",
+                f"Order {row.id} needed {shortfall} USD, above the {cap} USD cap. "
+                "It was refused without funding.",
+                _aware(row.created_at).isoformat() if row.created_at is not None else as_of,
+                f"paper_order:{row.id}",
+            )
+        )
+    return alerts
+
+
 def _provider_alerts(quote_router: Any, as_of: str) -> list[dict[str, Any]]:
     """Drain the quote router's fresh->stale transitions into the operator feed.
 
@@ -562,6 +598,7 @@ def alerts(session: Session, settings: Settings, quote_router: Any = None) -> di
     items.extend(_mark_alerts(session, settings, now, as_of))
     items.extend(_provider_alerts(quote_router, as_of))
     items.extend(_rejection_alerts(session, now, as_of))
+    items.extend(_topup_cap_alerts(session, now, as_of))
 
     items.sort(key=lambda item: (SEVERITY_ORDER[str(item["severity"])], str(item["id"])))
     return {"as_of": as_of, "alerts": items}

@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import json
+import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -89,6 +90,49 @@ from . import approvals, buckets, market_snapshots, pnl
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
+TOPUP_TRIGGER = "INSUFFICIENT_CASH"
+_TOPUP_LOGGER = logging.getLogger("ezchain.paper.topup")
+
+
+def _funding_audit(
+    order_id: str,
+    cash_before: Decimal,
+    cash_after: Decimal,
+    shortfall: Decimal,
+    settings: Settings,
+    trigger: str,
+) -> dict[str, Any]:
+    """The persisted evidence for one no-risk funding decision.
+
+    The funding journal group already carries the exact shortfall as money. These fields
+    complete the audit with the trigger and the cash before and after; they are recorded on
+    the order and never read back as an account (CONTRACT I1).
+    """
+    return {
+        "trigger": trigger,
+        "shortfall_usd": str(shortfall),
+        "cash_before_usd": str(cash_before),
+        "cash_after_usd": str(cash_after),
+        "cap_usd": str(settings.paper_no_risk_topup_cap_usd),
+        "group_id": f"funding:{order_id}",
+    }
+
+
+def _alert_topup_cap(order_id: str, shortfall: Decimal, cap: Decimal) -> None:
+    """Emit the cap alert when a shortfall reaches or exceeds the top-up cap.
+
+    The refusal is also persisted with the stable reason ``TOPUP_CAP_REACHED``, which drives
+    ``ezchain_paper_rejects_total`` and the operator's rejection alert feed. This structured
+    line gives the same event a named source for log-based alert rules.
+    """
+    _TOPUP_LOGGER.warning(
+        "paper_topup_cap_reached order_id=%s shortfall_usd=%s cap_usd=%s",
+        order_id,
+        shortfall,
+        cap,
+    )
+
+
 # Per-request flag recording whether the last ``place_order`` call created a new
 # order row (True) or replayed an existing one (False). A context variable keeps
 # it correct under concurrent async requests.
@@ -2001,16 +2045,30 @@ async def place_order(
         )
         fee = quantize_money(_fill_fee(notional, quote, settings), field="fee_usd")
         funded_shortfall = Decimal(0)
+        funding_audit: dict[str, Any] | None = None
         if allowed and payload.side == "buy" and replay.cash < notional + fee:
-            if settings.paper_no_risk:
-                funded_shortfall = (notional + fee) - replay.cash
-            else:
+            shortfall = (notional + fee) - replay.cash
+            cap = settings.paper_no_risk_topup_cap_usd
+            if not settings.paper_no_risk:
                 allowed = False
                 reasons = (RiskReason("INSUFFICIENT_CASH"),)
+            elif shortfall > cap:
+                # A shortfall past the cap is a refusal, not a smaller funded amount: the
+                # ticket stays whole or it does not trade. Record the decision and alert.
+                allowed = False
+                reasons = (RiskReason("TOPUP_CAP_REACHED"),)
+                funding_audit = _funding_audit(
+                    order.id, replay.cash, replay.cash, shortfall, settings, TOPUP_TRIGGER
+                )
+                _alert_topup_cap(order.id, shortfall, cap)
+            else:
+                funded_shortfall = shortfall
 
         if not allowed:
             order.quote_kind = quote.kind
             order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+            if funding_audit is not None:
+                order.funding_json = funding_audit
             return _mark_rejected(
                 session, order, ",".join(str(r) for r in reasons), reasons=reasons
             )
@@ -2185,6 +2243,14 @@ async def place_order(
         if funded_shortfall > 0:
             order.reason = "SHORTFALL_FUNDED"
             order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
+            order.funding_json = _funding_audit(
+                order.id,
+                replay.cash,
+                replay.cash + funded_shortfall,
+                funded_shortfall,
+                settings,
+                TOPUP_TRIGGER,
+            )
         session.commit()
         return order
 
