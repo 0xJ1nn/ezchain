@@ -332,18 +332,34 @@ Schemas are additive; consumers ignore unknown fields; breaking changes get a ne
 
 ## 7. Reliability
 
-- **At-least-once delivery**, idempotent handlers, dead-letter review page in ops.
-- **Backpressure**: bounded queues; ingest drops with a counter when the consumer lags,
-  never blocks the chain reader.
-- **Circuit breakers** per source/venue with half-open probes; breaker state is visible.
-- **Graceful shutdown**: stop accepting intents, drain in-flight orders, persist, exit.
-- **Restart safety**: no in-memory open position; executor reconciles open orders on boot
-  from DB + chain, and closes/replays orphaned intents explicitly.
-- **Clock**: all timestamps UTC, DB `timestamptz`; decisions store the observation time.
+The guarantees below describe the deployed code, not an aspiration.
 
-`executor` is the only service allowed to write `ledger_entries` for fills; engine writes
-only intent/decision rows. Ledger accounts: `wallet:<id>`, `strategy:<id>`,
-`fees:<chain>`, `pnl:realized`, `pnl:unrealized` (view only).
+- **At-least-once market events.** The market outbox keeps a row until it is published
+  and reports the unpublished depth; handlers must be idempotent. There is no dead-letter
+  review page, so a row that cannot be published stays visible as queue depth rather
+  than being parked elsewhere.
+- **Backpressure.** Provider queues are bounded by their configured budgets and refuse
+  a caller at the bound. The ingest handoff refuses observations older than its budget
+  and counts them. It does not drop a row merely because a consumer is slow.
+- **Circuit breakers** per provider and market source, with half-open probes; the real
+  state is emitted as `ezchain_breaker_state`.
+- **Graceful shutdown.** The API stops the scheduler and market monitor, waits for their
+  tasks and closes provider clients. The shutdown path does not drain in-flight executor
+  orders.
+- **Restart safety.** Positions are derived from the ledger on each intent, never held as
+  an in-memory balance. A broadcast claim is written to the outbox before the venue sees
+  the order, and a reconciliation pass books a missing journal from the venue's receipt.
+  It does not yet reconcile every open order from DB and chain state on boot, nor close
+  orphaned intents.
+- **Clock.** Timestamps are UTC, stored in `timestamptz` columns; decisions carry the
+  observation time they were made from.
+
+The ledger is the only accountant. Fills from the executor pipeline reach it only through
+the journal sink; the API's paper order service also appends ledger entries for paper
+orders and remains their caller of record. Engine writes only intent and decision rows.
+The accounts in use are `cash:USD`, `fees:USD`, `pnl:realized:USD`,
+`position:<chain>:<token_address>`, `equity:genesis` and `funding:USD`; unrealized PnL is
+a read model, not an account.
 
 ## 8. Configuration
 

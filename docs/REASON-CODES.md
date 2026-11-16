@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 268 codes across 17 categories, 6 layers.
+**Scale:** 269 codes across 17 categories, 6 layers.
 
 ---
 
@@ -202,13 +202,14 @@ or a process-local refusal).
 | `TRANSACTION_BUILD_FAILED` | core | — | no | critical | The adapter failed to build the unsigned transaction. |
 | `TRANSACTION_SIGN_FAILED` | core | — | no | critical | The signer failed. |
 
-### Kill switch and operational governance (3)
+### Kill switch and operational governance (4)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
 | `KILL_SWITCH_ACTIVE` | executor | — | no | critical | The operator switch is on; no new risk may be taken. |
 | `KILL_SWITCH_ARMED` | api | — | no | warning | The kill switch is armed; new risk-increasing orders are refused, exits settle. |
 | `KILL_SWITCH_UNAVAILABLE` | executor | — | yes | critical | The switch state could not be read, so execution fails closed. |
+| `GATE_NOT_MET` | api | — | no | critical | A live start has no verified gate record for this build, so execution is refused. |
 
 ### Strategy parameters (11)
 

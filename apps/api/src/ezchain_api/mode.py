@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ezchain_api import __version__
+from ezchain_core.reason_codes import GATE_NOT_MET
 
 if TYPE_CHECKING:
     from .config import Settings
@@ -42,6 +43,10 @@ _CHECKLIST_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 class LiveGateRefused(ValueError):
     """A live start was refused. The message names the record or the field at fault."""
+
+    # A stable code travels with every refusal, so an unauthenticated read surface can
+    # report why live is unavailable without exposing a prose diagnosis or a file path.
+    code = GATE_NOT_MET
 
     def __init__(self, message: str, *, record: Path | None = None) -> None:
         super().__init__(message)
@@ -93,7 +98,9 @@ def _canonical(payload: dict[str, Any]) -> bytes:
 
 
 def _refuse(message: str, record: Path | None = None) -> LiveGateRefused:
-    return LiveGateRefused(f"EZCHAIN_EXECUTION_MODE=live refused: {message}", record=record)
+    return LiveGateRefused(
+        f"{GATE_NOT_MET}: EZCHAIN_EXECUTION_MODE=live refused: {message}", record=record
+    )
 
 
 def _constant_time_equal(supplied: str, expected: str) -> bool:
@@ -262,6 +269,7 @@ def mode_status(settings: Settings) -> dict[str, Any]:
             "execution": "paper",
             "live_available": False,
             "live_blocked_reason": exc.public_message(),
+            "reason_code": exc.code,
         }
     return state.to_dict()
 

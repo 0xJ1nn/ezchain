@@ -52,7 +52,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from ezchain_core import (
     AUTOMATION_CONSENT_REQUIRED,
@@ -88,18 +88,32 @@ from ezchain_core import (
     journal_from_fill,
     quantize_money,
     risk_decision_from_intent,
+    utcnow,
     verify_prepared_transaction,
     verify_signed_transaction,
 )
 
 from .journal import JournalSink
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
+from .outbox import AttemptLog, BroadcastAttempt, MemoryAttemptLog
 from .signing import SigningBoundary, SigningRefused
 from .venue import VenueError
 
 # A quote may differ from the approved size only by rounding. Anything larger than this
 # is a different order, not the one risk approved.
 _QUOTE_SIZE_TOLERANCE = Decimal("0.01")
+
+# A refusal with one of these codes means the broadcast is definitively settled: the
+# venue rejected it, or the receipt cannot be booked. Leaving such a claim pending would
+# make a later reconcile book money the pipeline deliberately refused.
+_DEFINITIVE_POST_BROADCAST = frozenset(
+    {
+        "VENUE_REJECTED",
+        "UNBOOKABLE_RECEIPT",
+        "RECEIPT_EXCEEDS_ORDER",
+        TRANSACTION_DIGEST_MISMATCH,
+    }
+)
 
 
 class IntentRejected(Exception):
@@ -160,6 +174,9 @@ class ExecutionPipeline:
     position_source: Any = None
     timeout_seconds: float = 10.0
     idempotency_store: DedupeStore = field(default_factory=DedupeStore)
+    # The broadcast outbox. Production injects a durable store; the default only keeps a
+    # trace for the life of the process, so a real deployment must configure one.
+    attempts: AttemptLog = field(default_factory=MemoryAttemptLog)
     # When set, every order is built from an immutable approved intent, decoded and
     # checked against it, then signed before the venue sees it. Paper may leave it unset;
     # a live pipeline without one refuses every submit instead of broadcasting unsigned.
@@ -365,13 +382,36 @@ class ExecutionPipeline:
         if blocked is not None:
             return blocked
 
-        # 7. Fill from the venue receipt. A signature this process produced must come
+        # 7. Claim the broadcast durably before the venue sees the order. A process that
+        # dies after submit but before the journal must leave a trace another pass can
+        # reconcile. An outbox that refuses the claim refuses the broadcast too: money
+        # must never move without a record of what was sent.
+        attempt = BroadcastAttempt(
+            id=order.id,
+            group_id=f"fill:{order.id}",
+            chain=intent.chain,
+            token_address=intent.token_address,
+            side=order.side,
+            avg_cost_usd=position.avg_cost_usd,
+            position_cost_usd=position.cost_usd,
+            transaction_digest=signed.payload_digest if signed is not None else None,
+            created_at=utcnow(),
+        )
+        try:
+            self.attempts.append(attempt)
+        except Exception:  # noqa: BLE001 - untraceable money is not safe money
+            return _refused_before_submit(intent, order, reason="RECONCILIATION_FAILED")
+
+        # 7.1 Fill from the venue receipt. A signature this process produced must come
         # back with the same payload digest, or the receipt is not for our transaction.
         submitted = await self._submit(order, signed, timeout_seconds)
         if isinstance(submitted, ExecutionResult):
+            if submitted.reason in _DEFINITIVE_POST_BROADCAST:
+                self._resolve_attempt(attempt.id, "failed", submitted.reason)
             return submitted
         fill = submitted
         if signed is not None and fill.transaction_digest != signed.payload_digest:
+            self._resolve_attempt(attempt.id, "failed", TRANSACTION_DIGEST_MISMATCH)
             return _order_failed(order, "rejected", TRANSACTION_DIGEST_MISMATCH, fill=fill)
 
         # 8. Journal from the receipt, then append. The ledger is the only accountant.
@@ -384,6 +424,8 @@ class ExecutionPipeline:
             journal = _journal_from(intent, fill, position)
             self.sink.append(journal)
         except Exception as exc:  # noqa: BLE001 - the fill happened; the journal did not
+            # The claim stays open on purpose: reconciliation is what books the fill
+            # from the venue's receipt when this process never completes the append.
             return ExecutionResult(
                 intent=intent,
                 status="journal_error",
@@ -393,6 +435,7 @@ class ExecutionPipeline:
                 fill=fill,
                 reason=f"JOURNAL_FAILED: {exc}",
             )
+        self._resolve_attempt(attempt.id, "journaled")
 
         return ExecutionResult(
             intent=intent,
@@ -544,6 +587,20 @@ class ExecutionPipeline:
         except KillSwitchActive:
             return _denied(intent, decision, reason="KILL_SWITCH_ACTIVE", quote=quote)
         return None
+
+    def _resolve_attempt(
+        self, attempt_id: str, state: Literal["journaled", "failed"], reason: str | None = None
+    ) -> None:
+        """Close a broadcast claim when this run knows the outcome.
+
+        A failure to write the resolution is not a failure of the order: the journal is
+        already booked, or the venue has answered, and a later reconcile can close the
+        claim from those facts. The result the caller sees is unchanged.
+        """
+        try:
+            self.attempts.resolve(attempt_id, state=state, reason=reason)
+        except Exception:  # noqa: BLE001 - the claim is evidence, not the order's result
+            pass
 
     async def _held_position(self, intent: Intent, fallback: PositionState) -> PositionState | None:
         """The position right before submit; ``None`` means it could not be read."""

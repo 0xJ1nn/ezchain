@@ -39,6 +39,14 @@ class MemoryJournal:
     def entries(self) -> tuple[LedgerEntry, ...]:
         return tuple(entry for _, entries in self._groups for entry in entries)
 
+    def has_group(self, group_id: str) -> bool:
+        """True when a journal for this group is already booked.
+
+        Reconciliation asks before appending: a crash after the append but before the
+        outbox resolution must never book the same fill twice.
+        """
+        return any(existing == group_id for existing, _ in self._groups)
+
     def entries_for(self, group_id: str) -> tuple[LedgerEntry, ...]:
         for existing, entries in self._groups:
             if existing == group_id:

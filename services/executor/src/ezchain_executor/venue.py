@@ -25,7 +25,10 @@ from ezchain_core import (
 )
 from ezchain_core.execution import Fill, Intent, Order
 
+from .outbox import VenueTxStatus
+
 VenueMode = Literal["fill", "reject", "timeout", "partial", "quote_timeout", "no_quote"]
+VenueStatusMode = Literal["normal", "not_found", "unknown"]
 
 
 class VenueError(RuntimeError):
@@ -52,6 +55,9 @@ class FakeVenue:
     prepare_calls: int = 0
     prepared: list[ApprovedIntent] = field(default_factory=list)
     signed: list[SignedTransaction] = field(default_factory=list)
+    # Broadcast receipts, keyed by order id and by digest, for reconciliation queries.
+    receipts: dict[str, Fill] = field(default_factory=dict)
+    status_mode: VenueStatusMode = "normal"
 
     def _source(self) -> SourceRef:
         return SourceRef(
@@ -125,7 +131,7 @@ class FakeVenue:
             receipt["transaction_digest"] = digest
         if self.mode == "partial":
             quantity = order.quantity * self.partial_ratio
-            return Fill(
+            fill = Fill(
                 order_id=order.id,
                 side=order.side,
                 quantity=quantity,
@@ -136,17 +142,34 @@ class FakeVenue:
                 receipt=receipt,
                 transaction_digest=digest,
             )
-        return Fill(
-            order_id=order.id,
-            side=order.side,
-            quantity=order.quantity,
-            price_usd=order.quote.price,
-            notional_usd=order.amount_usd,
-            fee_usd=self.fee_usd,
-            status="filled",
-            receipt=receipt,
-            transaction_digest=digest,
-        )
+        else:
+            fill = Fill(
+                order_id=order.id,
+                side=order.side,
+                quantity=order.quantity,
+                price_usd=order.quote.price,
+                notional_usd=order.amount_usd,
+                fee_usd=self.fee_usd,
+                status="filled",
+                receipt=receipt,
+                transaction_digest=digest,
+            )
+        self.receipts[order.id] = fill
+        if digest is not None:
+            self.receipts[digest] = fill
+        return fill
+
+    async def transaction_status(
+        self, *, order_id: str, transaction_digest: str | None
+    ) -> VenueTxStatus:
+        """What the venue knows about one broadcast, for the reconciler."""
+        if self.status_mode == "unknown":
+            return VenueTxStatus("unknown")
+        key = transaction_digest if transaction_digest is not None else order_id
+        fill = self.receipts.get(key) or self.receipts.get(order_id)
+        if self.status_mode == "not_found" or fill is None:
+            return VenueTxStatus("not_found")
+        return VenueTxStatus("filled", fill)
 
 
 __all__ = ["FakeVenue", "VenueError", "VenueMode"]
