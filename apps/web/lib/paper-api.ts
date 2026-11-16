@@ -87,8 +87,34 @@ export interface PaperAccount {
 	unpriced_positions: PaperUnpricedPosition[];
 	by_chain: PaperChainComposition[];
 	by_asset: PaperAssetComposition[];
+	/** Optional in fixtures; the API always sends both. Read through the wallet helpers. */
+	wallets?: PaperWallet[];
+	by_wallet?: PaperWalletComposition[];
 	positions: PaperPosition[];
 	mode: "paper";
+}
+
+/** A paper wallet as /paper/wallets returns it. Paper mode travels with every row. */
+export interface PaperWallet {
+	id: string | null;
+	chain: string;
+	asset: string;
+	label: string;
+	balance_usd: string;
+	mode: string;
+}
+
+/** One wallet's server-computed equity contribution. A null value stays unknown. */
+export interface PaperWalletComposition {
+	wallet_id: string | null;
+	chain: string;
+	asset: string;
+	label: string;
+	settled_usd: string;
+	positions_usd: string | null;
+	market_value_usd: string | null;
+	share_pct: string | null;
+	mark_status: "known" | "unknown";
 }
 
 export type PaperResult<T> =
@@ -818,6 +844,109 @@ export async function getPaperPositions(): Promise<PaperResult<PaperPosition[]>>
 			return clonePositions(fixturePaperPositions);
 		}
 		return request<PaperPosition[]>("/paper/positions");
+	});
+}
+
+/**
+ * Fixture paper wallets mirror the server's declared wallets: one settlement wallet and
+ * one per chain the paper account holds. They are paper rows, never custody wallets, and
+ * carry no address or key material.
+ */
+export const fixturePaperWallets: PaperWallet[] = [
+	{
+		id: "wallet_solana",
+		chain: "solana",
+		asset: "SOL",
+		label: "Solana paper wallet",
+		balance_usd: "10.00",
+		mode: "paper",
+	},
+	{
+		id: "wallet_base",
+		chain: "base",
+		asset: "ETH",
+		label: "Base paper wallet",
+		balance_usd: "0.00",
+		mode: "paper",
+	},
+	{
+		id: "wallet_ethereum",
+		chain: "ethereum",
+		asset: "ETH",
+		label: "Ethereum paper wallet",
+		balance_usd: "0.00",
+		mode: "paper",
+	},
+	{
+		id: null,
+		chain: "unallocated",
+		asset: "USD",
+		label: "Unallocated",
+		balance_usd: "0.00",
+		mode: "paper",
+	},
+];
+
+/** Fixture composition: settled cash is known; a chain with an unpriced mark stays null. */
+export const fixturePaperWalletCompositions: PaperWalletComposition[] = [
+	{
+		wallet_id: "wallet_solana",
+		chain: "solana",
+		asset: "SOL",
+		label: "Solana paper wallet",
+		settled_usd: "10.00",
+		positions_usd: "0.00",
+		market_value_usd: "10.00",
+		share_pct: "0.10",
+		mark_status: "known",
+	},
+	{
+		wallet_id: "wallet_base",
+		chain: "base",
+		asset: "ETH",
+		label: "Base paper wallet",
+		settled_usd: "0.00",
+		positions_usd: null,
+		market_value_usd: null,
+		share_pct: null,
+		mark_status: "unknown",
+	},
+	{
+		wallet_id: "wallet_ethereum",
+		chain: "ethereum",
+		asset: "ETH",
+		label: "Ethereum paper wallet",
+		settled_usd: "0.00",
+		positions_usd: null,
+		market_value_usd: null,
+		share_pct: null,
+		mark_status: "unknown",
+	},
+	{
+		wallet_id: null,
+		chain: "unallocated",
+		asset: "USD",
+		label: "Unallocated",
+		settled_usd: "0.00",
+		positions_usd: null,
+		market_value_usd: null,
+		share_pct: null,
+		mark_status: "unknown",
+	},
+];
+
+export async function getPaperWallets(): Promise<PaperResult<PaperWallet[]>> {
+	return capture(async () => {
+		if (webMode() === "fixture") return [...fixturePaperWallets];
+		return request<PaperWallet[]>("/paper/wallets");
+	});
+}
+
+export async function getPaperWalletCompositions(): Promise<PaperResult<PaperWalletComposition[]>> {
+	return capture(async () => {
+		if (webMode() === "fixture") return [...fixturePaperWalletCompositions];
+		const account = await request<PaperAccount>("/paper/account");
+		return account.by_wallet ?? [];
 	});
 }
 

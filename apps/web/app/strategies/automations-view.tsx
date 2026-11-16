@@ -2,37 +2,36 @@ import Link from "next/link";
 import { EmptyState, FixtureBadge, Unavailable } from "@/components/ops";
 import { ProtectionList } from "@/components/protection-list";
 import { Badge, ButtonLink, Panel } from "@/components/ui";
-import { ageLabel } from "@/lib/live-format";
-import { getStrategies, webMode } from "@/lib/paper-api";
+import { AutomationsTable } from "@/components/automations-table";
+import { getAllStrategyRuns, getStrategies, webMode } from "@/lib/paper-api";
 import { getProtectionArms } from "@/lib/protection-api";
 import { getServiceHealth } from "@/lib/system-api";
-import { strategyKindMeta } from "@/lib/strategy-fixtures";
 
 // The scheduler view of the one strategy surface. Kept as its own module because it reads
 // the health probe and the protection arms, which the strategy list does not need.
 
-function intervalLabel(params: Record<string, string | number>) {
-	const raw = params.interval_minutes;
-	const minutes = typeof raw === "number" ? raw : Number(raw);
-	if (!Number.isFinite(minutes) || minutes <= 0) return "—";
-	if (minutes >= 1440 && minutes % 1440 === 0) return `${minutes / 1440}d`;
-	if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60}h`;
-	return `${minutes}m`;
-}
-
-function stamp(iso: string | null) {
-	if (!iso) return "never";
-	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}Z`;
-}
-
-export async function AutomationsView() {
+export async function AutomationsView({ demo }: { demo?: string } = {}) {
 	const mode = webMode();
-	const [strategiesResult, healthResult, armsResult] = await Promise.all([
+	const [requestedStrategies, runsResult, healthResult, armsResult] = await Promise.all([
 		getStrategies(),
+		getAllStrategyRuns(),
 		getServiceHealth(),
 		getProtectionArms(),
 	]);
+	// Fixture-only state demos, the same convention the positions page uses. A live
+	// deployment never hides a real failure behind a demo flag.
+	const strategiesResult =
+		mode === "fixture" && demo === "error"
+			? {
+					ok: false as const,
+					mode,
+					error: { code: "FIXTURE_DEMO_AUTOMATION_ERROR", message: "Fixture demo: the strategy read failed." },
+				}
+			: mode === "fixture" && demo === "empty"
+				? { ok: true as const, mode, data: [] }
+				: requestedStrategies;
 	const strategies = strategiesResult.ok ? strategiesResult.data : [];
+	const runs = runsResult.ok ? runsResult.data : [];
 	const active = strategies.filter((strategy) => strategy.status === "active");
 	const paused = strategies.filter((strategy) => strategy.status === "paused");
 	const health = healthResult.ok ? healthResult.data : null;
@@ -103,64 +102,11 @@ export async function AutomationsView() {
 					>
 						{strategiesResult.ok ? (
 							strategies.length > 0 ? (
-								<div
-									className="table-wrap"
-									tabIndex={0}
-									role="region"
-									aria-label="Scheduled strategies table"
-								>
-									<table className="table">
-										<caption className="sr-only">Scheduled strategies</caption>
-										<thead>
-											<tr>
-												<th scope="col">Strategy</th>
-												<th scope="col">Status</th>
-												<th scope="col">Kind</th>
-												<th scope="col">Chain</th>
-												<th scope="col">Interval</th>
-												<th scope="col">Last run</th>
-												<th scope="col" />
-											</tr>
-										</thead>
-										<tbody>
-											{strategies.map((strategy) => (
-												<tr key={strategy.id}>
-													<td>
-														<Link href={`/strategies/${strategy.id}`}>
-															<span className="strong">{strategy.name}</span>
-														</Link>
-														<span className="sub" style={{ display: "block" }}>
-															{strategy.token_symbol} · {strategy.id}
-														</span>
-													</td>
-													<td>
-														<Badge tone={strategy.status === "active" ? "ok" : "warn"}>
-															{strategy.status}
-														</Badge>
-													</td>
-													<td className="small">
-														{strategyKindMeta[strategy.kind]?.label ?? strategy.kind}
-													</td>
-													<td>{strategy.chain}</td>
-													<td className="mono small">{intervalLabel(strategy.params)}</td>
-													<td className="small">
-														{stamp(strategy.last_run_at)}
-														<span className="sub" style={{ display: "block" }}>
-															{strategy.last_run_at
-																? `${ageLabel(strategy.last_run_at)} ago`
-																: "never"}
-														</span>
-													</td>
-													<td className="right">
-														<Link className="btn sm" href={`/strategies/${strategy.id}`}>
-															Open
-														</Link>
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
+								<AutomationsTable
+									mode={mode}
+									initialStrategies={strategies}
+									initialRuns={runs}
+								/>
 							) : (
 								<div className="panel-body">
 									<EmptyState
@@ -215,15 +161,20 @@ export async function AutomationsView() {
 									<tr>
 										<td>Run log</td>
 										<td>
-											Available on each strategy detail page from
-											/strategies/[id]/runs.
+											The last decisions are in the table above; the full recorded log is on
+											each <Link href="/strategies">strategy detail page</Link>. Every row is
+											the engine&apos;s decision, not a browser timer.
 										</td>
 									</tr>
 									<tr>
 										<td>Trigger / action builder</td>
 										<td>
-											<span className="warn">Not built.</span> No generic trigger-action
-											automation object exists in this API.
+											The <Link href="/strategies/builder">visual builder</Link> declares a
+											typed graph: tick or candle nodes are the trigger, logic nodes are the
+											conditions, action nodes are the actions, and the chain and token
+											params are the scope. Its dry run is labelled <span className="mono">DRY_RUN</span>{" "}
+											and places no order; there is no generic trigger-action automation object
+											in this API and no simulated 30-day window is claimed here.
 										</td>
 									</tr>
 								</tbody>

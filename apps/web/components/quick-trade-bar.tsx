@@ -26,7 +26,7 @@ import {
 	quoteKindLabel,
 	sourceLabel,
 } from "@/lib/live-format";
-import styles from "./token.module.css";
+import styles from "@/app/tokens/[chain]/[id]/token.module.css";
 
 type TicketState =
 	| { kind: "idle" }

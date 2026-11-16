@@ -5,6 +5,20 @@ import { pct, signedUsd, usd, usd0 } from "./format";
 
 export type Tone = "default" | "ok" | "err" | "warn" | "info" | "ghost";
 
+/**
+ * Sample server-shaped equity points for the fixture build only. Every other mode reads
+ * the performance endpoint; these points are labelled FIXTURE wherever they are shown and
+ * are never treated as an API response. The UI plots only what is in the list.
+ */
+export const fixtureEquitySeries: { t: string; value: string }[] = [
+	{ t: "2026-11-10T00:00:00Z", value: "10000.00" },
+	{ t: "2026-11-11T00:00:00Z", value: "9974.20" },
+	{ t: "2026-11-12T00:00:00Z", value: "10021.80" },
+	{ t: "2026-11-13T00:00:00Z", value: "9958.40" },
+	{ t: "2026-11-14T00:00:00Z", value: "9886.10" },
+	{ t: "2026-11-15T00:00:00Z", value: "9709.36" },
+];
+
 export interface PositionFixture {
 	id: string;
 	symbol: string;

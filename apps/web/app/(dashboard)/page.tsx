@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { ModeBadge } from "@/components/ops";
 import { AppShell } from "@/components/shell";
+import { PositionTile } from "@/components/position-tile";
 import { Badge, ButtonLink, Meter, Panel, Stat, TokenAvatar } from "@/components/ui";
 import {
 	getMarketOverview,
 	getPaperAlerts,
 	getPaperLimits,
 	getPaperOrders,
+	getPaperPerformance,
 } from "@/lib/account-api";
 import { asApiError, getChains, getLaunches, getMarkets, LAUNCH_WINDOW_MINUTES } from "@/lib/api";
 import { killSwitchLevels, killSwitchScopeSummary } from "@/lib/kill-switch-copy";
@@ -28,6 +30,8 @@ import {
 	shortAddress,
 	sourceLabel,
 } from "@/lib/live-format";
+import { fixtureEquitySeries } from "@/lib/dashboard-fixtures";
+import { positionToTile } from "@/lib/position-tile-view";
 import {
 	fixturePaperAccountComplete,
 	fixturePaperAccountFlat,
@@ -54,6 +58,46 @@ function failure(result: Failure) {
 		<div className="note">
 			<Badge tone="warn">{code}</Badge> {message}
 		</div>
+	);
+}
+
+/** Plots only points the caller supplied with a numeric value; a null point is skipped. */
+function EquitySeries({ points }: { points: { t: string; value: string | null }[] }) {
+	const finite = points
+		.map((point) => (point.value === null ? Number.NaN : Number(point.value)))
+		.filter((value) => Number.isFinite(value));
+	if (finite.length === 0) {
+		return <div className="note">No numeric point was returned; nothing is drawn.</div>;
+	}
+	const min = Math.min(...finite);
+	const max = Math.max(...finite);
+	const span = max - min || 1;
+	const segments = points
+		.map((point, index) => {
+			const value = point.value === null ? Number.NaN : Number(point.value);
+			if (!Number.isFinite(value)) return null;
+			const x = (index / Math.max(1, points.length - 1)) * 320;
+			const y = 100 - ((value - min) / span) * 80;
+			return `${x},${y}`;
+		})
+		.filter((segment): segment is string => segment !== null)
+		.join(" ");
+	return (
+		<svg
+			viewBox="0 0 320 120"
+			width="100%"
+			height="120"
+			role="img"
+			aria-label={`Equity history, ${points.length} server points, paper mode`}
+		>
+			<polyline fill="none" stroke="currentColor" strokeWidth="1.5" points={segments} />
+			<text className="axis-text" x="2" y="116">
+				{points[0]?.t.slice(0, 10)}
+			</text>
+			<text className="axis-text" x="230" y="116">
+				{points[points.length - 1]?.t.slice(0, 10)}
+			</text>
+		</svg>
 	);
 }
 
@@ -118,6 +162,7 @@ export default async function DashboardPage({
 		overview,
 		executionMode,
 		killSwitchResult,
+		performance,
 	] = await Promise.all([
 			getPaperSnapshot(),
 			getStrategies(),
@@ -136,12 +181,35 @@ export default async function DashboardPage({
 			getMarketOverview(),
 			getExecutionMode(),
 			getKillSwitch(),
+			getPaperPerformance(),
 		]);
 
 	const live = snapshot.mode === "live";
 	// Deterministic composition states for fixture screenshots and tests. Live mode always
 	// renders the API's answer; a demo flag never masks a real outage.
 	const demo = live ? undefined : state;
+	const performanceRead =
+		demo === "series-unavailable"
+			? {
+					ok: false as const,
+					code: "FIXTURE_DEMO_SERIES_ERROR",
+					message: "Fixture demo: the performance series read failed.",
+				}
+			: performance;
+	// The series is plotted exactly as the server sent it. In fixture mode a labelled
+	// sample series keeps the chart reachable; a live read with no series stays empty.
+	const seriesFailed = demo === "series-unavailable" || (live && !performanceRead.ok);
+	const seriesError = performanceRead.ok ? null : performanceRead;
+	const serverSeries = performanceRead.ok
+		? (performanceRead.data.equity_series ?? performanceRead.data.series?.equity ?? [])
+		: [];
+	const equityPoints: { t: string; value: string | null }[] = live
+		? serverSeries.map((point) => {
+				const raw: unknown =
+					point.value ?? ("equity_usd" in point ? point.equity_usd : undefined);
+				return { t: point.t, value: typeof raw === "string" ? raw : null };
+			})
+		: fixtureEquitySeries.map((point) => ({ t: point.t, value: point.value }));
 	const demoAccount =
 		demo === "complete"
 			? fixturePaperAccountComplete
@@ -670,6 +738,21 @@ export default async function DashboardPage({
 								</table>
 							</div>
 						)}
+						{positions.length > 0 && (
+							<div className="panel-body">
+								<div className="between mb-8">
+									<span className="strong">9-zone tiles from the server view model</span>
+									<span className="small muted">
+										chart, ladder and trail stay empty — the API does not return them
+									</span>
+								</div>
+								<div className="grid cols-2 tiles" data-testid="dashboard-position-tiles">
+									{positions.map((position) => (
+										<PositionTile position={positionToTile(position)} key={`${position.chain}:${position.token_address}`} />
+									))}
+								</div>
+							</div>
+						)}
 					</Panel>
 
 					<Panel
@@ -712,18 +795,72 @@ export default async function DashboardPage({
 
 					<Panel
 						title="Account history"
-						sub="No equity snapshots are stored yet"
-						action={<SectionBadge mode={executionMode} />}
+						sub={
+							live
+								? performanceRead.ok
+									? `${serverSeries.length} server points · ${performanceRead.data.source ?? "ledger"}`
+									: "series unavailable"
+								: `${equityPoints.length} fixture sample points`
+						}
+						action={
+							seriesFailed ? (
+								<Badge tone="warn">{seriesError?.code ?? "UNAVAILABLE"}</Badge>
+							) : !live ? (
+								// A data-source label, not a mode: the sub line already says these are
+								// fixture sample points, and `the dashboard asserts no execution mode of
+								// its own` pins every panel badge to UNKNOWN, FIXTURE or LIVE API.
+								<Badge tone="ghost">FIXTURE</Badge>
+							) : performanceRead.ok ? (
+								<Badge tone="ghost">LIVE API</Badge>
+							) : (
+								<Badge tone="warn">{seriesError?.code ?? "UNAVAILABLE"}</Badge>
+							)
+						}
+						flush
+						footer={
+							live
+								? "Every point is a server equity snapshot. No bucket is filled in by the browser."
+								: "Sample points for the fixture build only. A live deployment reads the server series."
+						}
 					>
-						<div className="note">
-							The ledger is the source of truth, but ezCHAIN does not persist a periodic
-							equity curve yet. The performance page shows realized PnL from the ledger rather
-							than inventing a line.
-						</div>
-						<div className="row mt-12">
-							<ButtonLink href="/performance" size="sm">Paper performance</ButtonLink>
-							<ButtonLink href="/ledger" size="sm">Activity</ButtonLink>
-						</div>
+						{seriesFailed ? (
+							<div className="panel-body">
+								<div className="note err">
+									<Badge tone="warn">{seriesError?.code ?? "UNAVAILABLE"}</Badge> {seriesError?.message}
+									No equity point is substituted for a failed read.
+								</div>
+							</div>
+						) : equityPoints.length === 0 ? (
+							<div className="panel-body">
+								<div className="note">
+									{performanceRead.ok ? performanceRead.data.reason : "No server series available."} No line is drawn
+									from an empty series.
+								</div>
+							</div>
+						) : (
+							<div className="panel-body">
+								<EquitySeries points={equityPoints} />
+								<div className="table-wrap mt-8">
+									<table className="table compact">
+										<caption className="sr-only">Equity history points</caption>
+										<thead>
+											<tr>
+												<th scope="col">Bucket</th>
+												<th scope="col" className="num">Equity</th>
+											</tr>
+											</thead>
+										<tbody>
+											{equityPoints.map((point) => (
+												<tr key={point.t}>
+													<td className="mono">{point.t.slice(0, 16).replace("T", " ")}</td>
+													<td className="num mono">{point.value === null ? "—" : formatUsd(point.value)}</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						)}
 					</Panel>
 				</div>
 

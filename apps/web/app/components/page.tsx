@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { FixtureBadge } from "@/components/ops";
 import { MarketSpark } from "@/components/market-spark";
+import { PositionTile } from "@/components/position-tile";
+import { positionTiles } from "@/lib/position-fixtures";
 import {
 	Badge,
 	ButtonLink,
@@ -193,8 +195,8 @@ export default function ComponentsPage() {
 						</div>
 						<p className="note mt-12">
 							There is no standalone button primitive on purpose: navigation is a link. A
-							disabled tile action is a disabled button with an explanation, never a live
-							control that does nothing.
+							tile action that cannot run keeps its label and stays in the tab order with
+							aria-disabled, so a keyboard user can hear why it does nothing.
 						</p>
 					</Panel>
 
@@ -225,6 +227,38 @@ export default function ComponentsPage() {
 							The series is a display fixture. Market charts on real pages come from the API
 							and carry their source and freshness.
 						</p>
+					</Panel>
+
+					<Panel
+						title="Position tile"
+						sub="the signature component"
+						action={<FixtureBadge />}
+						footer="One sample from the shared PositionTileView fixture. All eleven states are on the state gallery; none of the actions execute here."
+					>
+						<div className="grid cols-2 tiles">
+							<PositionTile position={positionTiles[0]} />
+						</div>
+					</Panel>
+
+					<Panel title="Overlays" sub="documented, not activated">
+						<div className="drawer-demo" data-testid="gallery-drawer">
+							<div className="panel-head"><h3>Drawer</h3></div>
+							<div className="small muted">
+								A side surface. The builder&apos;s dry-run and backtest panels use this shape; they are
+								static here so the gallery never mutates state.
+							</div>
+						</div>
+						<div className="modal-demo mt-12" data-testid="gallery-modal">
+							<div className="panel-head"><h3>Confirmation</h3></div>
+							<div className="small muted">
+								Destructive actions arm in place elsewhere. A modal is shown here only as a documented
+								shape, with no action attached.
+							</div>
+						</div>
+						<div className="toast-demo mt-12" data-testid="gallery-toast">
+							<span className="badge ok">DONE</span>
+							<span className="small">A result notice carries its reason; it is never a fabricated fill.</span>
+						</div>
 					</Panel>
 
 					<Panel title="Notes and annotations" sub="explanatory primitives">
