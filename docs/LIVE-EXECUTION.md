@@ -5,6 +5,30 @@ Status: **contract for live trading.** Normative together with [SECURITY.md](SEC
 live are designed to share one pipeline — `Intent → RiskDecision → Quote → Order → Fill →
 Journal` — with only the custodian (executor) and the venue transaction differing.
 
+## 0. What exists in this build
+
+This document is the contract for a system that is **partly built**. Read this table before
+treating any section below as a description of running code; where the two disagree, the
+code is right and this table is the index.
+
+| Contract element | In this build |
+|---|---|
+| The one pipeline (`services/executor`, `Intent → … → Journal`) | **Built**, behind the `Venue` protocol, with a fake venue and 18 transaction-binding tests |
+| Signing boundary: decode and bind before any signer runs | **Built** |
+| Custody seam: `KeyHandle`, `SignerTransport`, typed refusals | **Built** — a *seam*, with a fake transport in tests; no shipped device or local-vault transport |
+| Broadcast outbox and reconciliation of claims without a journal | **Built** — `FileAttemptLog` + `Reconciler`; the durable log must be injected, the in-memory default is not durable |
+| Executor HTTP service, `executor_client`, HMAC loopback (§1) | **Not built** — no FastAPI app, no client module, no port |
+| Encrypted `vault.json` with argon2id + AES-GCM (§2) | **Not built** — the custody seam exists, the file format does not |
+| Simulate stage and `SIMULATION_FAILED` (§3.4) | **Not built**, and the code is not in the taxonomy |
+| Live tables `live_intents` / `live_orders` / `live_fills` (§3.1) | **Not built** — no live tables exist |
+| `live:` ledger account prefix (§3.8) | **Not built** — no live book. Paper accounts are `cash:USD`, `fees:USD`, `pnl:realized:USD`, `position:<chain>:<token>` |
+| On-chain balance reconciliation and `RECONCILE_DRIFT` (§6) | **Not built**, and the code is not in the taxonomy |
+| `LIVE_EXECUTOR_SHIPPED` flipped, a live intent executed | **False** — mode `live` refuses with `GATE_NOT_MET` |
+
+The pipeline's real success and refusal codes are the taxonomy in
+[REASON-CODES.md](REASON-CODES.md); anything named in this document but absent there is a
+plan, not a code.
+
 The reference pipeline is implemented once, in
 `services/executor/src/ezchain_executor/pipeline.py`. Its stages are the typed objects in
 `ezchain_core.execution` (`Intent`, `RiskDecision`, `Quote`, `Order`, `Fill`, `Journal`);
@@ -31,11 +55,11 @@ pipeline itself decodes those bytes and compares every one of those fields with 
 approval before any signer runs: a swapped mint, an inflated amount, a changed recipient, a
 foreign program, another cluster, the wrong side, a lowered floor or a replaced key refuses
 with its own `TRANSACTION_*` code and no signature. Because the check is in the pipeline,
-not in the signer, a substitute or buggy `TransactionSigner` cannot disarm it; the shipped
-signer keeps its own check as defence in depth. The signature that returns is verified
-again against the pipeline's decode — the approval it carries must be the approved one
-(`TRANSACTION_APPROVAL_MISMATCH`) and its bytes and digest must be the ones that were
-bound. The signed payload's SHA-256 digest is then carried through submission, and a
+not in the signer, a substitute or buggy `TransactionSigner` cannot disarm it; a signer that
+also checks keeps that as defence in depth rather than as the guarantee. The signature that
+returns is verified again against the pipeline's decode — the approval it carries must be
+the approved one (`TRANSACTION_APPROVAL_MISMATCH`) and its bytes and digest must be the ones
+that were bound. The signed payload's SHA-256 digest is then carried through submission, and a
 receipt that does not echo it is refused (`TRANSACTION_DIGEST_MISMATCH`) and never
 journaled. Paper may run without a boundary and submits unsigned; a pipeline in any other
 mode refuses an unsigned submit with `SIGNING_BOUNDARY_REQUIRED` before the venue is
@@ -58,19 +82,33 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
                      │ Postgres (orders, ledger, intents)        │ vault file (0600)
 ```
 
-- `services/executor` is a separate process (`ezchain-executor`, FastAPI on
-  `127.0.0.1:8100` or a unix socket). It is the **only** code that imports signing
-  libraries (`solders`, `eth-account`) or reads the vault. `apps/api` and the engine talk
-  to it only through `ezchain_api.executor_client` with a per-request HMAC
-  (`EZCHAIN_EXECUTOR_SECRET`, ≥ 32 bytes) over `intent_id|ts|body-sha256`, 30 s skew.
-- The executor exposes **no generic sign endpoint**. Endpoints: `GET /health`,
+**None of this topology is deployed yet** (§0): `services/executor` is a library with no
+HTTP app, no client module and no port. The box below is the design the boundary must
+satisfy when it is written, kept here because the custody argument depends on it.
+
+- `services/executor` is the intended separate process (`ezchain-executor`, FastAPI on
+  `127.0.0.1:8100` or a unix socket). It is the **only** code meant to import signing
+  libraries (`solders`, `eth-account`) or read the vault. `apps/api` and the engine would
+  talk to it only through `ezchain_api.executor_client` with a per-request HMAC
+  (`EZCHAIN_EXECUTOR_SECRET`, ≥ 32 bytes) over `intent_id|ts|body-sha256`, 30 s skew. The
+  gate already refuses to run with that variable set, so a test can never inherit one.
+- The executor is to expose **no generic sign endpoint**. Endpoints: `GET /health`,
   `GET /wallets` (public addresses only), `POST /vault/unlock`, `POST /vault/lock`,
   `POST /intents/{intent_id}/execute`, `GET /intents/{intent_id}`.
-- The executor re-reads the kill switch and the live-arm state from Postgres before every
-  signature (fail closed if unreadable) and re-validates the intent (amount ≤ approved,
-  wallet, chain, side, venue, expiry ≤ 60 s).
+- The executor re-reads the kill switch and the live-arm state before every signature (fail
+  closed if unreadable) and re-validates the intent (amount ≤ approved, wallet, chain, side,
+  venue, expiry ≤ 60 s). The kill-switch half of that is built in the pipeline; the arm
+  state has no reader because there is no arm flow.
 
 ## 2. Vault
+
+**The custody seam is built; this file format is not** (§0). What exists is
+`services/executor/src/ezchain_executor/vault.py`: a `SignerTransport` seam, a
+`HardwareSignerVault` over it, a `VaultTransactionSigner` that binds a prepared transaction
+to an `ApprovedIntent`, and one typed refusal per failure. No key material is stored by
+anything in this repository yet.
+
+The format below is the design an implementation must meet:
 
 - File `${EZCHAIN_DATA_DIR}/vault.json`, mode 0600. One record per key: `{id, label,
   family (svm|evm), address, kdf: {alg: argon2id, salt, t: 3, m: 65536, p: 1}, cipher:
@@ -82,7 +120,7 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
   or imported through the **executor CLI only** (`wallet import`, reads stdin, never
   argv). There is no browser key entry (the ADR-0016 proposal, not a reviewed decision) and
   **no key export** — backup is the
-  encrypted vault file itself.
+  encrypted vault file itself. Neither subcommand exists yet.
 - The API stores wallet metadata (`wallets` table: id, label, family, address, custody
   `local_vault|watch`, chains, policy) — never key material.
 
@@ -90,11 +128,17 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
 
 1. **Intent** (`live_intents` row): manual order or strategy decision with `mode=live`,
    wallet id, chain, token, side, `amount_usd`/`quantity`, `max_slippage_bps`,
-   idempotency key. Unique by idempotency key.
+   idempotency key. Unique by idempotency key. **There is no `live_intents` table**; the
+   pipeline's `Intent` is the typed object in `ezchain_core.execution` and dedupe is on the
+   idempotency key it carries, not on a row.
 2. **RiskDecision**: the paper policy **plus** live limits from settings/DB:
    `live_max_order_usd` (default 50), `live_max_daily_notional_usd` (default 250),
    `live_max_daily_loss_usd`, per-chain enable list, wallet policy, LIVE armed, kill
-   switch off, strategy paper gate passed (strategies only). Any unknown → deny.
+   switch off, strategy paper gate passed (strategies only). Any unknown → deny. **The live
+   limits are not implemented**: no `live_max_*` setting exists in this build, so the paper
+   policy is the whole policy. A sell is re-bounded against the held quantity before submit
+   and refuses a receipt larger than the order (`RECEIPT_EXCEEDS_ORDER`), which is the one
+   place the two sides are treated differently.
 3. **Quote/Build**: the venue adapter builds the unsigned transaction from the immutable
    `ApprovedIntent` for the wallet address — it is handed nothing else. Solana via Jupiter
    `/swap/v1/swap` (versioned tx); EVM via KyberSwap `/api/v1/route/build` (router
@@ -102,36 +146,62 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
    unlimited). `min_out` comes from the quote and `max_slippage_bps`. The pipeline decodes
    the returned bytes and checks them against the approval before any signer runs (program
    id, cluster, mint, side, amount, minimum output, recipient, idempotency key); any
-   difference is a `TRANSACTION_*` refusal with no signature.
-4. **Simulate**: Solana `simulateTransaction`; EVM `eth_estimateGas` + `eth_call`. A
-   failed simulation rejects (`SIMULATION_FAILED`) — nothing is signed.
-5. **Sign + broadcast** in the executor; nonce per (chain, address) serialized; one
-   in-flight tx per wallet per chain. The signer verifies the decode again immediately
-   before signing, the boundary rejects a signature whose approval, bytes or digest are not
-   the ones it bound, and the signed payload's digest is recorded as the transaction's
-   identity.
+   difference is a `TRANSACTION_*` refusal with no signature. **The adapter that builds
+   those bytes from a real venue is not in this build**; the fake venue speaks the same
+   protocol, so the binding above is what the tests exercise.
+4. **Simulate**: *not built* (§0). The stage is designed as Solana `simulateTransaction` and
+   EVM `eth_estimateGas` + `eth_call`, refusing a failed simulation before any signature.
+5. **Sign + broadcast** in the executor. The pipeline decodes, binds, re-reads the kill
+   switch, then signs — in that order, so an arm that lands during the build refuses before
+   the key is touched. The boundary rejects a signature whose approval, bytes or digest are
+   not the ones it bound, and the signed payload's digest is recorded as the transaction's
+   identity. **Nonce serialisation and one-in-flight-transaction-per-wallet are not built**:
+   there is no nonce manager, and the only in-flight guard is one per idempotency key, so
+   two *different* intents for one wallet can be in flight together.
 6. **Confirm**: poll receipt/signature status to finality (`confirmed` Solana, 1–3 blocks
    EVM per chain config) with a timeout (default 90 s). The receipt must echo the signed
    payload's digest; a different or missing digest is `TRANSACTION_DIGEST_MISMATCH` and
-   nothing is journaled. Timeout → `UNCONFIRMED`, the reconciler resolves it later; never
-   resend blindly.
+   nothing is journaled. A timeout returns `TIMEOUT` on an order whose status is `timeout`,
+   and the outbox claim it left behind stays open for reconciliation. A persisted
+   `UNCONFIRMED` state is not built; there is never a blind resend.
 7. **Fill**: computed from the **receipt** (token balance deltas / Transfer logs), not
    from the quote. Gas/fees in USD from the receipt.
-8. **Journal**: ledger entries in the **live book** (`live:` account prefix) in the same
-   transaction as the order/fill rows. Paper and live never share accounts or totals.
+8. **Journal**: ledger entries in the same transaction as the order/fill rows, through the
+   sink, and only from the receipt. Paper and live are meant never to share accounts; the
+   `live:` prefix that would separate them is part of the unbuilt live book (§0), so today
+   there is one book.
 
 ## 4. Modes and gates
 
-- System mode is `PAPER` until the owner **arms LIVE** (L4: 1.2 s hold + TOTP; audited,
-  expires after `EZCHAIN_LIVE_ARM_HOURS`, default 12). Disarm is one click. The mode is
-  derived server-side and stamped on every number; the UI cannot hard-code it.
-- A strategy can trade live only if its **paper gate** passed (configurable thresholds,
-  defaults: ≥ 7 days, ≥ 20 intents, ≥ 5 fills, no invariant breach) and the owner
-  promoted it (L4). Manual live orders need LIVE armed and an L2 confirm with the quote.
-- Kill switch: the executor refuses new intents while armed; exits (sells) for already
-  open live positions are still allowed only when the owner explicitly confirms (L3).
+- System mode is `PAPER` until an operator sets `EZCHAIN_EXECUTION_MODE=live` and a signed
+  live-gate record verifies against `EZCHAIN_LIVE_GATE_RECORD` + `EZCHAIN_LIVE_GATE_KEY`.
+  The mode is derived server-side and stamped on every number; the UI cannot hard-code it.
+  The in-app arming flow (1.2 s hold, TOTP, an expiry setting) is part of the unbuilt live
+  surface, not a behaviour of this build: `mode.py` reads those two values and nothing else.
+- A strategy can trade live only if its **paper gate** passed and the owner promoted it
+  (L4). The thresholds are configuration, and the defaults in code are ≥ 14 days,
+  ≥ 100 intents, ≥ 20 fills, no invariant breach and the same-window backtest
+  (`paper_gate_min_days`, `paper_gate_min_intents`, `paper_gate_min_fills`,
+  `paper_gate_require_backtest` in `apps/api/src/ezchain_api/config.py`; ADR-0009). The
+  gate is **computed on read** by `services/readiness.py` and reported per strategy; no
+  gate record is persisted against a strategy version, and a live intent is not yet
+  refused by it — the only live refusal today is the deployment gate below. Manual live
+  orders need LIVE armed and an L2 confirm with the quote.
+- Kill switch: the executor refuses new **entries** while armed, and a re-read sits
+  immediately before the signer call so an arm that lands mid-intent still refuses without
+  spending the key. Exits are deliberately not recalled — a sell only reduces the held
+  position. The "L3 explicit owner confirmation" for live exits is part of the unbuilt live
+  surface; today the pipeline lets a reduce-only sell settle with no extra prompt. The
+  persisted switch reports one flag at the widest scope in force, with `global` and
+  `strategy` levels; per-chain and per-wallet scopes are not built.
 
 ## 5. Chains in v1
+
+**The venue column is the plan.** What exists is a *quote* client per venue — `JupiterClient`
+and `KyberSwapClient` in `packages/adapters/src/ezchain_adapters/` speak the quote APIs.
+Nothing implements `TransactionAdapter.prepare` (the step that turns an `ApprovedIntent` into
+unsigned bytes) outside the fake venue in tests, so no adapter can build a transaction yet.
+That is the gap the 18 binding tests are written against, and it is why they use a fake.
 
 | Family | Venue | Live in v1 | Test harness |
 |---|---|---|---|
@@ -139,18 +209,36 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
 | evm (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea) | KyberSwap build | yes | Foundry `anvil --fork-url` of each chain: real build → sign → send → receipt → fill |
 | others | — | no (`live_execute: false`, labelled) | — |
 
-RPC endpoints are configuration (`chain_rpc` table / settings, public defaults), shown and
-editable on Chains & RPC. Secrets in RPC URLs are references, never logged.
+The harness column is the plan too: **no forked-anvil or Solana-simulation test exists in
+this repository**, and there is no funded address to run one against. A recorded-payload
+test against the fake venue is a different claim from a forked chain.
 
-## 6. Reconciliation (live)
+RPC endpoints are the design's configuration story; there is no `chain_rpc` table and no RPC
+URL setting in this build, and `/chains` renders registry data with no editable endpoint.
+When that lands, secrets in RPC URLs are references, never logged.
 
-Every N minutes and on executor boot: for each live wallet and chain, compare on-chain
-token balances (RPC) with the live ledger positions. Drift → `RECONCILE_DRIFT` alert and
-the affected strategy/wallet pauses (fail closed). Unconfirmed intents are resolved from
-chain state, never resent.
+## 6. Reconciliation
+
+Built: an **outbox reconciler** for broadcasts this platform sent and did not journal. The
+pipeline writes a claim to the attempt log and fsyncs it before the venue sees the order; a
+claim older than the submit timeout is asked about once and resolved to `journaled` or
+`failed`. A venue that answers `unknown`, a status read that raises, and a receipt that
+cannot be booked all leave the claim **pending** — never resolved into money nobody
+confirmed. The reconcile is safe beside a live fill (age window) and safe to run twice (the
+group check). `FileAttemptLog` is the durable log; the in-memory default is not, and
+production must inject the file one. There is no boot hook.
+
+Not built: comparing on-chain balances (RPC) with ledger positions, pausing a wallet or
+strategy on drift, and the `RECONCILE_DRIFT` code it would raise — that code is absent from
+the taxonomy, so nothing emits it.
 
 ## 7. What is never done
 
 No unlimited approvals, no key export, no browser key entry, no auto-retry of a failed
 broadcast with a new nonce, no live order without a successful simulation, no live
 number shown without `LIVE`, no mixing of paper and live totals.
+
+The fourth of those, "no live order without a successful simulation", is a rule about a
+stage this build does not have (§0). It holds trivially today because no live order runs at
+all; it must be re-read as an obligation when the simulate stage is written, not as a
+property the current code enforces.

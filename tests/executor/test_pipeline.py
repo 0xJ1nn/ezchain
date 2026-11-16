@@ -277,6 +277,38 @@ async def test_an_unbookable_receipt_is_refused() -> None:
     assert journal.groups == ()
 
 
+@pytest.mark.asyncio
+async def test_a_receipt_larger_than_the_order_is_refused_and_not_journaled() -> None:
+    """A venue that reports more than was approved is a refusal, not a windfall.
+
+    The quantity the pipeline approved came from the quote; a receipt above it means either
+    the venue filled more than asked or the receipt is for another trade. Booking it would
+    put tokens in the ledger that no approval covered, so this is the one place the sell side
+    is re-checked against the order rather than the position.
+    """
+
+    class OverfillVenue(FakeVenue):
+        async def submit(self, order, signed=None):  # type: ignore[no-untyped-def]
+            from ezchain_core import Fill
+
+            await super().submit(order, signed)
+            return Fill(
+                order_id=order.id,
+                side=order.side,
+                quantity=order.quantity + Decimal("1"),
+                price_usd=order.quote.price,
+                notional_usd=(order.quantity + Decimal("1")) * order.quote.price,
+                fee_usd=Decimal("0"),
+            )
+
+    pipe, _, journal = pipeline(OverfillVenue())
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "rejected"
+    assert result.reason == "RECEIPT_EXCEEDS_ORDER"
+    assert journal.groups == ()
+
+
 # --- Fail closed on money ----------------------------------------------------
 
 
