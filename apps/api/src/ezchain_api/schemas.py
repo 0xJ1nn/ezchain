@@ -1070,7 +1070,7 @@ class ProtectionEventOut(BaseModel):
     created_at: str | None = None
 
 
-SignalWindow = Literal["h1", "h24"]
+SignalWindow = Literal["m5", "h1", "h6", "h24"]
 SignalDirection = Literal["up", "down"]
 
 

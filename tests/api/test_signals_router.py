@@ -41,7 +41,9 @@ def make_row(
     token: str | None = None,
     pair: str | None = None,
     liquidity: str | None = "500000",
+    m5: str | None = None,
     h1: str | None = None,
+    h6: str | None = None,
     h24: str | None = None,
     observed: datetime | None = None,
     volume: str | None = "1000000",
@@ -59,9 +61,9 @@ def make_row(
         price_usd=Decimal(price),
         liquidity_usd=None if liquidity is None else Decimal(liquidity),
         volume_24h_usd=None if volume is None else Decimal(volume),
-        price_change_m5=None,
+        price_change_m5=None if m5 is None else Decimal(m5),
         price_change_h1=None if h1 is None else Decimal(h1),
-        price_change_h6=None,
+        price_change_h6=None if h6 is None else Decimal(h6),
         price_change_h24=None if h24 is None else Decimal(h24),
         pair_created_at=None,
         url=None,
@@ -151,23 +153,39 @@ def test_direction_down_returns_the_losers_in_the_same_order() -> None:
 
 
 def test_window_selects_the_change_field() -> None:
-    adapter = FakeDiscovery([make_row("AAA", h1="9", h24="-40")])
+    adapter = FakeDiscovery([make_row("AAA", m5="7", h1="9", h6="11", h24="-40")])
     client = client_for(adapter)
 
-    up_1h = client.get("/api/v1/signals/movers", params={"window": "h1", "direction": "up"}).json()
-    up_24h = client.get(
-        "/api/v1/signals/movers", params={"window": "h24", "direction": "up"}
-    ).json()
+    bodies = {
+        window: client.get(
+            "/api/v1/signals/movers", params={"window": window, "direction": "up"}
+        ).json()
+        for window in ("m5", "h1", "h6", "h24")
+    }
     down_24h = client.get(
         "/api/v1/signals/movers", params={"window": "h24", "direction": "down"}
     ).json()
 
-    assert [row["symbol"] for row in up_1h["rows"]] == ["AAA"]
-    assert up_1h["rows"][0]["change_pct"] == "9"
-    assert up_24h["rows"] == []
-    assert up_24h["reason"] == "NO_QUALIFIED_MOVERS"
+    assert [row["symbol"] for row in bodies["h1"]["rows"]] == ["AAA"]
+    assert bodies["h1"]["rows"][0]["change_pct"] == "9"
+    assert bodies["m5"]["rows"][0]["change_pct"] == "7"
+    assert bodies["h6"]["rows"][0]["change_pct"] == "11"
+    assert bodies["h24"]["rows"] == []
+    assert bodies["h24"]["reason"] == "NO_QUALIFIED_MOVERS"
     assert [row["symbol"] for row in down_24h["rows"]] == ["AAA"]
     assert down_24h["rows"][0]["change_pct"] == "-40"
+
+
+def test_m5_and_h6_exclude_rows_without_that_window_change() -> None:
+    """A row with only a 1h change is unknown to the 5m and 6h windows, not zero."""
+    adapter = FakeDiscovery([make_row("AAA", h1="9"), make_row("BBB", m5="3", h6="4")])
+    client = client_for(adapter)
+
+    for window in ("m5", "h6"):
+        body = client.get(
+            "/api/v1/signals/movers", params={"window": window, "direction": "up"}
+        ).json()
+        assert [row["symbol"] for row in body["rows"]] == ["BBB"]
 
 
 def test_one_row_per_token_keeps_the_deepest_pool() -> None:

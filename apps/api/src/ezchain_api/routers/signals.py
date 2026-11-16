@@ -126,7 +126,18 @@ class Ranking:
 
 
 def _change_of(row: MarketRow, window: SignalWindow) -> Decimal | None:
-    return row.price_change_h1 if window == "h1" else row.price_change_h24
+    """The token change for one window, from the market row's own field.
+
+    Each window reads its own field. An unknown change stays ``None`` so the ranking
+    excludes that row; no other window's number is borrowed to fill a gap.
+    """
+    if window == "m5":
+        return row.price_change_m5
+    if window == "h1":
+        return row.price_change_h1
+    if window == "h6":
+        return row.price_change_h6
+    return row.price_change_h24
 
 
 def _preference(row: MarketRow, observed: datetime) -> tuple[Any, ...]:
@@ -220,8 +231,9 @@ def rank_movers(
 def _candidate_sort(window: SignalWindow) -> SortMode:
     """The provider ranking the candidate set is drawn from.
 
-    The 24-hour window ranks the provider's own 24-hour change set. The 1-hour window
-    ranks the trending set, because the provider exposes no 1-hour ranking.
+    The 24-hour window ranks the provider's own 24-hour change set. The other three
+    windows rank the trending set, because the provider exposes no ranking for them; the
+    server ranks each window by its own change field after the read.
     """
     return "change_h24" if window == "h24" else "trending"
 
