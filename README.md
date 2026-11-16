@@ -212,6 +212,17 @@ bash tools/dev.sh                # API on :8000, web on :3000
 open http://localhost:3000
 ```
 
+Want bare `http://localhost` (port 80)? Run the dev server as above, then in a second
+terminal:
+
+```bash
+sudo node tools/serve-80.mjs      # http://localhost → 127.0.0.1:3000
+```
+
+It is a raw TCP forwarder with no dependencies, so it also carries the HMR WebSocket. The
+port below 1024 needs root; the app itself keeps running unprivileged. `--listen`/`--target`
+change the ports.
+
 Both setup scripts install from the committed locks, not from the ranges: Python via
 `requirements.lock` with `--require-hashes`, Node via `pnpm-lock.yaml --frozen-lockfile`.
 `python3 tools/check_pins.py --fast` verifies the pins without a network; the pin, audit
