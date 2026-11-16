@@ -1138,3 +1138,152 @@ def test_the_metrics_endpoint_renders_the_venue_histogram(session: Session) -> N
 
     assert 'ezchain_venue_latency_seconds_count{venue="jupiter"} 1' in body
     assert "ezchain_venue_latency_seconds_bucket{" in body
+
+
+# --- Fault injection against the real rules ------------------------------------
+
+
+def _samples(body: str, name: str) -> list[tuple[dict[str, str], float]]:
+    """Rendered samples for one family, with their labels and numeric values."""
+    samples: list[tuple[dict[str, str], float]] = []
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        head, _, value = line.partition(" ")
+        if head.split("{", 1)[0] != name:
+            continue
+        labels: dict[str, str] = {}
+        if "{" in head:
+            inside = head[head.index("{") + 1 : head.rindex("}")]
+            labels = dict(re.findall(r'([a-z_]+)="([^"]*)"', inside))
+        samples.append((labels, float(value.strip())))
+    return samples
+
+
+def _alert_fires(body: str, expr: str) -> bool:
+    """Evaluate a real rule's expression against a body the API rendered.
+
+    This is not a PromQL parser. The operator and selectors come from the rule itself;
+    a rule with a shape this suite does not inject fails loudly rather than being
+    reported as quiet because the test could not read it.
+    """
+    normalized = " ".join(expr.split())
+    breaker = re.fullmatch(r'ezchain_(\w+)\{state="(\w+)"\} > 0', normalized)
+    if breaker is not None:
+        family, state = breaker.groups()
+        return any(
+            value > 0
+            for labels, value in _samples(body, f"ezchain_{family}")
+            if labels.get("state") == state
+        )
+    stale = re.fullmatch(
+        r"ezchain_source_freshness_seconds > on\(source_class\) group_left "
+        r"ezchain_source_freshness_budget_seconds",
+        normalized,
+    )
+    if stale is not None:
+        budgets = {
+            labels["source_class"]: value
+            for labels, value in _samples(body, "ezchain_source_freshness_budget_seconds")
+        }
+        return any(
+            labels.get("source_class") in budgets and value > budgets[labels["source_class"]]
+            for labels, value in _samples(body, "ezchain_source_freshness_seconds")
+        )
+    raise AssertionError(f"no fault evaluator for {normalized!r}")
+
+
+def test_the_real_breaker_rule_fires_on_a_fault_and_stops_on_recovery(session: Session) -> None:
+    """Drive a real CircuitBreaker through open and recovery under its own alert rule."""
+    from ezchain_adapters import CircuitBreaker
+
+    expr = str(_alert_rules()["CircuitBreakerOpen"]["expr"])
+    clock = {"now": 1000.0}
+    breaker = CircuitBreaker(cooldown_seconds=30.0, failure_threshold=1, clock=lambda: clock["now"])
+    router = type("Live", (), {"breakers": lambda self: {"jupiter": breaker.state}})()
+
+    def body() -> str:
+        snapshot = build_ops_snapshot(session, quote_router=router)
+        assert snapshot is not None
+        return "\n".join(render_ops(snapshot))
+
+    assert not _alert_fires(body(), expr), "a closed breaker must not page"
+    breaker.record_failure()
+    assert _alert_fires(body(), expr), "an open breaker must page"
+    clock["now"] += 31.0
+    assert not _alert_fires(body(), expr), "half-open is not the open rule"
+    breaker.record_success()
+    assert not _alert_fires(body(), expr), "recovery must clear the page"
+
+
+def test_the_real_freshness_rule_fires_on_staleness_and_stops_on_recovery(
+    session: Session,
+) -> None:
+    """The same source moves past its budget and back under its own alert rule."""
+    expr = str(_alert_rules()["SourceStale"]["expr"])
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+    def body() -> str:
+        snapshot = _snapshot(session, now=lambda: now)
+        assert snapshot is not None
+        return "\n".join(render_ops(snapshot))
+
+    def observe(seconds: int) -> None:
+        session.query(MarketSnapshotRow).delete()
+        _snapshot_row(session, source="dexscreener", observed_at=now - timedelta(seconds=seconds))
+
+    observe(5)
+    assert not _alert_fires(body(), expr), "a fresh source must not page"
+    observe(900)
+    assert _alert_fires(body(), expr), "a source past its budget must page"
+    observe(1)
+    assert not _alert_fires(body(), expr), "recovery must clear the page"
+
+
+def test_every_metric_named_in_the_docs_is_emitted(session: Session) -> None:
+    """A documented metric that no body carries is a promise the process cannot keep."""
+    _snapshot_row(session, source="dexscreener", observed_at=datetime.now(UTC))
+    snapshot = build_ops_snapshot(
+        session,
+        provider_budget=ProviderBudgetManager(),
+        quote_router=_Router({"jupiter": "closed"}),
+    )
+    assert snapshot is not None
+    rejects = RejectMetrics()
+    rejects.record("SNAPSHOT_STALE")
+    latency = VenueLatencyMetrics()
+    latency.observe("jupiter", 0.2)
+    body = render_prometheus(
+        HttpMetrics(),
+        up=True,
+        paper_orders={"filled": 1},
+        paper_fills=1,
+        ops=snapshot,
+        rejects=rejects,
+        venue_latency=latency,
+    )
+    emitted = {
+        line.partition(" ")[0].split("{", 1)[0]
+        for line in body.splitlines()
+        if line and not line.startswith("#")
+    }
+    # A histogram's base name is documented, but only its suffixed series are samples.
+    emitted.update(
+        [name.rsplit("_", 1)[0] for name in emitted if name.endswith(("_bucket", "_sum", "_count"))]
+    )
+
+    docs = Path(__file__).resolve().parents[2] / "docs"
+    documented: set[str] = set()
+    for path in docs.rglob("*.md"):
+        documented.update(re.findall(r"ezchain_[a-z][a-z0-9_]*", path.read_text(encoding="utf-8")))
+    metric_suffixes = ("_total", "_seconds", "_bucket", "_entries", "_depth", "_capacity", "_state")
+    # Agent tool names share the prefix. ``get_state`` is a tool, not a metric family.
+    metrics = {
+        name
+        for name in documented
+        if (name == "ezchain_up" or name.endswith(metric_suffixes))
+        and not name.startswith("ezchain_get_")
+    }
+
+    assert metrics, "no metric names were found in the docs"
+    assert metrics <= emitted, f"documented but not emitted: {sorted(metrics - emitted)}"
