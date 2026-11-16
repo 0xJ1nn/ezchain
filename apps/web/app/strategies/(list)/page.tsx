@@ -16,9 +16,9 @@ const TABS = [
 export default async function StrategiesPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ view?: string }>;
+	searchParams: Promise<{ view?: string; state?: string }>;
 }) {
-	const { view } = await searchParams;
+	const { view, state } = await searchParams;
 	// One surface, two views: `?view=automations` is the scheduler view of the same
 	// strategies, and /automations redirects here instead of existing as a second copy.
 	const automations = view === "automations";
@@ -82,7 +82,7 @@ export default async function StrategiesPage({
 				})}
 			</div>
 
-			{automations ? <AutomationsView /> : <StrategiesListView />}
+			{automations ? <AutomationsView demo={state} /> : <StrategiesListView />}
 		</AppShell>
 	);
 }

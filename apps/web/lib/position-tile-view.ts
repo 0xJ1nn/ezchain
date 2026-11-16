@@ -48,8 +48,11 @@ export function positionToTile(position: PaperPosition): PositionTileView {
 		mark: `${source} · ${age.label}`,
 		markTone: markTone(position),
 		markToneClass: position.mark_usd === null ? "err" : undefined,
+		// No mode tag. A tile build from a row must not assert an execution mode: the
+		// dashboard already reads it from the server for its own KPI, and a second claim
+		// derived from a constant is exactly the drift `the dashboard asserts no execution
+		// mode of its own` exists to catch.
 		tags: [
-			{ label: "PAPER" },
 			{ label: position.chain, tone: "ghost" },
 			{ label: age.label, tone: age.stale || age.unknown ? "warn" : "ghost" },
 		],

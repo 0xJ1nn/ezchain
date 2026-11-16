@@ -806,9 +806,12 @@ export default async function DashboardPage({
 							seriesFailed ? (
 								<Badge tone="warn">{seriesError?.code ?? "UNAVAILABLE"}</Badge>
 							) : !live ? (
-								<Badge tone="ghost">FIXTURE SAMPLE</Badge>
+								// A data-source label, not a mode: the sub line already says these are
+								// fixture sample points, and `the dashboard asserts no execution mode of
+								// its own` pins every panel badge to UNKNOWN, FIXTURE or LIVE API.
+								<Badge tone="ghost">FIXTURE</Badge>
 							) : performanceRead.ok ? (
-								<Badge tone="ghost">SERVER SERIES</Badge>
+								<Badge tone="ghost">LIVE API</Badge>
 							) : (
 								<Badge tone="warn">{seriesError?.code ?? "UNAVAILABLE"}</Badge>
 							)

@@ -7,7 +7,11 @@ import { expect, test } from "./test";
 test("the dashboard plots the supplied equity series and labels its source", async ({ page }) => {
 	await page.goto("/");
 	const history = page.locator("section.panel").filter({ hasText: "Account history" });
-	await expect(history).toContainText("FIXTURE SAMPLE");
+	// The badge is a data-source label and the panel says in words that these are sample
+	// points. `the dashboard asserts no execution mode of its own` allows a panel badge to
+	// be UNKNOWN, FIXTURE or LIVE API and nothing else, so this cannot become a custom text.
+	await expect(history).toContainText("FIXTURE");
+	await expect(history).toContainText("fixture sample points");
 	await expect(history.getByRole("img", { name: /Equity history/ })).toBeVisible();
 	const points = history.getByRole("table", { name: "Equity history points" });
 	await expect(points.locator("tbody tr")).toHaveCount(6);
