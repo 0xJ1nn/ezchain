@@ -542,6 +542,18 @@ export function StrategiesClient({ mode, initialStrategies, initialRuns }: Props
 												<dt>Kind</dt>
 												<dd>{meta.label}</dd>
 											</div>
+											<div>
+												<dt>Allocation</dt>
+												<dd>
+													{strategy.params.max_position_usd
+														? `$${strategy.params.max_position_usd}`
+														: "—"}
+												</dd>
+											</div>
+											<div>
+												<dt>Risk profile</dt>
+												<dd>{strategy.risk_profile ?? "default"}</dd>
+											</div>
 										</dl>
 
 										<div className={styles.params}>{paramSummary(strategy)}</div>

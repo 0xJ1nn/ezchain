@@ -20,6 +20,11 @@ export interface Strategy {
 	// Fixture-only sample. The P0 list endpoint does not return per-strategy PnL, so live
 	// mode renders — rather than inventing a number.
 	pnl_usd?: string | null;
+	/** Manifest identity from the server. Absent means a built-in kind, not a plugin. */
+	plugin_id?: string | null;
+	plugin_version?: string | null;
+	/** Per-strategy trade-policy override. Null inherits the deployment default. */
+	risk_profile?: string | null;
 }
 
 export interface StrategyRun {

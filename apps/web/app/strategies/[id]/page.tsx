@@ -49,12 +49,27 @@ function rows(params: StrategyParams) {
 
 export default async function StrategyDetailPage({
 	params,
+	searchParams,
 }: {
 	params: Promise<{ id: string }>;
+	searchParams: Promise<{ state?: string }>;
 }) {
 	const { id } = await params;
+	const { state } = await searchParams;
 	const mode = webMode();
-	const [strategy, runs] = await Promise.all([getStrategy(id), getStrategyRuns(id)]);
+	const [requested, runs] = await Promise.all([getStrategy(id), getStrategyRuns(id)]);
+	// Fixture-only failed-read demo, the same convention the positions page uses.
+	const strategy =
+		mode === "fixture" && state === "error"
+			? {
+					ok: false as const,
+					mode,
+					error: {
+						code: "FIXTURE_DEMO_STRATEGY_ERROR",
+						message: "Fixture demo: the strategy read failed.",
+					},
+				}
+			: requested;
 
 	if (!strategy.ok) {
 		if (strategy.error.code === "STRATEGY_NOT_FOUND") notFound();
@@ -89,6 +104,9 @@ export default async function StrategyDetailPage({
 	const row = strategy.data;
 	const meta = strategyKindMeta[row.kind];
 	const paused = row.status === "paused";
+	const gateEvidence = runs.ok
+		? runs.data.filter((run) => ["denied", "error", "hold", "skip"].includes(run.action))
+		: [];
 
 	return (
 		<AppShell active="strategies">
@@ -257,6 +275,67 @@ export default async function StrategyDetailPage({
 									))}
 								</tbody>
 							</table>
+						</div>
+					</Panel>
+
+					<Panel title="Manifest & permissions" sub="what the API declares" flush>
+						<div className="table-wrap" tabIndex={0} role="region" aria-label="Manifest table">
+							<table className="table compact">
+								<caption className="sr-only">Strategy manifest</caption>
+								<tbody>
+									<tr>
+										<td className="muted">Plugin</td>
+										<td className="mono">
+											{row.plugin_id ?? `built-in: ${row.kind}`}
+											{row.plugin_version ? ` · ${row.plugin_version}` : ""}
+										</td>
+									</tr>
+									<tr>
+										<td className="muted">Risk profile</td>
+										<td className="mono">
+											{row.risk_profile ?? "inherits deployment default"}
+										</td>
+									</tr>
+									<tr>
+										<td className="muted">Grants</td>
+										<td>
+											Not exposed by this API. No permission is inferred from a strategy name
+											or its kind; the order service checks every intent.
+										</td>
+									</tr>
+									<tr>
+										<td className="muted">Strategy code</td>
+										<td>None bundled. This row is declarative configuration only.</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</Panel>
+
+					<Panel title="Paper gate evidence" sub="recorded decisions, not a promise" flush>
+						<div className="panel-body">
+							<p className="small muted mt-0">
+								The rows below are the API&apos;s recorded refusals and holds. They are evidence
+								that the gate ran — not a claim that this strategy is profitable. No return is
+								computed here.
+							</p>
+							{gateEvidence.length === 0 ? (
+								<div className="small muted">
+									No refusal or hold has been recorded. A strategy with no evidence has not been
+									proven safe; it simply has no recorded decision of this kind.
+								</div>
+							) : (
+								<ul className="list">
+									{gateEvidence.map((run) => (
+										<li className="list-row" key={run.id}>
+											<Badge tone="err">{run.action}</Badge>
+											<span className="grow small">
+												{run.reason} · {run.created_at.slice(0, 16).replace("T", " ")}
+											</span>
+										</li>
+									))}
+								</ul>
+							)}
 						</div>
 					</Panel>
 
