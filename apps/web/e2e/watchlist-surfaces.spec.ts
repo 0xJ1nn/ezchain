@@ -37,3 +37,32 @@ test("a token page star shares the same entry as the market row", async ({ page 
 	// The starred filter is a real URL state, not a client-only hide.
 	await expect(page.getByRole("link", { name: "Show all markets" }).first()).toBeVisible();
 });
+
+test("the watchlist says which starred tokens the paper account holds", async ({ page }) => {
+	// BONK is held (a fixture position) and WIF is only starred, so one row must say
+	// `open` while the other prints the unknown mark. A page that guessed from the star
+	// list alone would label both the same way.
+	await page.goto("/markets");
+	const markets = page.locator("table").first();
+	await markets
+		.locator("tbody tr")
+		.filter({ hasText: "BONK" })
+		.getByRole("button", { name: /Add BONK to watchlist/ })
+		.click();
+	await markets
+		.locator("tbody tr")
+		.filter({ hasText: "WIF" })
+		.getByRole("button", { name: /Add WIF to watchlist/ })
+		.click();
+
+	await page.goto("/watchlist");
+	const watchlist = page.locator("table").first();
+	// The column is present exactly once: the market table's own ten headers plus this one.
+	await expect(watchlist.getByRole("columnheader", { name: "Position" })).toHaveCount(1);
+
+	const bonk = watchlist.locator("tbody tr").filter({ hasText: "BONK" });
+	const wif = watchlist.locator("tbody tr").filter({ hasText: "WIF" });
+	await expect(bonk).toContainText("open");
+	await expect(wif).not.toContainText("open");
+});
+

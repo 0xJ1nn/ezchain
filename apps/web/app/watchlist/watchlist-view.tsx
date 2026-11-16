@@ -95,9 +95,15 @@ function requestLookup(keys: string[]): Promise<LookupResponse> {
 export function WatchlistView({
 	chainNames,
 	live,
+	heldKeys = [],
+	heldError = null,
 }: {
 	chainNames: Record<string, string>;
 	live: boolean;
+	/** `chain:base_token` keys the paper account holds, from the server read in `page.tsx`. */
+	heldKeys?: readonly string[];
+	/** The reason code when that read failed, so "open" is never confused with "unknown". */
+	heldError?: string | null;
 }) {
 	const entries = useWatchlist();
 	const [ready, setReady] = useState(false);
@@ -286,15 +292,30 @@ export function WatchlistView({
 					flush
 					title="Starred markets"
 					sub="current market rows for starred tokens"
-					action={<Badge tone="ghost">{availableRows.length} AVAILABLE</Badge>}
+					action={
+						<span className="row">
+							{heldError ? <Badge tone="warn">{heldError}</Badge> : null}
+							<Badge tone="ghost">{availableRows.length} AVAILABLE</Badge>
+						</span>
+					}
 					footer={
 						<span>
 							Use the pressed star to remove a token from this browser. Source and age are
-							per row; prices are discovery data, not executable quotes.
+							per row; prices are discovery data, not executable quotes. The Position
+							column is the paper account&apos;s own read, not a claim about a chain balance.
+							{heldError
+								? " The position read failed, so this column is blank rather than assuming nothing is held."
+								: ""}
 						</span>
 					}
 				>
-					<MarketTable rows={availableRows} chainNames={chainNames} />
+					<MarketTable
+						rows={availableRows}
+						chainNames={chainNames}
+						// A failed account read passes no column at all: an empty list would say
+						// "nothing is held", which is a claim this page cannot make.
+						heldKeys={heldError ? undefined : heldKeys}
+					/>
 				</Panel>
 			)}
 
