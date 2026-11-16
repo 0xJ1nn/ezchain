@@ -59,6 +59,24 @@ python -m tools.ops rehearse \
 | 4 | 0.693 s | 0.956 s | 51 778 | `89b0531c…d52e0d970` |
 | 5 | 1.638 s | 0.992 s | 51 754 | `f361e685…e2d390` |
 
+**Re-run at the current migration head (2026-11-16, head `0026_market_stored_order`).** Two
+migrations landed after the runs above, so the drill was repeated rather than quoted:
+
+```bash
+python -m tools.ops rehearse --admin-database postgresql://localhost:5432/postgres \
+  --dest /tmp/drill-lead --report /tmp/drill-lead/report.json
+# rehearse: ok — recovery 0.152s, reconciliation ok
+```
+
+| Run | Recovery | Backup | Dump bytes | Dump SHA-256 |
+|---|---|---|---|---|
+| head 0026 | **0.152 s** | 0.140 s | 54 767 | `cf80584e…06cc89` |
+
+`ok: true`, ledger identical row-for-row (7 fills, 7 orders, 33 ledger entries, 26 wallets),
+12 reconciliation checks pass, cash `9847.09` against a `10000` genesis. Faster than the runs
+above only because the machine was idle; the planning number stays the 16.9 s worst case
+recorded below, not this one.
+
 **Recovery time on an idle host: 0.54 s to 7.44 s, median 1.24 s** for this dataset.
 
 The spread is not a property of the tool. Three earlier runs taken while the full test
