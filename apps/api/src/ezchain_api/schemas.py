@@ -492,6 +492,9 @@ class OrderOut(BaseModel):
     amount_usd: str
     status: str
     reason: str | None = None
+    # The display text for ``reason``, derived from the one reason-code taxonomy so the
+    # risk page never shows a bare code or a second, drifting copy of the messages.
+    reason_message: str | None = None
     reasons: list[RiskReasonOut] = Field(default_factory=list)
     funding: FundingOut | None = None
     policy: PolicyOut | None = None
@@ -510,14 +513,19 @@ class OrderOut(BaseModel):
         if isinstance(data, dict):
             reason = data.get("reason")
             reasons = data.get("reasons")
+            if reason is not None:
+                from ezchain_core.reason_codes import message_for
+
+                data = dict(data)
+                data["reason_message"] = message_for(reason)
             if not reasons and reason is not None:
-                from ezchain_core.reason_codes import RISK_REASON_MESSAGES
+                from ezchain_core.reason_codes import message_for
 
                 data = dict(data)
                 data["reasons"] = [
                     {
                         "code": reason,
-                        "message": RISK_REASON_MESSAGES.get(reason, reason),
+                        "message": message_for(reason),
                         "detail": None,
                     }
                 ]

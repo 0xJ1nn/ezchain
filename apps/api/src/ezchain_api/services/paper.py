@@ -65,7 +65,7 @@ from ezchain_core.ledger import (
     sell_entries,
 )
 from ezchain_core.money import MONEY_QUANTUM, exact_product, quantize_money
-from ezchain_core.reason_codes import RISK_REASON_MESSAGES
+from ezchain_core.reason_codes import message_for
 
 from ..actor import (
     ACTOR_AGENT,
@@ -1553,7 +1553,7 @@ def _structured_reasons(value: Any) -> list[dict[str, Any]]:
             out.append(
                 {
                     "code": code,
-                    "message": RISK_REASON_MESSAGES.get(code, code),
+                    "message": message_for(code),
                     "detail": None,
                 }
             )

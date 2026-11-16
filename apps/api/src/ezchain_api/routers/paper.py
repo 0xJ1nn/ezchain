@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 from ezchain_core import OrderRequest
-from ezchain_core.reason_codes import RISK_REASON_MESSAGES
+from ezchain_core.reason_codes import message_for
 from ezchain_core.trade_policy import PolicyError
 
 from ..actor import ACTOR_UNKNOWN, from_principal
@@ -71,7 +71,7 @@ def _order(row: PaperOrderRow, approval: OrderApprovalRow | None = None) -> Orde
             [
                 RiskReasonOut(
                     code=row.reason,
-                    message=RISK_REASON_MESSAGES.get(row.reason, row.reason),
+                    message=message_for(row.reason),
                     detail=None,
                 )
             ]
