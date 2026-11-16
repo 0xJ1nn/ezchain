@@ -203,7 +203,8 @@ def create_key(
         raise ProviderKeyCipherUnavailable(
             exc.message, retryable=exc.retryable, detail=exc.detail
         ) from exc
-    retiring: str | None = None
+    retiring: ProviderKeyRow | None = None
+    retire_hook: Callable[[str], None] | None = None
     if active is not None:
         if forget is None:
             _discard(cipher, ciphertext)
@@ -212,7 +213,8 @@ def create_key(
         # that one commit rolls the retirement back, so the previous key stays active;
         # the external copy is only deleted once the new key is known to be in place.
         active.revoked_at = utcnow()
-        retiring = active.secret_ciphertext
+        retiring = active
+        retire_hook = forget
         session.flush()
     row = ProviderKeyRow(
         id=new_id(),
@@ -241,15 +243,15 @@ def create_key(
         raise
     # The new key is active now, so a delete failure here cannot leave the deployment
     # without a key. It only leaves an orphaned external copy, named for manual recovery.
-    if retiring:
+    if retiring is not None and retire_hook is not None:
         try:
-            forget(retiring)
+            retire_hook(retiring.secret_ciphertext)
         except Exception as exc:
             raise ProviderKeyForgetFailed(
                 "the new key is active, but the retired key's external copy could not be "
                 "removed; delete it manually before revoking the new key"
             ) from exc
-        active.secret_ciphertext = ""
+        retiring.secret_ciphertext = ""
         session.commit()
     session.refresh(row)
     return row

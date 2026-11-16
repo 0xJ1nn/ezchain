@@ -44,6 +44,7 @@ from ezchain_core import (
     LedgerEntry,
     MarkStatus,
     OrderRequest,
+    PolicyLimits,
     PositionView,
     Quote,
     RiskLimits,
@@ -1307,10 +1308,22 @@ def policy_evidence(
     strategy_id: str | None,
 ) -> dict[str, Any]:
     """The sizing decision persisted on an order: amount, profile, limits and source."""
+    # The document carries the five sizing fields enforcement applied, read from the
+    # limits the order was actually measured against — not recomputed from the profile, so
+    # a deployment override cannot make the record disagree with the decision.
+    enforced = limits_from_settings(settings, profile_name)
     return {
         "resolved_amount_usd": str(amount_usd),
         "profile": profile_name,
-        "limits": trade_policy.limits_snapshot(limits_from_settings(settings, profile_name)),
+        "limits": trade_policy.limits_snapshot(
+            PolicyLimits(
+                min_order_usd=enforced.min_order_usd,
+                max_order_usd=enforced.max_order_usd,
+                max_order_pct_of_equity=enforced.max_order_pct_of_equity,
+                per_token_cap_usd=enforced.per_token_cap_usd,
+                max_slippage_bps=enforced.max_slippage_bps,
+            )
+        ),
         "source": "strategy" if strategy_id is not None else "manual",
     }
 
