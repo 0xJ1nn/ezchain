@@ -46,6 +46,7 @@ def _http_error(exc: provider_keys.ProviderKeyError) -> HTTPException:
             "code": exc.code,
             "message": exc.message,
             "retryable": exc.retryable,
+            "detail": exc.detail,
         },
     )
 

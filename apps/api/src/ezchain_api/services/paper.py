@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import json
+import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -64,7 +65,7 @@ from ezchain_core.ledger import (
     sell_entries,
 )
 from ezchain_core.money import MONEY_QUANTUM, exact_product, quantize_money
-from ezchain_core.reason_codes import RISK_REASON_MESSAGES
+from ezchain_core.reason_codes import message_for
 
 from ..actor import (
     ACTOR_AGENT,
@@ -85,10 +86,53 @@ from ..models import (
     StrategyRow,
     new_id,
 )
-from . import approvals, buckets, market_snapshots, pnl
+from . import approvals, buckets, market_snapshots, pnl, trade_policy
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
+TOPUP_TRIGGER = "INSUFFICIENT_CASH"
+_TOPUP_LOGGER = logging.getLogger("ezchain.paper.topup")
+
+
+def _funding_audit(
+    order_id: str,
+    cash_before: Decimal,
+    cash_after: Decimal,
+    shortfall: Decimal,
+    settings: Settings,
+    trigger: str,
+) -> dict[str, Any]:
+    """The persisted evidence for one no-risk funding decision.
+
+    The funding journal group already carries the exact shortfall as money. These fields
+    complete the audit with the trigger and the cash before and after; they are recorded on
+    the order and never read back as an account (CONTRACT I1).
+    """
+    return {
+        "trigger": trigger,
+        "shortfall_usd": str(shortfall),
+        "cash_before_usd": str(cash_before),
+        "cash_after_usd": str(cash_after),
+        "cap_usd": str(settings.paper_no_risk_topup_cap_usd),
+        "group_id": f"funding:{order_id}",
+    }
+
+
+def _alert_topup_cap(order_id: str, shortfall: Decimal, cap: Decimal) -> None:
+    """Emit the cap alert when a shortfall reaches or exceeds the top-up cap.
+
+    The refusal is also persisted with the stable reason ``TOPUP_CAP_REACHED``, which drives
+    ``ezchain_paper_rejects_total`` and the operator's rejection alert feed. This structured
+    line gives the same event a named source for log-based alert rules.
+    """
+    _TOPUP_LOGGER.warning(
+        "paper_topup_cap_reached order_id=%s shortfall_usd=%s cap_usd=%s",
+        order_id,
+        shortfall,
+        cap,
+    )
+
+
 # Per-request flag recording whether the last ``place_order`` call created a new
 # order row (True) or replayed an existing one (False). A context variable keeps
 # it correct under concurrent async requests.
@@ -1101,6 +1145,40 @@ class ProfileLoosensStrategy(ValueError):
         self.pinned = pinned
 
 
+def resolve_profile_name(
+    session: Session,
+    *,
+    strategy_id: str | None,
+    requested: str | None,
+    side: str,
+    settings: Settings,
+) -> str | None:
+    """Resolve a profile name from its three inputs, before an order amount exists.
+
+    The order gate calls this through :func:`resolve_order_profile`; the sizing resolver at
+    the API edge calls it too, so the name used to size a ticket is the same one that gate
+    will enforce. An unknown name raises ``PROFILE_UNKNOWN`` and never falls back.
+    """
+    if requested is not None and requested not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    pinned: str | None = None
+    if strategy_id is not None:
+        strategy = session.get(StrategyRow, strategy_id)
+        if strategy is not None:
+            pinned = strategy.risk_profile
+    if pinned is not None and pinned not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    if pinned is None:
+        return requested if requested is not None else settings.trade_risk_profile
+    if requested is None:
+        return pinned
+    if PROFILE_RANK.get(requested, 0) > PROFILE_RANK.get(pinned, 0):
+        if side == "buy":
+            raise ProfileLoosensStrategy(requested, pinned)
+        return pinned
+    return requested
+
+
 def resolve_order_profile(
     session: Session,
     payload: OrderRequest,
@@ -1123,25 +1201,13 @@ def resolve_order_profile(
     does an order naming a ``strategy_id`` whose row no longer exists. An unknown name,
     requested or pinned, raises ``PROFILE_UNKNOWN`` and never falls back silently.
     """
-    requested = payload.risk_profile
-    if requested is not None and requested not in TRADE_RISK_PROFILES:
-        raise ValueError("PROFILE_UNKNOWN")
-    pinned: str | None = None
-    if payload.strategy_id is not None:
-        strategy = session.get(StrategyRow, payload.strategy_id)
-        if strategy is not None:
-            pinned = strategy.risk_profile
-    if pinned is not None and pinned not in TRADE_RISK_PROFILES:
-        raise ValueError("PROFILE_UNKNOWN")
-    if pinned is None:
-        return requested if requested is not None else settings.trade_risk_profile
-    if requested is None:
-        return pinned
-    if PROFILE_RANK.get(requested, 0) > PROFILE_RANK.get(pinned, 0):
-        if payload.side == "buy":
-            raise ProfileLoosensStrategy(requested, pinned)
-        return pinned
-    return requested
+    return resolve_profile_name(
+        session,
+        strategy_id=payload.strategy_id,
+        requested=payload.risk_profile,
+        side=payload.side,
+        settings=settings,
+    )
 
 
 def trade_profile_from_settings(
@@ -1232,6 +1298,21 @@ def limits_from_settings(settings: Settings, requested: str | None = None) -> Ri
         paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
         max_price_impact_pct=settings.max_price_impact_pct,
     )
+
+
+def policy_evidence(
+    settings: Settings,
+    profile_name: str | None,
+    amount_usd: Decimal,
+    strategy_id: str | None,
+) -> dict[str, Any]:
+    """The sizing decision persisted on an order: amount, profile, limits and source."""
+    return {
+        "resolved_amount_usd": str(amount_usd),
+        "profile": profile_name,
+        "limits": trade_policy.limits_snapshot(limits_from_settings(settings, profile_name)),
+        "source": "strategy" if strategy_id is not None else "manual",
+    }
 
 
 def _fill_fee(notional: Decimal, quote: Quote, settings: Settings) -> Decimal:
@@ -1472,7 +1553,7 @@ def _structured_reasons(value: Any) -> list[dict[str, Any]]:
             out.append(
                 {
                     "code": code,
-                    "message": RISK_REASON_MESSAGES.get(code, code),
+                    "message": message_for(code),
                     "detail": None,
                 }
             )
@@ -1488,6 +1569,7 @@ def _reject_new(
     reasons: Any = None,
     *,
     actor: OrderActor = UNKNOWN_ACTOR,
+    policy_json: dict[str, Any] | None = None,
 ) -> PaperOrderRow:
     """Persist a rejection before a quote exists (insufficient position, no exit route)."""
     order, created = _claim_or_existing(session, payload, actor)
@@ -1499,6 +1581,7 @@ def _reject_new(
     order.reason = reason
     order.reasons = _structured_reasons(reasons if reasons is not None else reason)
     order.quote_json = quote_json
+    order.policy_json = policy_json
     session.commit()
     return order
 
@@ -1738,18 +1821,30 @@ async def place_order(
                 ),
             ),
             actor=placed_by,
+            policy_json=policy_evidence(settings, None, payload.amount_usd, payload.strategy_id),
         )
     except ValueError:
-        return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
+        return _reject_new(
+            session,
+            payload,
+            "PROFILE_UNKNOWN",
+            actor=placed_by,
+            policy_json=policy_evidence(settings, None, payload.amount_usd, payload.strategy_id),
+        )
+    evidence = policy_evidence(settings, requested_profile, payload.amount_usd, payload.strategy_id)
     profile = trade_profile_from_settings(settings, requested_profile)
 
     if payload.side == "buy" and profile is not None:
         limits = limits_from_settings(settings, requested_profile)
         # Minimum size and the absolute maximum size apply before any quote.
         if payload.amount_usd < limits.min_order_usd:
-            return _reject_new(session, payload, "SIZE_BELOW_MIN", actor=placed_by)
+            return _reject_new(
+                session, payload, "SIZE_BELOW_MIN", actor=placed_by, policy_json=evidence
+            )
         if payload.amount_usd > limits.max_order_usd:
-            return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
+            return _reject_new(
+                session, payload, "SIZE_ABOVE_MAX", actor=placed_by, policy_json=evidence
+            )
         # Percent of equity, fail-closed on unknown marks. The sum is priced by the same
         # freshness policy as the account read: a stale or unknown mark on any held token
         # withholds the equity, so an entry is never sized against an old price.
@@ -1759,10 +1854,14 @@ async def place_order(
             replay, snapshots, max_age_seconds=float(settings.max_mark_age_seconds)
         )
         if equity is None:
-            return _reject_new(session, payload, "EQUITY_UNKNOWN", actor=placed_by)
+            return _reject_new(
+                session, payload, "EQUITY_UNKNOWN", actor=placed_by, policy_json=evidence
+            )
         cap = equity * limits.max_order_pct_of_equity
         if payload.amount_usd > cap:
-            return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
+            return _reject_new(
+                session, payload, "SIZE_ABOVE_MAX", actor=placed_by, policy_json=evidence
+            )
         # Per-token cap including the proposed order.
         existing_value = Decimal(0)
         held_qty, held_cost = replay.positions.get(
@@ -1773,7 +1872,9 @@ async def place_order(
         if mark is not None:
             existing_value = held_qty * mark
         if existing_value + payload.amount_usd > limits.per_token_cap_usd:
-            return _reject_new(session, payload, "POSITION_LIMIT", actor=placed_by)
+            return _reject_new(
+                session, payload, "POSITION_LIMIT", actor=placed_by, policy_json=evidence
+            )
 
     account = position_account(payload.chain, payload.token_address)
     held_qty = Decimal(0)
@@ -1956,6 +2057,7 @@ async def place_order(
         order, created = _claim_or_existing(session, payload, placed_by)
         if not created:
             return order
+        order.policy_json = evidence
         record_snapshot(session, snapshot)
 
         if fill_quantity <= 0 or notional <= 0:
@@ -2001,16 +2103,30 @@ async def place_order(
         )
         fee = quantize_money(_fill_fee(notional, quote, settings), field="fee_usd")
         funded_shortfall = Decimal(0)
+        funding_audit: dict[str, Any] | None = None
         if allowed and payload.side == "buy" and replay.cash < notional + fee:
-            if settings.paper_no_risk:
-                funded_shortfall = (notional + fee) - replay.cash
-            else:
+            shortfall = (notional + fee) - replay.cash
+            cap = settings.paper_no_risk_topup_cap_usd
+            if not settings.paper_no_risk:
                 allowed = False
                 reasons = (RiskReason("INSUFFICIENT_CASH"),)
+            elif shortfall > cap:
+                # A shortfall past the cap is a refusal, not a smaller funded amount: the
+                # ticket stays whole or it does not trade. Record the decision and alert.
+                allowed = False
+                reasons = (RiskReason("TOPUP_CAP_REACHED"),)
+                funding_audit = _funding_audit(
+                    order.id, replay.cash, replay.cash, shortfall, settings, TOPUP_TRIGGER
+                )
+                _alert_topup_cap(order.id, shortfall, cap)
+            else:
+                funded_shortfall = shortfall
 
         if not allowed:
             order.quote_kind = quote.kind
             order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+            if funding_audit is not None:
+                order.funding_json = funding_audit
             return _mark_rejected(
                 session, order, ",".join(str(r) for r in reasons), reasons=reasons
             )
@@ -2185,6 +2301,14 @@ async def place_order(
         if funded_shortfall > 0:
             order.reason = "SHORTFALL_FUNDED"
             order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
+            order.funding_json = _funding_audit(
+                order.id,
+                replay.cash,
+                replay.cash + funded_shortfall,
+                funded_shortfall,
+                settings,
+                TOPUP_TRIGGER,
+            )
         session.commit()
         return order
 

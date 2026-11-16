@@ -42,6 +42,7 @@ class ProviderKeyError(ValueError):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+        self.detail: dict[str, Any] = {}
 
 
 class ProviderKeyInvalid(ProviderKeyError):
@@ -72,11 +73,18 @@ class ProviderKeyCipherUnavailable(ProviderKeyError):
     code = "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
     status_code = 503
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         # Mirrors the store: a backend that is momentarily unreachable may recover, a
         # missing identity or deleted entry fails identically on every retry.
         self.retryable = retryable
+        self.detail = detail or {}
 
 
 class ProviderKeyForgetFailed(ProviderKeyError):
@@ -192,19 +200,20 @@ def create_key(
         cipher.ensure_available()
         ciphertext = cipher.encrypt(plaintext)
     except CipherUnavailable as exc:
-        raise ProviderKeyCipherUnavailable(exc.message, retryable=exc.retryable) from exc
+        raise ProviderKeyCipherUnavailable(
+            exc.message, retryable=exc.retryable, detail=exc.detail
+        ) from exc
+    retiring: str | None = None
     if active is not None:
-        # Encrypting first means a store failure leaves the active key untouched. The
-        # retirement then goes through the revoke path, which deletes the external copy
-        # before the row stops pointing at it.
         if forget is None:
             _discard(cipher, ciphertext)
             raise ProviderKeyError("replacing an active key requires a delete hook")
-        try:
-            revoke_key(session, workspace_id=workspace, key_id=active.id, forget=forget)
-        except Exception:
-            _discard(cipher, ciphertext)
-            raise
+        # Retire in memory and commit the retirement WITH the new row. A failure before
+        # that one commit rolls the retirement back, so the previous key stays active;
+        # the external copy is only deleted once the new key is known to be in place.
+        active.revoked_at = utcnow()
+        retiring = active.secret_ciphertext
+        session.flush()
     row = ProviderKeyRow(
         id=new_id(),
         workspace_id=workspace,
@@ -219,7 +228,7 @@ def create_key(
         session.commit()
     except IntegrityError as exc:
         # Two creates raced and the other one won the database's partial unique index.
-        # The loser's secret never belongs to a row, so remove it before refusing.
+        # The rollback also restores the retired row, so an active key always remains.
         session.rollback()
         _discard(cipher, ciphertext)
         raise ProviderKeyAlreadyExists(
@@ -230,6 +239,18 @@ def create_key(
         _discard(cipher, ciphertext)
         session.rollback()
         raise
+    # The new key is active now, so a delete failure here cannot leave the deployment
+    # without a key. It only leaves an orphaned external copy, named for manual recovery.
+    if retiring:
+        try:
+            forget(retiring)
+        except Exception as exc:
+            raise ProviderKeyForgetFailed(
+                "the new key is active, but the retired key's external copy could not be "
+                "removed; delete it manually before revoking the new key"
+            ) from exc
+        active.secret_ciphertext = ""
+        session.commit()
     session.refresh(row)
     return row
 
@@ -272,7 +293,9 @@ def resolve_secret(
     try:
         secret = cipher.decrypt(row.secret_ciphertext)
     except CipherUnavailable as exc:
-        raise ProviderKeyCipherUnavailable(exc.message, retryable=exc.retryable) from exc
+        raise ProviderKeyCipherUnavailable(
+            exc.message, retryable=exc.retryable, detail=exc.detail
+        ) from exc
     row.last_used_at = utcnow()
     session.commit()
     return secret

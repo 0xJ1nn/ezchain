@@ -1975,6 +1975,14 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "Shortfall was funded.",
         severity="info",
     ),
+    _S(
+        "TOPUP_CAP_REACHED",
+        "risk",
+        "api",
+        "ezchain_api/services/paper.py",
+        "The no-risk shortfall is larger than the configured top-up cap.",
+        "Paper funding cap reached; the order was not funded.",
+    ),
     # ------------------------------------------------------- api: approvals and automation
     _S(
         "AWAITING_APPROVAL",
@@ -2491,6 +2499,7 @@ _RISK_REASON_CODES: Final[tuple[str, ...]] = (
     "DAILY_LOSS_LIMIT",
     "INSUFFICIENT_CASH",
     "SHORTFALL_FUNDED",
+    "TOPUP_CAP_REACHED",
     "INSUFFICIENT_POSITION",
     "POSITION_CHANGED",
     "KILL_SWITCH_ACTIVE",

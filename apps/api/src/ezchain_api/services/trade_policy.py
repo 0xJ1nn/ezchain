@@ -19,6 +19,7 @@ fewest gates, which is what the loosening test compares against.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -26,10 +27,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import TRADE_RISK_PROFILES
+from ezchain_core.money import exact_product, floor_money
 from ezchain_core.trade_policy import (
     PROFILE_ORDER,
     PolicyError,
+    PolicyLimits,
     SizingPreview,
+    limits_for,
     preview_size,
     profile_document,
     profile_for,
@@ -39,6 +43,68 @@ from ..config import Settings
 from ..models import StrategyRow, StrategyRunRow
 
 AUDIT_REASON = "TRADE_POLICY_UPDATED"
+SIZING_SOURCE = "policy"
+
+
+@dataclass(frozen=True)
+class ResolvedSize:
+    """The size the server chose when a caller omitted ``amount_usd``."""
+
+    amount_usd: Decimal
+    profile: str | None
+    limits: PolicyLimits
+    source: str
+
+
+def limits_snapshot(limits: PolicyLimits) -> dict[str, Any]:
+    """The enforced limits as strings, one home for the snapshot stored on an order."""
+    return {
+        "min_order_usd": str(limits.min_order_usd),
+        "max_order_usd": str(limits.max_order_usd),
+        "max_order_pct_of_equity": str(limits.max_order_pct_of_equity),
+        "per_token_cap_usd": str(limits.per_token_cap_usd),
+        "max_slippage_bps": limits.max_slippage_bps,
+    }
+
+
+def resolve_size(
+    profile_name: str | None,
+    equity_usd: Decimal | None,
+    settings: Settings,
+) -> ResolvedSize:
+    """Choose a buy size from the profile when the caller sends no ``amount_usd``.
+
+    The candidate is the smaller of the profile's absolute maximum and its percent of
+    equity, raised to the minimum only when that does not break the percent cap. The order
+    gate's own resolver has the last word: if the chosen size is refused, the stable code
+    travels back to the caller instead of a smaller, silently invented ticket. With no
+    profile the deployment's own maximum is the whole policy. Money is computed exactly and
+    quantized once at the boundary.
+    """
+    profile = profile_for(profile_name)  # PROFILE_UNKNOWN before any sizing
+    if profile is None:
+        limits = PolicyLimits(
+            min_order_usd=Decimal(0),
+            max_order_usd=settings.max_order_usd,
+            max_order_pct_of_equity=Decimal(0),
+            per_token_cap_usd=settings.max_position_usd,
+            max_slippage_bps=settings.max_quote_slippage_bps,
+        )
+        return ResolvedSize(settings.max_order_usd, None, limits, SIZING_SOURCE)
+    if equity_usd is None:
+        raise PolicyError("EQUITY_UNKNOWN", "equity is unknown, so no size can be resolved")
+    # Floored, not rounded: half-even can move the cap *above* the value it caps (at equity
+    # 1000.0000007 the 5% ceiling is 50.000000035 and half-even gives 50.00000004), so the
+    # resolver refused the very size it had just chosen.
+    pct_cap = floor_money(
+        exact_product(equity_usd, profile.max_order_pct_of_equity), field="resolved_size_usd"
+    )
+    chosen = max(profile.min_order_usd, min(profile.max_order_usd, pct_cap))
+    result = preview_size(profile_name, chosen, equity_usd)
+    if not result.allowed:
+        reason = result.reasons[0]
+        raise PolicyError(reason.code, reason.message)
+    return ResolvedSize(chosen, profile_name, result.limits, SIZING_SOURCE)
 
 
 def _decimal(value: object) -> Decimal | None:
@@ -251,6 +317,7 @@ def update_strategy(
 
     previous = row.risk_profile
     row.risk_profile = risk_profile
+    after_profile = profile_for(after)
     session.add(
         StrategyRunRow(
             strategy_id=row.id,
@@ -264,6 +331,13 @@ def update_strategy(
                 "loosens": loosens,
                 "acknowledged": acknowledge_risk,
                 "actor": actor,
+            },
+            policy_json={
+                "profile": after,
+                "source": "strategy",
+                "limits": None
+                if after_profile is None
+                else limits_snapshot(limits_for(after_profile)),
             },
         )
     )

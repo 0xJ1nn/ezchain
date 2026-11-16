@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from ezchain_adapters import AdapterError, DexScreenerClient, QuoteRouter, get_chain
 from ezchain_core import OrderRequest
-from ezchain_core.reason_codes import RISK_REASON_MESSAGES
+from ezchain_core.reason_codes import message_for
+from ezchain_core.trade_policy import PolicyError
 
 from ..actor import ACTOR_UNKNOWN, from_principal
 from ..config import Settings, get_settings
@@ -19,15 +21,17 @@ from ..models import OrderApprovalRow, PaperFillRow, PaperOrderRow
 from ..schemas import (
     ActorOut,
     FillOut,
+    FundingOut,
     OrderOut,
     PaperAccountOut,
     PaperOrderIn,
     PaperWalletOut,
+    PolicyOut,
     PositionOut,
     ReconciliationOut,
     RiskReasonOut,
 )
-from ..services import approvals, paper, reconciliation
+from ..services import approvals, paper, reconciliation, trade_policy
 
 router = APIRouter(prefix="/api/v1/paper", tags=["paper"])
 
@@ -67,13 +71,15 @@ def _order(row: PaperOrderRow, approval: OrderApprovalRow | None = None) -> Orde
             [
                 RiskReasonOut(
                     code=row.reason,
-                    message=RISK_REASON_MESSAGES.get(row.reason, row.reason),
+                    message=message_for(row.reason),
                     detail=None,
                 )
             ]
             if row.reason is not None
             else []
         ),
+        funding=FundingOut.model_validate(row.funding_json) if row.funding_json else None,
+        policy=PolicyOut.model_validate(row.policy_json) if row.policy_json else None,
         quote_kind=row.quote_kind,
         actor=_actor(row),
         approval_id=None if approval is None else approval.id,
@@ -184,11 +190,41 @@ async def create_order(
     # with no principal (the development fallback, or a loopback read-only process) is
     # attributed to ``unknown`` rather than to a guess.
     actor = from_principal(getattr(request.state, "principal", None))
+    amount_usd = payload.amount_usd
+    if amount_usd is None:
+        # The caller left sizing to the server. Resolve the same profile the order gate
+        # will enforce and read equity from the account the gate prices against, then let
+        # the gate's own resolver choose the size. Nothing here invents a smaller ticket.
+        requested = payload.risk_profile or payload.trade_risk_profile or payload.profile
+        try:
+            profile_name = paper.resolve_profile_name(
+                session,
+                strategy_id=None,
+                requested=requested,
+                side=payload.side,
+                settings=settings,
+            )
+            # The account read needs the genesis journal to have a cash balance to price.
+            # place_order ensures it too; doing it here means the sizing read sees the same
+            # starting equity the fill will.
+            paper.ensure_genesis(session, settings.paper_starting_cash_usd)
+            account = paper.account_snapshot(session)
+            raw_equity = account.get("equity_usd")
+            equity = None if raw_equity is None else Decimal(str(raw_equity))
+            resolved = trade_policy.resolve_size(profile_name, equity, settings)
+        except (PolicyError, ValueError) as exc:
+            code = exc.code if isinstance(exc, PolicyError) else str(exc)
+            message = exc.message if isinstance(exc, PolicyError) else "unknown profile"
+            raise HTTPException(
+                status_code=422,
+                detail={"code": code, "message": message, "retryable": False},
+            ) from exc
+        amount_usd = resolved.amount_usd
     order_request = OrderRequest(
         chain=payload.chain,
         token_address=payload.token_address,
         side=payload.side,
-        amount_usd=payload.amount_usd,
+        amount_usd=amount_usd,
         idempotency_key=payload.idempotency_key,
         quantity=payload.quantity,
         reduce_only=payload.reduce_only,

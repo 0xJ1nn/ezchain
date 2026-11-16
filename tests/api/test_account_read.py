@@ -8,6 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy.orm import Session
@@ -1049,6 +1050,60 @@ def test_alerts_cover_stale_marks_kill_switch_and_rejections(
     assert "STALE_QUOTE" in rejected["detail"]
     assert rejected["id"].startswith("orders.rejected.")
     assert body["as_of"]
+
+
+@pytest.mark.parametrize(
+    "age_seconds, stale",
+    [(59, False), (61, True), (91, True)],
+)
+def test_mark_alerts_fire_only_beyond_the_mark_budget(
+    client_for: Callable[..., TestClient], session: Session, age_seconds: int, stale: bool
+) -> None:
+    """No false stale alert inside the 60s refresh budget, 61s and 91s both alert."""
+    now = utcnow()
+    at = now - timedelta(days=1)
+    _genesis(session, at=at)
+    _trade(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        side="buy",
+        quantity="10",
+        price="2",
+        fee="0.3",
+        at=at,
+    )
+    _snapshot(
+        session,
+        chain=CHAIN,
+        token=TOKEN_A,
+        price="2",
+        observed_at=now - timedelta(seconds=age_seconds),
+    )
+
+    body = _client(client_for).get("/api/v1/paper/alerts").json()
+    codes = {alert["code"] for alert in body["alerts"]}
+
+    assert ("POSITION_MARK_STALE" in codes) is stale
+    assert "POSITION_MARK_UNKNOWN" not in codes
+
+
+def test_unknown_mark_raises_an_unknown_alert_not_a_stale_one(
+    client_for: Callable[..., TestClient], session: Session
+) -> None:
+    at = utcnow() - timedelta(days=1)
+    _genesis(session, at=at)
+    _trade(
+        session, chain=CHAIN, token=TOKEN_A, side="buy", quantity="10", price="2", fee="0.3", at=at
+    )
+    _snapshot(session, chain=CHAIN, token=TOKEN_A, price=None, observed_at=utcnow())
+
+    codes = {
+        alert["code"] for alert in _client(client_for).get("/api/v1/paper/alerts").json()["alerts"]
+    }
+
+    assert "POSITION_MARK_UNKNOWN" in codes
+    assert "POSITION_MARK_STALE" not in codes
 
 
 def test_alerts_cover_unknown_marks(

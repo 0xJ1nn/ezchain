@@ -30,7 +30,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation, Overflow, localcontext
+from decimal import (
+    ROUND_FLOOR,
+    ROUND_HALF_EVEN,
+    Decimal,
+    InvalidOperation,
+    Overflow,
+    localcontext,
+)
 from typing import Any
 
 from .types import SourceRef
@@ -109,6 +116,22 @@ def quantize_money(value: object, *, field: str = "amount") -> Decimal:
         context.prec = exact_precision(amount, extra=MONEY_SCALE)
         try:
             return amount.quantize(MONEY_QUANTUM, rounding=ROUNDING)
+        except InvalidOperation as exc:  # pragma: no cover - only absurd exponents
+            raise MoneyError(f"{field} is outside the supported money range") from exc
+
+
+def floor_money(value: object, *, field: str = "amount") -> Decimal:
+    """Round a computed USD amount down to the ledger minor unit.
+
+    A ceiling derived from a fraction of equity is the case this exists for: rounding it
+    half-even can land *above* the value it caps, so a size chosen from that ceiling is then
+    refused by a check against the same cap. Flooring cannot cross the line it came from.
+    """
+    amount = _as_decimal(value, field=field)
+    with localcontext() as context:
+        context.prec = exact_precision(amount, extra=MONEY_SCALE)
+        try:
+            return amount.quantize(MONEY_QUANTUM, rounding=ROUND_FLOOR)
         except InvalidOperation as exc:  # pragma: no cover - only absurd exponents
             raise MoneyError(f"{field} is outside the supported money range") from exc
 

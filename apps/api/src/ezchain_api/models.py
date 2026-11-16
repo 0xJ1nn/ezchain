@@ -148,6 +148,25 @@ class AgentBucketRow(Base):
     updated_by_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
+class WatchlistRow(Base):
+    """One watched base token on one chain, keyed by the pair the UI shows.
+
+    The row is an identity, not a price: no market value is cached here, so a watched token
+    with no stored snapshot is still a row and can be reported as unknown rather than
+    silently dropped from a filtered read. Adding the same pair again is one row.
+    """
+
+    __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("chain", "base_token", name="uq_watchlist_chain_token"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    chain: Mapped[str] = mapped_column(String(40), index=True)
+    base_token: Mapped[str] = mapped_column(String(160), index=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
 class PaperWalletRow(Base):
     """A paper wallet: one settlement account per chain, plus the genesis wallet.
 
@@ -209,6 +228,14 @@ class PaperOrderRow(Base):
     reasons: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONType, nullable=True)
     quote_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     quote_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # Audit of a paper no-risk funding decision: the trigger, the exact shortfall and the
+    # cash before and after the top-up, plus the cap it was measured against. Null when no
+    # funding was attempted. It is evidence, never an account; the journal stays the only
+    # accountant (CONTRACT I1).
+    funding_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # The sizing decision the gate enforced: resolved amount, effective profile, the
+    # limits snapshot and whether the source was a person or a strategy (GH-107).
+    policy_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     # Who placed the order, decided on the server: ``human`` for the deployment token,
     # ``agent`` for a scoped key (addressed by its key id), ``strategy`` for an engine
@@ -371,6 +398,8 @@ class StrategyRunRow(Base):
     action: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(String(64))
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # The trade-policy snapshot this run applied, when the decision was a policy change.
+    policy_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # Same interval bucket the order idempotency key names, so a run row and the order it
     # produced describe the same window in the same spelling.

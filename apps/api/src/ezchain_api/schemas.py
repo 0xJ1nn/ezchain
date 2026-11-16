@@ -79,6 +79,35 @@ MarketSort = Literal["trending", "liquidity", "new", "change_h24", "pair_age"]
 MarketSortSemantics = Literal["global_sort", "per_chain_sort", "per_chain_round_robin"]
 
 
+class WatchlistIn(BaseModel):
+    """A watched token identity. No price, route or balance may be supplied."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chain: str = Field(min_length=2, max_length=40)
+    base_token: str = Field(min_length=2, max_length=160)
+    symbol: str | None = Field(default=None, max_length=40)
+    name: str | None = Field(default=None, max_length=120)
+
+
+class WatchlistOut(BaseModel):
+    id: str
+    chain: str
+    base_token: str
+    symbol: str | None = None
+    name: str | None = None
+    added_at: str
+
+
+class WatchlistMissingOut(BaseModel):
+    """A watched token with no matching market row; unknown, never dropped."""
+
+    chain: str
+    base_token: str
+    symbol: str | None = None
+    reason: Literal["NO_SNAPSHOT"] = "NO_SNAPSHOT"
+
+
 class MarketCoverageOut(BaseModel):
     """One chain's contribution to a discovery pass; counts are pre-slice.
 
@@ -109,6 +138,7 @@ class MarketFiltersOut(BaseModel):
     min_pair_age_minutes: int | None = None
     max_pair_age_minutes: int | None = None
     unknown_excluded: dict[str, int] = Field(default_factory=dict)
+    watchlist: bool = False
 
 
 class MarketPopulationOut(BaseModel):
@@ -141,6 +171,7 @@ class MarketListOut(BaseModel):
     truncated: bool = False
     applied_filters: MarketFiltersOut | None = None
     population: MarketPopulationOut | None = None
+    watchlist_missing: list[WatchlistMissingOut] = Field(default_factory=list)
 
 
 class StoredMarketListOut(BaseModel):
@@ -333,7 +364,10 @@ class PaperOrderIn(BaseModel):
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
     side: Literal["buy", "sell"]
-    amount_usd: Decimal = Field(gt=0)
+    # A buy may omit it: the server resolves the size from the effective profile and the
+    # current equity. A sell needs an explicit amount or quantity, since an exit is sized
+    # by the position rather than by a policy.
+    amount_usd: Decimal | None = Field(default=None, gt=0)
     idempotency_key: str = Field(min_length=8, max_length=120)
     # The exact token quantity of a sell. The service bounds it to the open position.
     quantity: Decimal | None = Field(default=None, gt=0)
@@ -352,6 +386,8 @@ class PaperOrderIn(BaseModel):
     def sell_only_fields(self) -> PaperOrderIn:
         if self.side == "buy" and (self.reduce_only or self.quantity is not None):
             raise ValueError("reduce_only and quantity are only valid for a sell")
+        if self.side == "sell" and self.amount_usd is None and self.quantity is None:
+            raise ValueError("a sell needs amount_usd or quantity")
         return self
 
     @field_validator("quantity", mode="before")
@@ -375,7 +411,9 @@ class PaperOrderIn(BaseModel):
 
     @field_validator("amount_usd")
     @classmethod
-    def cents(cls, value: Decimal) -> Decimal:
+    def cents(cls, value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return None
         if not value.is_finite():
             raise ValueError("amount_usd must be finite")
         try:
@@ -403,6 +441,34 @@ class RiskReasonOut(BaseModel):
     detail: Any = None
 
 
+class FundingOut(BaseModel):
+    """The audit of a paper no-risk top-up, as persisted on the order.
+
+    Money stays a decimal string. ``cash_after_usd`` equals ``cash_before_usd`` on a
+    cap-refused order: nothing was funded.
+    """
+
+    trigger: str
+    shortfall_usd: str
+    cash_before_usd: str
+    cash_after_usd: str
+    cap_usd: str
+    group_id: str
+
+
+class PolicyOut(BaseModel):
+    """The trade-policy decision the order gate enforced (GH-107).
+
+    The limits are the snapshot taken when the order was placed, not a live lookup: a later
+    settings change must not rewrite what the order was measured against.
+    """
+
+    resolved_amount_usd: str
+    profile: str | None = None
+    limits: dict[str, Any]
+    source: str
+
+
 class ActorOut(BaseModel):
     """Who placed an order, as the server recorded it.
 
@@ -426,7 +492,12 @@ class OrderOut(BaseModel):
     amount_usd: str
     status: str
     reason: str | None = None
+    # The display text for ``reason``, derived from the one reason-code taxonomy so the
+    # risk page never shows a bare code or a second, drifting copy of the messages.
+    reason_message: str | None = None
     reasons: list[RiskReasonOut] = Field(default_factory=list)
+    funding: FundingOut | None = None
+    policy: PolicyOut | None = None
     quote_kind: str | None = None
     actor: ActorOut = Field(default_factory=lambda: ActorOut(kind="unknown"))
     # The approval this order waits in or was decided by. Null for a person's own order,
@@ -442,14 +513,19 @@ class OrderOut(BaseModel):
         if isinstance(data, dict):
             reason = data.get("reason")
             reasons = data.get("reasons")
+            if reason is not None:
+                from ezchain_core.reason_codes import message_for
+
+                data = dict(data)
+                data["reason_message"] = message_for(reason)
             if not reasons and reason is not None:
-                from ezchain_core.reason_codes import RISK_REASON_MESSAGES
+                from ezchain_core.reason_codes import message_for
 
                 data = dict(data)
                 data["reasons"] = [
                     {
                         "code": reason,
-                        "message": RISK_REASON_MESSAGES.get(reason, reason),
+                        "message": message_for(reason),
                         "detail": None,
                     }
                 ]
@@ -994,7 +1070,7 @@ class ProtectionEventOut(BaseModel):
     created_at: str | None = None
 
 
-SignalWindow = Literal["h1", "h24"]
+SignalWindow = Literal["m5", "h1", "h6", "h24"]
 SignalDirection = Literal["up", "down"]
 
 

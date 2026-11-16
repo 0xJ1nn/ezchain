@@ -50,7 +50,9 @@ from ..schemas import (
     StoredMarketListOut,
     StoredSnapshotOut,
     TokenOut,
+    WatchlistMissingOut,
 )
+from ..services import watchlist as watchlist_service
 from ..services.candles import get_candles
 from ..services.market_monitor import (
     MarketMonitor,
@@ -358,6 +360,7 @@ def _stored_filters_payload(
     min_pair_age_minutes: int | None,
     max_pair_age_minutes: int | None,
     unknown: dict[str, int],
+    watchlist: bool = False,
 ) -> MarketFiltersOut:
     return MarketFiltersOut(
         chain=chain,
@@ -370,6 +373,7 @@ def _stored_filters_payload(
         min_pair_age_minutes=min_pair_age_minutes,
         max_pair_age_minutes=max_pair_age_minutes,
         unknown_excluded=unknown,
+        watchlist=watchlist,
     )
 
 
@@ -384,6 +388,7 @@ def _market_filters_payload(
     min_pair_age_minutes: int | None,
     max_pair_age_minutes: int | None,
     unknown: dict[str, int],
+    watchlist: bool = False,
 ) -> MarketFiltersOut:
     return _stored_filters_payload(
         chain,
@@ -396,6 +401,7 @@ def _market_filters_payload(
         min_pair_age_minutes,
         max_pair_age_minutes,
         unknown,
+        watchlist,
     )
 
 
@@ -583,7 +589,9 @@ async def markets(
     min_pair_age_minutes: int | None = Query(default=None, ge=0),
     max_pair_age_minutes: int | None = Query(default=None, ge=0),
     dex: str | None = Query(default=None, max_length=80),
+    watchlist: bool = Query(default=False),
     adapter: DexScreenerClient = Depends(get_dexscreener),
+    session: Session = Depends(get_session),
 ) -> MarketListOut:
     if chain != "all" and get_chain(chain) is None:
         raise HTTPException(
@@ -629,6 +637,35 @@ async def markets(
         max_pair_age_minutes=max_pair_age_minutes,
         now=now,
     )
+    # The watchlist filter narrows the read to stored identities. A watched pair whose
+    # token has no market row is not dropped: it is reported with its own reason below,
+    # because an absent observation is unknown, not a zero price and not a disappeared row.
+    watchlist_missing: list[WatchlistMissingOut] = []
+    if watchlist:
+        watched = watchlist_service.watched_pairs(session)
+        if chain != "all":
+            watched = {pair for pair in watched if pair[0] == chain}
+        present = {
+            (row.chain, watchlist_service.normalize_token(row.base_token)) for row in filtered
+        }
+        filtered = [
+            row
+            for row in filtered
+            if (row.chain, watchlist_service.normalize_token(row.base_token)) in watched
+        ]
+        for row in watchlist_service.rows(session):
+            if (row.chain, row.base_token) in watched and (
+                row.chain,
+                row.base_token,
+            ) not in present:
+                watchlist_missing.append(
+                    WatchlistMissingOut(
+                        chain=row.chain,
+                        base_token=row.base_token,
+                        symbol=row.symbol,
+                    )
+                )
+
     total = len(filtered)
 
     effective_cursor = cursor or page_cursor or after
@@ -718,6 +755,7 @@ async def markets(
             min_pair_age_minutes,
             max_pair_age_minutes,
             unknown,
+            watchlist,
         ),
         population=_population(
             rows=rows,
@@ -727,6 +765,7 @@ async def markets(
             sort=sort,
             semantics=semantics,
         ),
+        watchlist_missing=watchlist_missing,
     )
 
 

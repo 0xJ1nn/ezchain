@@ -43,10 +43,17 @@ class CipherUnavailable(RuntimeError):
 
     code = "PROVIDER_KEY_ENCRYPTION_UNAVAILABLE"
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.retryable = retryable
+        self.detail = detail or {}
 
 
 class SecretCipher(Protocol):
@@ -199,9 +206,31 @@ class KeyringCipher:
         try:
             module.delete_password(self._service, reference)
         except Exception as exc:  # noqa: BLE001 - a store that cannot delete is unusable
-            raise CipherUnavailable("the OS keyring could not remove its test entry") from exc
+            # The probe entry is left behind, so the backend may recover; a retry can
+            # succeed. Name the entry in the detail so an operator can clean it up.
+            raise CipherUnavailable(
+                "the OS keyring could not remove its test entry",
+                retryable=True,
+                detail={"probe_entry": reference},
+            ) from exc
         if read_back != probe:
             raise CipherUnavailable("the OS keyring did not return what it stored")
+        # A delete that silently does nothing passes the old probe and later strands
+        # revoked secrets. Prove the entry is gone before calling the store available.
+        try:
+            leftover = module.get_password(self._service, reference)
+        except Exception as exc:  # noqa: BLE001 - a store that cannot read is unavailable
+            raise CipherUnavailable(
+                "the OS keyring could not confirm the probe was removed",
+                retryable=True,
+                detail={"probe_entry": reference},
+            ) from exc
+        if leftover is not None:
+            raise CipherUnavailable(
+                "the OS keyring did not remove its test entry",
+                retryable=True,
+                detail={"probe_entry": reference},
+            )
 
     def _discard_probe(self, module: Any, reference: str) -> None:
         """Best-effort cleanup of a probe that failed midway; never masks the cause."""

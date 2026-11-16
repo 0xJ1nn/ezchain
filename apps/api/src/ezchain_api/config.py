@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     # exact shortfall through a labelled funding journal group instead of being
     # rejected. Never affects a real-risk gate and never leaves paper.
     paper_no_risk: bool = False
+    # Upper bound on one no-risk shortfall. A buy whose fee-inclusive cost exceeds cash by
+    # more than this is refused with TOPUP_CAP_REACHED; the cap keeps paper funding from
+    # becoming an unbounded mint and is what the cap alert is measured against.
+    paper_no_risk_topup_cap_usd: Decimal = Field(default=Decimal("1000"), gt=0)
     max_order_usd: Decimal = Field(default=Decimal("1000"))
     max_position_usd: Decimal = Field(default=Decimal("2500"))
     max_open_positions: int = 10
