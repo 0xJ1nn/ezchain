@@ -127,6 +127,94 @@ Each chain's ladder, its pricing stable and its primary provider are data in
 (`capabilities.quote_kind`, `capabilities.quote_providers`). The badge is the head of the
 ladder, so it cannot claim a provider the chain does not use.
 
+### 3.1 T1 plan — executable depth, not listings
+
+The reason a chain gets a real venue adapter first is depth that a quote can actually exit,
+not the presence of a registry row. The registry has 25 entries; that number is browsing
+coverage. Seven concrete keyless quote clients are built — `JupiterClient`, `KyberSwapClient`,
+`VeloraClient`, `LifiClient`, `CetusClient`, `StonfiClient` and `OsmosisSqsClient`, all wired
+in `apps/api/src/ezchain_api/main.py:113-125`. Eighteen registered chains have an executable
+ladder; seven have only the capped `paper_mark` (§3.2). No concrete adapter implements the
+build/sign/submit `VenueAdapter` surface of §2 or the executor's `Venue` protocol: the only
+`Venue` implementation is `FakeVenue` in
+`services/executor/src/ezchain_executor/venue.py:40`, an in-memory test double. Real venue
+depth is therefore a plan, not a shipped capability.
+
+The first real adapters go to the six registry T1 rows, in this order of justification:
+**Solana, Ethereum, Base, Arbitrum One, Polygon PoS, BNB Chain**. These are the chains whose
+ladder head already has to survive the router's mandatory full-size sell quote
+(`packages/adapters/src/ezchain_adapters/quotes.py:379-399`) against a live provider, with the
+answer recorded in `tests/adapters/fixtures/` (`jupiter_quote_buy.json`,
+`jupiter_quote_sell.json`, `kyberswap_base_buy.json`, `velora_base_buy.json`). That exit test is
+the closest thing this repository has to a liquidity measurement, and a venue adapter that
+cannot clear it would be an adapter to a market the platform must refuse to enter. A registry
+listing, a seed token or a market row proves none of that.
+
+No measured cross-chain liquidity ranking exists in `docs/evidence`: the recorded discovery
+pass in §4.2 counts returned rows per chain but does not rank depth. The order above is a
+plan built on the six chains with recorded executable quotes, not a claim that one is deeper
+than another. A depth ranking across all 25 chains must be measured before any adapter beyond
+these six is committed; producing it is a code and measurement task, not a docs change.
+
+Each first adapter is gated, in order: a contract suite for `quote`, `build_swap`, `simulate`,
+`submit` and `status` against live mainnet plus the recorded fixture; a paper fill through the
+same surface that agrees with the adapter's quote; the fail-closed `NO_SELL_ROUTE` behaviour on
+a token with no exit; and only then a §3 matrix promotion backed by the passing evidence. A
+a docs-only promotion is rejected: the proposed ADR-0014 rule is that a row may be promoted
+only on a passing contract suite. Until such a suite exists, no chain is T1 in the sense §2
+defines.
+
+### 3.2 Per-chain capability matrix (registry truth)
+
+This table is derived from `packages/adapters/src/ezchain_adapters/registry.py`; the `Tier`
+column is the registry's own `ChainMeta.tier`, not the aspirational target in §3. It must be
+updated in the same change as the registry. `Quote head` is `chain.quote_kind`: a head of
+`paper_mark` means no keyless executable quote exists for that chain. `Paper fill` is `yes`
+for every registered chain because `apps/api/src/ezchain_api/services/paper.py:1821,1846`
+prices through the one `QuoteRouter` built in `apps/api/src/ezchain_api/main.py:117-145` and
+handed to `PaperOrderExecutor` at line 153 — the capped mark is the router's own last rung,
+not a second paper pricing path. That is the same *quote* adapter surface as live quotes; the
+`build_swap`/`submit` surface in §2 is not used by paper fills and has no concrete
+implementation. `Live execute` is `no` for every row because `ChainMeta.live_execute` defaults
+to `False` (`registry.py:71`) and nothing overrides it.
+
+| Chain (registry id) | Tier | Quote head | Paper fill | Live execute | Build/sign/submit adapter | Venue contract suite |
+|---|---|---|---|---|---|---|
+| Solana (`solana`) | T1 | jupiter | yes | no | none | per-provider tests only |
+| Ethereum (`ethereum`) | T1 | kyberswap | yes | no | none | per-provider tests only |
+| Base (`base`) | T1 | kyberswap | yes | no | none | per-provider tests only |
+| Arbitrum One (`arbitrum`) | T1 | kyberswap | yes | no | none | per-provider tests only |
+| Polygon PoS (`polygon`) | T1 | kyberswap | yes | no | none | per-provider tests only |
+| BNB Chain (`bsc`) | T1 | kyberswap | yes | no | none | per-provider tests only |
+| Optimism (`optimism`) | T2 | kyberswap | yes | no | none | per-provider tests only |
+| Avalanche C (`avalanche`) | T2 | kyberswap | yes | no | none | per-provider tests only |
+| Blast (`blast`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| Mantle (`mantle`) | T2 | lifi | yes | no | none | per-provider tests only |
+| Linea (`linea`) | T2 | kyberswap | yes | no | none | per-provider tests only |
+| Scroll (`scroll`) | T2 | lifi | yes | no | none | per-provider tests only |
+| zkSync Era (`zksync`) | T2 | lifi | yes | no | none | per-provider tests only |
+| Sui (`sui`) | T2 | cetus | yes | no | none | per-provider tests only |
+| Aptos (`aptos`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| TON (`ton`) | T2 | stonfi | yes | no | none | per-provider tests only |
+| Tron (`tron`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| NEAR (`near`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| Osmosis (`osmosis`) | T2 | osmosis_sqs | yes | no | none | per-provider tests only |
+| Cosmos Hub (`cosmos`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| Fantom (`fantom`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| Cronos (`cronos`) | T2 | lifi | yes | no | none | per-provider tests only |
+| Celo (`celo`) | T2 | lifi | yes | no | none | per-provider tests only |
+| Moonbeam (`moonbeam`) | T2 | paper_mark | yes | no | none | per-provider tests only |
+| Metis (`metis`) | T2 | lifi | yes | no | none | per-provider tests only |
+
+The last column names what exists today, not a passing gate: per-provider tests are
+`tests/adapters/test_jupiter.py`, `test_kyberswap.py`, `test_lifi.py`, `test_velora.py` and
+`test_svm_move_cosmos_quotes.py`, with one recorded response per quote path in
+`tests/adapters/fixtures/`. There is no single shared contract suite that every venue adapter
+must pass; adding one is work in the adapters field, recorded here as a gap. Note also that
+the §3 target tiers and the registry tiers differ for Osmosis, NEAR, Cosmos Hub and Moonbeam
+(T3 as a target, T2 in `ChainMeta`'s default); the target column is aspirational and a change
+to either column is a product decision, not a docs edit.
+
 ## 4. Per-chain data requirements
 
 | Need | Source of truth |

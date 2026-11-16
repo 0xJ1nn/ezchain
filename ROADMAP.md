@@ -75,6 +75,13 @@ create a strategy and watch it place paper orders. Every number carries source, 
 - [ ] Signed plugin packages, registry and a bwrap/seccomp profile.
 - [ ] Multi-tenant ledger partitioning for one instance serving many users.
 
+> **Proposed, not a decision of record (#39).** The M1–M5 milestones below and the pump.fun
+> spike were drafted in a documentation pass and have not been reviewed by the maintainer.
+> They are planning proposals: no item here grants scope or settles an architecture choice.
+> The maintainer's review of each milestone sequence unblocks promotion to a decision;
+> ADR-0014–0019 carry the same status in [`docs/DECISIONS.md`](docs/DECISIONS.md). No code is
+> blocked on #39.
+
 ## Current — M1: UI close-out
 
 Close out the M1 surfaces and keep the gate trustworthy.
@@ -97,8 +104,8 @@ issues remain open for the follow-ups below.
   scoring and routing (#12), alert delivery channels (#13) and gallery polish (#14).
 
 **Known M1 gaps:** responsive tables still scroll instead of becoming cards; markets
-watchlists are absent (#33); ADR-0014–0019 and this roadmap need maintainer review
-(#39).
+watchlists are absent (#33); ADR-0014–0019 and the M1–M5 milestones are Proposed pending
+maintainer review (#39), not decisions of record.
 
 Exit: `main` renders the full M1 surface at 1440 and 390 px with no external requests,
 `bash tools/ci.sh` is green on five consecutive runs, and no screen implies live data.

@@ -3,6 +3,17 @@
 Format: context → options → decision → consequences. Superseded ADRs keep their entry and
 gain a `Superseded by` line.
 
+**Status review (2026-11-16, #39).** ADR-0014, 0015, 0016, 0018 and 0019 were written in a
+background documentation pass and marked Accepted without explicit maintainer review. They
+are now **Proposed** and are not decisions of record; ADR-0017 was already Proposed on spike
+#35. What unblocks each: the maintainer must confirm the "Verified today" matrix convention
+(0014), the Jupiter-first execution plan (0015), the no-browser-key custody boundary (0016),
+watchlists as owned entities (0018), and the one reason-code taxonomy (0019). A review can
+also revise or reject any of them. The M1–M5 roadmap in `ROADMAP.md` carries the same status;
+no code is blocked on #39. Note that ADR-0019's taxonomy is implemented in code (ADR-0043)
+and ADR-0015's executor pipeline exists (ADR-0026) — working code does not turn an unreviewed
+decision into an accepted one.
+
 ---
 
 ## ADR-0001 — Modular monolith plus an isolated executor
@@ -221,7 +232,7 @@ a second styling system silently.
 
 ## ADR-0014 — "Verified" means an adapter contract suite passed, not a plan
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** `docs/CHAINS.md` listed six chains as T1 (live-mainnet verified) and fourteen
 more as T2/T3 while no adapter package, ingest service or executor existed. The M1 audit
@@ -244,7 +255,7 @@ rejected.
 
 ## ADR-0015 — Jupiter first, paper-first, one execution path
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** Solana is the declared first-class chain and Jupiter routes across Raydium
 and PumpSwap. Building three AMM integrations before the pipeline exists would multiply
@@ -267,7 +278,7 @@ path.
 
 ## ADR-0016 — No browser key entry; watch-only by default
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** the onboarding and wallet wireframes disagreed: one refused seed phrases and
 private keys, the other allowed importing an existing key from Security → Vault. No key
@@ -316,7 +327,7 @@ to Accepted.
 
 ## ADR-0018 — Watchlists are first-class, not copy-trading
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** the wireframe shows watchlist toggles and counts, but there is no domain
 entity or API. "Watch to buy" was requested as a product behaviour. Copy-trading is
@@ -335,7 +346,7 @@ preview is removed in M5. No social/copy-trade surface is implied.
 
 ## ADR-0019 — Stable reason codes and fail-closed UI states
 
-**Date:** 2026-10-22 · **Status:** Accepted
+**Date:** 2026-10-22 · **Status:** Proposed (pending maintainer review, #39)
 
 **Context:** the wireframe names `MARK_STALE`, `NO_SELL_ROUTE`, `EXECUTOR_DOWN`,
 `RISK_DENIED`, `QUOTE_EXPIRED` and others, but there is no schema, constant set or UI
@@ -499,7 +510,7 @@ Rules that ride with it:
 - A sell is quoted in the sell direction (`token → stable`, sized by quantity); a buy quote
   is never inverted.
 - A buy is only valid when the received size also has a full-size sell quote from the same
-  venue — an entry with no executable exit is not an entry (ADR-0015).
+  venue — an entry with no executable exit is not an entry (ADR-0015, Proposed).
 - Provider fees and gas are declared in `Quote.fee_usd`. The fill pays
   `max(paper_fee_bps, fee_usd)`, never their sum.
 - A buy with a quoted impact above `EZCHAIN_MAX_PRICE_IMPACT_PCT` (default 5%) is rejected
@@ -1692,3 +1703,58 @@ Migration `0025_strategy_run_window` adds the nullable column and the unique pai
 backfills nothing: existing rows pre-date the claim and keep NULL. On SQLite the constraint
 is added through a batch rebuild, so the table's own indexes are preserved (checked in
 `tests/api/test_strategy_run_window_migration.py`).
+
+---
+
+## ADR-0049 — Which parts of the engine belong in Rust
+
+**Date:** 2026-11-16 · **Status:** Proposed (pending maintainer review; no rewrite is
+authorised by this ADR)
+
+**Context:** the platform is Python end to end (`apps/api`, `services/engine`,
+`services/executor`, `packages/core-py`, `packages/adapters`). Money paths need stable
+behaviour more than they need a new language, so the question is which parts, if any, have a
+measured CPU cost that justifies a Rust kernel behind pyo3. There is no such measurement in
+this repository. The only recorded timing is end-to-end HTTP latency in the stress harness
+(`tools/stress/http.py:494`) and the release-drill report
+(`docs/evidence/p0-production/stress-all-2026-10-23.md`); neither profiles a single function,
+and CONTRACT I12 requires a claim to name what was measured. Every bottleneck below is
+therefore **unmeasured**, with the measurement that would settle it named in its place.
+
+| Hot path | Where it lives | Bottleneck today | What would measure it |
+|---|---|---|---|
+| Event decode | `services/ingest/src/ezchain_ingest/eventlog.py:55` (`json.loads` per recorded line) and the provider wire parsers in `packages/adapters/src/ezchain_adapters/` | unmeasured | a benchmark that replays the recorded JSONL corpus through decode and normalisation, reporting time and allocations per event at a stated corpus size; fixtures live in `tests/adapters/fixtures/` |
+| Quote ladders | `packages/adapters/src/ezchain_adapters/quotes.py` (`QuoteRouter.quote`, lines 317–421, and the decimal parsers at 71–93) | unmeasured; wall time is dominated by the 8 s ladder deadline and 5 s attempt timeout (lines 61–62), so CPU time must be separated from provider wait before anything is attributed to decoding | a transport-stubbed benchmark of parse and routing only, with p50 and p99 and provider HTTP excluded, against a recorded quote response per provider |
+| Execution clock | `services/engine/src/ezchain_engine/scheduler.py` (`now = now or utcnow()` at line 439, injected clock at 761) and the decision-window claim in ADR-0048 | unmeasured | a tick benchmark on a fixed decision set with an injected clock, reporting decisions per second and scheduling jitter on the claim path, not just the evaluator |
+| Ledger hot section | `packages/core-py/src/ezchain_core/ledger.py` (`buy_entries`/`sell_entries` at 241/293, `assert_balanced` at 352, `seal_entries`/`verify_seal` at 416/425, `replay_balances` at 435) | unmeasured | a benchmark replaying a recorded tape of N entries through journal construction, seal verification and replay, with integer conservation asserted inside the timed loop |
+
+**Options:** (a) rewrite the engine in Rust now and expose it wholesale through pyo3; (b) keep
+everything in Python and optimise only when a general slowdown appears; (c) make the benchmark
+and the parity harness the entry gate, then move only measured, pure kernels into a Rust core
+while Python keeps control.
+
+**Decision:** (c), as a reference architecture and a proposal, not as permission to write
+code. The **Rust core / Python control plane** split is the boundary: a Rust core may own only
+pure, deterministic, side-effect-free kernels (event decode, quote arithmetic, seal hashing,
+clock arithmetic) exposed through pyo3, with Python-owned values at the boundary. The Python
+control plane keeps every I/O call, configuration, auth and scoped keys, the approval and kill
+switch gates, strategy plugin hosting, and all ledger writes. The path is phased: phase 0 is
+the benchmark and parity harness; phase 1 moves at most one kernel whose measured number
+misses a declared target on a recorded corpus; later phases require their own measurements and
+stop when a phase shows no gain. A rewrite does not land under this ADR without two things,
+both red first: a **failing benchmark** that shows the Python path below a declared target on a
+recorded corpus, and a **parity harness** that feeds the same inputs to the Python and Rust
+implementations and requires identical outputs, including decimal rounding, error codes and
+rejected-input behaviour. No benchmark number is claimed here: `docs/evidence` contains no
+measurement of these four paths, so each is unmeasured and a rewrite is not yet justified.
+
+**Consequences:** the boundary keeps money decisions, approvals and keys in Python, where the
+platform's tests and invariants already live, and keeps a Rust failure from becoming a silent
+change to a fill. While a kernel is moved, two implementations must coexist and the parity
+harness is the only thing that makes that safe; dropping it turns a rounding change into an
+accounting defect. pyo3 adds a build and ABI surface to a currently pure-Python install, and
+that cost is paid before any speedup. A phase that does not move the measured number ends the
+work rather than reaching for the next hot path. This ADR changes no code, grants no rewrite,
+and stays Proposed until the maintainer reviews the boundary and the entry gate.
+
+

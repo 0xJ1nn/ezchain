@@ -150,9 +150,9 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
       detail route is live (#102).
 - [x] #36 Playwright gate determinism: the build-directory guard and the single-writer
       gate are in place.
-- [ ] #39 review the audit-drafted ADR-0014–0019 and `ROADMAP.md` before treating them as
-      decisions of record. ADR-0015/0016/0018/0019 and the roadmap were not explicitly
-      approved by the maintainer.
+- [ ] #39 maintainer review of the audit-drafted ADR-0014–0019 and `ROADMAP.md`. ADR-0014,
+      0015, 0016, 0018 and 0019 are now Proposed, as are the M1–M5 milestones; ADR-0017 was
+      already Proposed on #35. Review or revision by the maintainer unblocks acceptance.
 - [x] Dark “Instrument” visual pass from `design/BRIEF.md`; dark is the default theme with
       a persisted light toggle (#147).
 - [ ] `SOL/USD` is repeated in fixture strings (`$147.62`). Move it to one fixture

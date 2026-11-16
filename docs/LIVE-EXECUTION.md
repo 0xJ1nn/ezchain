@@ -80,7 +80,8 @@ web ──proxy──▶ api (+ inline engine) ──HMAC/loopback──▶ exec
   `EZCHAIN_VAULT_IDLE_MINUTES` (default 30). Every unlock/lock/sign is an audit row.
 - Keys are **generated inside the executor** (`ezchain-executor wallet new --family evm`)
   or imported through the **executor CLI only** (`wallet import`, reads stdin, never
-  argv). There is no browser key entry (ADR-0016) and **no key export** — backup is the
+  argv). There is no browser key entry (the ADR-0016 proposal, not a reviewed decision) and
+  **no key export** — backup is the
   encrypted vault file itself.
 - The API stores wallet metadata (`wallets` table: id, label, family, address, custody
   `local_vault|watch`, chains, policy) — never key material.
