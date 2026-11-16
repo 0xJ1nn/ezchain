@@ -3,7 +3,7 @@ import { AppShell } from "@/components/shell";
 import { EmptyState, FixtureBadge, ModeBadge, Unavailable } from "@/components/ops";
 import { Badge, ButtonLink, Panel, Stat } from "@/components/ui";
 import { formatUsd, formatUsdPrice, shortAddress } from "@/lib/live-format";
-import { getPaperSnapshot } from "@/lib/paper-api";
+import { getPaperSnapshot, getPaperWallets } from "@/lib/paper-api";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +40,9 @@ const custody = [
 ];
 
 export default async function WalletsPage() {
-	const snapshot = await getPaperSnapshot();
+	const [snapshot, walletsResult] = await Promise.all([getPaperSnapshot(), getPaperWallets()]);
 	const mode = snapshot.mode;
+	const wallets = walletsResult.ok ? walletsResult.data : [];
 	const account = snapshot.account.ok ? snapshot.account.data : null;
 	const positions = snapshot.positions.ok ? snapshot.positions.data : [];
 	const error = !snapshot.account.ok
@@ -116,6 +117,11 @@ export default async function WalletsPage() {
 					meta="PAPER · server view model"
 				/>
 				<Stat
+					label="Paper wallets"
+					value={walletsResult.ok ? String(wallets.length) : "—"}
+					meta={walletsResult.ok ? "server declared · no keys" : "wallet read unavailable"}
+				/>
+				<Stat
 					label="On-chain wallets"
 					value="0"
 					meta="no custody backend in this build"
@@ -125,6 +131,76 @@ export default async function WalletsPage() {
 
 			<div className="split">
 				<div className="stack">
+					<Panel
+						title="Paper wallets"
+						sub={walletsResult.ok ? `${wallets.length} from /api/v1/paper/wallets` : "unavailable"}
+						action={mode === "fixture" ? <FixtureBadge /> : <Badge tone="ghost">PAPER</Badge>}
+						flush
+						footer="A paper wallet is a ledger attribution, not a chain address. Cash is the server's settled sum; no key, seed or signature is ever returned."
+					>
+						{walletsResult.ok ? (
+							wallets.length > 0 ? (
+								<div className="table-wrap">
+									<table className="table">
+										<caption className="sr-only">Paper wallets</caption>
+										<thead>
+											<tr>
+												<th>Wallet</th>
+												<th>Chain</th>
+												<th>Asset</th>
+												<th className="num">Settled cash</th>
+												<th />
+											</tr>
+										</thead>
+										<tbody>
+											{wallets.map((wallet) => (
+												<tr key={wallet.id ?? "unallocated"}>
+													<td>
+														<Link
+															href={`/wallets/${encodeURIComponent(wallet.id ?? "unallocated")}`}
+														>
+															<span className="strong">{wallet.label}</span>
+														</Link>
+														<span className="sub" style={{ display: "block" }}>
+															{wallet.id ?? "unallocated"}
+														</span>
+													</td>
+													<td>{wallet.chain}</td>
+													<td className="mono">{wallet.asset}</td>
+													<td className="num mono">{formatUsd(wallet.balance_usd)}</td>
+													<td className="right">
+														<Link
+															className="btn sm"
+															href={`/wallets/${encodeURIComponent(wallet.id ?? "unallocated")}`}
+														>
+															Open
+														</Link>
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							) : (
+								<div className="panel-body">
+									<EmptyState title="No paper wallets declared">
+										The API returned no wallet rows. Nothing is invented to fill the list.
+									</EmptyState>
+								</div>
+							)
+						) : (
+							<div className="panel-body">
+								<Unavailable
+									title="Paper wallets unavailable"
+									code={walletsResult.error.code}
+									message={walletsResult.error.message}
+								>
+									No wallet row is substituted when the read fails.
+								</Unavailable>
+							</div>
+						)}
+					</Panel>
+
 					<Panel
 						title="Paper positions"
 						sub={snapshot.positions.ok ? `${positions.length} · from the ledger` : "unavailable"}
@@ -259,11 +335,12 @@ export default async function WalletsPage() {
 						</p>
 					</Panel>
 
-					<Panel title="Why there is no wallet list" sub="honest state">
+					<Panel title="Paper wallets vs custody" sub="honest state">
 						<p className="small muted">
-							A wallet list needs an address model, ownership metadata, chain sync and a
-							custody backend. None of those exist in this branch. Showing invented wallet
-							names or balances would break the rule that every number has a source.
+							The list above is the server&apos;s paper wallets: ledger attributions with a settled
+							cash sum. An on-chain wallet list needs an address model, ownership metadata,
+							chain sync and a custody backend. None of those exist in this build. Showing
+							invented addresses or balances would break the rule that every number has a source.
 						</p>
 						<div className="row mt-12">
 							<ButtonLink href="/security" size="sm">
