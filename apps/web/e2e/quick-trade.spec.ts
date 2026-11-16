@@ -167,6 +167,70 @@ test("a filled buy offers protection as an explicit click, never automatically",
 	await expect(bar.getByTestId("quick-trade-submit")).toBeEnabled();
 });
 
+test("buy, arm protection, then sell the same token in paper", async ({ page }) => {
+	// GH-145's third criterion: one test that walks buy → position with protection → sell.
+	// The two legs are separate POSTs with different sides, and the armed stop-loss must
+	// neither fire nor block the exit.
+	const posted: Record<string, unknown>[] = [];
+	await page.route("**/api/v1/paper/orders", async (route) => {
+		const body = route.request().postDataJSON() as Record<string, unknown>;
+		posted.push(body);
+		const side = body.side === "sell" ? "sell" : "buy";
+		await route.fulfill({
+			status: 201,
+			contentType: "application/json",
+			body: JSON.stringify({
+				id: side === "sell" ? "ord_path_sell" : "ord_path_buy",
+				chain: "solana",
+				token_address: BONK_MINT,
+				side,
+				amount_usd: body.amount_usd,
+				status: "filled",
+				reason: null,
+				quote_kind: "jupiter",
+				created_at: "2026-11-09T10:00:00Z",
+				filled_at: "2026-11-09T10:00:01Z",
+			}),
+		});
+	});
+
+	await page.goto(`/tokens/solana/${BONK_MINT}`);
+	const bar = page.getByTestId("quick-trade-bar");
+
+	// 1. Buy.
+	await bar.getByTestId("quick-trade-submit").click();
+	await expect(bar.getByText("PAPER FILL")).toBeVisible();
+	await expect(bar).toContainText("ord_path_buy");
+
+	// 2. The position now exists, and protection is offered on it rather than assumed.
+	await page.goto("/positions");
+	await expect(page.locator("main")).toContainText("BONK");
+	await page.goto(`/tokens/solana/${BONK_MINT}`);
+	await bar.getByTestId("quick-trade-submit").click();
+	await bar.getByTestId("quick-trade-protect").click();
+	const form = bar.getByTestId("quick-trade-protect-form");
+	await form.getByLabel("Loss (%)").fill("6");
+	await form.getByTestId("quick-trade-arm").click();
+	await expect(form.getByRole("status")).toContainText("Armed stop-loss for BONK.");
+
+	// 3. Sell the same token. The armed stop-loss is a protection record, not a refusal.
+	await page.goto(`/tokens/solana/${BONK_MINT}?side=sell&amount=100`);
+	const sellBar = page.getByTestId("quick-trade-bar");
+	await expect(sellBar.getByRole("button", { name: "Sell" })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	await expect(sellBar.getByTestId("quick-trade-submit")).toBeEnabled();
+	await sellBar.getByTestId("quick-trade-submit").click();
+	await expect(sellBar.getByText("PAPER FILL")).toBeVisible();
+	await expect(sellBar).toContainText("ord_path_sell");
+	await expect(sellBar).toContainText("SELL");
+
+	// Both legs reached the API, each with its own side and idempotency key.
+	expect(posted.map((body) => body.side)).toEqual(["buy", "buy", "sell"]);
+	expect(new Set(posted.map((body) => String(body.idempotency_key))).size).toBe(3);
+});
+
 test("the quick-trade bar fails closed when no route or price exists", async ({ page }) => {
 	await page.goto(`/tokens/solana/${SCAM_MINT}`);
 	const bar = page.getByTestId("quick-trade-bar");
