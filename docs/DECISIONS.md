@@ -1692,3 +1692,58 @@ Migration `0025_strategy_run_window` adds the nullable column and the unique pai
 backfills nothing: existing rows pre-date the claim and keep NULL. On SQLite the constraint
 is added through a batch rebuild, so the table's own indexes are preserved (checked in
 `tests/api/test_strategy_run_window_migration.py`).
+
+---
+
+## ADR-0049 — Which parts of the engine belong in Rust
+
+**Date:** 2026-11-16 · **Status:** Proposed (pending maintainer review; no rewrite is
+authorised by this ADR)
+
+**Context:** the platform is Python end to end (`apps/api`, `services/engine`,
+`services/executor`, `packages/core-py`, `packages/adapters`). Money paths need stable
+behaviour more than they need a new language, so the question is which parts, if any, have a
+measured CPU cost that justifies a Rust kernel behind pyo3. There is no such measurement in
+this repository. The only recorded timing is end-to-end HTTP latency in the stress harness
+(`tools/stress/http.py:494`) and the release-drill report
+(`docs/evidence/p0-production/stress-all-2026-10-23.md`); neither profiles a single function,
+and CONTRACT I12 requires a claim to name what was measured. Every bottleneck below is
+therefore **unmeasured**, with the measurement that would settle it named in its place.
+
+| Hot path | Where it lives | Bottleneck today | What would measure it |
+|---|---|---|---|
+| Event decode | `services/ingest/src/ezchain_ingest/eventlog.py:55` (`json.loads` per recorded line) and the provider wire parsers in `packages/adapters/src/ezchain_adapters/` | unmeasured | a benchmark that replays the recorded JSONL corpus through decode and normalisation, reporting time and allocations per event at a stated corpus size; fixtures live in `tests/adapters/fixtures/` |
+| Quote ladders | `packages/adapters/src/ezchain_adapters/quotes.py` (`QuoteRouter.quote`, lines 317–421, and the decimal parsers at 71–93) | unmeasured; wall time is dominated by the 8 s ladder deadline and 5 s attempt timeout (lines 61–62), so CPU time must be separated from provider wait before anything is attributed to decoding | a transport-stubbed benchmark of parse and routing only, with p50 and p99 and provider HTTP excluded, against a recorded quote response per provider |
+| Execution clock | `services/engine/src/ezchain_engine/scheduler.py` (`now = now or utcnow()` at line 439, injected clock at 761) and the decision-window claim in ADR-0048 | unmeasured | a tick benchmark on a fixed decision set with an injected clock, reporting decisions per second and scheduling jitter on the claim path, not just the evaluator |
+| Ledger hot section | `packages/core-py/src/ezchain_core/ledger.py` (`buy_entries`/`sell_entries` at 241/293, `assert_balanced` at 352, `seal_entries`/`verify_seal` at 416/425, `replay_balances` at 435) | unmeasured | a benchmark replaying a recorded tape of N entries through journal construction, seal verification and replay, with integer conservation asserted inside the timed loop |
+
+**Options:** (a) rewrite the engine in Rust now and expose it wholesale through pyo3; (b) keep
+everything in Python and optimise only when a general slowdown appears; (c) make the benchmark
+and the parity harness the entry gate, then move only measured, pure kernels into a Rust core
+while Python keeps control.
+
+**Decision:** (c), as a reference architecture and a proposal, not as permission to write
+code. The **Rust core / Python control plane** split is the boundary: a Rust core may own only
+pure, deterministic, side-effect-free kernels (event decode, quote arithmetic, seal hashing,
+clock arithmetic) exposed through pyo3, with Python-owned values at the boundary. The Python
+control plane keeps every I/O call, configuration, auth and scoped keys, the approval and kill
+switch gates, strategy plugin hosting, and all ledger writes. The path is phased: phase 0 is
+the benchmark and parity harness; phase 1 moves at most one kernel whose measured number
+misses a declared target on a recorded corpus; later phases require their own measurements and
+stop when a phase shows no gain. A rewrite does not land under this ADR without two things,
+both red first: a **failing benchmark** that shows the Python path below a declared target on a
+recorded corpus, and a **parity harness** that feeds the same inputs to the Python and Rust
+implementations and requires identical outputs, including decimal rounding, error codes and
+rejected-input behaviour. No benchmark number is claimed here: `docs/evidence` contains no
+measurement of these four paths, so each is unmeasured and a rewrite is not yet justified.
+
+**Consequences:** the boundary keeps money decisions, approvals and keys in Python, where the
+platform's tests and invariants already live, and keeps a Rust failure from becoming a silent
+change to a fill. While a kernel is moved, two implementations must coexist and the parity
+harness is the only thing that makes that safe; dropping it turns a rounding change into an
+accounting defect. pyo3 adds a build and ABI surface to a currently pure-Python install, and
+that cost is paid before any speedup. A phase that does not move the measured number ends the
+work rather than reaching for the next hot path. This ADR changes no code, grants no rewrite,
+and stays Proposed until the maintainer reviews the boundary and the entry gate.
+
+
