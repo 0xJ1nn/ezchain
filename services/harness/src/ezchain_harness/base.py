@@ -77,7 +77,8 @@ class ProviderClient(ABC):
     """One provider's chat API behind :class:`~ezchain_agent_runtime.ModelClient`."""
 
     provider: ClassVar[str]
-    credential_env: ClassVar[str]
+    # A local endpoint names no key variable; its client sends no credential at all.
+    credential_env: ClassVar[str | None] = None
 
     def __init__(
         self,
@@ -126,7 +127,7 @@ class ProviderClient(ABC):
     def _decode(self, body: Mapping[str, Any]) -> ModelTurn: ...
 
     def complete(self, request: ModelRequest) -> ModelTurn:
-        secret = Credential.from_env(self.credential_env).secret()
+        secret = Credential.from_env(self.credential_env).secret() if self.credential_env else ""
         payload = dict(self._payload(request))
         payload["model"] = self._model_id
         http_request = HttpRequest(
