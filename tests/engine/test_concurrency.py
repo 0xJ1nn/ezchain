@@ -294,6 +294,53 @@ async def test_two_ticks_in_one_window_write_one_run_and_one_order(tmp_path: Pat
     eng_b.dispose()
 
 
+async def test_a_manual_run_racing_a_scheduled_tick_still_decides_once(tmp_path: Path) -> None:
+    """An owner's forced run and a scheduled tick cannot both decide one window.
+
+    ``force=True`` skips the interval gate, not the claim. Without that, pressing "run now"
+    while a tick was in flight would have been a way to log two decisions and place a
+    second order for one window — the exact hole the due gate was supposed to close.
+    """
+    url = f"sqlite+pysqlite:///{tmp_path / 'manual-race.db'}"
+    eng_a, eng_b, factory_a, factory_b = _two_processes(url)
+    _add_strategy(factory_a, "strategy-manual")
+    settings = Settings(environment="test", database_url=url, data_mode="fixture")
+    barrier = Barrier()
+    source_a = BarrierDex(barrier)
+    source_b = BarrierDex(barrier)
+    seen: list[object] = []
+    executor_a = _executor(factory_a, settings, seen)
+    executor_b = _executor(factory_b, settings, seen)
+
+    async def manual() -> RunResult:
+        with factory_b() as session:
+            strategy = session.get(StrategyRow, "strategy-manual")
+            assert strategy is not None
+            return await evaluate_strategy(
+                session, strategy, source_b, executor_b, now=NOW, force=True  # type: ignore[arg-type]
+            )
+
+    scheduled, forced = await asyncio.gather(
+        StrategyScheduler(
+            factory_a, source_a, executor_a, interval_seconds=1, now=lambda: NOW
+        ).run_once(),
+        manual(),
+    )
+
+    with factory_a() as session:
+        assert session.scalar(select(func.count()).select_from(StrategyRunRow)) == 1
+        assert session.scalar(select(func.count()).select_from(PaperOrderRow)) == 1
+        run = session.scalar(select(StrategyRunRow))
+    assert run is not None
+    assert len(scheduled) == 1
+    # Whichever won, both callers report the one record and only the owner executed.
+    assert scheduled[0].run_id == forced.run_id == run.id
+    assert len(seen) == 1
+    assert barrier._seen == 2
+    eng_a.dispose()
+    eng_b.dispose()
+
+
 async def test_a_restart_inside_the_window_does_not_decide_again(tmp_path: Path) -> None:
     """A restarted process must not repeat a window the previous process already decided.
 
