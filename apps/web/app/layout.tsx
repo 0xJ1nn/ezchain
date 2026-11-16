@@ -4,21 +4,25 @@ import "@ezchain/ui/tokens.css";
 import "./ui.css";
 import { HydrationMarker } from "./hydration-marker";
 
-const inter = localFont({
-	src: "./fonts/inter-latin-var.woff2",
-	variable: "--font-inter",
+const sora = localFont({
+	src: "./fonts/sora-latin-var.woff2",
+	variable: "--font-sora",
 	display: "swap",
-	weight: "100 900",
+	weight: "300 800",
 });
 
-const plexMono = localFont({
-	src: [
-		{ path: "./fonts/ibm-plex-mono-400.woff2", weight: "400", style: "normal" },
-		{ path: "./fonts/ibm-plex-mono-500.woff2", weight: "500", style: "normal" },
-		{ path: "./fonts/ibm-plex-mono-600.woff2", weight: "600", style: "normal" },
-	],
-	variable: "--font-plex-mono",
+const unbounded = localFont({
+	src: "./fonts/unbounded-latin-var.woff2",
+	variable: "--font-unbounded",
 	display: "swap",
+	weight: "400 800",
+});
+
+const jetbrainsMono = localFont({
+	src: "./fonts/jetbrains-mono-latin-var.woff2",
+	variable: "--font-jetbrains-mono",
+	display: "swap",
+	weight: "400 700",
 });
 
 export const metadata: Metadata = {
@@ -27,7 +31,7 @@ export const metadata: Metadata = {
 		"Open-source, multi-chain crypto trading workstation. Paper first, your keys, your strategies.",
 };
 
-// Dark is primary (design/BRIEF.md). The inline bootstrap sets html[data-theme]
+// Dark is the brand default. The inline bootstrap sets html[data-theme]
 // before first paint so the persisted or system-guessed skin never flashes.
 // It reads the stored choice; with no stored choice it guesses from
 // prefers-color-scheme (light only when the system prefers light), else dark.
@@ -37,7 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 	return (
 		<html
 			lang="en"
-			className={`${inter.variable} ${plexMono.variable}`}
+			className={`${sora.variable} ${unbounded.variable} ${jetbrainsMono.variable}`}
 			data-theme="dark"
 			suppressHydrationWarning
 		>
