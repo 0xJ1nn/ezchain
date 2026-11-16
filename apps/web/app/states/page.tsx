@@ -3,22 +3,20 @@ import { AppShell } from "@/components/shell";
 import { FixtureBadge } from "@/components/ops";
 import { Badge, Panel } from "@/components/ui";
 import { PositionTile } from "@/components/position-tile";
-import { positionTiles } from "@/lib/position-fixtures";
+import {
+	TILE_STATE_LABELS,
+	TILE_STATES,
+	allPositionTiles,
+} from "@/lib/position-fixtures";
 import { referenceSurfacesEnabled } from "@/lib/runtime";
 
-const codeStates = [
-	{ state: "Entering (intent, not fill)", rendered: true },
-	{ state: "Pre-bank", rendered: true },
-	{ state: "Riding", rendered: true },
-	{ state: "Unsellable · no sell route", rendered: true },
-	{ state: "Trail armed", rendered: false },
-	{ state: "Banked", rendered: false },
-	{ state: "Laddered", rendered: false },
-	{ state: "Dust", rendered: false },
-	{ state: "Stale mark", rendered: false },
-	{ state: "Closed", rendered: false },
-	{ state: "Quarantined", rendered: false },
-];
+// Coverage is derived from the one fixture model, not a second hand-written list: a state
+// is "yes" only when a PositionTileView with that tileState actually renders above.
+const renderedStates = new Set(allPositionTiles.map((tile) => tile.tileState));
+const codeStates = TILE_STATES.map((state) => ({
+	state: TILE_STATE_LABELS[state],
+	rendered: renderedStates.has(state),
+}));
 
 export default function StatesPage() {
 	// Design documentation: reachable in the development (fixture) build only.
@@ -31,9 +29,11 @@ export default function StatesPage() {
 					<div className="crumbs">Reference / State gallery</div>
 					<h1>State gallery</h1>
 					<p className="sub">
-						The four position-tile states the shared <span className="mono">PositionTile</span>{" "}
-						component currently renders. Every action on a tile is disabled: execution is not
-						wired in this build. Values are sample server view-model strings.
+						All eleven wireframe states, each rendered by the same{" "}
+						<span className="mono">PositionTile</span> component from one{" "}
+						<span className="mono">PositionTileView</span> model. Tile actions are labelled but
+						do not execute: this build has no order path from the gallery. Values are sample
+						server view-model strings.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -51,7 +51,7 @@ export default function StatesPage() {
 			</div>
 
 			<section className="grid cols-2 tiles" aria-label="Position tile states">
-				{positionTiles.map((position) => (
+				{allPositionTiles.map((position) => (
 					<PositionTile position={position} key={position.id} />
 				))}
 			</section>
@@ -60,6 +60,7 @@ export default function StatesPage() {
 				<Panel title="State coverage" sub="shared tile component" flush>
 					<div className="table-wrap">
 						<table className="table compact">
+							<caption className="sr-only">State coverage</caption>
 							<thead>
 								<tr>
 									<th>State</th>

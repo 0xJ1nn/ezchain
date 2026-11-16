@@ -189,7 +189,9 @@ export function PositionTile({ position }: { position: PositionTileView }) {
 						className={action.className}
 						type="button"
 						key={action.label}
-						disabled={action.disabled}
+						// Keep the action in the tab order so keyboard users can reach it and
+						// hear why it cannot run. `disabled` would remove it from the tab order.
+						aria-disabled={action.disabled ? "true" : undefined}
 						aria-label={action.ariaLabel}
 						title={action.disabled ? "Execution is not wired in M1" : undefined}
 					>

@@ -3,6 +3,37 @@
 
 export type TileTone = "win" | "loss" | "flat" | "error";
 
+/** The eleven states the wireframe requires. Every one is a PositionTileView, not a variant shape. */
+export const TILE_STATES = [
+	"entering",
+	"pre-bank",
+	"trail-armed",
+	"banked",
+	"riding",
+	"laddered",
+	"unsellable",
+	"dust",
+	"stale",
+	"closed",
+	"quarantined",
+] as const;
+
+export type TileState = (typeof TILE_STATES)[number];
+
+export const TILE_STATE_LABELS: Record<TileState, string> = {
+	entering: "Entering (intent, not fill)",
+	"pre-bank": "Pre-bank",
+	"trail-armed": "Trail armed",
+	banked: "Banked",
+	riding: "Riding",
+	laddered: "Laddered",
+	unsellable: "Unsellable · no sell route",
+	dust: "Dust",
+	stale: "Stale mark",
+	closed: "Closed",
+	quarantined: "Quarantined",
+};
+
 export interface TileMarketCell {
 	k: string;
 	v: string;
@@ -41,6 +72,8 @@ export interface TileChart {
 }
 
 export interface PositionTileView {
+	/** Which wireframe state this fixture pins. Drives the gallery's coverage table. */
+	tileState: TileState;
 	id: string;
 	symbol: string;
 	name: string;
@@ -55,7 +88,7 @@ export interface PositionTileView {
 	mark: string;
 	markTone: "live" | "stale" | "dead";
 	markToneClass?: "err";
-	tags: { label: string; tone?: "default" | "ghost" | "info" | "err" | "warn" }[];
+	tags: { label: string; tone?: "default" | "ghost" | "info" | "ok" | "err" | "warn" }[];
 	chart: TileChart;
 	market: TileMarketCell[];
 	money: TileMoneyCell[];
@@ -63,7 +96,7 @@ export interface PositionTileView {
 		| {
 				kind: "steps";
 				state: string;
-				stateTone: "default" | "info" | "err" | "warn";
+				stateTone: "default" | "info" | "ok" | "err" | "warn";
 				bag: string;
 				next: string;
 				steps: TileStep[];
@@ -75,7 +108,7 @@ export interface PositionTileView {
 				note: string;
 				lastExecutable: string;
 		  };
-	prov: { label: string; tone?: "default" | "ghost" | "ok" | "err" | "warn"; className?: string }[];
+	prov: { label: string; tone?: "default" | "ghost" | "info" | "ok" | "err" | "warn"; className?: string }[];
 	budget:
 		| { kind: "bar"; width: string; cap: string }
 		| { kind: "text"; cap: string };
@@ -164,6 +197,7 @@ const scamcoinChart: TileChart = {
 
 export const positionTiles: PositionTileView[] = [
 	{
+		tileState: "riding",
 		id: "bonk",
 		symbol: "BO",
 		name: "Bonk",
@@ -225,6 +259,7 @@ export const positionTiles: PositionTileView[] = [
 		note: "First bank at +69.6% (30.5% of bag); trailing the remainder at 8% giveback.",
 	},
 	{
+		tileState: "pre-bank",
 		id: "aerodrome",
 		symbol: "AE",
 		name: "Aerodrome",
@@ -286,6 +321,7 @@ export const positionTiles: PositionTileView[] = [
 		note: "Manual entry · hard stop −12% · no automation attached.",
 	},
 	{
+		tileState: "entering",
 		id: "mochi",
 		symbol: "MO",
 		name: "Mochi",
@@ -345,6 +381,7 @@ export const positionTiles: PositionTileView[] = [
 		note: "Entering is a state, not a spinner. Show the intent, its ttl and the last known quote.",
 	},
 	{
+		tileState: "unsellable",
 		id: "scamcoin",
 		symbol: "SC",
 		name: "Scamcoin",
@@ -401,6 +438,296 @@ export const positionTiles: PositionTileView[] = [
 		note: "Write-off is paper-only, two-step, and writes an explicit ledger reason. It is not a sell. The $5.70 mark value is not executable; the last full-size quote is $0.0041.",
 	},
 ];
+
+// The remaining seven wireframe states are patched copies of the four above. Every tile —
+// rendered or gallery-only — is the same PositionTileView shape; no state gets a second
+// model and no value is computed here. All strings are authored fixture data.
+function stateTile(
+	base: PositionTileView,
+	tileState: TileState,
+	patch: Partial<PositionTileView> & { id: string },
+): PositionTileView {
+	return {
+		...base,
+		...patch,
+		tileState,
+		chart: { ...base.chart, ...(patch.chart ?? {}) },
+	};
+}
+
+export const remainingTileStates: PositionTileView[] = [
+	stateTile(positionTiles[0], "trail-armed", {
+		id: "trail-armed",
+		symbol: "TR",
+		name: "Trail armed",
+		pnlPct: "+28.4%",
+		pnlUsd: "+$24.10",
+		pnlSol: "+0.163 SOL",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "TRAIL ARMED", tone: "info" },
+			{ label: "solana", tone: "ghost" },
+		],
+		ladder: {
+			kind: "steps",
+			state: "TRAIL ARMED",
+			stateTone: "info",
+			bag: "69.5%",
+			next: "8% GIVEBACK",
+			steps: [
+				{ label: "ARM +25", state: "on" },
+				{ label: "BANK +70", state: "on" },
+				{ label: "TRAIL", state: "on" },
+				{ label: "FINAL +500", state: "off" },
+			],
+		},
+		prov: [
+			{ label: "mark live · 1s", tone: "ghost" },
+			{ label: "trail armed · 8%", tone: "info" },
+			{ label: "rule momentum_v1", tone: "ghost" },
+		],
+		budget: { kind: "text", cap: "TRAILING · NO MAX HOLD" },
+		actions: [
+			{ label: "Sell now", className: "btn danger sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for trail armed" },
+		],
+		note: "The trail is armed at an 8% giveback. Nothing was sold at this step.",
+	}),
+	stateTile(positionTiles[0], "banked", {
+		id: "banked",
+		symbol: "BK",
+		name: "Banked",
+		pnlPct: "+69.6%",
+		pnlUsd: "+$62.20",
+		pnlSol: "+0.421 SOL",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "BANKED", tone: "ok" },
+			{ label: "solana", tone: "ghost" },
+		],
+		money: [
+			{ k: "In", v: "$89.48" },
+			{ k: "Banked", v: "$46.20", tone: "ok" },
+			{ k: "Realized", v: "+$62.20", tone: "ok" },
+			{ k: "Unreal", v: "—" },
+		],
+		ladder: {
+			kind: "steps",
+			state: "BANKED",
+			stateTone: "ok",
+			bag: "30.5% SOLD",
+			next: "NEXT +200% RUNG",
+			steps: [
+				{ label: "ARM +25", state: "on" },
+				{ label: "BANK +70", state: "on" },
+				{ label: "RUNG +200", state: "next" },
+				{ label: "FINAL +500", state: "off" },
+			],
+		},
+		prov: [
+			{ label: "mark live · 1s", tone: "ghost" },
+			{ label: "fill recorded · 46.20", tone: "ok" },
+			{ label: "rule momentum_v1", tone: "ghost" },
+		],
+		budget: { kind: "text", cap: "BANKED 30.5% OF BAG" },
+		actions: [
+			{ label: "Sell now", className: "btn danger sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for banked" },
+		],
+		note: "The bank fill is in the paper ledger. Unrealized is — because no remainder is marked here.",
+	}),
+	stateTile(positionTiles[0], "laddered", {
+		id: "laddered",
+		symbol: "LD",
+		name: "Laddered",
+		pnlPct: "+212.0%",
+		pnlUsd: "+$189.70",
+		pnlSol: "+1.285 SOL",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "LADDERED", tone: "ok" },
+			{ label: "solana", tone: "ghost" },
+		],
+		money: [
+			{ k: "In", v: "$89.48" },
+			{ k: "Banked", v: "$122.40", tone: "ok" },
+			{ k: "Realized", v: "$122.40", tone: "ok" },
+			{ k: "Unreal", v: "+$67.30", tone: "ok" },
+		],
+		ladder: {
+			kind: "steps",
+			state: "LADDERED",
+			stateTone: "ok",
+			bag: "40.0% LEFT",
+			next: "FINAL +500%",
+			steps: [
+				{ label: "ARM +25", state: "on" },
+				{ label: "BANK +70", state: "on" },
+				{ label: "RUNG +200", state: "on" },
+				{ label: "FINAL +500", state: "next" },
+			],
+		},
+		prov: [
+			{ label: "mark live · 1s", tone: "ghost" },
+			{ label: "three fills recorded", tone: "ok" },
+			{ label: "rule momentum_v1", tone: "ghost" },
+		],
+		budget: { kind: "text", cap: "THREE RUNGS FILLED" },
+		actions: [
+			{ label: "Sell now", className: "btn danger sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for laddered" },
+		],
+		note: "Three rungs are filled in the paper ledger; the remainder still rides.",
+	}),
+	stateTile(positionTiles[2], "dust", {
+		id: "dust",
+		symbol: "DU",
+		name: "Dust",
+		pnlPct: "—",
+		pnlUsd: "below min notional",
+		pnlTone: "muted",
+		price: "$0.00000009",
+		priceTone: "muted",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "DUST", tone: "warn" },
+			{ label: "solana", tone: "ghost" },
+		],
+		money: [
+			{ k: "In", v: "$0.02" },
+			{ k: "Banked", v: "—" },
+			{ k: "Realized", v: "—" },
+			{ k: "Unreal", v: "—" },
+		],
+		ladder: {
+			kind: "note",
+			state: "DUST · NO EXIT",
+			stateTone: "err",
+			lastExecutable: "—",
+			note: "The residual is below the venue's minimum notional. No exit was sent and no value is invented.",
+		},
+		prov: [
+			{ label: "mark entry fallback · 6s", tone: "warn" },
+			{ label: "below min notional", tone: "warn" },
+		],
+		budget: { kind: "text", cap: "NO EXECUTABLE EXIT" },
+		actions: [
+			{ label: "Sell now", className: "btn danger sm", disabled: true },
+			{ label: "SURE? WRITE OFF", className: "btn armed sm", disabled: true, ariaLabel: "Write off dust, paper only" },
+		],
+		note: "Dust is not zero. It is a residual the venue will not let the app sell.",
+	}),
+	stateTile(positionTiles[1], "stale", {
+		id: "stale",
+		symbol: "ST",
+		name: "Stale mark",
+		pnlPct: "—",
+		pnlUsd: "not re-marked",
+		pnlTone: "muted",
+		mark: "stale · 5m",
+		markTone: "stale",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "STALE", tone: "warn" },
+			{ label: "base", tone: "ghost" },
+		],
+		money: [
+			{ k: "In", v: "$74.02" },
+			{ k: "Banked", v: "—" },
+			{ k: "Realized", v: "—" },
+			{ k: "Unreal", v: "—" },
+		],
+		prov: [
+			{ label: "mark stale · 5m", tone: "warn" },
+			{ label: "exec not attempted", tone: "ghost" },
+			{ label: "rule manual", tone: "ghost" },
+		],
+		actions: [
+			{ label: "Sell now", className: "btn danger sm", disabled: true },
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for stale mark" },
+		],
+		note: "A stale mark is not executable. Unrealized stays — rather than being recomputed here.",
+	}),
+	stateTile(positionTiles[0], "closed", {
+		id: "closed",
+		symbol: "CL",
+		name: "Closed",
+		pnlPct: "+12.8%",
+		pnlUsd: "+$11.46",
+		pnlSol: "+0.078 SOL",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "CLOSED", tone: "ok" },
+			{ label: "solana", tone: "ghost" },
+		],
+		money: [
+			{ k: "In", v: "$89.48" },
+			{ k: "Banked", v: "$100.94", tone: "ok" },
+			{ k: "Realized", v: "+$11.46", tone: "ok" },
+			{ k: "Unreal", v: "—" },
+		],
+		ladder: {
+			kind: "steps",
+			state: "CLOSED",
+			stateTone: "ok",
+			bag: "0% LEFT",
+			next: "—",
+			steps: [
+				{ label: "ARM +25", state: "on" },
+				{ label: "BANK +70", state: "on" },
+				{ label: "EXIT", state: "on" },
+				{ label: "FINAL +500", state: "off" },
+			],
+		},
+		prov: [
+			{ label: "exit fill recorded", tone: "ok" },
+			{ label: "rule momentum_v1", tone: "ghost" },
+		],
+		budget: { kind: "text", cap: "NO OPEN EXPOSURE" },
+		actions: [
+			{ label: "⋯", className: "btn sm", disabled: true, ariaLabel: "More actions for closed" },
+		],
+		note: "A closed position has no open exposure. Unrealized is —; the result is in the ledger.",
+	}),
+	stateTile(positionTiles[3], "quarantined", {
+		id: "quarantined",
+		symbol: "QU",
+		name: "Quarantined",
+		pnlPct: "—",
+		pnlUsd: "excluded from exposure",
+		pnlTone: "muted",
+		tags: [
+			{ label: "PAPER" },
+			{ label: "QUARANTINED", tone: "err" },
+			{ label: "solana", tone: "ghost" },
+		],
+		money: [
+			{ k: "In", v: "$148.00" },
+			{ k: "Banked", v: "—" },
+			{ k: "Realized", v: "—" },
+			{ k: "Unreal", v: "—" },
+		],
+		ladder: {
+			kind: "note",
+			state: "QUARANTINED",
+			stateTone: "err",
+			lastExecutable: "—",
+			note: "The server excluded this token from exposure. Nothing was sent and no value is substituted.",
+		},
+		prov: [
+			{ label: "mark no_sell_route · 2m", tone: "err" },
+			{ label: "excluded from exposure", tone: "err" },
+		],
+		budget: { kind: "text", cap: "NO MAX HOLD · EXCLUDED" },
+		actions: [
+			{ label: "Sell now", className: "btn danger sm", disabled: true },
+			{ label: "SURE? WRITE OFF", className: "btn armed sm", disabled: true, ariaLabel: "Write off quarantined, paper only" },
+		],
+		note: "Quarantine is a server verdict, not a browser guess. The browser never re-derives it.",
+	}),
+];
+
+export const allPositionTiles: PositionTileView[] = [...positionTiles, ...remainingTileStates];
 
 export const positionsSummary = {
 	open: "4",
