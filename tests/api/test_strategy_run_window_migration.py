@@ -127,6 +127,6 @@ def test_the_downgrade_removes_only_the_claim(tmp_path: Path) -> None:
             assert connection.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar() == 1
         with Session(engine) as session:
             assert database_revision(session) == "0024_agent_buckets"
-            assert head_revision() == "0027_no_risk_funding_audit"
+            assert head_revision() == "0028_trade_policy_evidence"
     finally:
         engine.dispose()

@@ -214,6 +214,9 @@ class PaperOrderRow(Base):
     # funding was attempted. It is evidence, never an account; the journal stays the only
     # accountant (CONTRACT I1).
     funding_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # The sizing decision the gate enforced: resolved amount, effective profile, the
+    # limits snapshot and whether the source was a person or a strategy (GH-107).
+    policy_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     strategy_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     # Who placed the order, decided on the server: ``human`` for the deployment token,
     # ``agent`` for a scoped key (addressed by its key id), ``strategy`` for an engine
@@ -376,6 +379,8 @@ class StrategyRunRow(Base):
     action: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(String(64))
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # The trade-policy snapshot this run applied, when the decision was a policy change.
+    policy_json: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # Same interval bucket the order idempotency key names, so a run row and the order it
     # produced describe the same window in the same spelling.

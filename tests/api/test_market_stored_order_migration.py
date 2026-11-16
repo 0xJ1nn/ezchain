@@ -21,7 +21,7 @@ from sqlalchemy.engine import Engine, make_url
 
 from ezchain_api.db import alembic_config, database_revision, head_revision
 
-REVISION = "0027_no_risk_funding_audit"
+REVISION = "0028_trade_policy_evidence"
 TABLE = "market_snapshots"
 GLOBAL_INDEX = "ix_market_snapshot_liquidity_order"
 CHAIN_INDEX = "ix_market_snapshot_chain_liquidity_order"

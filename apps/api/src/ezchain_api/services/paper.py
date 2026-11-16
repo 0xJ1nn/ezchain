@@ -86,7 +86,7 @@ from ..models import (
     StrategyRow,
     new_id,
 )
-from . import approvals, buckets, market_snapshots, pnl
+from . import approvals, buckets, market_snapshots, pnl, trade_policy
 from .system_flags import read_kill_switch
 
 GENESIS_GROUP = "genesis"
@@ -1145,6 +1145,40 @@ class ProfileLoosensStrategy(ValueError):
         self.pinned = pinned
 
 
+def resolve_profile_name(
+    session: Session,
+    *,
+    strategy_id: str | None,
+    requested: str | None,
+    side: str,
+    settings: Settings,
+) -> str | None:
+    """Resolve a profile name from its three inputs, before an order amount exists.
+
+    The order gate calls this through :func:`resolve_order_profile`; the sizing resolver at
+    the API edge calls it too, so the name used to size a ticket is the same one that gate
+    will enforce. An unknown name raises ``PROFILE_UNKNOWN`` and never falls back.
+    """
+    if requested is not None and requested not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    pinned: str | None = None
+    if strategy_id is not None:
+        strategy = session.get(StrategyRow, strategy_id)
+        if strategy is not None:
+            pinned = strategy.risk_profile
+    if pinned is not None and pinned not in TRADE_RISK_PROFILES:
+        raise ValueError("PROFILE_UNKNOWN")
+    if pinned is None:
+        return requested if requested is not None else settings.trade_risk_profile
+    if requested is None:
+        return pinned
+    if PROFILE_RANK.get(requested, 0) > PROFILE_RANK.get(pinned, 0):
+        if side == "buy":
+            raise ProfileLoosensStrategy(requested, pinned)
+        return pinned
+    return requested
+
+
 def resolve_order_profile(
     session: Session,
     payload: OrderRequest,
@@ -1167,25 +1201,13 @@ def resolve_order_profile(
     does an order naming a ``strategy_id`` whose row no longer exists. An unknown name,
     requested or pinned, raises ``PROFILE_UNKNOWN`` and never falls back silently.
     """
-    requested = payload.risk_profile
-    if requested is not None and requested not in TRADE_RISK_PROFILES:
-        raise ValueError("PROFILE_UNKNOWN")
-    pinned: str | None = None
-    if payload.strategy_id is not None:
-        strategy = session.get(StrategyRow, payload.strategy_id)
-        if strategy is not None:
-            pinned = strategy.risk_profile
-    if pinned is not None and pinned not in TRADE_RISK_PROFILES:
-        raise ValueError("PROFILE_UNKNOWN")
-    if pinned is None:
-        return requested if requested is not None else settings.trade_risk_profile
-    if requested is None:
-        return pinned
-    if PROFILE_RANK.get(requested, 0) > PROFILE_RANK.get(pinned, 0):
-        if payload.side == "buy":
-            raise ProfileLoosensStrategy(requested, pinned)
-        return pinned
-    return requested
+    return resolve_profile_name(
+        session,
+        strategy_id=payload.strategy_id,
+        requested=payload.risk_profile,
+        side=payload.side,
+        settings=settings,
+    )
 
 
 def trade_profile_from_settings(
@@ -1276,6 +1298,21 @@ def limits_from_settings(settings: Settings, requested: str | None = None) -> Ri
         paper_mark_max_order_usd=settings.paper_mark_max_order_usd,
         max_price_impact_pct=settings.max_price_impact_pct,
     )
+
+
+def policy_evidence(
+    settings: Settings,
+    profile_name: str | None,
+    amount_usd: Decimal,
+    strategy_id: str | None,
+) -> dict[str, Any]:
+    """The sizing decision persisted on an order: amount, profile, limits and source."""
+    return {
+        "resolved_amount_usd": str(amount_usd),
+        "profile": profile_name,
+        "limits": trade_policy.limits_snapshot(limits_from_settings(settings, profile_name)),
+        "source": "strategy" if strategy_id is not None else "manual",
+    }
 
 
 def _fill_fee(notional: Decimal, quote: Quote, settings: Settings) -> Decimal:
@@ -1532,6 +1569,7 @@ def _reject_new(
     reasons: Any = None,
     *,
     actor: OrderActor = UNKNOWN_ACTOR,
+    policy_json: dict[str, Any] | None = None,
 ) -> PaperOrderRow:
     """Persist a rejection before a quote exists (insufficient position, no exit route)."""
     order, created = _claim_or_existing(session, payload, actor)
@@ -1543,6 +1581,7 @@ def _reject_new(
     order.reason = reason
     order.reasons = _structured_reasons(reasons if reasons is not None else reason)
     order.quote_json = quote_json
+    order.policy_json = policy_json
     session.commit()
     return order
 
@@ -1782,18 +1821,30 @@ async def place_order(
                 ),
             ),
             actor=placed_by,
+            policy_json=policy_evidence(settings, None, payload.amount_usd, payload.strategy_id),
         )
     except ValueError:
-        return _reject_new(session, payload, "PROFILE_UNKNOWN", actor=placed_by)
+        return _reject_new(
+            session,
+            payload,
+            "PROFILE_UNKNOWN",
+            actor=placed_by,
+            policy_json=policy_evidence(settings, None, payload.amount_usd, payload.strategy_id),
+        )
+    evidence = policy_evidence(settings, requested_profile, payload.amount_usd, payload.strategy_id)
     profile = trade_profile_from_settings(settings, requested_profile)
 
     if payload.side == "buy" and profile is not None:
         limits = limits_from_settings(settings, requested_profile)
         # Minimum size and the absolute maximum size apply before any quote.
         if payload.amount_usd < limits.min_order_usd:
-            return _reject_new(session, payload, "SIZE_BELOW_MIN", actor=placed_by)
+            return _reject_new(
+                session, payload, "SIZE_BELOW_MIN", actor=placed_by, policy_json=evidence
+            )
         if payload.amount_usd > limits.max_order_usd:
-            return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
+            return _reject_new(
+                session, payload, "SIZE_ABOVE_MAX", actor=placed_by, policy_json=evidence
+            )
         # Percent of equity, fail-closed on unknown marks. The sum is priced by the same
         # freshness policy as the account read: a stale or unknown mark on any held token
         # withholds the equity, so an entry is never sized against an old price.
@@ -1803,10 +1854,14 @@ async def place_order(
             replay, snapshots, max_age_seconds=float(settings.max_mark_age_seconds)
         )
         if equity is None:
-            return _reject_new(session, payload, "EQUITY_UNKNOWN", actor=placed_by)
+            return _reject_new(
+                session, payload, "EQUITY_UNKNOWN", actor=placed_by, policy_json=evidence
+            )
         cap = equity * limits.max_order_pct_of_equity
         if payload.amount_usd > cap:
-            return _reject_new(session, payload, "SIZE_ABOVE_MAX", actor=placed_by)
+            return _reject_new(
+                session, payload, "SIZE_ABOVE_MAX", actor=placed_by, policy_json=evidence
+            )
         # Per-token cap including the proposed order.
         existing_value = Decimal(0)
         held_qty, held_cost = replay.positions.get(
@@ -1817,7 +1872,9 @@ async def place_order(
         if mark is not None:
             existing_value = held_qty * mark
         if existing_value + payload.amount_usd > limits.per_token_cap_usd:
-            return _reject_new(session, payload, "POSITION_LIMIT", actor=placed_by)
+            return _reject_new(
+                session, payload, "POSITION_LIMIT", actor=placed_by, policy_json=evidence
+            )
 
     account = position_account(payload.chain, payload.token_address)
     held_qty = Decimal(0)
@@ -2000,6 +2057,7 @@ async def place_order(
         order, created = _claim_or_existing(session, payload, placed_by)
         if not created:
             return order
+        order.policy_json = evidence
         record_snapshot(session, snapshot)
 
         if fill_quantity <= 0 or notional <= 0:

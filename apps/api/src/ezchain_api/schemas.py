@@ -333,7 +333,10 @@ class PaperOrderIn(BaseModel):
     chain: str = Field(min_length=2, max_length=40)
     token_address: str = Field(min_length=8, max_length=160)
     side: Literal["buy", "sell"]
-    amount_usd: Decimal = Field(gt=0)
+    # A buy may omit it: the server resolves the size from the effective profile and the
+    # current equity. A sell needs an explicit amount or quantity, since an exit is sized
+    # by the position rather than by a policy.
+    amount_usd: Decimal | None = Field(default=None, gt=0)
     idempotency_key: str = Field(min_length=8, max_length=120)
     # The exact token quantity of a sell. The service bounds it to the open position.
     quantity: Decimal | None = Field(default=None, gt=0)
@@ -352,6 +355,8 @@ class PaperOrderIn(BaseModel):
     def sell_only_fields(self) -> PaperOrderIn:
         if self.side == "buy" and (self.reduce_only or self.quantity is not None):
             raise ValueError("reduce_only and quantity are only valid for a sell")
+        if self.side == "sell" and self.amount_usd is None and self.quantity is None:
+            raise ValueError("a sell needs amount_usd or quantity")
         return self
 
     @field_validator("quantity", mode="before")
@@ -375,7 +380,9 @@ class PaperOrderIn(BaseModel):
 
     @field_validator("amount_usd")
     @classmethod
-    def cents(cls, value: Decimal) -> Decimal:
+    def cents(cls, value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return None
         if not value.is_finite():
             raise ValueError("amount_usd must be finite")
         try:
@@ -418,6 +425,19 @@ class FundingOut(BaseModel):
     group_id: str
 
 
+class PolicyOut(BaseModel):
+    """The trade-policy decision the order gate enforced (GH-107).
+
+    The limits are the snapshot taken when the order was placed, not a live lookup: a later
+    settings change must not rewrite what the order was measured against.
+    """
+
+    resolved_amount_usd: str
+    profile: str | None = None
+    limits: dict[str, Any]
+    source: str
+
+
 class ActorOut(BaseModel):
     """Who placed an order, as the server recorded it.
 
@@ -443,6 +463,7 @@ class OrderOut(BaseModel):
     reason: str | None = None
     reasons: list[RiskReasonOut] = Field(default_factory=list)
     funding: FundingOut | None = None
+    policy: PolicyOut | None = None
     quote_kind: str | None = None
     actor: ActorOut = Field(default_factory=lambda: ActorOut(kind="unknown"))
     # The approval this order waits in or was decided by. Null for a person's own order,
