@@ -10,6 +10,25 @@ The last recorded Compose drill was at `0003_paper_fill_order`
 ([p0-production/docker-up.md](../p0-production/docker-up.md)); the head is now
 `0023_strategy_risk_profile`, twenty-three revisions later.
 
+## Addendum — re-measured at head `0026_market_stored_order` (2026-11-16)
+
+A third migration (`0026_market_stored_order`) landed after the addendum above, so the
+daemon-free phase was re-run once more. Same host, same absence of a Docker CLI and daemon.
+
+```bash
+bash tools/ops/drill.sh --static-only
+#   passed  static: compose valid (7 services); 26 migrations, head 0026_market_stored_order
+# drill: ok (static-only) at 0026_market_stored_order
+# exit=0
+```
+
+The static phase is the whole of what this host can prove, and it still proves it at the
+current head: seven services, the four long-running ones healthy-checked, one published
+port, `migrate` ahead of `api`, 26 revisions in a single unbranched chain. **No container was
+started here**, so the acceptance criteria that need a running stack — a paper buy through the
+edge, reconciliation green, restart and backup — remain unexercised and this issue stays open
+on that basis rather than closing on the static result.
+
 ## Addendum — re-measured at head `0025_strategy_run_window` (2026-11-14, later the same day)
 
 Two migrations landed after the drill above (`0024_agent_buckets`, `0025_strategy_run_window`),
