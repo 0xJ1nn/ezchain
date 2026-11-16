@@ -141,9 +141,17 @@ example.)
 
 `ingest` connects to RPC/WS/REST per source → normalizes into the one
 `ezchain_core.MarketEvent` (`chain, venue, pair, price, size, direction, units,
-confidence, source, source timestamp, observed_at`) → publishes to NATS `market.*` →
-engine consumes; API serves snapshots; candles are materialized into Timescale
-hypertables.
+confidence, source, source timestamp, observed_at`) → writes the JSONL event log (the
+replay input) and the `market_events` table (the query path) in the same transaction, with
+one outbox row per inserted event carrying the topic `market.event` → a relay marks rows
+delivered with `mark_published` → engine consumes; API serves snapshots; candles are
+materialized into Timescale hypertables.
+
+The transport is not built. There is no NATS client, no broker and no relay process in
+tree: the outbox table is the seam, and delivery is at-least-once by construction so a
+relay that dies between publish and `mark_published` re-delivers. Until that relay exists,
+the API reads the table directly and nothing subscribes. This paragraph described a NATS
+publish the code has never done; it now matches `services/ingest/src/ezchain_ingest/store.py`.
 
 Rules: every event declares units and freshness; a late event is flagged, not silently
 reordered; duplicate `(source name, pair, source timestamp)` is idempotent, in the replay
