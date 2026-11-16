@@ -454,3 +454,35 @@ injected transport so the suite exercises the whole mapping with no key and no s
   session ended failed with a reason.
 - **Cost from the operator's rate.** No price table ships in the code; `ModelPricing` is a
   required argument and each answered turn is priced with it into the session record.
+
+## 10. Tested compatibility
+
+This table claims only what a test in this repository exercises. The two rows are the two
+`ModelClient` implementations that exist: the Anthropic Messages client
+(`services/harness/src/ezchain_harness/anthropic.py`) and the OpenAI-compatible chat client
+(`services/harness/src/ezchain_harness/openai.py`). Hermes and OpenClaw are MCP pack
+integrations, not model clients, so they do not get a row here; no other provider is
+implemented. Each named test drives the real client through the scripted transport in
+`tests/harness/providers_helpers.py` — one response per call, no key and no socket. A cell
+that says `not tested` means no test exercises that combination; it is not a promise that the
+mapping works. The model ids are the pinned defaults in that helper, not a claim about every
+model a gateway may proxy.
+
+<!-- compatibility-table:start -->
+| Model client | Tool calling | Parallel tool calls | Streaming | Structured final answer | Token accounting |
+|---|---|---|---|---|---|
+| Anthropic Messages — `claude-sonnet-4-5` | `test_a_tool_use_block_becomes_a_tool_call_and_the_tools_are_sent` | not tested | not tested | `test_the_final_text_becomes_the_loops_answer_object` | `test_usage_is_counted_and_priced_from_the_operators_rate` |
+| OpenAI-compatible chat — `gpt-4o-mini` | `test_a_function_call_becomes_a_tool_call_with_parsed_arguments` | not tested | not tested | not tested | `test_usage_is_counted_and_priced` |
+<!-- compatibility-table:end -->
+
+Two gaps are worth naming. Decoding more than one tool call from a single response is not
+tested for either client: the Anthropic test
+`test_consecutive_tool_results_are_merged_into_one_user_turn` encodes results for two calls in
+one turn, which is the reverse direction. Neither client performs model streaming — the only
+`stream` in the harness is the trace's output `TextIO`
+(`services/harness/src/ezchain_harness/trace.py:53`) — so streaming is `not tested` rather than
+unsupported by a measured verdict. The OpenAI client calls the same answer parser as Anthropic
+(`openai.py:151`), but no test asserts that a JSON answer object becomes an `Answer` for it.
+`tests/test_agent_compat.py` parses the table above and fails if a row claims a capability
+without a test name, names a test that does not exist, or changes the client or capability
+columns without updating the test.
