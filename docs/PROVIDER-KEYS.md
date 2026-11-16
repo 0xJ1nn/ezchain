@@ -57,10 +57,12 @@ A workspace holds exactly one active key per provider, and the database enforces
 partial unique index, so two concurrent creates cannot both succeed. A create that would
 add a second active key is refused with HTTP 409 `PROVIDER_KEY_ALREADY_EXISTS`; nothing is
 stored and the existing key keeps working. Replacing it is an explicit request: send
-`"replace": true` in the body. That retires the active key through the revoke path — the
-row is marked revoked and its stored secret deleted — before the new key is saved. A
-revoke of the new key therefore cannot make the old one resolvable again. The retired row
-stays in the list with its fingerprint and timestamps.
+`"replace": true` in the body. The retirement and the new row commit together, and only
+then is the old key's external copy deleted: a failure before that commit rolls the
+retirement back, so an active key always remains, and a failure after it leaves an orphaned
+copy rather than a deployment with no key. A revoke of the new key therefore cannot make
+the old one resolvable again. The retired row stays in the list with its fingerprint and
+timestamps.
 
 A revoked key cannot be resolved for a provider call. The row keeps its fingerprint and
 timestamps so the revocation is still visible in the list. Revocation deletes the stored
