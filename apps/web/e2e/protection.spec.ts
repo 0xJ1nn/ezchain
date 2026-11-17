@@ -4,6 +4,8 @@ import { expect, test } from "./test";
 // the armed arm reflected on the strategy surface's automations view. Fixture
 // mode only; the fixture never pretends to write to the API.
 
+const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+
 test("arm a stop-loss from the positions page, edit it, and list it in automations", async ({
 	page,
 }) => {
@@ -39,5 +41,23 @@ test("arm a stop-loss from the positions page, edit it, and list it in automatio
 		.filter({ has: page.getByRole("heading", { name: "Armed protection" }) });
 	await expect(arms).toContainText("stop-loss");
 	await expect(arms).toContainText("armed");
+	await expect(arms).toContainText("BONK");
+});
+
+test("exits armed on the trade screen list as paper protection in automations", async ({
+	page,
+}) => {
+	await page.goto(`/tokens/solana/${BONK_MINT}`);
+	await page.getByTestId("exits-save").click();
+	await expect(page.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
+
+	await page.goto("/strategies?view=automations");
+	await expect(page.getByRole("heading", { name: "Automations", level: 1 })).toBeVisible();
+	const arms = page
+		.locator("section.panel")
+		.filter({ has: page.getByRole("heading", { name: "Armed protection" }) });
+	await expect(arms).toContainText("stop-loss");
+	await expect(arms).toContainText("take-profit");
+	await expect(arms).toContainText("trailing stop");
 	await expect(arms).toContainText("BONK");
 });

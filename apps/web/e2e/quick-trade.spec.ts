@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "./test";
 
+// One ticket replaces the token page's separate Quick trade and Paper trade panels.
+// These checks keep the old surface's intent: presets re-quote on the server, the
+// cost sheet is shown before sending, a fill reaches the API exactly once,
+// protection is armed by an explicit click, and a missing route fails closed.
+
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const SCAM_MINT = "Scam1111111111111111111111111111111111111111";
 
@@ -16,161 +21,116 @@ const noExternal = (page: Page) => {
 	return external;
 };
 
+async function hold(page: Page) {
+	const submit = page.getByTestId("trade-submit");
+	await expect(submit).toBeEnabled();
+	await submit.scrollIntoViewIfNeeded();
+	const box = await submit.boundingBox();
+	if (!box) throw new Error("no submit box");
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(760);
+	await page.mouse.up();
+}
+
+function fillResponse(id: string, side: "buy" | "sell", amount: string) {
+	return {
+		id,
+		chain: "solana",
+		token_address: BONK_MINT,
+		side,
+		amount_usd: amount,
+		status: "filled",
+		reason: null,
+		quote_kind: "jupiter",
+		created_at: "2026-11-09T10:00:00Z",
+		filled_at: "2026-11-09T10:00:01Z",
+	};
+}
+
 test("a preset re-quotes on the server and shows the landed cost sheet before submit", async ({
 	page,
 }) => {
 	const external = noExternal(page);
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	const bar = page.getByTestId("quick-trade-bar");
-	await expect(bar).toContainText("idem ");
+	const ticket = page.getByTestId("trade-ticket");
+	await expect(ticket).toBeVisible();
 
-	await expect(bar.getByTestId("quick-trade-submit")).toBeEnabled();
-	await bar.getByTestId("quick-trade-preset-250").click();
-
-	await expect(page).toHaveURL(/[?&]amount=250(&|$)/, { timeout: 60_000 });
-	await expect(page.locator("#quote")).toContainText("$250.00");
-	await expect(bar.getByTestId("cost-sheet")).toBeVisible();
-	await expect(bar.getByTestId("cost-sheet")).toContainText("Platform fee");
-	await expect(bar.getByTestId("cost-sheet")).toContainText("Venue fee");
-	await expect(bar.getByTestId("cost-sheet")).toContainText("Estimated impact");
-	await expect(bar.getByTestId("cost-sheet")).toContainText("Receiver's worst case");
-	await expect(bar).toContainText("Jupiter v6 → Raydium");
-	await expect(bar.getByTestId("quick-trade-submit")).toBeEnabled();
-
-	// The ticket below follows the same server selection instead of keeping a stale amount.
-	await expect(page.locator("#ticket").getByLabel("Paper amount in USD")).toHaveValue("250");
-	await expect(
-		page.locator("#ticket").getByRole("button", { name: "Confirm paper order" }),
-	).toBeEnabled();
+	await ticket.getByTestId("ticket-chip-50").click();
+	await expect(page).toHaveURL(/[?&]amount=\d+(\.\d+)?(&|$)/, { timeout: 60_000 });
+	const sized = Number(await ticket.getByTestId("ticket-amount").inputValue());
+	expect(sized, "the 50% chip must size from buying power").toBeGreaterThan(0);
+	const expectedOut = (
+		await page.locator("#quote tr", { hasText: "Expected out" }).locator("td").last().textContent()
+	)?.trim().replace(/^PAPER\s*/, "");
+	expect(expectedOut, "the server rendered an expected out").toBeTruthy();
+	await expect(ticket).toContainText(expectedOut ?? "");
+	await expect(ticket.getByTestId("cost-sheet")).toBeVisible();
+	await expect(ticket.getByTestId("cost-sheet")).toContainText("Platform fee");
+	await expect(ticket.getByTestId("cost-sheet")).toContainText("Venue fee");
+	await expect(ticket.getByTestId("cost-sheet")).toContainText("Estimated impact");
+	await expect(ticket.getByTestId("cost-sheet")).toContainText("Receiver's worst case");
+	await expect(page.locator("#quote")).toContainText("Jupiter v6 → Raydium");
+	await expect(page.getByTestId("trade-submit")).toBeEnabled();
+	await expect(ticket.getByTestId("ticket-amount")).toHaveValue(sized.toFixed(2));
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
-test("a custom amount previews, is remembered as a preset, and submits once", async ({
-	page,
-}) => {
-	const posted: { body: Record<string, unknown> | null; count: number } = {
-		body: null,
-		count: 0,
-	};
+test("Max sizes from the paper account and submits exactly one order", async ({ page }) => {
+	const posted: { body: Record<string, unknown> | null; count: number } = { body: null, count: 0 };
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		posted.count += 1;
 		posted.body = route.request().postDataJSON() as Record<string, unknown>;
 		await route.fulfill({
 			status: 201,
 			contentType: "application/json",
-			body: JSON.stringify({
-				id: "ord_quick_01",
-				chain: "solana",
-				token_address: BONK_MINT,
-				side: "buy",
-				amount_usd: "175.5",
-				status: "filled",
-				reason: null,
-				quote_kind: "jupiter",
-				created_at: "2026-11-09T10:00:00Z",
-				filled_at: "2026-11-09T10:00:01Z",
-			}),
+			body: JSON.stringify(fillResponse("ord_quick_01", "buy", posted.body?.amount_usd as string)),
 		});
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	const bar = page.getByTestId("quick-trade-bar");
-	await expect(bar).toContainText("idem ");
-	await bar.getByTestId("quick-trade-preset-custom").click();
+	const ticket = page.getByTestId("trade-ticket");
+	await ticket.getByTestId("ticket-chip-max").click();
+	await expect(page).toHaveURL(/[?&]amount=/, { timeout: 60_000 });
+	const amount = await ticket.getByTestId("ticket-amount").inputValue();
+	expect(Number(amount)).toBeGreaterThan(0);
+	await expect(ticket.getByTestId("cost-sheet")).toBeVisible();
 
-	const amount = bar.getByLabel("Quick trade amount in USD");
-	await amount.fill("175.5");
-	await amount.press("Enter");
-
-	await expect(page).toHaveURL(/[?&]amount=175\.5(&|$)/, { timeout: 60_000 });
-	await expect(bar.getByTestId("cost-sheet")).toBeVisible();
-	await expect(bar.getByTestId("quick-trade-preset-175.5")).toBeVisible();
-
-	// A reload keeps the custom notional as a preset; the server quote still matches.
-	await page.reload();
-	await expect(
-		page.getByTestId("quick-trade-bar").getByTestId("quick-trade-preset-175.5"),
-	).toBeVisible();
-	await expect(page.getByTestId("quick-trade-bar").getByTestId("quick-trade-submit")).toBeEnabled();
-
-	await expect(page.getByTestId("quick-trade-bar")).toContainText("idem ");
-	await page.getByTestId("quick-trade-bar").getByTestId("quick-trade-submit").click();
-	await expect(page.getByTestId("quick-trade-bar").getByText("PAPER FILL")).toBeVisible();
-	await expect(page.getByTestId("quick-trade-bar")).toContainText("ord_quick_01");
-
-	expect(posted.count, "the bar must POST exactly once").toBe(1);
+	await hold(page);
+	await expect(ticket.getByTestId("fill-stamp")).toContainText("PAPER FILLED");
+	await expect(ticket).toContainText("ord_quick_01");
+	expect(posted.count, "the ticket must POST exactly once").toBe(1);
 	if (!posted.body) throw new Error("expected a POST body");
 	expect(posted.body).toMatchObject({
 		chain: "solana",
 		token_address: BONK_MINT,
 		side: "buy",
-		amount_usd: "175.5",
 	});
 	expect(String(posted.body.idempotency_key)).toMatch(/^[0-9a-f-]{16,}$/i);
 });
 
-test("a filled buy offers protection as an explicit click, never automatically", async ({
-	page,
-}) => {
+test("exits are armed by an explicit click, never automatically on a fill", async ({ page }) => {
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		await route.fulfill({
 			status: 201,
 			contentType: "application/json",
-			body: JSON.stringify({
-				id: "ord_quick_02",
-				chain: "solana",
-				token_address: BONK_MINT,
-				side: "buy",
-				amount_usd: "100",
-				status: "filled",
-				reason: null,
-				quote_kind: "jupiter",
-				created_at: "2026-11-09T10:00:00Z",
-				filled_at: "2026-11-09T10:00:01Z",
-			}),
+			body: JSON.stringify(fillResponse("ord_quick_02", "buy", "100")),
 		});
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	const bar = page.getByTestId("quick-trade-bar");
-	await expect(bar).toContainText("idem ");
+	const exits = page.getByTestId("exits-panel");
+	await expect(exits.getByTestId("exits-status")).toHaveCount(0);
+	await hold(page);
+	await expect(page.getByTestId("fill-stamp")).toBeVisible();
+	await expect(exits.getByTestId("exits-status")).toHaveCount(0);
 
-	await expect(bar.getByTestId("quick-trade-protect-form")).toHaveCount(0);
-	await bar.getByTestId("quick-trade-submit").click();
-	await expect(bar.getByText("PAPER FILL")).toBeVisible();
-	await expect(bar.getByTestId("quick-trade-protect-form")).toHaveCount(0);
-
-	await bar.getByTestId("quick-trade-protect").click();
-	const form = bar.getByTestId("quick-trade-protect-form");
-	await expect(form).toBeVisible();
-	await expect(form.getByLabel("Loss (%)")).toHaveValue("8");
-
-	await form.getByLabel("Loss (%)").fill("0");
-	await form.getByTestId("quick-trade-arm").click();
-	await expect(form.getByRole("status")).toContainText("Enter a positive stop-loss percent.");
-	await expect(bar.getByText(/Armed stop-loss/)).toHaveCount(0);
-
-	await form.getByLabel("Loss (%)").fill("5");
-	await form.getByTestId("quick-trade-arm").click();
-	await expect(form.getByRole("status")).toContainText("Armed stop-loss for BONK.");
-
-	// A new preview is a new trade. The previous fill, protect form and armed notice
-	// must not survive onto a quote that has not filled.
-	await bar.getByTestId("quick-trade-preset-250").click();
-	await expect(page).toHaveURL(/[?&]amount=250(&|$)/, { timeout: 60_000 });
-	await expect(bar.getByTestId("quick-trade-protect-form")).toHaveCount(0);
-	await expect(bar.getByText(/Armed stop-loss/)).toHaveCount(0);
-	await expect(bar.getByText("PAPER FILL")).toHaveCount(0);
-	await expect(bar.getByTestId("quick-trade-protect")).toHaveCount(0);
-	await expect(bar.getByTestId("quick-trade-submit")).toContainText("Confirm paper order");
-	await expect(bar.getByTestId("quick-trade-submit")).toBeEnabled();
+	await exits.getByTestId("exits-save").click();
+	await expect(exits.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
 });
 
-test("buy, arm protection, then sell the same token in paper", async ({ page }) => {
-	// GH-145's third criterion: one test that walks buy → position with protection → sell.
-	// The two legs are separate POSTs with different sides, and the armed stop-loss must
-	// neither fire nor block the exit.
+test("buy, arm exits, then sell the same token in paper", async ({ page }) => {
 	const posted: Record<string, unknown>[] = [];
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -179,72 +139,40 @@ test("buy, arm protection, then sell the same token in paper", async ({ page }) 
 		await route.fulfill({
 			status: 201,
 			contentType: "application/json",
-			body: JSON.stringify({
-				id: side === "sell" ? "ord_path_sell" : "ord_path_buy",
-				chain: "solana",
-				token_address: BONK_MINT,
-				side,
-				amount_usd: body.amount_usd,
-				status: "filled",
-				reason: null,
-				quote_kind: "jupiter",
-				created_at: "2026-11-09T10:00:00Z",
-				filled_at: "2026-11-09T10:00:01Z",
-			}),
+			body: JSON.stringify(fillResponse(side === "sell" ? "ord_path_sell" : "ord_path_buy", side, String(body.amount_usd))),
 		});
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	const bar = page.getByTestId("quick-trade-bar");
+	await hold(page);
+	await expect(page.getByTestId("fill-stamp")).toContainText("PAPER FILLED");
+	await expect(page.locator("#ticket")).toContainText("ord_path_buy");
 
-	// 1. Buy.
-	await bar.getByTestId("quick-trade-submit").click();
-	await expect(bar.getByText("PAPER FILL")).toBeVisible();
-	await expect(bar).toContainText("ord_path_buy");
+	await page.getByTestId("exits-save").click();
+	await expect(page.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
 
-	// 2. The position now exists, and protection is offered on it rather than assumed.
-	await page.goto("/positions");
-	await expect(page.locator("main")).toContainText("BONK");
-	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	await bar.getByTestId("quick-trade-submit").click();
-	await bar.getByTestId("quick-trade-protect").click();
-	const form = bar.getByTestId("quick-trade-protect-form");
-	await form.getByLabel("Loss (%)").fill("6");
-	await form.getByTestId("quick-trade-arm").click();
-	await expect(form.getByRole("status")).toContainText("Armed stop-loss for BONK.");
+	await page.getByTestId("ticket-side-sell").click();
+	await expect(page).toHaveURL(/side=sell/);
+	await hold(page);
+	await expect(page.getByTestId("fill-stamp")).toContainText("PAPER SOLD");
+	await expect(page.locator("#ticket")).toContainText("ord_path_sell");
 
-	// 3. Sell the same token. The armed stop-loss is a protection record, not a refusal.
-	await page.goto(`/tokens/solana/${BONK_MINT}?side=sell&amount=100`);
-	const sellBar = page.getByTestId("quick-trade-bar");
-	await expect(sellBar.getByRole("button", { name: "Sell" })).toHaveAttribute(
-		"aria-pressed",
-		"true",
-	);
-	await expect(sellBar.getByTestId("quick-trade-submit")).toBeEnabled();
-	await sellBar.getByTestId("quick-trade-submit").click();
-	await expect(sellBar.getByText("PAPER FILL")).toBeVisible();
-	await expect(sellBar).toContainText("ord_path_sell");
-	await expect(sellBar).toContainText("SELL");
-
-	// Both legs reached the API, each with its own side and idempotency key.
-	expect(posted.map((body) => body.side)).toEqual(["buy", "buy", "sell"]);
-	expect(new Set(posted.map((body) => String(body.idempotency_key))).size).toBe(3);
+	expect(posted.map((body) => body.side)).toEqual(["buy", "sell"]);
+	expect(new Set(posted.map((body) => String(body.idempotency_key))).size).toBe(2);
 });
 
-test("the quick-trade bar fails closed when no route or price exists", async ({ page }) => {
+test("the ticket fails closed when no route or price exists", async ({ page }) => {
 	await page.goto(`/tokens/solana/${SCAM_MINT}`);
-	const bar = page.getByTestId("quick-trade-bar");
-	await expect(bar).toContainText("idem ");
+	const ticket = page.getByTestId("trade-ticket");
+	await expect(ticket).toContainText("NO_SELL_ROUTE");
+	await expect(page.getByTestId("trade-submit")).toBeDisabled();
+	await expect(ticket.getByTestId("cost-sheet")).toHaveCount(0);
+	await expect(ticket).not.toContainText("Jupiter v6");
+	await expect(ticket).not.toContainText("3,182,686");
 
-	await expect(bar.getByText("NO_SELL_ROUTE", { exact: true })).toBeVisible();
-	await expect(bar.getByTestId("quick-trade-submit")).toBeDisabled();
-	await expect(bar.getByTestId("cost-sheet")).toHaveCount(0);
-	await expect(bar).not.toContainText("Jupiter v6");
-	await expect(bar).not.toContainText("3,182,686");
-
-	await bar.getByRole("button", { name: "Sell" }).click();
+	await page.getByTestId("ticket-side-sell").click();
 	await expect(page).toHaveURL(/[?&]side=sell(&|$)/, { timeout: 60_000 });
-	await expect(bar.getByText("NO_SELL_ROUTE", { exact: true })).toBeVisible();
-	await expect(bar.getByTestId("quick-trade-submit")).toBeDisabled();
-	await expect(bar.getByTestId("cost-sheet")).toHaveCount(0);
+	await expect(ticket).toContainText("NO_SELL_ROUTE");
+	await expect(page.getByTestId("trade-submit")).toBeDisabled();
+	await expect(ticket.getByTestId("cost-sheet")).toHaveCount(0);
 });
