@@ -76,7 +76,12 @@ def _capture_class(obj: type) -> dict[str, Any]:
         }
     methods: dict[str, str] = {}
     for name, member in sorted(vars(obj).items()):
-        if name.startswith("_") or not callable(member):
+        if name.startswith("_"):
+            continue
+        if isinstance(member, property):
+            methods[name] = "<property>"
+            continue
+        if not callable(member):
             continue
         try:
             methods[name] = str(inspect.signature(member))

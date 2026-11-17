@@ -407,6 +407,7 @@
     },
     "kind": "class",
     "methods": {
+      "is_paper_only": "<property>",
       "to_dict": "(self) -> 'dict[str, Any]'"
     }
   },

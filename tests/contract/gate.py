@@ -20,6 +20,17 @@ MANIFEST_FILE = SNAPSHOT_DIR / "manifest.json"
 DEPRECATIONS_FILE = Path(__file__).parent / "deprecations.json"
 SURFACES = ("openapi", "mcp_tools", "sdk_interfaces")
 WARNING_KEYS = ("deprecated", "warning", "description")
+STALE_SNAPSHOT_MESSAGE = "snapshots are stale"
+
+
+def allows_update(problems: list[str]) -> bool:
+    """Whether the only reason to refresh is that the version already moved.
+
+    ``--update`` must not erase a gate failure. A stale-snapshot message is expected after
+    a reviewed version bump; anything else — an unbumped change, a missing deprecated field
+    or a bad deprecation window — means the old baseline still has evidence to protect.
+    """
+    return all(STALE_SNAPSHOT_MESSAGE in problem for problem in problems)
 
 
 @dataclass(frozen=True)
@@ -143,7 +154,7 @@ def evaluate(
             problems.append(
                 _problem_list(
                     changes,
-                    f"the {surface} snapshots are stale: they record {snapshot_version} but the "
+                    f"the {surface} {STALE_SNAPSHOT_MESSAGE}: they record {snapshot_version} but the "
                     f"API is {current_version}; review the changed fields and regenerate "
                     "the snapshots with tools/check_contracts.py --update",
                 )

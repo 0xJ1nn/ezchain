@@ -24,6 +24,7 @@ from tests.contract.gate import (  # noqa: E402
     DEPRECATIONS_FILE,
     MANIFEST_FILE,
     SNAPSHOT_DIR,
+    allows_update,
     evaluate,
 )
 
@@ -37,6 +38,26 @@ def _write_json(path: Path, payload: Any) -> None:
 
 def update() -> int:
     captured = capture_all()
+    # The old baseline is evidence, not a scratch file. Refuse to overwrite it while it
+    # still reports a real contract failure; only a reviewed version bump may refresh it.
+    if MANIFEST_FILE.exists():
+        manifest = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
+        previous = {
+            surface: json.loads((SNAPSHOT_DIR / f"{surface}.json").read_text(encoding="utf-8"))
+            for surface in SURFACES
+            if (SNAPSHOT_DIR / f"{surface}.json").exists()
+        }
+        deprecations = (
+            json.loads(DEPRECATIONS_FILE.read_text(encoding="utf-8"))
+            if DEPRECATIONS_FILE.exists()
+            else []
+        )
+        problems = evaluate(captured, previous, manifest, deprecations, __version__)
+        if not allows_update(problems):
+            for problem in problems:
+                print(problem, file=sys.stderr)
+            print("refusing to overwrite the baseline: fix the gate findings first", file=sys.stderr)
+            return 1
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     _write_json(
         MANIFEST_FILE,
