@@ -2,6 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Tone } from "@/lib/dashboard-fixtures";
 
+export { useHold, HoldButton, ConfirmButton } from "./ui-hold";
+export type { ButtonVariant, ButtonSize } from "./ui-hold";
+export { Toggle } from "./ui-toggle";
+import type { ButtonVariant, ButtonSize } from "./ui-hold";
+
 function cx(...parts: Array<string | false | null | undefined>) {
 	return parts.filter(Boolean).join(" ");
 }
@@ -129,16 +134,194 @@ export function ButtonLink({
 }: {
 	href: string;
 	children: ReactNode;
-	variant?: "default" | "primary" | "ghost" | "danger";
-	size?: "sm";
+	variant?: ButtonVariant;
+	size?: ButtonSize;
 	block?: boolean;
 }) {
 	return (
 		<Link
-			className={cx("btn", variant !== "default" && variant, size, block && "block")}
+			className={cx(
+				"btn",
+				variant !== "default" && variant,
+				size !== "md" && size,
+				block && "block",
+			)}
 			href={href}
 		>
 			{children}
 		</Link>
+	);
+}
+
+export function Button({
+	children,
+	variant = "default",
+	size = "md",
+	block = false,
+	onClick,
+	disabled,
+	title,
+	type = "button",
+}: {
+	children: ReactNode;
+	variant?: ButtonVariant;
+	size?: ButtonSize;
+	block?: boolean;
+	onClick?: () => void;
+	disabled?: boolean;
+	title?: string;
+	type?: "button" | "submit";
+}) {
+	return (
+		<button
+			type={type}
+			className={cx(
+				"btn",
+				variant !== "default" && variant,
+				size !== "md" && size,
+				block && "block",
+			)}
+			onClick={onClick}
+			disabled={disabled}
+			title={title}
+		>
+			{children}
+		</button>
+	);
+}
+
+export function ModePill({
+	mode,
+	children,
+}: {
+	mode: "paper" | "live" | "unknown" | "pending";
+	children?: ReactNode;
+}) {
+	return (
+		<span className={cx("mode", mode)}>
+			<span className="dot" aria-hidden="true" />
+			{children ?? (mode === "paper" ? "PAPER" : mode === "live" ? "LIVE" : mode === "unknown" ? "UNKNOWN" : "PENDING")}
+		</span>
+	);
+}
+
+export function KillSwitch({
+	armed,
+	unknown = false,
+	pending = false,
+	children,
+	onClick,
+}: {
+	armed?: boolean;
+	unknown?: boolean;
+	pending?: boolean;
+	children: ReactNode;
+	onClick?: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			className={cx("kill", armed && "armed", unknown && "unknown", pending && "pending")}
+			onClick={onClick}
+		>
+			{children}
+		</button>
+	);
+}
+
+export function Delta({
+	tone,
+	children,
+	pill = false,
+}: {
+	tone: "up" | "down" | "flat";
+	children: ReactNode;
+	pill?: boolean;
+}) {
+	return <span className={cx("delta", tone, pill && "pill")}>{children}</span>;
+}
+
+export function Segmented<T extends string>({
+	options,
+	value,
+	onChange,
+	side = false,
+	block = false,
+}: {
+	options: ReadonlyArray<{ value: T; label: ReactNode }>;
+	value: T;
+	onChange: (value: T) => void;
+	side?: boolean;
+	block?: boolean;
+}) {
+	return (
+		<div className={cx("seg", side && "side", block && "block")} role="group">
+			{options.map((option) => (
+				<button
+					type="button"
+					key={option.value}
+					className={cx(
+						value === option.value && (side ? (option.value === "buy" ? "on-buy" : "on-sell") : "on"),
+					)}
+					aria-pressed={value === option.value}
+					onClick={() => onChange(option.value)}
+				>
+					{option.label}
+				</button>
+			))}
+		</div>
+	);
+}
+
+export function Chips({
+	options,
+	value,
+	onChange,
+}: {
+	options: ReadonlyArray<string>;
+	value?: string;
+	onChange?: (value: string) => void;
+}) {
+	return (
+		<div className="chips" role="group">
+			{options.map((option) => (
+				<button
+					type="button"
+					key={option}
+					className={cx(value === option && "on")}
+					aria-pressed={value === option}
+					onClick={() => onChange?.(option)}
+				>
+					{option}
+				</button>
+			))}
+		</div>
+	);
+}
+
+export function Toast({
+	tone = "ok",
+	icon,
+	title,
+	children,
+	time,
+	action,
+}: {
+	tone?: "ok" | "win" | "ask" | "err";
+	icon?: ReactNode;
+	title: ReactNode;
+	children: ReactNode;
+	time?: string;
+	action?: ReactNode;
+}) {
+	return (
+		<div className={cx("toast", tone)} role="status">
+			<span className="ic" aria-hidden="true">{icon}</span>
+			<div>
+				<b>{title}</b>
+				<span>{children}</span>
+			</div>
+			{action ?? (time && <span className="t">{time}</span>)}
+		</div>
 	);
 }

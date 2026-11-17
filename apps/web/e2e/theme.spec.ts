@@ -6,7 +6,8 @@ test("default dark on load, toggle to light persists on reload", async ({ page }
 	await page.goto("/");
 	await expect(page.getByText("Fixture preview")).toBeVisible();
 	await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(18, 20, 23)");
+	// Brand canvas: bg-0 #08090b in the graphite theme.
+	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(8, 9, 11)");
 
 	const toggle = page.locator("header.topbar").getByTestId("theme-toggle");
 	await expect(toggle).toBeVisible();
@@ -15,7 +16,8 @@ test("default dark on load, toggle to light persists on reload", async ({ page }
 
 	await toggle.click();
 	await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(242, 242, 239)");
+	// Brand canvas: bg-0 #f3f4f6 in the paper theme.
+	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(243, 244, 246)");
 	await expect(toggle).toHaveAttribute("aria-label", "Switch to dark theme");
 	await expect
 		.poll(() => page.evaluate(() => window.localStorage.getItem("ezchain.theme")))
@@ -23,7 +25,8 @@ test("default dark on load, toggle to light persists on reload", async ({ page }
 
 	await page.reload();
 	await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(242, 242, 239)");
+	// Brand canvas: bg-0 #f3f4f6 in the paper theme.
+	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(243, 244, 246)");
 	await page.screenshot({ path: ".shots/theme-light-1440.png" });
 
 	await page.getByTestId("theme-toggle").click();

@@ -14,6 +14,7 @@ import {
 	TokenAvatar,
 } from "@/components/ui";
 import { referenceSurfacesEnabled } from "@/lib/runtime";
+import { BrandControls } from "@/components/brand/brand-controls";
 
 export default function ComponentsPage() {
 	// Design documentation: reachable in the development (fixture) build only.
@@ -40,6 +41,8 @@ export default function ComponentsPage() {
 
 			<div className="split">
 				<div className="stack">
+					<BrandControls />
+
 					<Panel title="Badges" sub="tone vocabulary">
 						<div className="row">
 							<Badge>default</Badge>
