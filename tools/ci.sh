@@ -155,8 +155,25 @@ if [ -f pnpm-workspace.yaml ]; then
     ran=1
   fi
 fi
+# The Rust half of the platform (ADR-0050) is gated wherever a toolchain exists.
+# Its absence is reported as a skip, not a red gate, so a contributor without Rust
+# can still run the local gate; when cargo is present all three checks are mandatory.
+if [ -f rust/Cargo.toml ]; then
+  if command -v cargo >/dev/null 2>&1; then
+    step "rust gate"
+    (
+      cd rust
+      cargo fmt --all -- --check
+      cargo clippy --workspace --all-targets -- -D warnings
+      cargo test --workspace
+    )
+    ran=1
+  else
+    echo "rust gates skipped: cargo not present (install rustup to run them)"
+  fi
+fi
 if [ "$ran" -eq 0 ]; then
-  echo "not present yet: ruff, mypy, pytest, eslint, tsc, playwright"
+  echo "not present yet: ruff, mypy, pytest, eslint, tsc, playwright, cargo"
 fi
 
 printf '\n\033[32mci: ok\033[0m\n'

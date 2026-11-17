@@ -60,3 +60,6 @@ scratch/
 # Desktop build artifacts (generated, never committed)
 apps/desktop/build/
 apps/desktop/dist/
+
+# Rust build artifacts (generated, never committed)
+rust/target/
