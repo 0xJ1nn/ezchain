@@ -136,7 +136,26 @@ test("exits arm through the protection API in fixture mode, with the gaps named"
 	await expect(page.getByTestId("exits-panel")).toBeVisible();
 	await expect(page.getByTestId("exits-panel")).toContainText("not available");
 
-	await page.getByTestId("exits-save").click();
+	const arm = page.getByTestId("exits-save");
+	await expect(arm).toHaveAttribute("data-hold-ms", "650");
+	await arm.scrollIntoViewIfNeeded();
+	const box = await arm.boundingBox();
+	if (!box) throw new Error("no exits arm box");
+	const cx = box.x + box.width / 2;
+	const cy = box.y + box.height / 2;
+
+	// A release before the threshold arms nothing.
+	await page.mouse.move(cx, cy);
+	await page.mouse.down();
+	await page.waitForTimeout(250);
+	await page.mouse.up();
+	await page.waitForTimeout(100);
+	await expect(page.getByTestId("exits-status")).toHaveCount(0);
+
+	// A full hold arms the three exits the API can express.
+	await page.mouse.down();
+	await page.waitForTimeout(780);
+	await page.mouse.up();
 	await expect(page.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
 
 	const arms = await page.evaluate(() =>

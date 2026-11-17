@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createProtectionArm, type PaperApiMode } from "@/lib/protection-api";
 import { fmt, pct, readPrice, usd } from "./format";
 import type { ExitLines } from "./types";
@@ -9,6 +9,8 @@ import styles from "./trade.module.css";
 // Port of the brand exits panel and its trading styles.
 // Every number shown here is derived from the user's own exit inputs and the
 // server-supplied book value; nothing is read from a client-side position scalar.
+
+const HOLD_MS = 650;
 
 const TRACE = [10, 12, 11, 18, 26, 24, 33, 41, 38, 47, 55, 52, 60, 57, 50, 44];
 const VW = 320;
@@ -87,7 +89,37 @@ export function Exits({
 	const [distance, setDistance] = useState("15");
 	const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [holding, setHolding] = useState(false);
+	const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const trail = trailPaths();
+
+	// Arming protection is one of the board's held actions. A release before the
+	// full 650 ms drains the hold and sends nothing.
+	useEffect(
+		() => () => {
+			if (holdTimer.current) clearTimeout(holdTimer.current);
+		},
+		[],
+	);
+
+	function stopHold() {
+		if (holdTimer.current) clearTimeout(holdTimer.current);
+		holdTimer.current = null;
+		setHolding(false);
+	}
+
+	function onArmDown(event: ReactPointerEvent<HTMLButtonElement>) {
+		if (busy || entry === null || stop === null || event.button !== 0) return;
+		event.preventDefault();
+		event.currentTarget.setPointerCapture(event.pointerId);
+		setHolding(true);
+		setNotice(null);
+		holdTimer.current = setTimeout(() => {
+			holdTimer.current = null;
+			setHolding(false);
+			void arm();
+		}, HOLD_MS);
+	}
 
 	const entry = lines.entry;
 	const stop = lines.sl;
@@ -347,12 +379,18 @@ export function Exits({
 				<span>Exits arm on the server through the protection API — paper only.</span>
 				<button
 					type="button"
-					className={`${styles.btn} ${styles.sm} ${styles.primary}`}
+					className={`${styles.btn} ${styles.sm} ${styles.primary} ${holding ? styles.holding : ""}`}
 					data-testid="exits-save"
+					data-hold-ms={HOLD_MS}
+					style={{ ["--hold" as string]: `${HOLD_MS}ms` }}
 					disabled={busy || entry === null || stop === null}
-					onClick={arm}
+					onPointerDown={onArmDown}
+					onPointerUp={stopHold}
+					onPointerCancel={stopHold}
+					onPointerLeave={stopHold}
 				>
-					{busy ? "Arming…" : "Save exits"}
+					<i className={styles.fill} aria-hidden="true" />
+					{busy ? "Arming…" : holding ? "Keep holding…" : "Hold to arm"}
 				</button>
 			</div>
 			{notice && (
