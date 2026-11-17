@@ -53,7 +53,7 @@ class PermissionError(ApprovalError):
 
 def normalize_mode(value: object) -> Mode:
     """Read old or unknown values as the safe default; new writes use a canonical token."""
-    return value if value in MODES else DEFAULT_MODE  # type: ignore[return-value]
+    return value if value in MODES else DEFAULT_MODE
 
 
 def decide(

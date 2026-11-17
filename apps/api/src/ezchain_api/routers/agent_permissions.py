@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..actor import ACTOR_HUMAN, from_principal
+from ..actor import ACTOR_HUMAN, PrincipalLike, from_principal
 from ..config import Settings, get_settings
 from ..deps import get_session
 from ..services import agent_permissions
@@ -28,7 +28,7 @@ def _refusal(exc: agent_permissions.PermissionError) -> HTTPException:
     )
 
 
-def _caller(request: Request) -> tuple[str, object]:
+def _caller(request: Request) -> tuple[str, PrincipalLike | None]:
     principal = getattr(request.state, "principal", None)
     return (getattr(principal, "subject", "") or ""), principal
 
