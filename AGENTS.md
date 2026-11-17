@@ -32,6 +32,25 @@ conflict, stop and ask.
 
 ---
 
+## Language policy (ADR-0050 — normative)
+
+Pick the language by layer. Do not choose by personal preference.
+
+| Layer | Language |
+|---|---|
+| Core engine, P2P networking, consensus/validation, RPC server, transaction execution, shipped CLI | **Rust** |
+| Indexer/analytics, AI/ML components, strategy plugins | **Python** |
+| Dashboard and all product UI | **TypeScript** (UI work belongs to Claude) |
+
+New code in a Rust-owned layer written in Python is a review failure. The migration lives on
+`rust/migration`; each field has its own branch and worktree. A port is done only when every
+recorded case from the original matches and the Rust gate is green — never on "it compiles".
+`docs/CONTRACT.md` invariants, the ledger authority and the owner-blocked live mode are
+unchanged by the language decision. Money arithmetic stays in Python until decimal parity is
+proven (see ADR-0049/0050). P2P and consensus need their own design ADR before code.
+
+---
+
 ## First thing every session — RECONNAISSANCE
 
 Before changing anything for a non-trivial task, **stop and inspect**:
