@@ -1770,10 +1770,12 @@ listed below. ADR-0049's parity and benchmark gate is retained and made mandator
 multi-chain trading platform with an AI harness, built to be trusted for performance,
 footprint, stability and safety. Rust is the language for the components where those
 properties matter most. The Python-only state of the repository is a starting point, not the
-target design. A measured proof on 2026-11-18 showed that a small scope normaliser ported to
-Rust through pyo3 matched all 53 recorded cases but ran at 0.61x (slower), because the FFI
-crossing cost more than the function's work. The lesson is kept: port loops and whole
-boundaries, not individual small functions, and prove parity before replacing anything.
+target design. A scratch parity proof, recorded in a private workspace note rather than a
+committed benchmark artifact, showed that a small scope normaliser ported to Rust through
+pyo3 matched all 53 recorded cases but ran at roughly 0.6x (slower), because the FFI crossing
+cost more than the function's work. It is a lesson about granularity, not a claim of a speed
+win: port loops and whole boundaries, not individual small functions, and prove parity before
+replacing anything.
 
 **Decision — the language map is normative:**
 
