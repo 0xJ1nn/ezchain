@@ -14,10 +14,15 @@ architecture changes. Only the domain examples differ.
 
 ## Current project state
 
-- **Language policy (ADR-0050, accepted 2026-11-18):** Rust owns the core engine, P2P,
-  consensus/validation, RPC server, transaction execution and the shipped CLI; Python owns
-  the indexer/analytics, AI/ML components and strategy plugins; TypeScript owns the dashboard
-  and all product UI (Claude's lane). Choose by layer, never by preference.
+- **Language policy (ADR-0050, refined by ADR-0052, accepted 2026-11-18):** Rust owns the core
+  engine, P2P/WebSockets, consensus/validation, node RPC transport, transaction execution,
+  cryptography, storage, performance-critical and security-critical logic, and the shipped CLI;
+  Python owns business logic/orchestration, AI/ML, analytics, strategy development, automation,
+  monitoring, the application-level API and integrations, and developer tooling; TypeScript
+  owns the dashboard and all product UI (Claude's lane). Choose by layer, never by preference;
+  integrate with PyO3 in-process or gRPC/IPC across services, with typed versioned interfaces
+  and independent tests, benchmarks and deployment. Preserve working code and migrate
+  bottlenecks incrementally behind recorded parity.
 - Migration integration branch: `rust/migration`. One field per worker, one worktree per
   field; a port lands only after `record → diff → gate → bench` parity against the original.
   See ADR-0049 and ADR-0050 before touching a money path.
