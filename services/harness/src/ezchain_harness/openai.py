@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any
 
 from ezchain_agent_runtime import Message, ModelRequest, ModelTurn, ModelUsage, ToolCall
 
@@ -70,8 +70,8 @@ def to_chat_messages(messages: tuple[Message, ...]) -> list[dict[str, Any]]:
 
 
 class OpenAICompatibleClient(ProviderClient):
-    provider: ClassVar[str] = "openai"
-    credential_env: ClassVar[str] = "OPENAI_API_KEY"
+    provider: str = "openai"
+    credential_env: str | None = "OPENAI_API_KEY"
 
     def __init__(self, *, base_url: str = DEFAULT_BASE_URL, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -81,10 +81,10 @@ class OpenAICompatibleClient(ProviderClient):
         return f"{self._base_url}/chat/completions"
 
     def _headers(self, secret: str) -> dict[str, str]:
-        return {
-            "content-type": "application/json",
-            "authorization": f"Bearer {secret}",
-        }
+        headers = {"content-type": "application/json"}
+        if secret:
+            headers["authorization"] = f"Bearer {secret}"
+        return headers
 
     def _payload(self, request: ModelRequest) -> dict[str, Any]:
         messages = to_chat_messages(request.messages)

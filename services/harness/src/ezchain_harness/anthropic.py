@@ -23,7 +23,7 @@ loop refuses it rather than the client inventing an answer.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any
 
 from ezchain_agent_runtime import Message, ModelRequest, ModelTurn, ModelUsage, ToolCall
 
@@ -92,8 +92,8 @@ def _is_tool_results(message: Mapping[str, Any]) -> bool:
 
 
 class AnthropicClient(ProviderClient):
-    provider: ClassVar[str] = "anthropic"
-    credential_env: ClassVar[str] = "ANTHROPIC_API_KEY"
+    provider: str = "anthropic"
+    credential_env: str | None = "ANTHROPIC_API_KEY"
 
     def __init__(self, *, base_url: str = DEFAULT_BASE_URL, **kwargs: Any) -> None:
         super().__init__(**kwargs)
