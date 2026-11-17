@@ -1818,5 +1818,108 @@ the Python suite remains the behavioural oracle until each field's parity gate p
 must read this ADR and the language map in `AGENTS.md` before choosing a language for new code.
 A new component in a Rust-owned layer written in Python is a review failure, not a preference.
 
+---
 
+## ADR-0051 — P2P and consensus boundary: a permissioned replicated log with pure validation kernels
+
+**Date:** 2026-11-18 · **Status:** Proposed (pending maintainer acceptance of the validator model,
+the concrete set-size and quorum parameters, the message contract and the fork-choice rule)
+
+**Context:** ezCHAIN has no peer-to-peer networking, consensus, validators or chain state today.
+The platform consumes public RPC and market data through adapters; it does not gossip messages,
+validate blocks, elect a leader or maintain a replicated state. ADR-0050 assigns P2P networking and
+consensus/validation to Rust from the start, but clause 5 of that decision requires each of them to
+have its own design ADR — validator set, fork choice and message contract — before code is written.
+This ADR supplies that design.
+
+The need is narrower than a blockchain. A small set of operator-controlled nodes must be able to
+exchange validated messages and agree on one ordered tape of deterministic state transitions, so a
+decision that gates money can be replayed from persisted inputs (CONTRACT I9) and every node can
+hold the same state. This is reproducibility and audit infrastructure, not a new asset. The ledger
+remains the only accountant (I1), live execution stays owner-blocked (ADR-0026, ADR-0035, ADR-0050
+clause 3), and keys remain inside the executor boundary (I4).
+
+**Options:** (a) stand up a public, permissionless chain with a token, staking and slashing —
+rejected, because no such product decision exists and it would introduce money paths the owner has
+not authorised; (b) adopt a full gossip and BFT stack now — deferred, because the ecosystem survey
+names those projects as precedents rather than dependencies to import, no validator set or fork
+choice has been accepted, and the first slice needs pure kernels rather than a transport; (c) define
+a permissioned replicated log with a static, operator-provisioned validator set, specify gossip and
+agreement as design only, and implement the pure validation and replay kernels first.
+
+**Decision:** (c), with the following contract.
+
+**Validator and deployment model.** The validator set is an ordered, operator-provisioned list of
+opaque node identifiers. Two deployment shapes are in scope: a single operator running all nodes,
+and a consortium of a small, fixed number of known operators. There is no public membership, no
+token, no staking, no bond, no slashing and no dynamic join or leave. A membership change is an
+explicit operator action that publishes a new set version; automating it requires a further ADR.
+The set version travels on every message and every tape event, and a node accepts only material
+naming a set version it holds. Set size and quorum thresholds are parameters passed into the
+kernels, never literals inside them (I7); no concrete number is decided here. The recommendation
+for the first deployment is one operator and one node, with three nodes as the fault-tolerant
+consortium shape, but the maintainer must accept those numbers. Authentication of a node
+identifier is a separate ADR: this slice carries no keys and produces no signatures.
+
+**Message contract.** An envelope is a deterministically encoded record with six fields plus a
+digest: `schema` (version string, `ezchain.p2p/1` in this slice), `kind` (a declared set whose only
+member today is `tape_event`), `sender` (opaque node id), `set_version`, `seq` (a per-sender
+monotonic integer starting at one), `payload` (opaque bounded bytes) and `timestamp` (a declared
+clock value, never trusted for ordering). The digest is taken over a canonical, length-prefixed
+encoding of those fields in a fixed order, so different field boundaries cannot produce the same
+bytes. Validation is a pure function of the envelope and an explicit limits value; it returns the
+envelope's deterministic id on success and one typed rejection reason on failure. The reasons are
+`UnsupportedSchema`, `UnknownKind`, `SenderEmpty`, `SetVersionEmpty`, `SequenceZero`,
+`PayloadEmpty`, `PayloadTooLarge`, `EnvelopeTooLarge` and `DigestMismatch`, checked in that order so
+the reported reason is reproducible. The digest is a dependency-free, non-cryptographic content id
+(FNV-1a over the canonical bytes). Its job is deterministic identity and in-process tamper
+evidence within a trusted operator group; it is not a signature and not a security boundary.
+Reordering and dropping are detected by the consensus kernel through sequence and replay, not by a
+content id.
+
+**State contract and replay.** The replicated state is the deterministic projection of an ordered
+tape of accepted events. Each event carries an opaque content id supplied by a validated envelope,
+a per-sender sequence, its sender, its set version and a non-monetary command over a string
+register (`Set` or `Delete` of a key and value). State consists of the applied ids in tape order,
+the register map and the last sequence per sender, using ordered maps so two nodes serialise and
+compare their state identically. Applying one event is the only writer of state: it refuses a
+duplicate id, a sequence that does not advance for that sender, an event from another set version,
+an empty sender or an empty command key, and leaves state unchanged on every refusal (fail closed,
+I3). Replay folds a whole tape from the empty state with that same transition, so an identical tape
+always yields an identical state and state digest; a changed, dropped or reordered tape yields a
+different state or a typed refusal. The register carries no monetary meaning and no arithmetic.
+
+**Lifecycle.** Admission has one declared state set with one writer, the validation and replay
+kernels: `Received` is resolved by validating the envelope, `Validated` by handing it to the
+transition in sequence order, `Applied` is terminal for the message, `Rejected` is terminal with a
+typed reason and no state change, and `Quarantined` is terminal for a tape version until an
+operator resolves a divergence and publishes a new set version. Readers project the resulting
+state; no parallel boolean flag records the same fact.
+
+**Fork and failure handling (designed, not implemented).** A fork is two nodes holding different
+accepted tapes at the same position. Detection compares tape length and last applied id. The
+deterministic resolution rule, to be implemented later, selects the candidate with the lowest
+lexicographic head digest, breaking ties by lowest set version and then lowest node id. A node that
+cannot resolve a divergence enters `Quarantined`, stops advancing state, refuses further events and
+never writes to the platform ledger; an operator records the resolution in a new set version. An
+invalid envelope is refused with its typed reason and applies nothing; it is never read as an empty
+command. Propagation, peer discovery, transport, leader election, quorum certificates, view changes
+and any claim about liveness or availability are out of scope; this ADR designs those boundaries but
+makes no promise about them and implements no BFT algorithm or gossip protocol.
+
+**Live money and keys remain owner-blocked.** These kernels carry no private keys, no signatures, no
+wallet addresses, no money arithmetic, no ledger writes and no execution path. A P2P or consensus
+node cannot arm live mode, reach the executor, move funds or alter the ledger. The replicated
+register is not a chain state of record for accounting; the Python ledger keeps that role. Any
+future decision that lets consensus state gate real money requires a separate accepted ADR.
+
+**Consequences:** the design gives the maintainer a concrete permissioned model to accept or
+change before any network code is written, and the two Rust crates in this change implement only
+the pure kernels that the design requires — envelope validation and deterministic tape replay.
+Because this is new capability with no Python original, the written contract in this ADR is the
+oracle for their tests, and the parity requirement of ADR-0050 is satisfied by recording the
+contract's cases as unit tests instead of diffing against a removed implementation. Status is
+Proposed: the validator model, set-size and quorum parameters, digest choice and fork-choice rule
+are recommendations awaiting maintainer acceptance, and no gossip, BFT, transport or persistence
+work is claimed as delivered.
 
