@@ -1818,5 +1818,62 @@ the Python suite remains the behavioural oracle until each field's parity gate p
 must read this ADR and the language map in `AGENTS.md` before choosing a language for new code.
 A new component in a Rust-owned layer written in Python is a review failure, not a preference.
 
+---
+
+## ADR-0052 — Hybrid architecture: what each language owns
+
+**Date:** 2026-11-18 · **Status:** Accepted (maintainer instruction). Refines ADR-0050; where
+this ADR is more specific, it wins.
+
+**Decision — Rust owns the execution and trust boundary:**
+
+- High-performance execution and processing.
+- Networking, P2P and WebSockets.
+- Transaction processing and validation.
+- Concurrency and parallel execution.
+- Memory management and storage.
+- Cryptographic operations.
+- Performance-critical algorithms.
+- Security-critical components.
+
+**Decision — Python owns the application and intelligence layer:**
+
+- Business logic and orchestration.
+- AI/ML models and inference.
+- Analytics and data processing.
+- Strategy development and experimentation.
+- Automation and scripting.
+- Monitoring and reporting.
+- APIs and integrations.
+- Prototyping and developer tools.
+
+**Interpretation of the one overlap:** ADR-0050 assigns the RPC server to Rust and this ADR
+assigns APIs and integrations to Python. They describe two different surfaces. Rust owns the
+node-facing RPC and WebSocket transport — the wire protocol clients speak to the node. Python
+owns the application-level HTTP API, the product-facing WebSocket gateway in `apps/api`, and
+third-party integrations that compose those calls for the product. Only the **node-facing**
+P2P/WebSocket transport is Rust; the product-facing gateway stays with the Python API that
+serves the same clients. If the maintainer intends the public HTTP API itself to be Rust, this
+paragraph is the single place to change.
+
+**Integration contract:**
+
+1. Use PyO3 where Python calls into a Rust kernel in-process; use gRPC or IPC for separately
+   deployed services. Keep the boundary typed and versioned so either side can be replaced.
+2. Keep performance-critical and security-sensitive logic in Rust. Keep rapidly evolving
+   intelligence, automation and application logic in Python.
+3. Avoid unnecessary rewrites. Preserve working code and migrate bottlenecks incrementally,
+   with recorded behavioural parity as the gate. A working Python implementation is not
+   replaced by an unproven Rust one.
+4. Design clear interfaces between both languages, with independent testing, benchmarking and
+   deployment. A Rust crate has its own gate; a Python package has its own suite; neither is
+   validated only by the other's tests.
+
+**Consequences:** agents must classify a new component before writing it: if it is
+performance-critical, security-critical, a network transport, or part of the trust/money
+boundary, it is Rust; if it is business logic, model inference, analytics, automation or an
+integration, it is Python. UI stays TypeScript and belongs to Claude. Money arithmetic stays
+in Python until decimal parity is proven (ADR-0050 rule 4), and live mode stays owner-blocked.
+
 
 

@@ -32,7 +32,7 @@ conflict, stop and ask.
 
 ---
 
-## Language policy (ADR-0050 — normative)
+## Language policy (ADR-0050, refined by ADR-0052 — normative)
 
 Pick the language by layer. Do not choose by personal preference.
 
@@ -41,6 +41,17 @@ Pick the language by layer. Do not choose by personal preference.
 | Core engine, P2P networking, consensus/validation, RPC server, transaction execution, shipped CLI | **Rust** |
 | Indexer/analytics, AI/ML components, strategy plugins | **Python** |
 | Dashboard and all product UI | **TypeScript** (UI work belongs to Claude) |
+
+**Classification rule (ADR-0052):** Rust owns performance-critical and security-critical
+logic — execution, node-facing networking/P2P/WebSockets, transaction processing and
+validation, concurrency, storage, cryptography and performance algorithms. Python owns
+business logic, AI/ML, analytics, strategy development, automation, monitoring, the
+application-level API, the product-facing WebSocket gateway in `apps/api`, third-party
+integrations, and developer tooling. The node-facing RPC/WebSocket transport is Rust; the
+product's HTTP API, WebSocket gateway and third-party integrations are Python. Integrate with PyO3 in-process or
+gRPC/IPC across services, with typed, versioned interfaces and independent tests, benchmarks
+and deployment. Preserve working code; migrate bottlenecks incrementally behind recorded
+parity — never replace a working implementation with an unproven one.
 
 New code in a Rust-owned layer written in Python is a review failure. The migration lives on
 `rust/migration`; each field has its own branch and worktree. A port is done only when every
