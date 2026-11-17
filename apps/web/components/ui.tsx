@@ -5,6 +5,9 @@ import type { Tone } from "@/lib/dashboard-fixtures";
 export { useHold, HoldButton, ConfirmButton } from "./ui-hold";
 export type { ButtonVariant, ButtonSize } from "./ui-hold";
 export { Toggle } from "./ui-toggle";
+export { Coin, CoinIdentity, chainInfo, TOKEN_LOGOS } from "./coin";
+export type { CoinSize } from "./coin";
+export { AssetLabel, AssetWhere } from "./asset-label";
 import type { ButtonVariant, ButtonSize } from "./ui-hold";
 
 function cx(...parts: Array<string | false | null | undefined>) {
