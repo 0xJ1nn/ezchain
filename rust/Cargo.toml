@@ -1,5 +1,7 @@
 [workspace]
-members = ["ezchain-core", "ezchain-rpc"]
+# Every crate in this directory is a workspace member. Field workers add a crate by
+# creating its directory; they never edit this file, so their branches cannot conflict here.
+members = ["ezchain-*"]
 resolver = "2"
 
 [workspace.package]
