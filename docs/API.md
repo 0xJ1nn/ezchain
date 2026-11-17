@@ -131,6 +131,7 @@ staleness is [OBSERVABILITY.md](OBSERVABILITY.md).
 | GET | `/api/v1/markets/overview` | read | Per-chain observation status, age and errors |
 | GET | `/api/v1/markets/stored` | read | Latest persisted observations |
 | GET | `/api/v1/tokens/{chain}/{address}` | read | Token header, pairs, safety and quote preview |
+| GET | `/api/v1/tokens/{chain}/{address}/metadata` | read | Market, liquidity, holders, activity and safety evidence with source and age |
 | GET | `/api/v1/tokens/{chain}/{address}/candles` | read | Closed OHLCV bars, oldest first |
 | GET | `/api/v1/quotes` | read | Quote or `paper_mark` envelope for a side and size |
 
@@ -186,6 +187,33 @@ CHAIN_NOT_FOUND`.
 
 The token page and the per-position detail page both render this series. The chart names
 its source, age, stale state and reason; it never draws a fabricated line.
+
+### Token metadata
+
+`GET /api/v1/tokens/{chain}/{address}/metadata` returns one token's market and safety
+evidence. Every field is an observation with `value`, `known`, `unit`, `source`,
+`observed_at` and, when nothing was measured, a `reason`. An unknown value is `null`; it
+is never zero and an absent safety check never reads as a pass. An unknown chain is `404
+CHAIN_NOT_FOUND`.
+
+The response carries market cap, FDV, liquidity, liquidity change, LP state (burned,
+locked with a duration, or unlocked), holders with their one-hour change, top-ten and dev
+holdings, and pair age. Each of `5m`, `1h`, `6h` and `24h` carries price change, buys,
+sells, buy and sell volume, buying and selling makers and the buy/sell ratio. A window
+longer than the pair's age is `applicable: false` and every value in it is null with
+`WINDOW_OUTSIDE_PAIR_LIFE`. Seven checks are returned: mint revoked, freeze revoked, LP
+burned or locked, top ten under 30 %, dev under 5 %, sells work, and buy and sell tax
+(with a combined tax over 10 % failing the check).
+
+DexScreener is the free source for market cap, FDV, liquidity, pair age and per-window
+activity. It does not publish split buy/sell volume, liquidity change, holder
+concentration, LP lock state or taxes, so those fields keep their reason codes rather
+than being derived from a price. The keyed source is only constructed for a provider the
+workspace has stored a key for; in this build the key store accepts only Jupiter, so the
+enrichable fields remain null with `KEYED_SOURCE_NOT_CONFIGURED`. A provider outage
+returns `200` with a warning (`SOURCE_UNAVAILABLE` or `ENRICHER_UNAVAILABLE`), the fields
+that are still known and a reason on every field that is not. The answer is cached per
+token for a short TTL, but ages are computed on each read.
 
 ### Paper account and orders
 

@@ -1,0 +1,41 @@
+{
+  "pairs": [
+    {
+      "chainId": "ethereum",
+      "dexId": "uniswap",
+      "pairAddress": "0xMAJORPAIR00000000000000000000000000000000",
+      "baseToken": {
+        "address": "0xmajor000000000000000000000000000000000000",
+        "symbol": "MAJOR",
+        "name": "Major token"
+      },
+      "quoteToken": {
+        "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "symbol": "USDC",
+        "name": "USD Coin"
+      },
+      "priceUsd": "2841.32",
+      "priceNative": "2841.32",
+      "marketCap": "342000000000",
+      "fdv": "342000000000",
+      "liquidity": {"usd": "125000000.00"},
+      "volume": {"m5": "900000", "h1": "12000000", "h6": "71000000", "h24": "280000000"},
+      "priceChange": {"m5": "-0.12", "h1": "0.84", "h6": "2.31", "h24": "-1.05"},
+      "txns": {
+        "m5": {"buys": 120, "sells": 98},
+        "h1": {"buys": 2100, "sells": 1870},
+        "h6": {"buys": 11000, "sells": 10400},
+        "h24": {"buys": 43000, "sells": 41800}
+      },
+      "makers": {
+        "m5": {"buys": 110, "sells": 92},
+        "h1": {"buys": 1900, "sells": 1730},
+        "h6": {"buys": 9800, "sells": 9300},
+        "h24": {"buys": 38000, "sells": 37000}
+      },
+      "pairCreatedAt": 1672531200000,
+      "url": "https://dexscreener.com/ethereum/0xMAJORPAIR"
+    }
+  ],
+  "observed_at": "2026-11-17T12:00:00+00:00"
+}

@@ -1,0 +1,41 @@
+{
+  "pairs": [
+    {
+      "chainId": "solana",
+      "dexId": "pumpswap",
+      "pairAddress": "LAUNCHPAIR111111111111111111111111111111",
+      "baseToken": {
+        "address": "LAUNCHMINT11111111111111111111111111111111",
+        "symbol": "LAUNCH",
+        "name": "Launch token"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL",
+        "name": "Wrapped SOL"
+      },
+      "priceUsd": "0.0000421",
+      "priceNative": "0.00000031",
+      "marketCap": "42100",
+      "fdv": "42100",
+      "liquidity": {"usd": "42000.50"},
+      "volume": {"m5": "12000", "h1": "90000", "h6": "310000", "h24": "980000"},
+      "priceChange": {"m5": "5.2", "h1": "18.7", "h6": "44.1", "h24": "120.5"},
+      "txns": {
+        "m5": {"buys": 42, "sells": 14},
+        "h1": {"buys": 310, "sells": 105},
+        "h6": {"buys": 1200, "sells": 780},
+        "h24": {"buys": 4100, "sells": 3200}
+      },
+      "makers": {
+        "m5": {"buys": 30, "sells": 11},
+        "h1": {"buys": 210, "sells": 84},
+        "h6": {"buys": 900, "sells": 640},
+        "h24": {"buys": 3100, "sells": 2600}
+      },
+      "pairCreatedAt": 1794915600000,
+      "url": "https://dexscreener.com/solana/LAUNCHPAIR"
+    }
+  ],
+  "observed_at": "2026-11-17T12:00:00+00:00"
+}

@@ -1,0 +1,41 @@
+{
+  "pairs": [
+    {
+      "chainId": "base",
+      "dexId": "aerodrome",
+      "pairAddress": "0xBRIDGEDPAIR00000000000000000000000000000000",
+      "baseToken": {
+        "address": "0x1111111111111111111111111111111111111111",
+        "symbol": "SRC",
+        "name": "Source token"
+      },
+      "quoteToken": {
+        "address": "0x2222222222222222222222222222222222222222",
+        "symbol": "BRIDGED",
+        "name": "Bridged token"
+      },
+      "priceUsd": "1.02",
+      "priceNative": "1.02",
+      "marketCap": "550000000",
+      "fdv": "600000000",
+      "liquidity": {"usd": "2200000.00"},
+      "volume": {"m5": "4000", "h1": "50000", "h6": "300000", "h24": "1200000"},
+      "priceChange": {"m5": "0.01", "h1": "0.02", "h6": "-0.05", "h24": "0.11"},
+      "txns": {
+        "m5": {"buys": 8, "sells": 6},
+        "h1": {"buys": 90, "sells": 81},
+        "h6": {"buys": 500, "sells": 470},
+        "h24": {"buys": 2000, "sells": 1900}
+      },
+      "makers": {
+        "m5": {"buys": 7, "sells": 5},
+        "h1": {"buys": 80, "sells": 72},
+        "h6": {"buys": 440, "sells": 410},
+        "h24": {"buys": 1800, "sells": 1700}
+      },
+      "pairCreatedAt": 1700000000000,
+      "url": "https://dexscreener.com/base/0xBRIDGEDPAIR"
+    }
+  ],
+  "observed_at": "2026-11-17T12:00:00+00:00"
+}
