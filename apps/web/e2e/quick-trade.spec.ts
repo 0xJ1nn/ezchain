@@ -33,6 +33,18 @@ async function hold(page: Page) {
 	await page.mouse.up();
 }
 
+/** Arming exits is a held action on the trade screen. */
+async function holdExits(page: Page) {
+	const arm = page.getByTestId("exits-save");
+	await arm.scrollIntoViewIfNeeded();
+	const box = await arm.boundingBox();
+	if (!box) throw new Error("no exits arm box");
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(780);
+	await page.mouse.up();
+}
+
 function fillResponse(id: string, side: "buy" | "sell", amount: string) {
 	return {
 		id,
@@ -110,7 +122,7 @@ test("Max sizes from the paper account and submits exactly one order", async ({ 
 	expect(String(posted.body.idempotency_key)).toMatch(/^[0-9a-f-]{16,}$/i);
 });
 
-test("exits are armed by an explicit click, never automatically on a fill", async ({ page }) => {
+test("exits are armed by an explicit hold, never automatically on a fill", async ({ page }) => {
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		await route.fulfill({
 			status: 201,
@@ -126,7 +138,7 @@ test("exits are armed by an explicit click, never automatically on a fill", asyn
 	await expect(page.getByTestId("fill-stamp")).toBeVisible();
 	await expect(exits.getByTestId("exits-status")).toHaveCount(0);
 
-	await exits.getByTestId("exits-save").click();
+	await holdExits(page);
 	await expect(exits.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
 });
 
@@ -148,7 +160,7 @@ test("buy, arm exits, then sell the same token in paper", async ({ page }) => {
 	await expect(page.getByTestId("fill-stamp")).toContainText("PAPER FILLED");
 	await expect(page.locator("#ticket")).toContainText("ord_path_buy");
 
-	await page.getByTestId("exits-save").click();
+	await holdExits(page);
 	await expect(page.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
 
 	await page.getByTestId("ticket-side-sell").click();

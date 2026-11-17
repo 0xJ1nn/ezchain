@@ -6,6 +6,18 @@ import { expect, test } from "./test";
 
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 
+/** Arming exits is a held action on the trade screen. */
+async function holdExits(page: import("@playwright/test").Page) {
+	const arm = page.getByTestId("exits-save");
+	await arm.scrollIntoViewIfNeeded();
+	const box = await arm.boundingBox();
+	if (!box) throw new Error("no exits arm box");
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(780);
+	await page.mouse.up();
+}
+
 test("arm a stop-loss from the positions page, edit it, and list it in automations", async ({
 	page,
 }) => {
@@ -48,7 +60,7 @@ test("exits armed on the trade screen list as paper protection in automations", 
 	page,
 }) => {
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	await page.getByTestId("exits-save").click();
+	await holdExits(page);
 	await expect(page.getByTestId("exits-status")).toContainText("Armed 3 exits on paper");
 
 	await page.goto("/strategies?view=automations");
