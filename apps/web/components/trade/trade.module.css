@@ -100,6 +100,7 @@
 .candles rect { fill: currentColor; }
 .lineview { color: var(--green, var(--f-green)); }
 .linePath { fill: none; stroke: currentColor; stroke-width: 1.8; }
+.lineFill { stroke: none; }
 .ema { fill: none; stroke-width: 1.4; stroke-linejoin: round; }
 .ema.e1 { stroke: var(--blue, var(--f-blue)); }
 .ema.e2 { stroke: var(--amber, var(--f-amber)); opacity: .8; }

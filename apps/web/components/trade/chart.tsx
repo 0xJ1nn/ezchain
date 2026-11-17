@@ -439,6 +439,21 @@ export function TradeChart({
 						</g>
 					) : (
 						<g className={styles.lineview}>
+							{chartType === "area" && (
+								<>
+									<defs>
+										<linearGradient id="ezcg-area" x1="0" x2="0" y1="0" y2="1">
+											<stop offset="0" stopColor="currentColor" stopOpacity=".22" />
+											<stop offset="1" stopColor="currentColor" stopOpacity="0" />
+										</linearGradient>
+									</defs>
+									<path
+										className={styles.lineFill}
+										fill="url(#ezcg-area)"
+										d={`${linePath(rows.map((r) => r.close), x, y)}L${x(n - 1)} ${LEGEND + PH}L${x(0)} ${LEGEND + PH}Z`}
+									/>
+								</>
+							)}
 							<path
 								className={styles.linePath}
 								d={linePath(
