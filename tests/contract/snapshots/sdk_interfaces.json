@@ -1,0 +1,636 @@
+{
+  "Account": {
+    "bases": [],
+    "fields": {
+      "cash_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "complete": {
+        "default": "True",
+        "type": "bool"
+      },
+      "equity_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "marks_unknown": {
+        "default": "False",
+        "type": "bool"
+      },
+      "open_positions": {
+        "default": "0",
+        "type": "int"
+      },
+      "realized_usd": {
+        "default": "Decimal('0')",
+        "type": "Decimal"
+      },
+      "unrealized_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Allocation": {
+    "bases": [],
+    "fields": {
+      "max_daily_loss_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "max_notional_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "max_positions": {
+        "default": "required",
+        "type": "int"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Candle": {
+    "bases": [],
+    "fields": {
+      "close": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "high": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "low": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "open": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "open_time": {
+        "default": "required",
+        "type": "datetime"
+      },
+      "volume": {
+        "default": "None",
+        "type": "Decimal | None"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Context": {
+    "bases": [],
+    "fields": {
+      "account": {
+        "default": "None",
+        "type": "Account | None"
+      },
+      "allocation": {
+        "default": "None",
+        "type": "Allocation | None"
+      },
+      "candles": {
+        "default": "factory",
+        "type": "Mapping[str, tuple[Candle, ...]]"
+      },
+      "logs": {
+        "default": "factory",
+        "type": "list[dict[str, Any]]"
+      },
+      "mode": {
+        "default": "required",
+        "type": "Mode"
+      },
+      "now": {
+        "default": "required",
+        "type": "datetime"
+      },
+      "params": {
+        "default": "required",
+        "type": "Mapping[str, Any]"
+      },
+      "position": {
+        "default": "None",
+        "type": "Position | None"
+      },
+      "positions": {
+        "default": "()",
+        "type": "tuple[Position, ...]"
+      },
+      "signals": {
+        "default": "()",
+        "type": "tuple[Signal, ...]"
+      },
+      "snapshot": {
+        "default": "None",
+        "type": "Snapshot | None"
+      },
+      "state": {
+        "default": "required",
+        "type": "dict[str, Any]"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "candles_for": "(self, timeframe: 'str', n: 'int') -> 'tuple[Candle, ...]'",
+      "log": "(self, level: 'str', message: 'str', **fields: 'Any') -> 'None'",
+      "random": "(self, seed: 'int | str') -> '_random.Random'",
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Fill": {
+    "bases": [],
+    "fields": {
+      "created_at": {
+        "default": "required",
+        "type": "datetime"
+      },
+      "fee_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "notional_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "price_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "quantity": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "side": {
+        "default": "required",
+        "type": "Side"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Intent": {
+    "bases": [],
+    "fields": {
+      "dedupe_key": {
+        "default": "None",
+        "type": "str | None"
+      },
+      "limit_price": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "notional_usd": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "reason": {
+        "default": "required",
+        "type": "str"
+      },
+      "side": {
+        "default": "required",
+        "type": "Side"
+      },
+      "size_pct": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "ttl_s": {
+        "default": "None",
+        "type": "int | None"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "MANIFEST_FILENAME": {
+    "kind": "value",
+    "value": "ezchain.plugin.json"
+  },
+  "ManifestError": {
+    "bases": [
+      "ValueError"
+    ],
+    "kind": "class"
+  },
+  "Mode": {
+    "kind": "value",
+    "value": "typing.Literal['paper', 'live']"
+  },
+  "ParamsError": {
+    "bases": [
+      "ValueError"
+    ],
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, str]'"
+    }
+  },
+  "PluginContext": {
+    "bases": [],
+    "fields": {
+      "account": {
+        "default": "None",
+        "type": "Account | None"
+      },
+      "allocation": {
+        "default": "None",
+        "type": "Allocation | None"
+      },
+      "candles": {
+        "default": "factory",
+        "type": "Mapping[str, tuple[Candle, ...]]"
+      },
+      "logs": {
+        "default": "factory",
+        "type": "list[dict[str, Any]]"
+      },
+      "mode": {
+        "default": "required",
+        "type": "Mode"
+      },
+      "now": {
+        "default": "required",
+        "type": "datetime"
+      },
+      "params": {
+        "default": "required",
+        "type": "Mapping[str, Any]"
+      },
+      "position": {
+        "default": "None",
+        "type": "Position | None"
+      },
+      "positions": {
+        "default": "()",
+        "type": "tuple[Position, ...]"
+      },
+      "signals": {
+        "default": "()",
+        "type": "tuple[Signal, ...]"
+      },
+      "snapshot": {
+        "default": "None",
+        "type": "Snapshot | None"
+      },
+      "state": {
+        "default": "required",
+        "type": "dict[str, Any]"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "candles_for": "(self, timeframe: 'str', n: 'int') -> 'tuple[Candle, ...]'",
+      "log": "(self, level: 'str', message: 'str', **fields: 'Any') -> 'None'",
+      "random": "(self, seed: 'int | str') -> '_random.Random'",
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "PluginContractError": {
+    "bases": [
+      "PluginError"
+    ],
+    "kind": "class"
+  },
+  "PluginError": {
+    "bases": [
+      "RuntimeError"
+    ],
+    "kind": "class"
+  },
+  "PluginLoadError": {
+    "bases": [
+      "PluginError"
+    ],
+    "kind": "class"
+  },
+  "PluginManifest": {
+    "bases": [],
+    "fields": {
+      "author": {
+        "default": "None",
+        "type": "str | None"
+      },
+      "capabilities_required": {
+        "default": "()",
+        "type": "tuple[str, ...]"
+      },
+      "chains": {
+        "default": "()",
+        "type": "tuple[str, ...]"
+      },
+      "context_bars": {
+        "default": "200",
+        "type": "int"
+      },
+      "data_scopes": {
+        "default": "()",
+        "type": "tuple[str, ...]"
+      },
+      "description": {
+        "default": "''",
+        "type": "str"
+      },
+      "entrypoint": {
+        "default": "required",
+        "type": "str"
+      },
+      "homepage": {
+        "default": "None",
+        "type": "str | None"
+      },
+      "id": {
+        "default": "required",
+        "type": "str"
+      },
+      "license": {
+        "default": "None",
+        "type": "str | None"
+      },
+      "modes": {
+        "default": "('paper',)",
+        "type": "tuple[str, ...]"
+      },
+      "name": {
+        "default": "required",
+        "type": "str"
+      },
+      "params_schema": {
+        "default": "factory",
+        "type": "dict[str, Any]"
+      },
+      "permissions": {
+        "default": "factory",
+        "type": "frozenset[str]"
+      },
+      "primary_timeframe": {
+        "default": "None",
+        "type": "str | None"
+      },
+      "sdk": {
+        "default": "required",
+        "type": "str"
+      },
+      "timeframes": {
+        "default": "()",
+        "type": "tuple[str, ...]"
+      },
+      "ui": {
+        "default": "factory",
+        "type": "dict[str, Any]"
+      },
+      "venues": {
+        "default": "()",
+        "type": "tuple[str, ...]"
+      },
+      "version": {
+        "default": "required",
+        "type": "str"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Position": {
+    "bases": [],
+    "fields": {
+      "avg_cost_usd": {
+        "default": "required",
+        "type": "Decimal | None"
+      },
+      "chain": {
+        "default": "required",
+        "type": "str"
+      },
+      "mark_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "market_value_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "quantity": {
+        "default": "required",
+        "type": "Decimal"
+      },
+      "symbol": {
+        "default": "required",
+        "type": "str"
+      },
+      "token_address": {
+        "default": "required",
+        "type": "str"
+      },
+      "unrealized_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "SDK_VERSION": {
+    "kind": "value",
+    "value": "1.0.0"
+  },
+  "Side": {
+    "kind": "value",
+    "value": "typing.Literal['buy', 'sell']"
+  },
+  "Signal": {
+    "bases": [],
+    "fields": {
+      "name": {
+        "default": "required",
+        "type": "str"
+      },
+      "observed_at": {
+        "default": "required",
+        "type": "datetime"
+      },
+      "payload": {
+        "default": "factory",
+        "type": "Mapping[str, Any]"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Snapshot": {
+    "bases": [],
+    "fields": {
+      "address": {
+        "default": "required",
+        "type": "str"
+      },
+      "chain": {
+        "default": "required",
+        "type": "str"
+      },
+      "liquidity_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "name": {
+        "default": "required",
+        "type": "str"
+      },
+      "observed_at": {
+        "default": "None",
+        "type": "datetime | None"
+      },
+      "price_change_h1": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "price_change_h24": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "price_change_h6": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "price_change_m5": {
+        "default": "None",
+        "type": "Decimal | None"
+      },
+      "price_usd": {
+        "default": "required",
+        "type": "Decimal | None"
+      },
+      "stale": {
+        "default": "False",
+        "type": "bool"
+      },
+      "symbol": {
+        "default": "required",
+        "type": "str"
+      },
+      "volume_24h_usd": {
+        "default": "None",
+        "type": "Decimal | None"
+      }
+    },
+    "kind": "class",
+    "methods": {
+      "to_dict": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "Strategy": {
+    "bases": [],
+    "kind": "class",
+    "methods": {
+      "on_candle": "(self, ctx: 'PluginContext', candle: 'Candle') -> 'list[Intent]'",
+      "on_fill": "(self, ctx: 'PluginContext', fill: 'Fill') -> 'None'",
+      "on_signal": "(self, ctx: 'PluginContext', signal: 'Signal') -> 'list[Intent]'",
+      "on_start": "(self, ctx: 'PluginContext') -> 'None'",
+      "on_stop": "(self, ctx: 'PluginContext', reason: 'str') -> 'None'",
+      "on_timer": "(self, ctx: 'PluginContext') -> 'list[Intent]'",
+      "state": "(self) -> 'dict[str, Any]'"
+    }
+  },
+  "check_compatible": {
+    "kind": "function",
+    "signature": "(manifest: 'PluginManifest', sdk_version: 'str' = '1.0.0') -> 'None'"
+  },
+  "load_manifest": {
+    "kind": "function",
+    "signature": "(path: 'Path') -> 'PluginManifest'"
+  },
+  "manifest.MANIFEST_FILENAME": {
+    "kind": "value",
+    "value": "ezchain.plugin.json"
+  },
+  "manifest.MAX_MANIFEST_BYTES": {
+    "kind": "value",
+    "value": 262144
+  },
+  "manifest.MODES": {
+    "kind": "value",
+    "value": [
+      "live",
+      "paper"
+    ]
+  },
+  "manifest.PERMISSIONS": {
+    "kind": "value",
+    "value": [
+      "read_account",
+      "read_market",
+      "submit_intent"
+    ]
+  },
+  "manifest.SDK_VERSION": {
+    "kind": "value",
+    "value": "1.0.0"
+  },
+  "manifest.TIMEFRAMES": {
+    "kind": "value",
+    "value": [
+      "15m",
+      "1d",
+      "1h",
+      "1m",
+      "4h",
+      "5m"
+    ]
+  },
+  "manifest.TOP_LEVEL_KEYS": {
+    "kind": "value",
+    "value": [
+      "author",
+      "capabilities_required",
+      "chains",
+      "context_bars",
+      "data_scopes",
+      "description",
+      "entrypoint",
+      "homepage",
+      "id",
+      "license",
+      "modes",
+      "name",
+      "params_schema",
+      "permissions",
+      "primary_timeframe",
+      "sdk",
+      "timeframes",
+      "ui",
+      "venues",
+      "version"
+    ]
+  },
+  "parse_manifest": {
+    "kind": "function",
+    "signature": "(data: 'object') -> 'PluginManifest'"
+  },
+  "validate_params": {
+    "kind": "function",
+    "signature": "(schema: 'Mapping[str, Any] | None', params: 'Mapping[str, Any] | None') -> 'dict[str, Any]'"
+  }
+}
