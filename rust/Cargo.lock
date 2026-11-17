@@ -3,11 +3,23 @@
 version = 4
 
 [[package]]
+name = "ezchain-cli"
+version = "0.0.0"
+
+[[package]]
+name = "ezchain-consensus"
+version = "0.0.0"
+
+[[package]]
 name = "ezchain-core"
 version = "0.0.0"
 
 [[package]]
 name = "ezchain-executor"
+version = "0.0.0"
+
+[[package]]
+name = "ezchain-p2p"
 version = "0.0.0"
 
 [[package]]
