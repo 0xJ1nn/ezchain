@@ -64,15 +64,16 @@ def test_read_only_queues_a_reduce_only_exit() -> None:
 
 
 def test_kill_switch_does_not_refuse_a_reduce_only_exit() -> None:
-    # The switch refuses new risk; a reduce-only sell cannot open any.
-    assert agent_permissions.decide(
-        mode="auto",
-        effect="trade",
-        limit_usd=Decimal("100"),
-        amount_usd=Decimal("10"),
-        kill_switch_active=True,
-        exit_only=True,
-    ) == ("allow", "PERMISSION_AUTO")
+    # The switch stops the agent; an exit must reach a person in every mode.
+    for mode in ("ask", "auto", "read_only"):
+        assert agent_permissions.decide(
+            mode=mode,  # type: ignore[arg-type]
+            effect="trade",
+            limit_usd=Decimal("100"),
+            amount_usd=Decimal("10"),
+            kill_switch_active=True,
+            exit_only=True,
+        ) == ("queue", "KILL_SWITCH_ACTIVE")
 
 
 def test_read_only_still_refuses_an_entry() -> None:

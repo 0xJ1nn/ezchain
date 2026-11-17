@@ -2,8 +2,9 @@
 
 Modes are a lifecycle, not three booleans. ``ask`` queues every configure or trade call,
 ``auto`` runs those inside the order limit and the agent's capped bucket, and ``read_only``
-refuses them. The kill switch is checked first and overrides every mode except a
-reduce-only exit, which adds no risk and is queued for a person rather than refused.
+refuses them. The kill switch is checked first and overrides every mode: new risk is refused,
+and a reduce-only exit is queued for a person so the agent cannot fill while the switch says
+it is stopped.
 
 The existing automation tier and its consent record remain the proof that a person opted in
 to unattended execution. A mode never bypasses that consent: it can only make the gate
@@ -67,10 +68,13 @@ def decide(
 ) -> tuple[Outcome, str]:
     """The one decision function. It never reads state and never moves money.
 
-    A reduce-only exit adds no risk: the kill switch does not refuse it, and a refusal
-    becomes a queue so a person still sees the exit instead of a stranded position.
+    A reduce-only exit adds no risk, but the kill switch stops the agent: the exit is queued
+    so a person still sees it instead of a stranded position, and never filled in auto. Any
+    other refusal of an exit becomes a queue for the same reason.
     """
-    if kill_switch_active and not exit_only:
+    if kill_switch_active and exit_only:
+        return "queue", "KILL_SWITCH_ACTIVE"
+    if kill_switch_active:
         return "refuse", "KILL_SWITCH_ACTIVE"
     if effect == "read":
         return "allow", "PERMISSION_READ"
