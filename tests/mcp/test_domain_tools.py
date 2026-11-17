@@ -79,6 +79,13 @@ def test_every_tool_is_a_closed_object_with_a_valid_declaration(tool: Any) -> No
     assert tool.read_only == (tool.effect == "read")
 
 
+@pytest.mark.parametrize("name", ["ezchain_create_auto_buy", "ezchain_resume_auto_buy"])
+def test_a_recurring_buy_declares_a_trade_effect(name: str) -> None:
+    tool = next(tool for tool in all_tools(allow_writes=True) if tool.name == name)
+    assert tool.effect == "trade"
+    assert tool.read_only is False
+
+
 # --- injection tests: one row per tool -------------------------------------------------
 
 

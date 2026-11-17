@@ -1,8 +1,8 @@
 """Auto-buy tools: create, pause and resume recurring paper buys.
 
 An auto-buy is a recurring strategy, so it is created through the strategy route and paused
-or resumed through the same status field the platform already enforces. Creating or changing
-one configures automation; it never places an order directly.
+or resumed through the same status field the platform already enforces. Creating or resuming
+one arms buys that fire later, so those tools declare a trade effect; pausing only configures.
 """
 
 from __future__ import annotations
@@ -53,6 +53,7 @@ TOOLS: tuple[Tool, ...] = (
         ),
         _create,
         read_only=False,
+        effect="trade",
     ),
     Tool(
         "ezchain_pause_auto_buy",
@@ -69,6 +70,7 @@ TOOLS: tuple[Tool, ...] = (
         _object({"strategy_id": {"type": "string"}}, ["strategy_id"]),
         _resume,
         read_only=False,
+        effect="trade",
     ),
 )
 
