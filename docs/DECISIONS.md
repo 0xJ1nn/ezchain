@@ -1757,4 +1757,64 @@ that cost is paid before any speedup. A phase that does not move the measured nu
 work rather than reaching for the next hot path. This ADR changes no code, grants no rewrite,
 and stays Proposed until the maintainer reviews the boundary and the entry gate.
 
+---
+
+## ADR-0050 — Language policy: Rust core, Python support, TypeScript UI
+
+**Date:** 2026-11-18 · **Status:** Accepted (explicit maintainer decision). This ADR
+supersedes the *"no rewrite is authorised"* clause of ADR-0049 with respect to the components
+listed below. ADR-0049's parity and benchmark gate is retained and made mandatory; its
+"Proposed" status no longer blocks this policy.
+
+**Context:** the maintainer has decided that ezCHAIN is to be an open-source, one-stop,
+multi-chain trading platform with an AI harness, built to be trusted for performance,
+footprint, stability and safety. Rust is the language for the components where those
+properties matter most. The Python-only state of the repository is a starting point, not the
+target design. A measured proof on 2026-11-18 showed that a small scope normaliser ported to
+Rust through pyo3 matched all 53 recorded cases but ran at 0.61x (slower), because the FFI
+crossing cost more than the function's work. The lesson is kept: port loops and whole
+boundaries, not individual small functions, and prove parity before replacing anything.
+
+**Decision — the language map is normative:**
+
+| Layer | Language | Reason |
+|---|---|---|
+| Core engine, deterministic decision/scheduling kernels | **Rust** | Determinism, stable latency, no GC pauses |
+| P2P networking | **Rust** | Protocol correctness, backpressure, memory safety |
+| Consensus / validation | **Rust** | Deterministic state transitions across nodes |
+| RPC server | **Rust** | Typed wire contract, throughput, one boundary for clients |
+| Transaction execution | **Rust** | Deterministic, replayable, bounded resource use |
+| CLI and operator tooling shipped to users | **Rust** | One small static binary, low footprint |
+| Indexer / analytics | **Python** | Data tooling and rapid queries |
+| AI / ML components, agent harness integration | **Python** | Ecosystem and model clients |
+| Strategy plugins | **Python** | Third-party authors, SDK stays approachable |
+| Dashboard and all product UI | **TypeScript** | Web UI; UI work belongs to Claude |
+
+**Migration rules:**
+
+1. The integration branch is `rust/migration`, based on `origin/main`. One field per worker
+   (`rust/core-py`, `rust/engine`, `rust/executor`, `rust/api-rpc`, `rust/p2p-consensus`,
+   `rust/cli`, …), one worktree per field, PRs into `rust/migration`, then one reviewed PR into
+   `main`. Conventional commits, signed off, one logical change per commit.
+2. **No reduction in quality.** Every ported unit keeps or improves test coverage: the
+   recorded cases from the Python original must all match before the Python implementation is
+   removed. `record → diff → gate → bench` is the definition of done for a ported unit.
+3. `docs/CONTRACT.md` invariants are unchanged. The ledger remains the only accountant until
+   a separate accepted ADR defines chain state; live execution stays owner-blocked; keys stay
+   in the executor boundary. A language change is not a permission to change a money rule.
+4. Money arithmetic (`money.py`, ledger entries, seal hashing) stays in Python until a Rust
+   decimal with equivalent per-operation precision exists and a parity harness proves it.
+   `rust_decimal`'s fixed 28-digit precision cannot do this today.
+5. P2P, consensus and validation do not exist in the repository yet. They are built in Rust
+   from the start, but each needs its own design ADR (validator set, fork choice, message
+   contract) before code is written. "Rust" is the language decision, not a protocol design.
+6. The local gate (`bash tools/ci.sh`) and the Rust gate (`cargo fmt`, `cargo clippy`,
+   `cargo test`, rust-anything `gate`) both stay green. A red gate is never merged.
+
+**Consequences:** the build gains a Rust toolchain and a pyo3 ABI matrix during the migration;
+the Python suite remains the behavioural oracle until each field's parity gate passes. Agents
+must read this ADR and the language map in `AGENTS.md` before choosing a language for new code.
+A new component in a Rust-owned layer written in Python is a review failure, not a preference.
+
+
 
