@@ -68,10 +68,10 @@ test("a preset re-quotes on the server and shows the landed cost sheet before su
 	const ticket = page.getByTestId("trade-ticket");
 	await expect(ticket).toBeVisible();
 
-	await ticket.getByTestId("ticket-chip-50").click();
+	await ticket.getByTestId("ticket-preset-100").click();
 	await expect(page).toHaveURL(/[?&]amount=\d+(\.\d+)?(&|$)/, { timeout: 60_000 });
 	const sized = Number(await ticket.getByTestId("ticket-amount").inputValue());
-	expect(sized, "the 50% chip must size from buying power").toBeGreaterThan(0);
+	expect(sized, "the $100 chip must set a fixed USD amount").toBe(100);
 	const expectedOut = (
 		await page.locator("#quote tr", { hasText: "Expected out" }).locator("td").last().textContent()
 	)?.trim().replace(/^PAPER\s*/, "");
@@ -89,7 +89,7 @@ test("a preset re-quotes on the server and shows the landed cost sheet before su
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 });
 
-test("Max sizes from the paper account and submits exactly one order", async ({ page }) => {
+test("a saved quick-buy chip sizes the ticket and submits exactly one order", async ({ page }) => {
 	const posted: { body: Record<string, unknown> | null; count: number } = { body: null, count: 0 };
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		posted.count += 1;
@@ -103,10 +103,10 @@ test("Max sizes from the paper account and submits exactly one order", async ({ 
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
 	const ticket = page.getByTestId("trade-ticket");
-	await ticket.getByTestId("ticket-chip-max").click();
+	await ticket.getByTestId("ticket-preset-500").click();
 	await expect(page).toHaveURL(/[?&]amount=/, { timeout: 60_000 });
 	const amount = await ticket.getByTestId("ticket-amount").inputValue();
-	expect(Number(amount)).toBeGreaterThan(0);
+	expect(Number(amount)).toBe(500);
 	await expect(ticket.getByTestId("cost-sheet")).toBeVisible();
 
 	await hold(page);

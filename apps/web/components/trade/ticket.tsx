@@ -12,6 +12,13 @@ import {
 	type Side,
 } from "@/lib/api";
 import { ageLabel, formatAmount, formatPrice, formatUsd, quoteKindLabel, sourceLabel } from "@/lib/live-format";
+import {
+	priorityLabel,
+	PRIORITY_OPTIONS,
+	slippageLabel,
+	SLIPPAGE_OPTIONS,
+	useTicketTradeSettings,
+} from "@/lib/trading-prefs";
 import { fmt } from "./format";
 import type { ExitLines } from "./types";
 import styles from "./trade.module.css";
@@ -82,6 +89,7 @@ export function Ticket({
 	const [stamp, setStamp] = useState<Stamp | null>(null);
 	const [holding, setHolding] = useState(false);
 	const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const { prefs, setSlippage, setPriority } = useTicketTradeSettings();
 
 	useEffect(() => {
 		setLocalSide(side);
@@ -167,12 +175,15 @@ export function Ticket({
 		}, HOLD_MS);
 	}
 
-	function chooseAmount(value: number, fraction: number) {
-		if (maxUsd === null) return;
-		const text = ((maxUsd * fraction) / 1).toFixed(2);
+	function choosePreset(value: number) {
+		const text = value.toFixed(2);
 		setLocalAmount(text);
 		setChip(value);
 		preview(localSide, text);
+	}
+
+	function presetLabel(value: number): string {
+		return `$${Number.isInteger(value) ? value : value.toFixed(2)}`;
 	}
 
 	const badges: Array<{ text: string; cls: string }> = [];
@@ -241,37 +252,71 @@ export function Ticket({
 				<span className={styles.unit}>USD</span>
 			</label>
 
-			<div className={styles.chips} role="group" aria-label="Amount presets">
-				{[25, 50, 75].map((value) => (
+			<div className={styles.lbl} data-testid="quick-buy-label">
+				<span>Quick buy</span>
+				<a className={styles.link} href="/settings/trading">Edit</a>
+			</div>
+			<div className={styles.chips} role="group" aria-label="Quick buy presets">
+				{prefs.presets.map((value) => (
 					<button
 						key={value}
 						type="button"
 						className={chip === value ? styles.on : undefined}
-						disabled={maxUsd === null}
 						aria-pressed={chip === value}
-						data-testid={`ticket-chip-${value}`}
-						onClick={() => chooseAmount(value, value / 100)}
+						data-testid={`ticket-preset-${value}`}
+						onClick={() => choosePreset(value)}
 					>
-						{value}%
+						{presetLabel(value)}
 					</button>
 				))}
-				<button
-					type="button"
-					className={chip === 100 ? styles.on : undefined}
-					disabled={maxUsd === null}
-					aria-pressed={chip === 100}
-					data-testid="ticket-chip-max"
-					onClick={() => chooseAmount(100, 1)}
-				>
-					Max
-				</button>
+			</div>
+
+			<div className={styles.tset} data-testid="ticket-trade-settings">
+				<label className={styles.sel}>
+					<span>Slippage</span>
+					<b>
+						{slippageLabel(prefs.slippage)}
+						<select
+							aria-label="Slippage"
+							data-testid="ticket-slippage"
+							value={prefs.slippage}
+							onChange={(e) => setSlippage(e.target.value)}
+						>
+							{SLIPPAGE_OPTIONS.map((option) => (
+								<option key={option} value={option}>{slippageLabel(option)}</option>
+							))}
+						</select>
+					</b>
+				</label>
+				<label className={styles.sel}>
+					<span>Priority fee</span>
+					<b>
+						{priorityLabel(prefs.priority)}
+						<select
+							aria-label="Priority fee"
+							data-testid="ticket-priority"
+							value={prefs.priority}
+							onChange={(e) => setPriority(e.target.value)}
+						>
+							{PRIORITY_OPTIONS.map((option) => (
+								<option key={option.id} value={option.id}>{option.label}</option>
+							))}
+						</select>
+					</b>
+				</label>
 			</div>
 
 			<div className={styles.quote} data-testid="ticket-quote">
 				{quote && matches ? (
 					<>
-						<div className={styles.kv}><span>You get</span><b>{quote.side === "buy" ? `${formatAmount(quote.amount_out)} ${symbol}` : formatUsd(quote.amount_out)}</b></div>
+						<div className={styles.kv}><span>You get</span><b>{quote.side === "buy" ? `≈ ${formatAmount(quote.amount_out)} ${symbol}` : formatUsd(quote.amount_out)}</b></div>
 						<div className={styles.kv}><span>Price</span><b>{formatPrice(quote.price)}</b></div>
+						<div className={styles.kv}>
+							<span>Price impact</span>
+							<b title={quote.price_impact_pct ? "Reported by the venue for this quote" : "The venue did not report a price impact"}>
+								{quote.price_impact_pct ? `${quote.price_impact_pct}%` : "—"}
+							</b>
+						</div>
 						<div className={styles.kv}><span>Simulated fee</span><b>{formatUsd(quote.fee_usd)}</b></div>
 						<div className={styles.kv}><span>Quote</span><b>{sourceLabel(quote.source.name)} · {ageLabel(quote.source.observed_at, now)}</b></div>
 						<div className={styles.kv}><span>Kind</span><b>{quoteKindLabel(quote.kind)}</b></div>
@@ -295,6 +340,17 @@ export function Ticket({
 					<span key={badge.text} className={`${styles.badge} ${badge.cls}`}>{badge.text}</span>
 				))}
 				{badges.length === 0 && <span className={styles.badge}>No exits set</span>}
+			</div>
+
+			<div
+				className={styles.prof}
+				data-testid="ticket-profile"
+				title="The API does not publish an auto profile for this token, so no exit profile is assumed."
+			>
+				<svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14">
+					<use href="/icons/ion.svg#sparkles" />
+				</svg>
+				<span>Profile: <b>—</b> · exits: <b>—</b></span>
 			</div>
 
 			<button
@@ -323,7 +379,7 @@ export function Ticket({
 
 			<div className={styles.ticketFoot}>
 				<span className={styles.modePaper}><span className={styles.xDot} />PAPER</span>
-				Fills are paper-filled at the live mark. Nothing is sent to a venue.
+				Paper-filled at the mark. Slippage and priority fee apply in real mode.
 			</div>
 
 			{stamp && (
