@@ -5,8 +5,11 @@ import { MarketSpark } from "@/components/market-spark";
 import { PositionTile } from "@/components/position-tile";
 import { positionTiles } from "@/lib/position-fixtures";
 import {
+	AssetLabel,
+	AssetWhere,
 	Badge,
 	ButtonLink,
+	Coin,
 	LiveDot,
 	Meter,
 	Panel,
@@ -42,6 +45,36 @@ export default function ComponentsPage() {
 			<div className="split">
 				<div className="stack">
 					<BrandControls />
+
+					<Panel title="Chain identity" sub="logo, chain badge and asset label">
+						<div className="stack-sm" data-testid="chain-identity">
+							<div className="row" data-testid="chain-coins">
+								<Coin symbol="BTC" name="Bitcoin" chain="bitcoin" />
+								<Coin symbol="ETH" name="Ethereum" chain="ethereum" />
+								<Coin symbol="SOL" name="Solana" chain="solana" />
+								<Coin symbol="GLIM" name="Glimmer" chain="solana" size="sm" color="#3fe0a5" />
+								<Coin symbol="PIXL" name="Pixel Pals" chain="base" size="lg" color="#8b7cff" />
+								<Coin symbol="XXXX" name="Unknown chain" />
+							</div>
+							<div className="row" data-testid="chain-labels">
+								<AssetLabel symbol="SOL" name="Solana" chain="solana" />
+								<AssetLabel symbol="BTC" name="Bitcoin" venue="Coinbase" />
+								<AssetLabel symbol="ETH" name="Ethereum" chain="ethereum" bridged="Wormhole" size="sm" />
+								<AssetLabel symbol="ZAPP" name="Zapp Protocol" chain="base" color="#59c8ff" />
+							</div>
+							<div className="row" data-testid="chain-where">
+								<AssetWhere symbol="ARB" chain="arbitrum" />
+								<AssetWhere symbol="DOGE" venue="Kraken" />
+								<AssetWhere symbol="USDC" chain="base" bridged="Circle CCTP" />
+								<AssetWhere symbol="FOO" chain="mystery-chain" />
+							</div>
+						</div>
+						<p className="note mt-12">
+							Token logos and chain marks are the exported brand files. A token without an
+							exported logo falls back to its first letter; a chain with no mark gets no badge
+							and no guessed icon. Unknown stays visible as text.
+						</p>
+					</Panel>
 
 					<Panel title="Badges" sub="tone vocabulary">
 						<div className="row">

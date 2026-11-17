@@ -873,3 +873,28 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 .toast.win .ic { background: var(--green); color: var(--on-accent); }
 .toast.ask .ic { background: var(--amber-a); color: var(--amber); }
 .toast.err .ic { background: var(--red-a); color: var(--red); }
+
+/* ---------- chain identity ----------
+   Ported from the approved components.css: the token disc, the chain badge with a
+   two-pixel ring in the card colour, and the two-line asset label. */
+.coin { --c: var(--text-2); width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--c) 16%, var(--bg-2)); color: var(--c); font: 600 13px/1 var(--font);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent); }
+.coin.sm { width: 22px; height: 22px; font-size: 10px; } .coin.lg { width: 44px; height: 44px; font-size: 17px; }
+.tok { position: relative; display: inline-grid; flex: none; --ring: var(--bg-2); }
+.coin.img { background: none; box-shadow: none; overflow: hidden; }
+.coin.img img { width: 100%; height: 100%; display: block; }
+.tok .chb { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ring); box-shadow: 0 0 0 2px var(--ring); overflow: hidden; }
+.tok .chb img { width: 100%; height: 100%; display: block; border-radius: 50%; }
+.tok.sm .chb { width: 10px; height: 10px; right: -2px; bottom: -2px; box-shadow: 0 0 0 1.5px var(--ring); }
+.tok.lg .chb { width: 18px; height: 18px; right: -3px; bottom: -3px; }
+.tbl tbody tr:hover .tok, .bg-3 .tok { --ring: var(--bg-3); }
+.panel .tok, .bg-1 .tok { --ring: var(--bg-1); }
+.ion { flex: none; fill: currentColor; stroke: currentColor; }
+.asset { display: flex; align-items: center; gap: 12px; min-width: 0; text-align: left; }
+.asset .nm { display: block; font: 500 14px/1.2 var(--font); color: var(--text-1); white-space: nowrap; }
+.where { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; margin-top: 3px; font: 400 12px/1.2 var(--font); color: var(--text-3); white-space: nowrap; }
+.where .chain, .where .venue { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+.where .chimg { border-radius: 50%; }
+.where .bridged { height: 18px; padding: 0 6px; font-size: 11px; margin-left: 4px; }
