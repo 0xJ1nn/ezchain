@@ -7,3 +7,4 @@
 
 pub mod freshness;
 pub mod freshness_policy;
+pub mod strategy_params;
