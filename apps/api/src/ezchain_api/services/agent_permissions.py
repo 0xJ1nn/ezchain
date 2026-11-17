@@ -2,7 +2,8 @@
 
 Modes are a lifecycle, not three booleans. ``ask`` queues every configure or trade call,
 ``auto`` runs those inside the order limit and the agent's capped bucket, and ``read_only``
-refuses them. The kill switch is checked first and overrides every mode.
+refuses them. The kill switch is checked first and overrides every mode except a
+reduce-only exit, which adds no risk and is queued for a person rather than refused.
 
 The existing automation tier and its consent record remain the proof that a person opted in
 to unattended execution. A mode never bypasses that consent: it can only make the gate
@@ -62,22 +63,33 @@ def decide(
     limit_usd: Decimal,
     amount_usd: Decimal | None = None,
     kill_switch_active: bool = False,
+    exit_only: bool = False,
 ) -> tuple[Outcome, str]:
-    """The one decision function. It never reads state and never moves money."""
-    if kill_switch_active:
+    """The one decision function. It never reads state and never moves money.
+
+    A reduce-only exit adds no risk: the kill switch does not refuse it, and a refusal
+    becomes a queue so a person still sees the exit instead of a stranded position.
+    """
+    if kill_switch_active and not exit_only:
         return "refuse", "KILL_SWITCH_ACTIVE"
     if effect == "read":
         return "allow", "PERMISSION_READ"
     mode = normalize_mode(mode)
+    outcome: Outcome
+    code: str
     if mode == "read_only":
-        return "refuse", "PERMISSION_READ_ONLY"
-    if mode == "ask":
-        return "queue", "PERMISSION_ASK"
-    if effect == "configure":
-        return "allow", "PERMISSION_AUTO"
-    if amount_usd is not None and amount_usd > limit_usd:
-        return "queue", "PERMISSION_LIMIT_EXCEEDED"
-    return "allow", "PERMISSION_AUTO"
+        outcome, code = "refuse", "PERMISSION_READ_ONLY"
+    elif mode == "ask":
+        outcome, code = "queue", "PERMISSION_ASK"
+    elif effect == "configure":
+        outcome, code = "allow", "PERMISSION_AUTO"
+    elif amount_usd is not None and amount_usd > limit_usd:
+        outcome, code = "queue", "PERMISSION_LIMIT_EXCEEDED"
+    else:
+        outcome, code = "allow", "PERMISSION_AUTO"
+    if exit_only and outcome == "refuse":
+        return "queue", code
+    return outcome, code
 
 
 def mode_for(session: Session, user: str, settings: Settings) -> Mode:

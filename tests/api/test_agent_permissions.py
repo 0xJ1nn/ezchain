@@ -52,6 +52,38 @@ def test_the_decision_matrix() -> None:
         ) == (outcome, code)
 
 
+def test_read_only_queues_a_reduce_only_exit() -> None:
+    # A refusal here would strand the position, so a person still sees the exit.
+    assert agent_permissions.decide(
+        mode="read_only",
+        effect="trade",
+        limit_usd=Decimal("100"),
+        amount_usd=Decimal("10"),
+        exit_only=True,
+    ) == ("queue", "PERMISSION_READ_ONLY")
+
+
+def test_kill_switch_does_not_refuse_a_reduce_only_exit() -> None:
+    # The switch refuses new risk; a reduce-only sell cannot open any.
+    assert agent_permissions.decide(
+        mode="auto",
+        effect="trade",
+        limit_usd=Decimal("100"),
+        amount_usd=Decimal("10"),
+        kill_switch_active=True,
+        exit_only=True,
+    ) == ("allow", "PERMISSION_AUTO")
+
+
+def test_read_only_still_refuses_an_entry() -> None:
+    assert agent_permissions.decide(
+        mode="read_only",
+        effect="trade",
+        limit_usd=Decimal("100"),
+        amount_usd=Decimal("10"),
+    ) == ("refuse", "PERMISSION_READ_ONLY")
+
+
 def test_unknown_mode_fails_closed_to_ask() -> None:
     assert agent_permissions.normalize_mode("legacy") == "ask"
     assert agent_permissions.decide(mode="legacy", effect="trade", limit_usd=Decimal("1")) == (
@@ -191,6 +223,52 @@ def test_ask_queues_and_read_only_refuses_an_agent_order(
     assert refused.json()["status"] == "rejected"
     assert refused.json()["reason"] == "PERMISSION_READ_ONLY"
     assert session.scalars(select(PaperFillRow)).all() == []
+
+
+def _open_a_position(client: TestClient) -> None:
+    opened = client.post(
+        "/api/v1/paper/orders",
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "side": "buy",
+            "amount_usd": "25",
+            "idempotency_key": "perm-exit-open-1",
+        },
+        headers=_bearer(DEPLOYMENT),
+    )
+    assert opened.json()["status"] == "filled"
+
+
+def _agent_exit(client: TestClient, token: str, key: str) -> Any:
+    return client.post(
+        "/api/v1/paper/orders",
+        json={
+            "chain": CHAIN,
+            "token_address": TOKEN,
+            "side": "sell",
+            "amount_usd": "10",
+            "reduce_only": True,
+            "idempotency_key": key,
+        },
+        headers=_bearer(token),
+    )
+
+
+def test_read_only_queues_an_agent_exit_on_the_order_path(
+    authed_settings: Settings, session: Session, key_factory: sessionmaker[Session]
+) -> None:
+    client = _client(authed_settings, session, key_factory)
+    _open_a_position(client)
+    client.put(
+        "/api/v1/agent/permission-mode",
+        json={"mode": "read_only", "user_id": "hermes"},
+        headers=_bearer(DEPLOYMENT),
+    )
+
+    exit_order = _agent_exit(client, _agent_token(key_factory), "perm-exit-readonly-1")
+    assert exit_order.status_code == 201
+    assert exit_order.json()["status"] == "pending_approval"
 
 
 def test_every_gate_decision_is_appended(

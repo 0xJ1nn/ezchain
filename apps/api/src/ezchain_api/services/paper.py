@@ -2178,6 +2178,7 @@ async def place_order(
                 amount_usd=payload.amount_usd,
                 limit_usd=settings.max_order_usd,
                 kill_switch_active=read_kill_switch(session, settings).active,
+                exit_only=exit_only,
             )
             agent_permissions.record_decision(
                 session,
