@@ -6,3 +6,4 @@
 //! their own parity-gated migration.
 
 pub mod freshness;
+pub mod freshness_policy;
