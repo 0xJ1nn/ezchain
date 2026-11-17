@@ -452,9 +452,8 @@ async def evaluate_all_arms(
     max_mark_age_seconds: float | None = None,
 ) -> list[ProtectionResult]:
     """One pass over armed arms. One buckled arm never stops the rest."""
-    if getattr(order_executor, "active", False):
-        logger.warning("protection pass idle: operator kill switch is active")
-        return []
+    # An armed switch refuses new entries, never a reduce-only exit: the order service
+    # enforces the buy-only gate and an arm can only sell a held position (ADR-0034).
     moment = now or utcnow()
     with session_factory() as session:
         arm_ids = list(
