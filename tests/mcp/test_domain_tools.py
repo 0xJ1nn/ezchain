@@ -17,6 +17,7 @@ from ezchain_mcp.client import EzchainClient
 from ezchain_mcp.credentials import Credential
 from ezchain_mcp.registry import all_tools
 from ezchain_mcp.server import McpServer
+from ezchain_mcp.tools import Tool, _object
 
 FORGED_FIELDS = ("mode", "live", "execution", "approved", "executed", "approval_status")
 FORBIDDEN_HINTS = (
@@ -84,6 +85,20 @@ def test_a_recurring_buy_declares_a_trade_effect(name: str) -> None:
     tool = next(tool for tool in all_tools(allow_writes=True) if tool.name == name)
     assert tool.effect == "trade"
     assert tool.read_only is False
+
+
+@pytest.mark.parametrize("effect", ["configure", "trade"])
+def test_a_read_only_tool_cannot_declare_a_writing_effect(effect: str) -> None:
+    with pytest.raises(ValueError, match="read-only"):
+        Tool(
+            "read_only_writer",
+            "Read-only writer",
+            "An invalid declaration.",
+            _object({}),
+            lambda _client, _args: None,
+            read_only=True,
+            effect=effect,  # type: ignore[arg-type]
+        )
 
 
 # --- injection tests: one row per tool -------------------------------------------------

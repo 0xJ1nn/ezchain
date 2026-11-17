@@ -65,6 +65,8 @@ class Tool:
         if self.effect is None:
             # A read-only tool reads; a mutation configures unless it is explicitly a trade.
             object.__setattr__(self, "effect", "read" if self.read_only else "configure")
+        if self.read_only and self.effect in ("configure", "trade"):
+            raise ValueError(f"a read-only tool cannot declare a {self.effect} effect: {self.name}")
         if self.cost == "paid" and not self.billed_provider:
             raise ValueError(f"a paid tool must name the provider that bills it: {self.name}")
         if self.billed_provider is not None and self.cost != "paid":
