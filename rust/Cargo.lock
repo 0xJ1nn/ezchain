@@ -7,5 +7,9 @@ name = "ezchain-core"
 version = "0.0.0"
 
 [[package]]
+name = "ezchain-executor"
+version = "0.0.0"
+
+[[package]]
 name = "ezchain-rpc"
 version = "0.0.0"

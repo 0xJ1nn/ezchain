@@ -1,0 +1,9 @@
+[package]
+name = "ezchain-executor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure executor-boundary kernels: kill switch, transaction binding, receipt verification"
+
+[dependencies]
