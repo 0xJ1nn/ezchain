@@ -1,0 +1,921 @@
+{
+  "ezchain_create_strategy": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Create a declarative, graph or plugin strategy. Plugin params are validated.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "momentum",
+            "dip",
+            "dca",
+            "threshold",
+            "graph",
+            "plugin"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        },
+        "plugin_id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused"
+          ],
+          "type": "string"
+        },
+        "token_address": {
+          "type": "string"
+        },
+        "token_symbol": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "chain",
+        "token_address",
+        "token_symbol",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_create_strategy",
+    "title": "Create strategy"
+  },
+  "ezchain_delete_strategy": {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Delete a strategy and its decision log. Orders keep the historical id.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_delete_strategy",
+    "title": "Delete strategy"
+  },
+  "ezchain_dry_run_graph": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Evaluate one graph tick against current data. Never places an order.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "graph": {
+          "type": "object"
+        },
+        "max_position_usd": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "token_address": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "graph",
+        "chain",
+        "token_address"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_dry_run_graph",
+    "title": "Dry-run graph"
+  },
+  "ezchain_get_account": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Cash, equity, realized and unrealized PnL, and open positions. PAPER only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_account",
+    "title": "Get paper account"
+  },
+  "ezchain_get_agent_state": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "One snapshot: mode, kill switch, risk, account, positions, strategies, plugins.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_agent_state",
+    "title": "Get full agent state"
+  },
+  "ezchain_get_automation": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Whether this user's agent orders wait for a person or execute automatically.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_automation",
+    "title": "Get automation tier"
+  },
+  "ezchain_get_backtest": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "One immutable backtest result.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "backtest_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "backtest_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_backtest",
+    "title": "Get backtest"
+  },
+  "ezchain_get_candles": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Closed OHLCV bars, oldest first. Unknown volume is null, never zero.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 300,
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeframe": {
+          "default": "5m",
+          "enum": [
+            "1m",
+            "5m",
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "address"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_candles",
+    "title": "Get candles"
+  },
+  "ezchain_get_graph_catalogue": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "The node catalogue for the visual strategy graph.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_graph_catalogue",
+    "title": "Get graph catalogue"
+  },
+  "ezchain_get_ledger": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Append-only journal slice. The ledger is the only accountant.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 200,
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "ezchain_get_ledger",
+    "title": "Get ledger"
+  },
+  "ezchain_get_live_readiness": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Paper-gate evidence and checks. Read-only: it never promotes a strategy.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_live_readiness",
+    "title": "Get live readiness"
+  },
+  "ezchain_get_mode": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Execution and data mode, live availability, auth rules and the tool list.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_mode",
+    "title": "Get execution mode"
+  },
+  "ezchain_get_performance": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Account performance and the equity curve, all derived from the ledger.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_performance",
+    "title": "Get paper performance"
+  },
+  "ezchain_get_reconciliation": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Proof that ledger groups, cash, fills and positions agree.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_reconciliation",
+    "title": "Get reconciliation"
+  },
+  "ezchain_get_strategy": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "One strategy, its params, pinned plugin version and status.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_strategy",
+    "title": "Get strategy"
+  },
+  "ezchain_get_strategy_performance": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "PAPER performance attributed to this strategy's own fills.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_strategy_performance",
+    "title": "Get strategy performance"
+  },
+  "ezchain_get_strategy_runs": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "The strategy's append-only decision log, newest first.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_strategy_runs",
+    "title": "Get strategy runs"
+  },
+  "ezchain_get_system_status": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Health, readiness, kill switch and capabilities.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_get_system_status",
+    "title": "Get system status"
+  },
+  "ezchain_get_token": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Current price, liquidity, volume, changes and safety evidence for one token.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "address"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_get_token",
+    "title": "Get token snapshot"
+  },
+  "ezchain_list_approvals": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Agent orders waiting for a person. A pending row is not a fill.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "expired",
+            "superseded",
+            "executed",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "ezchain_list_approvals",
+    "title": "List approvals"
+  },
+  "ezchain_list_backtests": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Immutable backtest artifacts, optionally filtered by strategy.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "ezchain_list_backtests",
+    "title": "List backtests"
+  },
+  "ezchain_list_fills": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Recent paper fills with quantity, price, notional and fee.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "ezchain_list_fills",
+    "title": "List fills"
+  },
+  "ezchain_list_markets": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Live multi-chain market rows. Use chain='all' for the round-robin overview.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "default": "all",
+          "type": "string"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "q": {
+          "type": "string"
+        },
+        "sort": {
+          "enum": [
+            "trending",
+            "liquidity",
+            "new"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "ezchain_list_markets",
+    "title": "List markets"
+  },
+  "ezchain_list_orders": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Recent paper orders, newest first, including rejected orders and their reasons.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "ezchain_list_orders",
+    "title": "List orders"
+  },
+  "ezchain_list_plugins": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Installed external strategy plugins, manifests, permissions and issues.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_list_plugins",
+    "title": "List plugins"
+  },
+  "ezchain_list_positions": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Open paper positions with server-computed marks and PnL.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_list_positions",
+    "title": "List positions"
+  },
+  "ezchain_list_strategies": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "User strategies, including declarative, graph and plugin kinds.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_list_strategies",
+    "title": "List strategies"
+  },
+  "ezchain_pause_strategy": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Pause a strategy. Paused strategies never reach the executor.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_pause_strategy",
+    "title": "Pause strategy"
+  },
+  "ezchain_place_paper_order": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Place a PAPER order. There is no live order tool; mode is server-derived.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "amount_usd": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "chain": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "side": {
+          "enum": [
+            "buy",
+            "sell"
+          ],
+          "type": "string"
+        },
+        "token_address": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "token_address",
+        "side",
+        "amount_usd",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_place_paper_order",
+    "title": "Place paper order"
+  },
+  "ezchain_resume_strategy": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Resume a paused strategy.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_resume_strategy",
+    "title": "Resume strategy"
+  },
+  "ezchain_run_backtest": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Run an immutable graph backtest. Declare fees and slippage explicitly.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "bars": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "fee_bps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "graph": {
+          "type": "object"
+        },
+        "slippage_bps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "starting_cash_usd": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "strategy_id": {
+          "type": "string"
+        },
+        "timeframe": {
+          "enum": [
+            "1m",
+            "5m",
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ],
+          "type": "string"
+        },
+        "token_address": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "timeframe",
+        "bars",
+        "fee_bps",
+        "slippage_bps",
+        "starting_cash_usd"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_run_backtest",
+    "title": "Run backtest"
+  },
+  "ezchain_run_strategy": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Evaluate one strategy tick. PAPER only; the kill switch still applies.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_run_strategy",
+    "title": "Run strategy now"
+  },
+  "ezchain_update_strategy": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Rename, retune params, or pause/resume a strategy.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused"
+          ],
+          "type": "string"
+        },
+        "strategy_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_update_strategy",
+    "title": "Update strategy"
+  },
+  "ezchain_validate_graph": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Compile a visual graph and return its full validation report.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "graph": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "graph"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_validate_graph",
+    "title": "Validate graph"
+  },
+  "ezchain_validate_plugin_config": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Validate and default a plugin configuration without creating a strategy.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "object"
+        },
+        "plugin_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_validate_plugin_config",
+    "title": "Validate plugin config"
+  }
+}
