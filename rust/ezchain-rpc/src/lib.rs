@@ -6,5 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod adapter_error;
+pub mod json_safe;
 pub mod method;
 pub mod scopes;
