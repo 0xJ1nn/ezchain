@@ -43,11 +43,12 @@ Pick the language by layer. Do not choose by personal preference.
 | Dashboard and all product UI | **TypeScript** (UI work belongs to Claude) |
 
 **Classification rule (ADR-0052):** Rust owns performance-critical and security-critical
-logic — execution, networking/P2P/WebSockets, transaction processing and validation,
-concurrency, storage, cryptography and performance algorithms. Python owns business logic,
-AI/ML, analytics, strategy development, automation, monitoring, the application-level API and
+logic — execution, node-facing networking/P2P/WebSockets, transaction processing and
+validation, concurrency, storage, cryptography and performance algorithms. Python owns
+business logic, AI/ML, analytics, strategy development, automation, monitoring, the
+application-level API, the product-facing WebSocket gateway in `apps/api`, third-party
 integrations, and developer tooling. The node-facing RPC/WebSocket transport is Rust; the
-product's HTTP API and third-party integrations are Python. Integrate with PyO3 in-process or
+product's HTTP API, WebSocket gateway and third-party integrations are Python. Integrate with PyO3 in-process or
 gRPC/IPC across services, with typed, versioned interfaces and independent tests, benchmarks
 and deployment. Preserve working code; migrate bottlenecks incrementally behind recorded
 parity — never replace a working implementation with an unproven one.

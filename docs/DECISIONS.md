@@ -1850,9 +1850,11 @@ this ADR is more specific, it wins.
 **Interpretation of the one overlap:** ADR-0050 assigns the RPC server to Rust and this ADR
 assigns APIs and integrations to Python. They describe two different surfaces. Rust owns the
 node-facing RPC and WebSocket transport — the wire protocol clients speak to the node. Python
-owns the application-level HTTP API and third-party integrations that compose those calls for
-the product. If the maintainer intends the public HTTP API itself to be Rust, this paragraph
-is the single place to change.
+owns the application-level HTTP API, the product-facing WebSocket gateway in `apps/api`, and
+third-party integrations that compose those calls for the product. Only the **node-facing**
+P2P/WebSocket transport is Rust; the product-facing gateway stays with the Python API that
+serves the same clients. If the maintainer intends the public HTTP API itself to be Rust, this
+paragraph is the single place to change.
 
 **Integration contract:**
 
