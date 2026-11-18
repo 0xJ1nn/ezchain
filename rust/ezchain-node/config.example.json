@@ -1,0 +1,17 @@
+{
+  "rpc_bind": "127.0.0.1:8545",
+  "rpc_max_payload_bytes": 65536,
+  "validator_set_path": "validator_set.example.json",
+  "self_id": "node-a",
+  "max_validators": 3,
+  "p2p": {
+    "max_envelope_bytes": 65536,
+    "max_payload_bytes": 32768,
+    "dedup_capacity": 1024,
+    "queue_capacity": 256,
+    "fanout": 1,
+    "max_frame_bytes": 131072,
+    "outbound_queue_capacity": 64,
+    "accepted_queue_capacity": 16
+  }
+}

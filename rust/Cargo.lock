@@ -151,8 +151,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "ezchain-flow"
+version = "0.0.0"
+dependencies = [
+ "ezchain-executor",
+ "ezchain-protection",
+ "ezchain-scheduler",
+]
+
+[[package]]
 name = "ezchain-jsoncanon"
 version = "0.0.0"
+
+[[package]]
+name = "ezchain-node"
+version = "0.0.0"
+dependencies = [
+ "ezchain-p2p",
+ "ezchain-p2p-transport",
+ "ezchain-rpc",
+ "ezchain-rpc-server",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "ezchain-p2p"
