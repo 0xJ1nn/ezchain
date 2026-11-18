@@ -25,6 +25,13 @@ impl BigUint {
         Self { digits: vec![1] }
     }
 
+    /// A single decimal digit (`0..=9`), used when growing a quotient.
+    pub fn from_digit(d: u8) -> Self {
+        Self {
+            digits: vec![d % 10],
+        }
+    }
+
     /// Build from a big-endian digit string (most significant digit first).
     ///
     /// Leading zeros are stripped, matching `Decimal.as_tuple().digits`; an
@@ -160,6 +167,55 @@ impl BigUint {
         Self::from_little_endian(digits)
     }
 
+    /// Multiply by a single decimal digit (`0..=9`).
+    pub fn mul_small(&self, d: u8) -> Self {
+        if d == 0 || self.is_zero() {
+            return Self::zero();
+        }
+        let mut digits = Vec::with_capacity(self.digits.len() + 1);
+        let mut carry = 0u16;
+        for &x in &self.digits {
+            let product = x as u16 * d as u16 + carry;
+            digits.push((product % 10) as u8);
+            carry = product / 10;
+        }
+        if carry != 0 {
+            digits.push(carry as u8);
+        }
+        Self::from_little_endian(digits)
+    }
+
+    /// Divide by a non-zero magnitude, returning `(quotient, remainder)`.
+    ///
+    /// Schoolbook long division over decimal digits: each step shifts the
+    /// running remainder by one digit, then picks the largest `0..=9` multiple
+    /// of the divisor that still fits. Because the remainder is always smaller
+    /// than the divisor before a step, the next quotient digit fits in one
+    /// decimal digit.
+    pub fn div_mod(&self, divisor: &Self) -> (Self, Self) {
+        assert!(!divisor.is_zero(), "division by zero");
+        if self.compare(divisor) == Ordering::Less {
+            return (Self::zero(), self.clone());
+        }
+        let mut quotient = vec![0u8; self.digits.len()];
+        let mut remainder = Self::zero();
+        for i in (0..self.digits.len()).rev() {
+            // remainder = remainder * 10 + next dividend digit
+            remainder = remainder.mul_pow10(1).add(&Self {
+                digits: vec![self.digits[i]],
+            });
+            let mut digit = 9u8;
+            while divisor.mul_small(digit).compare(&remainder) == Ordering::Greater {
+                digit -= 1;
+            }
+            if digit != 0 {
+                remainder = remainder.sub(&divisor.mul_small(digit));
+                quotient[i] = digit;
+            }
+        }
+        (Self::from_little_endian(quotient), remainder)
+    }
+
     /// Multiply by ten raised to `k` (prepend `k` low-order zeros).
     pub fn mul_pow10(&self, k: usize) -> Self {
         if self.is_zero() || k == 0 {
@@ -231,5 +287,24 @@ mod tests {
         assert_eq!(q.to_digits_be(), "123456");
         assert_eq!(r.to_digits_be(), "789");
         assert_eq!(q.mul_pow10(3).add(&r), a);
+    }
+
+    #[test]
+    fn general_div_mod() {
+        for (a, b, q, r) in [
+            ("100000", "3", "33333", "1"),
+            ("1", "8", "0", "1"),
+            ("999", "2", "499", "1"),
+            ("1000", "8", "125", "0"),
+            ("12345", "100", "123", "45"),
+        ] {
+            let a = BigUint::from_digits_str(a).unwrap();
+            let b = BigUint::from_digits_str(b).unwrap();
+            let (got_q, got_r) = a.div_mod(&b);
+            assert_eq!(got_q.mul(&b).add(&got_r), a, "{a:?} / {b:?}");
+            assert_eq!(got_r.compare(&b), Ordering::Less, "{a:?} / {b:?}");
+            assert_eq!(got_q.to_digits_be(), q);
+            assert_eq!(got_r.to_digits_be(), r);
+        }
     }
 }

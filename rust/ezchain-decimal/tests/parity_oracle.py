@@ -15,6 +15,7 @@ Every expected value is recorded as a token so the fixture is self-describing::
     V:<sign>|<coefficient digits>|<exponent>~<python str(Decimal)>   # decimal result
     I:<integer>                                                     # exact_precision
     C:<LT|EQ|GT>                                                    # comparison
+    P:<fill>;<worst|None>;<slip|None>;<venue_leg>;<platform>        # preview_cost sheet
     E:<ExceptionClassName>                                          # refusal
 
 The Python implementation stays the oracle until the Rust gate passes; this
@@ -26,7 +27,8 @@ from __future__ import annotations
 import os
 import random
 import sys
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import Decimal, localcontext
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -39,16 +41,21 @@ FIXTURE = Path(os.environ.get("EZ_DECIMAL_FIXTURE", str(HERE / "parity_fixture.t
 sys.path.insert(0, str(CORE_PY_SRC))
 
 from ezchain_core.money import (  # noqa: E402
+    bps_fee,
     exact_precision,
     exact_product,
     exact_sum,
     floor_money,
+    preview_cost,
     quantize_money,
 )
+from ezchain_core.types import SourceRef  # noqa: E402
 
-# A fixed seed makes the corpus reproducible in CI and in a rerun.
-SEED = 20261118
+# SEED comes from the environment so a held-out corpus with a different seed can
+# be generated without overwriting the committed fixture (see the crate README).
 BIG = "12345678901234567890123456789012345678"  # 38 digits, the NUMERIC(38,8) column
+# preview_cost's source is a pure echo; any valid SourceRef serves the oracle.
+SOURCE = SourceRef(name="parity-oracle", url=None, observed_at=datetime.now(UTC))
 
 
 def dec_token(value: Decimal) -> str:
@@ -134,6 +141,49 @@ def tricky_corpus() -> list[tuple[str, list[str]]]:
         *[("sum", [s, "0.1"]) for s in ("NaN", "Infinity")],
         ("prod", ["1", "sNaN"]),
         ("ep", ["8", "NaN"]),
+        # Division: exact quotients, preferred exponents, half-even ties, signs,
+        # non-terminating expansions and power-of-ten divisors.
+        ("div", ["28", "1", "8"]),
+        ("div", ["28", "1.00", "2"]),
+        ("div", ["28", "1.20", "2"]),
+        ("div", ["28", "100", "10000"]),
+        ("div", ["28", "12345", "10000"]),
+        ("div", ["28", "1", "10000"]),
+        ("div", ["4", "100000", "3"]),
+        ("div", ["4", "101", "1000"]),
+        ("div", ["2", "10", "4"]),
+        ("div", ["2", "1", "80"]),
+        ("div", ["3", "999", "2"]),
+        ("div", ["28", "1", "3"]),
+        ("div", ["28", "2", "3"]),
+        ("div", ["28", "1", "7"]),
+        ("div", ["28", "1E-8", "3"]),
+        ("div", ["28", "0E+5", "5"]),
+        ("div", ["28", "-1", "8"]),
+        ("div", ["28", "1", "-8"]),
+        ("div", ["28", "-1", "-3"]),
+        ("div", ["28", BIG, "9950"]),
+        ("div", ["28", "1", "0"]),
+        # bps_fee: the fee the journal books for a notional at a given bps.
+        ("bps", ["100", "50"]),
+        ("bps", ["0.1", "25"]),
+        ("bps", ["-12.345678901", "50"]),
+        ("bps", [BIG + ".12345678", "50"]),
+        ("bps", ["100", "0"]),
+        ("bps", ["1", "3"]),
+        ("bps", ["100", "-1"]),
+        ("bps", ["NaN", "50"]),
+        # preview_cost: paper mark vs executable, venue-leg max, slippage window.
+        ("pc", ["paper_mark", "100", "999", "None", "50"]),
+        ("pc", ["jupiter", "100", "0.123456789", "10", "50"]),
+        ("pc", ["jupiter", "100", "2.5", "10", "50"]),
+        ("pc", ["jupiter", "100", "0.000000001", "10000", "50"]),
+        ("pc", ["paper_mark", "100", "999", "None", "50"]),
+        ("pc", ["jupiter", "0.1", "0.01", BIG, "25"]),
+        ("pc", ["jupiter", "100", "1", "None", "50"]),
+        ("pc", ["jupiter", "0", "1", "None", "50"]),
+        ("pc", ["jupiter", "100", "NaN", "10", "50"]),
+        ("pc", ["jupiter", "100", "1", "10", "-1"]),
     ]
     return cases
 
@@ -141,7 +191,19 @@ def tricky_corpus() -> list[tuple[str, list[str]]]:
 def random_corpus() -> list[tuple[str, list[str]]]:
     """Deterministic seeded cases across every operation, up to 40 digits."""
     rng = random.Random(SEED)
-    plan = {"parse": 60, "ep": 40, "q": 80, "f": 80, "sum": 70, "prod": 50, "cmp": 20}
+    plan = {
+        "parse": 60,
+        "ep": 40,
+        "q": 80,
+        "f": 80,
+        "sum": 70,
+        "prod": 50,
+        "cmp": 20,
+        "div": 70,
+        "bps": 45,
+        "pc": 45,
+    }
+    fee_choices = [0, 1, 5, 25, 30, 50, 99, 300, 2500, 9999, 10000]
     cases: list[tuple[str, list[str]]] = []
     for op, count in plan.items():
         for _ in range(count):
@@ -156,10 +218,34 @@ def random_corpus() -> list[tuple[str, list[str]]]:
                 args = [rnd_dec(rng) for _ in range(rng.randint(0, 6))]
             elif op == "prod":
                 args = [rnd_dec(rng) for _ in range(rng.randint(1, 4))]
+            elif op == "div":
+                precision = str(rng.choice([2, 4, 8, 12, 28, 60]))
+                args = [precision, rnd_dec(rng), rnd_dec(rng)]
+            elif op == "bps":
+                fee = rng.choice(fee_choices)
+                if rng.random() < 0.05:  # exercise the negative-fee refusal
+                    fee = -fee
+                args = [rnd_dec(rng), str(fee)]
+            elif op == "pc":
+                kind = rng.choice(["paper_mark", "jupiter", "kyberswap"])
+                notional = rnd_dec(rng).lstrip("-") or "1"
+                venue = rnd_dec(rng)
+                amount = "None" if rng.random() < 0.3 else rnd_dec(rng)
+                args = [kind, notional, venue, amount, str(rng.choice(fee_choices))]
             else:  # cmp
                 args = [rnd_dec(rng), rnd_dec(rng)]
             cases.append((op, args))
     return cases
+
+
+def pc_token(preview, venue_leg: Decimal) -> str:
+    """Encode the computed numeric fields of a CostPreview as one token."""
+    worst = "None" if preview.worst_case_out is None else dec_token(preview.worst_case_out)
+    slip = "None" if preview.slippage_bps is None else str(preview.slippage_bps)
+    return (
+        f"P:{dec_token(preview.fill_fee_usd)};{worst};{slip};"
+        f"{dec_token(venue_leg)};{dec_token(preview.platform_fee_usd)}"
+    )
 
 
 def expected_for(op: str, args: list[str]) -> str:
@@ -168,6 +254,25 @@ def expected_for(op: str, args: list[str]) -> str:
         return dec_token(Decimal(args[0]))
 
     try:
+        if op == "div":
+            precision = int(args[0])
+            with localcontext() as context:
+                context.prec = precision
+                return dec_token(Decimal(args[1]) / Decimal(args[2]))
+        if op == "bps":
+            return dec_token(bps_fee(Decimal(args[0]), int(args[1])))
+        if op == "pc":
+            kind, notional, venue, amount, fee = args
+            preview = preview_cost(
+                kind=kind,
+                notional_usd=Decimal(notional),
+                venue_fee_usd=Decimal(venue),
+                price_impact_pct=None,
+                amount_out=None if amount == "None" else Decimal(amount),
+                fee_bps=int(fee),
+                source=SOURCE,
+            )
+            return pc_token(preview, quantize_money(Decimal(venue)))
         if op == "ep":
             extra = int(args[0])
             values = [Decimal(s) for s in args[1:]]
