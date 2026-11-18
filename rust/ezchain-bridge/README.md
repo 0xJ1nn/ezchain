@@ -46,8 +46,15 @@ app's Python 3.11 venv. Build and install it with the host-native script from th
 repository root:
 
 ```bash
+<<<<<<< HEAD
 bash tools/build-native.sh                       # .venv (or $VIRTUAL_ENV / $EZCHAIN_VENV)
 EZCHAIN_VENV=/path/to/venv bash tools/build-native.sh
+=======
+SCRATCH=/private/var/folders/55/5z874h2x6tq_8xjr5zb2b76w0000gn/T/opencode/ez-rust-poc
+export CARGO_HOME="$SCRATCH/cargo" RUSTUP_HOME="$SCRATCH/rustup" PATH="$SCRATCH/cargo/bin:$PATH"
+cargo build -p ezchain-bridge
+cp rust/target/debug/libezchain_bridge.dylib rust/target/debug/ezchain_bridge.so
+>>>>>>> origin/rust/migration
 ```
 
 It builds the crate with `cargo build --locked --release -p ezchain-bridge` from `rust/`
@@ -99,6 +106,7 @@ the pinned counts are asserted only for the committed corpus.
 
 ## Oracle and scope
 
+<<<<<<< HEAD
 Python remains the behavioural oracle: a recorded case is never changed to make the Rust
 side pass. **The ledger remains the sole accountant (CONTRACT I1): routing arithmetic
 through these kernels does not make Rust an accountant and does not change the execution
@@ -110,6 +118,16 @@ orchestration, keys, risk decisions and ledger writes is unchanged.
 No speedup is claimed — a single call across FFI costs more than a small kernel, so any
 performance claim needs a loop or a whole service boundary and a recorded benchmark
 (ADR-0050).
+=======
+Python remains the behavioural oracle until the whole migrated surface passes parity.
+A recorded case is never changed to make the Rust side pass. **The ledger remains the
+sole accountant (CONTRACT I1): exposing these kernels does not make Rust an accountant,
+does not change any production caller and does not touch the money-path execution
+flow.** Money arithmetic stays in Python at the call site; these functions are available
+for a caller that explicitly chooses to use the proven kernel. No speedup is claimed —
+a single call across FFI costs more than a small kernel, so any performance claim needs
+a loop or a whole service boundary and a recorded benchmark (ADR-0050).
+>>>>>>> origin/rust/migration
 
 The money functions are the eight listed above only. The rest of `ezchain-decimal`
 (`exact_sum`, `exact_product`, `bps_fee`, `preview_cost`, `require_money`,
