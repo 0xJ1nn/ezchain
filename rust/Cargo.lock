@@ -102,6 +102,14 @@ name = "ezchain-rpc"
 version = "0.0.0"
 
 [[package]]
+name = "ezchain-seal"
+version = "0.0.0"
+dependencies = [
+ "ezchain-fingerprint",
+ "ezchain-jsoncanon",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

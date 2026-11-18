@@ -8,13 +8,13 @@
 use std::cmp::Ordering;
 
 use crate::biguint::BigUint;
-use crate::decimal::{Decimal, RoundMode};
+use crate::decimal::{Context, Decimal, RoundMode, DEFAULT_CONTEXT, MAX_PREC};
 
 /// The money constants from `money.py` that affect precision derivation.
-const MONEY_PRECISION: i32 = 60;
-const MONEY_SCALE: i32 = 8;
+const MONEY_PRECISION: i64 = 60;
+const MONEY_SCALE: i64 = 8;
 /// Dividing by `BPS` shifts the exponent by four (BPS_DIGITS in `money.py`).
-const BPS_DIGITS: i32 = 4;
+const BPS_DIGITS: i64 = 4;
 /// The slippage window used by `preview_cost` (DEFAULT_SLIPPAGE_BPS in money.py).
 const DEFAULT_SLIPPAGE_BPS: i64 = 50;
 /// The non-executable mark kind; executable quotes pay the larger fee leg.
@@ -35,18 +35,121 @@ pub enum MoneyError {
     /// An explicit value is not a whole number of minor units
     /// (`SubQuantumError` in Python).
     SubQuantum,
+    /// A `bool` reached `_as_decimal` (`MoneyError: ... not bool`).
+    BoolInput,
+    /// A `float` reached `_as_decimal` (`FloatMoneyError` in Python).
+    FloatInput,
+    /// A value of any other non-Decimal, non-int type reached a boundary.
+    WrongType,
+    /// A result's adjusted exponent exceeded the ambient context `Emax`
+    /// (`decimal.Overflow` in Python).
+    Overflow,
+    /// Quantize needed more than `prec` digits or exceeded `Emax`
+    /// (`decimal.InvalidOperation` in Python).
+    InvalidOperation,
+    /// A decimal `InvalidOperation`/`Overflow` that a money helper caught and
+    /// re-raised as its own `MoneyError("... outside the supported money range")`.
+    OutsideMoneyRange,
+    /// A derived precision was outside `[1, MAX_PREC]`, so assigning
+    /// `context.prec` in Python raises `ValueError` before the operation runs.
+    PrecisionOutOfRange,
 }
 
 impl MoneyError {
     /// The Python exception class name recorded by the oracle.
     pub fn code(&self) -> &'static str {
         match self {
-            MoneyError::NegativeFeeBps | MoneyError::NonPositiveNotional => "ValueError",
+            MoneyError::NegativeFeeBps
+            | MoneyError::NonPositiveNotional
+            | MoneyError::PrecisionOutOfRange => "ValueError",
             MoneyError::DivisionByZero => "DivisionByZero",
             MoneyError::SubQuantum => "SubQuantumError",
+            MoneyError::FloatInput => "FloatMoneyError",
+            MoneyError::Overflow => "Overflow",
+            MoneyError::InvalidOperation => "InvalidOperation",
             _ => "MoneyError",
         }
     }
+}
+
+/// A value at a money boundary, preserving the Python type the caller used.
+///
+/// `money.py`'s `_as_decimal` accepts only `Decimal` and `int`; `bool`, `float`
+/// and every other type are refused with distinct exception classes. Rust's
+/// type system cannot express "a bool passed where a Decimal was expected", so
+/// this enum makes that boundary explicit for the parity harness. The payload
+/// of `Int` is a `Decimal` whose exponent is always zero (`Decimal(int)`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum MoneyInput {
+    Decimal(Decimal),
+    Int(Decimal),
+    Float(f64),
+    Bool(bool),
+    Str(String),
+    None,
+    /// A Python `Decimal('NaN' | 'sNaN' | '±Infinity')`: constructed fine, but
+    /// refused by `_as_decimal`'s finite guard.
+    NonFinite,
+}
+
+impl MoneyInput {
+    /// Parse a harness boundary-input token: `<tag>:<payload>`.
+    pub fn parse(token: &str) -> Option<Self> {
+        let (tag, payload) = token.split_once(':')?;
+        match tag {
+            "D" => Decimal::parse(payload).ok().map(Self::Decimal),
+            "I" => Decimal::parse(payload).ok().map(Self::Int),
+            "F" => payload.parse::<f64>().ok().map(Self::Float),
+            "B" => match payload {
+                "True" => Some(Self::Bool(true)),
+                "False" => Some(Self::Bool(false)),
+                _ => None,
+            },
+            "S" => Some(Self::Str(payload.to_string())),
+            "N" => Some(Self::None),
+            "X" => Some(Self::NonFinite),
+            _ => None,
+        }
+    }
+}
+
+/// Rust mirror of `money._as_decimal`: accept `Decimal` and `int`, refuse
+/// `bool`, `float` and every other type with the same exception class.
+pub fn as_decimal(input: &MoneyInput) -> Result<Decimal, MoneyError> {
+    match input {
+        MoneyInput::Decimal(value) | MoneyInput::Int(value) => Ok(value.clone()),
+        MoneyInput::Float(_) => Err(MoneyError::FloatInput),
+        MoneyInput::Bool(_) => Err(MoneyError::BoolInput),
+        MoneyInput::Str(_) | MoneyInput::None => Err(MoneyError::WrongType),
+        MoneyInput::NonFinite => Err(MoneyError::NonFinite),
+    }
+}
+
+/// Rust mirror of `money.from_minor_units`' type guard: only an `int` is
+/// accepted. Notably a `float` here is a plain `MoneyError`, **not** the
+/// `FloatMoneyError` that `_as_decimal` raises.
+pub fn from_minor_units_input(input: &MoneyInput) -> Result<MinorUnits, MoneyError> {
+    match input {
+        MoneyInput::Int(value) => Ok(MinorUnits {
+            sign: value.sign && !value.coef.is_zero(),
+            magnitude: value.coef.clone(),
+        }),
+        MoneyInput::Bool(_) | MoneyInput::Float(_) | MoneyInput::Str(_) | MoneyInput::None => {
+            Err(MoneyError::WrongType)
+        }
+        MoneyInput::Decimal(_) => Err(MoneyError::WrongType),
+        MoneyInput::NonFinite => Err(MoneyError::NonFinite),
+    }
+}
+
+/// Build the ambient decimal context for a money operation. Assigning a
+/// precision outside CPython's `[1, MAX_PREC]` range raises `ValueError` in
+/// Python before the operation starts; refuse here with the same code.
+fn checked_context(precision: i128) -> Result<Context, MoneyError> {
+    if precision < 1 || precision > MAX_PREC as i128 {
+        return Err(MoneyError::PrecisionOutOfRange);
+    }
+    Ok(Context::with_precision(precision as i64))
 }
 
 /// An exact signed integer count of ledger minor units (1e-8 USD).
@@ -93,17 +196,24 @@ impl MinorUnits {
 
 /// Parity for `money.exact_precision`: `precision = 60 + extra + Σ(len(digits)
 /// + max(exponent, 0))`. Every operand is finite by construction in this type.
-pub fn exact_precision(values: &[Decimal], extra: i32) -> i64 {
-    let mut needed = MONEY_PRECISION as i64 + extra as i64;
+pub fn exact_precision(values: &[Decimal], extra: i64) -> i64 {
+    let mut needed = MONEY_PRECISION + extra;
     for value in values {
-        needed += value.coef.digit_count() as i64 + value.exp.max(0) as i64;
+        needed += value.coef.digit_count() as i64 + value.exp.max(0);
     }
     needed
 }
 
 fn quantize_with(value: &Decimal, mode: RoundMode) -> Result<Decimal, MoneyError> {
-    let precision = exact_precision(std::slice::from_ref(value), MONEY_SCALE) as usize;
-    Ok(value.quantize(-MONEY_SCALE, mode, precision))
+    let precision = exact_precision(std::slice::from_ref(value), MONEY_SCALE);
+    let ctx = checked_context(precision.into())?;
+    // money.py wraps quantize in `except InvalidOperation -> MoneyError`.
+    value
+        .quantize(-MONEY_SCALE, mode, &ctx)
+        .map_err(|e| match e {
+            MoneyError::InvalidOperation => MoneyError::OutsideMoneyRange,
+            other => other,
+        })
 }
 
 /// Parity for `money.quantize_money`: quantize to 1e-8, half-even, under a
@@ -129,18 +239,20 @@ pub fn exact_sum(values: &[Decimal]) -> Result<Decimal, MoneyError> {
         });
     }
 
-    let mut integer_digits = 1usize;
-    let mut min_exponent = i32::MAX;
+    let mut integer_digits = 1i128;
+    let mut min_exponent = i64::MAX;
     for value in values {
-        integer_digits = integer_digits.max(value.coef.digit_count() + value.exp.max(0) as usize);
+        integer_digits =
+            integer_digits.max(value.coef.digit_count() as i128 + value.exp.max(0) as i128);
         min_exponent = min_exponent.min(value.exp);
     }
     let scale = if min_exponent < 0 {
-        min_exponent.unsigned_abs() as usize
+        min_exponent.unsigned_abs() as i128
     } else {
         0
     };
-    let precision = integer_digits + scale + values.len().to_string().len() + 2;
+    let precision = integer_digits + scale + values.len().to_string().len() as i128 + 2;
+    let ctx = checked_context(precision)?;
 
     let mut total = Decimal {
         sign: false,
@@ -148,7 +260,7 @@ pub fn exact_sum(values: &[Decimal]) -> Result<Decimal, MoneyError> {
         exp: 0,
     };
     for value in values {
-        total = total.add(value, precision);
+        total = total.add(value, &ctx)?;
     }
     Ok(total)
 }
@@ -160,7 +272,8 @@ pub fn exact_product(values: &[Decimal]) -> Result<Decimal, MoneyError> {
         return Err(MoneyError::EmptyProduct);
     }
     let significant: usize = values.iter().map(|value| value.coef.digit_count()).sum();
-    let precision = significant + values.len() + 2;
+    let precision = significant as i64 + values.len() as i64 + 2;
+    let ctx = checked_context(precision.into())?;
 
     let mut product = Decimal {
         sign: false,
@@ -168,7 +281,7 @@ pub fn exact_product(values: &[Decimal]) -> Result<Decimal, MoneyError> {
         exp: 0,
     };
     for value in values {
-        product = product.mul(value, precision);
+        product = product.mul(value, &ctx)?;
     }
     Ok(product)
 }
@@ -184,9 +297,10 @@ pub fn bps_fee(notional: &Decimal, fee_bps: i64) -> Result<Decimal, MoneyError> 
     let precision = exact_precision(
         &[notional.clone(), fee_bps_dec.clone()],
         MONEY_SCALE + BPS_DIGITS,
-    ) as usize;
-    let product = notional.mul(&fee_bps_dec, precision);
-    let fee = product.div(&Decimal::from_i64(10_000), precision)?;
+    );
+    let ctx = checked_context(precision.into())?;
+    let product = notional.mul(&fee_bps_dec, &ctx)?;
+    let fee = product.div(&Decimal::from_i64(10_000), &ctx)?;
     quantize_money(&fee)
 }
 
@@ -235,12 +349,12 @@ pub fn preview_cost(
     };
     let worst_case_out = match (slippage_bps, amount_out) {
         (Some(slippage), Some(amount)) => {
-            let precision =
-                exact_precision(std::slice::from_ref(amount), MONEY_SCALE + BPS_DIGITS) as usize;
+            let precision = exact_precision(std::slice::from_ref(amount), MONEY_SCALE + BPS_DIGITS);
+            let ctx = checked_context(precision.into())?;
             let factor = Decimal::from_i64(10_000 - slippage);
             let inside_window = amount
-                .mul(&factor, precision)
-                .div(&Decimal::from_i64(10_000), precision)?;
+                .mul(&factor, &ctx)?
+                .div(&Decimal::from_i64(10_000), &ctx)?;
             Some(quantize_money(&inside_window)?)
         }
         _ => None,
@@ -281,8 +395,15 @@ pub fn require_money(value: &Decimal) -> Result<Decimal, MoneyError> {
 pub fn to_minor_units(value: &Decimal) -> Result<MinorUnits, MoneyError> {
     require_money(value)?;
 
-    // `MONEY_SCALE` is added in i64 space so no i32 exponent can overflow here.
-    let shift = value.exp as i64 + MONEY_SCALE as i64;
+    // `amount.scaleb(MONEY_SCALE)` is context-checked in Python: an adjusted
+    // exponent above Emax raises Overflow, which to_minor_units catches and
+    // re-raises as MoneyError. Check it before any coefficient is grown.
+    if value.adjusted() + MONEY_SCALE as i128 > DEFAULT_CONTEXT.emax as i128 {
+        return Err(MoneyError::OutsideMoneyRange);
+    }
+    // The check above bounds `shift` to roughly Emax in magnitude, so the
+    // i128 -> usize conversion below cannot overflow or allocate wildly.
+    let shift = value.exp as i128 + MONEY_SCALE as i128;
     let magnitude = if shift >= 0 {
         value.coef.mul_pow10(shift as usize)
     } else {
@@ -336,6 +457,7 @@ pub fn compare(a: &Decimal, b: &Decimal) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decimal::ParseError;
 
     fn d(s: &str) -> Decimal {
         Decimal::parse(s).unwrap()
@@ -483,6 +605,79 @@ mod tests {
         assert_eq!(
             token(&exact_neg(&long)),
             "1|12345678901234567890123456789|0~-12345678901234567890123456789"
+        );
+    }
+
+    #[test]
+    fn as_decimal_guards_match_python_input_types() {
+        let accepted = |token: &str| as_decimal(&MoneyInput::parse(token).unwrap()).unwrap();
+        assert_eq!(token(&accepted("D:1.5")), "0|15|-1~1.5");
+        assert_eq!(token(&accepted("I:42")), "0|42|0~42");
+        assert_eq!(
+            token(&accepted("I:123456789012345678901234567890")),
+            "0|123456789012345678901234567890|0~123456789012345678901234567890"
+        );
+        let refused = |token: &str| {
+            as_decimal(&MoneyInput::parse(token).unwrap())
+                .unwrap_err()
+                .code()
+        };
+        assert_eq!(refused("B:True"), "MoneyError");
+        assert_eq!(refused("B:False"), "MoneyError");
+        assert_eq!(refused("F:0.1"), "FloatMoneyError");
+        assert_eq!(refused("S:1.5"), "MoneyError");
+        assert_eq!(refused("N:"), "MoneyError");
+        assert_eq!(refused("X:NaN"), "MoneyError");
+    }
+
+    #[test]
+    fn from_minor_units_guard_uses_plain_money_error_for_float() {
+        let accepted = from_minor_units_input(&MoneyInput::parse("I:-250000000").unwrap()).unwrap();
+        assert_eq!(accepted.canonical(), "N:-250000000");
+        // _as_decimal raises FloatMoneyError, but from_minor_units raises a
+        // plain MoneyError for a float — the two guards must stay distinct.
+        let refused = |token: &str| {
+            from_minor_units_input(&MoneyInput::parse(token).unwrap())
+                .unwrap_err()
+                .code()
+        };
+        assert_eq!(refused("F:1.0"), "MoneyError");
+        assert_eq!(refused("B:True"), "MoneyError");
+        assert_eq!(refused("D:1"), "MoneyError");
+    }
+
+    #[test]
+    fn ambient_context_boundaries_match_python() {
+        // money.py catches InvalidOperation/Overflow in quantize and
+        // to_minor_units and re-raises its own MoneyError.
+        assert_eq!(
+            quantize_money(&d("1E+1000000")),
+            Err(MoneyError::OutsideMoneyRange)
+        );
+        assert_eq!(
+            quantize_money(&d("1E+9999999999")),
+            Err(MoneyError::OutsideMoneyRange)
+        );
+        assert_eq!(
+            to_minor_units(&d("1E+999999")),
+            Err(MoneyError::OutsideMoneyRange)
+        );
+        // exact_product does not catch Overflow; Python raises it directly.
+        assert_eq!(
+            exact_product(&[d("1E+999999"), d("1E+999999")]),
+            Err(MoneyError::Overflow)
+        );
+        // A precision beyond MAX_PREC makes `context.prec = n` raise ValueError.
+        assert_eq!(
+            quantize_money(&d("1E+999999999999999999")),
+            Err(MoneyError::PrecisionOutOfRange)
+        );
+        // Tiny values quantize to zero, and exponents beyond i32 parse.
+        assert_eq!(quantize_money(&d("1E-1000000")).unwrap().str_repr(), "0E-8");
+        assert_eq!(d("1E+9999999999").exp, 9_999_999_999);
+        assert_eq!(
+            Decimal::parse("1E+9999999999999999999"),
+            Err(ParseError::ExpOutOfRange)
         );
     }
 }

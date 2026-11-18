@@ -18,8 +18,10 @@ binding, and enables no Rust money arithmetic anywhere.
   digits, **not** a fixed 28- or 38-digit word. There is no precision cap in the
   value itself; every operation derives the exact context it needs from the
   operands, the way `money.py` sizes its `localcontext()`.
-- `exp: i32` — base-10 exponent. The 38-digit `NUMERIC(38, 8)` column and values
-  far beyond it are handled; exponents outside the `i32` range are out of scope.
+- `exp: i64` — base-10 exponent. It spans CPython's whole constructible range
+  (`MAX_EMAX = MAX_PREC = 999999999999999999`), so exponents outside the former
+  `i32` representation are handled and proven below. Larger exponents are
+  refused at parse time the way `Decimal(str)` raises `InvalidOperation`.
 
 Formatting reproduces `str(Decimal)` (including `0E-8` for a zero at exponent -8),
 because `money.py` serialises values with `str()`.
@@ -53,10 +55,13 @@ the Rust output matches every recorded token, including exact triples
 | `from_minor_units` | `from_minor_units(minor)` | yes — inverse conversion for arbitrary-precision signed integers |
 | `exact_neg` | `exact_neg(value)` | yes — sign flip on the digits with no context rounding, including the sign of zero |
 | Non-finite rejection | `_as_decimal` → `MoneyError` | yes — `NaN`, `sNaN`, `±Infinity` at every money boundary, including the new conversion helpers |
+| Input-type guards | `_as_decimal` / `from_minor_units` | yes — `bool` → `MoneyError`, `float` → `FloatMoneyError`, `int` accepted as `Decimal(int)`, any other type → `MoneyError`; `from_minor_units(1.0)` → plain `MoneyError`, not `FloatMoneyError` |
+| Ambient-context boundaries | decimal `Emax` / `MAX_PREC` under `money.py`'s `localcontext()` | yes — quantize/floor past `Emax` → `MoneyError` (caught `InvalidOperation`), product past `Emax` → `Overflow`, derived precision past `MAX_PREC` → `ValueError`, `scaleb` past `Emax` in `to_minor_units` → `MoneyError` |
+| Exponents outside `i32` | `Decimal(str)` and money ops at ±1e10 and near `MAX_EMAX` | yes — parse, `str`, quantize refusal, `exact_precision`, product overflow and end-of-range construction refusal all match |
 
-Corpus: **962 deterministic cases** (fixed hand-picked tricky cases plus a seeded
-random corpus, up to 40 digits). A **held-out corpus of 962 cases generated with a
-different seed (88317)** also matched 962/962, as a check against overfitting. Tricky
+Corpus: **1087 deterministic cases** (fixed hand-picked tricky cases plus a seeded
+random corpus, up to 40 digits). A **held-out corpus of 1087 cases generated with a
+different seed (77123)** also matched 1087/1087, as a check against overfitting. Tricky
 cases include `0.1 + 0.2`, 38-digit `NUMERIC(38, 8)` values, negative exponents,
 half-even ties (`5e-9 → 0E-8`, `15e-9 → 2E-8`), floor on negatives
 (`-1.234567895 → -1.23456790`), non-finite refusal, division preferred-exponent and
@@ -64,7 +69,9 @@ rounding cases (`1.00 / 2 → 0.50`, `100000 / 3` at precision 4 `→ 3.333E+4`,
 `101 / 1000` at precision 2 `→ 0.10`, `1 / 3` at 28 digits), long-tail bps fees,
 both preview cost-sheet branches, whole-versus-sub-quantum minor-unit conversions
 (`0.1 → 10000000`, `0.000000009 → SubQuantumError`), signed minor-unit round trips,
-and `exact_neg` on long coefficients and signed zeros.
+`exact_neg` on long coefficients and signed zeros, every Python input type at both
+money boundaries, the `Emax`/`MAX_PREC` refusal boundaries and exponents up to
+`MAX_EMAX`.
 
 This proves **per-operation decimal parity only**. It does not establish a speed
 advantage, an FFI boundary, or that a whole money path is ready to move.
@@ -80,13 +87,15 @@ These are explicitly out of this prototype. None may be treated as ready to port
 - **SHA-256 fingerprint / seal hashing** — no hashing, no seal, no cryptography.
 
 Also not ported: the echoed `network_fee_usd` /
-`price_impact_pct` fields of a cost sheet, ambient-context overflow /
-`Emin`/`Emax`/`clamp`, context sizes that would raise Python's
-`InvalidOperation`, Python's `bool`/`float`/`int` input guards (the prototype is
-string-only), and exponents outside `i32`. The context-precision derivation is
-sized so that no rounding is needed for the proven operations in this scope;
-`round_to_precision` and the division guard digit mirror context rounding, but
-behaviour at the extreme InvalidOperation boundary is not claimed.
+`price_impact_pct` fields of a cost sheet. Context behaviour is proven only for
+the **default ambient context** `money.py` actually runs under: `clamp = 0`,
+`Emin = -999999`, `Emax = 999999`, with `prec` derived per operation. A
+non-default `clamp`, custom `Emin`/`Emax`, and subnormal / underflow (`Emin`-edge)
+behaviour are **not** proven: `money.py` never sets those fields, so this oracle
+cannot record answers for them. Exponents beyond `MAX_EMAX` are refused at parse
+time; they are not representable in CPython either. The context-precision
+derivation is sized so that no rounding is needed for the proven operations;
+`round_to_precision` and the division guard digit mirror context rounding.
 
 ## Gates (observed results)
 
@@ -95,15 +104,15 @@ From the `rust/` workspace, with the scratch Rust toolchain and the project venv
 ```
 cargo fmt --all -- --check                          # clean
 cargo clippy --workspace --all-targets -- -D warnings  # clean
-cargo test --workspace                              # 428 passed, 0 failed
-   └─ ezchain-decimal: 18 unit tests + 1 parity test (962/962 cases)
+cargo test --workspace                              # 439 passed, 0 failed
+   └─ ezchain-decimal: 22 unit tests + 1 parity test (1087/1087 cases)
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
-                                                    # OK: fixture matches oracle (962 cases)
-EZ_DECIMAL_SEED=88317 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
+                                                    # OK: fixture matches oracle (1087 cases)
+EZ_DECIMAL_SEED=77123 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
   .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
-                                                     # wrote 962 held-out cases
+                                                     # wrote 1087 held-out cases
 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
-  cargo test -p ezchain-decimal --test parity        # parity: 962/962 held-out cases match
+  cargo test -p ezchain-decimal --test parity        # parity: 1087/1087 held-out cases match
 ```
 
 Regenerate the recorded oracle fixture with:
