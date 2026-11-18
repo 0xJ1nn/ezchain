@@ -58,6 +58,10 @@ the Rust output matches every recorded token, including exact triples
 | Input-type guards | `_as_decimal` / `from_minor_units` | yes — `bool` → `MoneyError`, `float` → `FloatMoneyError`, `int` accepted as `Decimal(int)`, any other type → `MoneyError`; `from_minor_units(1.0)` → plain `MoneyError`, not `FloatMoneyError` |
 | Ambient-context boundaries | decimal `Emax` / `MAX_PREC` under `money.py`'s `localcontext()` | yes — quantize/floor past `Emax` → `MoneyError` (caught `InvalidOperation`), product past `Emax` → `Overflow`, derived precision past `MAX_PREC` → `ValueError`, `scaleb` past `Emax` in `to_minor_units` → `MoneyError` |
 | Exponents outside `i32` | `Decimal(str)` and money ops at ±1e10 and near `MAX_EMAX` | yes — parse, `str`, quantize refusal, `exact_precision`, product overflow and end-of-range construction refusal all match |
+| `SourceRef.to_dict` | `types.SourceRef.to_dict` | yes — `name`, `url`/null and the UTC `datetime.isoformat()` spelling (`YYYY-MM-DDTHH:MM:SS[.ffffff]+00:00`) |
+| `CostPreview.to_dict` | `money.CostPreview.to_dict` | yes — the full field map including the echoed `network_fee_usd` / `price_impact_pct`, nullable `worst_case_out`, integer `slippage_bps` and nested `source` |
+| `Quote.to_dict` | `types.Quote.to_dict` | yes — money spellings plus nullable `route` / `price_impact_pct` and nested `source` |
+| to_dict → canonical JSON bytes | `json.dumps(obj.to_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)` | yes — every recorded field map re-emitted byte-for-byte through `ezchain-jsoncanon` |
 
 Corpus: **1087 deterministic cases** (fixed hand-picked tricky cases plus a seeded
 random corpus, up to 40 digits). A **held-out corpus of 1087 cases generated with a
@@ -73,8 +77,14 @@ both preview cost-sheet branches, whole-versus-sub-quantum minor-unit conversion
 money boundaries, the `Emax`/`MAX_PREC` refusal boundaries and exponents up to
 `MAX_EMAX`.
 
-This proves **per-operation decimal parity only**. It does not establish a speed
-advantage, an FFI boundary, or that a whole money path is ready to move.
+The `to_dict` spellings have their own corpus: **592 deterministic cases** (171
+`SourceRef`, 218 `CostPreview`, 203 `Quote`, recorded from the real Python
+objects) with a **held-out corpus of 592 cases from a different seed (99173)**
+also matching 592/592.
+
+This proves **per-operation decimal parity and the named `to_dict` spellings
+only**. It does not establish a speed advantage, an FFI boundary, or that a
+whole money path is ready to move.
 
 ## Remaining blockers — NOT proven, NOT in scope
 
@@ -82,12 +92,15 @@ These are explicitly out of this prototype. None may be treated as ready to port
 
 - **Currency conversion** — no conversion between assets, quote inversion or
   token-decimal scaling is implemented.
-- **JSON canonicalisation** — no canonical wire form; `to_dict`/JSON behaviour is
-  not reproduced, including `CostPreview.to_dict` and `SourceRef` serialisation.
 - **SHA-256 fingerprint / seal hashing** — no hashing, no seal, no cryptography.
 
-Also not ported: the echoed `network_fee_usd` /
-`price_impact_pct` fields of a cost sheet. Context behaviour is proven only for
+The previously-listed `to_dict` / JSON canonicalisation blocker is resolved for
+the records named above: their field maps and canonical JSON bytes are proven.
+A general canonical wire form for *every* record, and the transaction/ledger
+fingerprint path, remain the job of `ezchain-jsoncanon` / `ezchain-seal`, not
+this crate.
+
+Also out of scope: context behaviour is proven only for
 the **default ambient context** `money.py` actually runs under: `clamp = 0`,
 `Emin = -999999`, `Emax = 999999`, with `prec` derived per operation. A
 non-default `clamp`, custom `Emin`/`Emax`, and subnormal / underflow (`Emin`-edge)
@@ -104,29 +117,42 @@ From the `rust/` workspace, with the scratch Rust toolchain and the project venv
 ```
 cargo fmt --all -- --check                          # clean
 cargo clippy --workspace --all-targets -- -D warnings  # clean
-cargo test --workspace                              # 439 passed, 0 failed
-   └─ ezchain-decimal: 22 unit tests + 1 parity test (1087/1087 cases)
+cargo test --workspace                              # 450 passed, 0 failed
+   └─ ezchain-decimal: 22 unit tests + 1 decimal parity test (1087/1087 cases)
+                        + 2 to_dict tests (592/592 cases)
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
                                                     # OK: fixture matches oracle (1087 cases)
+.venv/bin/python rust/ezchain-decimal/tests/todict_oracle.py --check
+                                                    # OK: fixture matches oracle (592 cases)
 EZ_DECIMAL_SEED=77123 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
   .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
                                                      # wrote 1087 held-out cases
 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
   cargo test -p ezchain-decimal --test parity        # parity: 1087/1087 held-out cases match
+EZ_TODICT_SEED=99173 EZ_TODICT_FIXTURE=/tmp/todict-heldout.txt \
+  .venv/bin/python rust/ezchain-decimal/tests/todict_oracle.py
+                                                      # wrote 592 held-out cases
+EZ_TODICT_FIXTURE=/tmp/todict-heldout.txt \
+  cargo test -p ezchain-decimal --test todict         # parity: 592/592 held-out cases match
 ```
 
-Regenerate the recorded oracle fixture with:
+Regenerate the recorded oracle fixtures with:
 
 ```
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
+.venv/bin/python rust/ezchain-decimal/tests/todict_oracle.py
 ```
 
-Set `EZ_DECIMAL_SEED` / `EZ_DECIMAL_FIXTURE` to generate a held-out corpus without
-overwriting the committed fixture; the Rust parity test reads the path in
-`EZ_DECIMAL_FIXTURE` when it is set, otherwise it uses the committed fixture.
+Set `EZ_DECIMAL_SEED` / `EZ_DECIMAL_FIXTURE` or `EZ_TODICT_SEED` /
+`EZ_TODICT_FIXTURE` to generate a held-out corpus without overwriting the
+committed fixture; the Rust parity tests read the path in the matching
+`*_FIXTURE` variable when it is set, otherwise they use the committed fixture.
 
 ## Safety
 
-`#![forbid(unsafe_code)]`, zero dependencies, no I/O, no keys, no ledger writes.
-No money-path caller is modified. Money arithmetic stays in Python (CONTRACT I1,
-ADR-0049/0050/0052) until a separate ADR and full-path parity gate say otherwise.
+`#![forbid(unsafe_code)]`, zero runtime dependencies, no I/O, no keys, no ledger
+writes. The only Cargo dependency is a **dev-only** path dependency on the
+sibling `ezchain-jsoncanon` crate, used in the parity gate to emit the canonical
+byte string; the library itself stays dependency-free. No money-path caller is
+modified. Money arithmetic stays in Python (CONTRACT I1, ADR-0049/0050/0052)
+until a separate ADR and full-path parity gate say otherwise.
