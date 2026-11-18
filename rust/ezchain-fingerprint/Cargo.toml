@@ -1,0 +1,13 @@
+[package]
+name = "ezchain-fingerprint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "SHA-256 fingerprint of canonical transaction JSON bytes, byte-identical to signing.py (ADR-0052)"
+
+[dependencies]
+# ADR-0052 assigns cryptographic operations to Rust, which authorises this one
+# well-audited pure-Rust dependency. Pinned to one exact version; no other
+# direct dependency is added. Transitive crates come from sha2 only.
+sha2 = "=0.10.8"
