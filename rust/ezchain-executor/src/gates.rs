@@ -63,6 +63,40 @@ pub enum RefusalCode {
     PositionChanged,
     /// A reused idempotency key naming a different payload (`IDEMPOTENCY_CONFLICT`).
     IdempotencyConflict,
+    /// An unattended intent with no matching automation consent (`AUTOMATION_CONSENT_REQUIRED`).
+    AutomationConsentRequired,
+    /// A sell with no held position (`INSUFFICIENT_POSITION`).
+    InsufficientPosition,
+    /// A sell that resolves to a non-positive size (`INVALID_AMOUNT`).
+    InvalidAmount,
+    /// A live/mode submit with no signing boundary (`SIGNING_BOUNDARY_REQUIRED`).
+    SigningBoundaryRequired,
+    /// A non-paper submit whose signer is not vault/custody backed (`VAULT_BOUNDARY_REQUIRED`).
+    VaultBoundaryRequired,
+    /// The key handle's owner differs from the order's principal (`CUSTODY_OWNER_MISMATCH`).
+    CustodyOwnerMismatch,
+    /// The approved intent cannot be constructed (`TRANSACTION_NOT_APPROVABLE`).
+    TransactionNotApprovable,
+    /// The venue could not build the transaction (`TRANSACTION_BUILD_FAILED`).
+    TransactionBuildFailed,
+    /// The signer failed (`TRANSACTION_SIGN_FAILED`).
+    TransactionSignFailed,
+    /// The broadcast claim could not be written (`RECONCILIATION_FAILED`).
+    ReconciliationFailed,
+    /// The venue submit timed out (`TIMEOUT`).
+    Timeout,
+    /// The venue rejected the order (`VENUE_REJECTED`).
+    VenueRejected,
+    /// The venue adapter raised an unmapped error (`VENUE_ERROR`).
+    VenueError,
+    /// A receipt that is not accepted/sized/priced (`UNBOOKABLE_RECEIPT`).
+    UnbookableReceipt,
+    /// A receipt larger than the approved order (`RECEIPT_EXCEEDS_ORDER`).
+    ReceiptExceedsOrder,
+    /// A receipt that does not echo the signed payload digest (`TRANSACTION_DIGEST_MISMATCH`).
+    TransactionDigestMismatch,
+    /// The journal could not be built or appended (`JOURNAL_FAILED`).
+    JournalFailed,
 }
 
 impl RefusalCode {
@@ -83,7 +117,64 @@ impl RefusalCode {
             Self::KillSwitchUnavailable => "KILL_SWITCH_UNAVAILABLE",
             Self::PositionChanged => "POSITION_CHANGED",
             Self::IdempotencyConflict => "IDEMPOTENCY_CONFLICT",
+            Self::AutomationConsentRequired => "AUTOMATION_CONSENT_REQUIRED",
+            Self::InsufficientPosition => "INSUFFICIENT_POSITION",
+            Self::InvalidAmount => "INVALID_AMOUNT",
+            Self::SigningBoundaryRequired => "SIGNING_BOUNDARY_REQUIRED",
+            Self::VaultBoundaryRequired => "VAULT_BOUNDARY_REQUIRED",
+            Self::CustodyOwnerMismatch => "CUSTODY_OWNER_MISMATCH",
+            Self::TransactionNotApprovable => "TRANSACTION_NOT_APPROVABLE",
+            Self::TransactionBuildFailed => "TRANSACTION_BUILD_FAILED",
+            Self::TransactionSignFailed => "TRANSACTION_SIGN_FAILED",
+            Self::ReconciliationFailed => "RECONCILIATION_FAILED",
+            Self::Timeout => "TIMEOUT",
+            Self::VenueRejected => "VENUE_REJECTED",
+            Self::VenueError => "VENUE_ERROR",
+            Self::UnbookableReceipt => "UNBOOKABLE_RECEIPT",
+            Self::ReceiptExceedsOrder => "RECEIPT_EXCEEDS_ORDER",
+            Self::TransactionDigestMismatch => "TRANSACTION_DIGEST_MISMATCH",
+            Self::JournalFailed => "JOURNAL_FAILED",
         }
+    }
+
+    /// Resolve a stable Python reason string to its typed code. Receipt-verification
+    /// kernels (`crate::receipt`) return their refusals as the exact Python strings, so
+    /// the state machine maps them back here rather than owning a second vocabulary.
+    pub fn from_code(code: &str) -> Option<Self> {
+        Some(match code {
+            "MISSING_RISK_INPUTS" => Self::MissingRiskInputs,
+            "RISK_DENIED" => Self::RiskDenied,
+            "PRICE_UNKNOWN" => Self::PriceUnknown,
+            "QUOTE_STALE" => Self::QuoteStale,
+            "QUOTE_TIMEOUT" => Self::QuoteTimeout,
+            "NO_QUOTE" => Self::NoQuote,
+            "NO_ROUTE" => Self::NoRoute,
+            "NO_SELL_ROUTE" => Self::NoSellRoute,
+            "EXIT_NO_ROUTE" => Self::ExitNoRoute,
+            "QUOTE_SIZE_MISMATCH" => Self::QuoteSizeMismatch,
+            "KILL_SWITCH_ACTIVE" => Self::KillSwitchActive,
+            "KILL_SWITCH_UNAVAILABLE" => Self::KillSwitchUnavailable,
+            "POSITION_CHANGED" => Self::PositionChanged,
+            "IDEMPOTENCY_CONFLICT" => Self::IdempotencyConflict,
+            "AUTOMATION_CONSENT_REQUIRED" => Self::AutomationConsentRequired,
+            "INSUFFICIENT_POSITION" => Self::InsufficientPosition,
+            "INVALID_AMOUNT" => Self::InvalidAmount,
+            "SIGNING_BOUNDARY_REQUIRED" => Self::SigningBoundaryRequired,
+            "VAULT_BOUNDARY_REQUIRED" => Self::VaultBoundaryRequired,
+            "CUSTODY_OWNER_MISMATCH" => Self::CustodyOwnerMismatch,
+            "TRANSACTION_NOT_APPROVABLE" => Self::TransactionNotApprovable,
+            "TRANSACTION_BUILD_FAILED" => Self::TransactionBuildFailed,
+            "TRANSACTION_SIGN_FAILED" => Self::TransactionSignFailed,
+            "RECONCILIATION_FAILED" => Self::ReconciliationFailed,
+            "TIMEOUT" => Self::Timeout,
+            "VENUE_REJECTED" => Self::VenueRejected,
+            "VENUE_ERROR" => Self::VenueError,
+            "UNBOOKABLE_RECEIPT" => Self::UnbookableReceipt,
+            "RECEIPT_EXCEEDS_ORDER" => Self::ReceiptExceedsOrder,
+            "TRANSACTION_DIGEST_MISMATCH" => Self::TransactionDigestMismatch,
+            "JOURNAL_FAILED" => Self::JournalFailed,
+            _ => return None,
+        })
     }
 }
 
