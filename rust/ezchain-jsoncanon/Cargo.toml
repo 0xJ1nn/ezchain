@@ -1,0 +1,7 @@
+[package]
+name = "ezchain-jsoncanon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Dependency-free canonical JSON for transaction fingerprints, byte-identical to signing.py (ADR-0050 rule 2)"

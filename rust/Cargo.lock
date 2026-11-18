@@ -32,6 +32,10 @@ name = "ezchain-executor"
 version = "0.0.0"
 
 [[package]]
+name = "ezchain-jsoncanon"
+version = "0.0.0"
+
+[[package]]
 name = "ezchain-p2p"
 version = "0.0.0"
 
