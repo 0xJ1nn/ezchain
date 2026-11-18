@@ -9,8 +9,9 @@
 use std::cmp::Ordering;
 
 use ezchain_decimal::{
-    bps_fee, exact_precision, exact_product, exact_sum, floor_money, preview_cost, quantize_money,
-    Decimal, ParseError,
+    bps_fee, exact_neg, exact_precision, exact_product, exact_sum, floor_money, from_minor_units,
+    preview_cost, quantize_money, require_money, require_quantity, to_minor_units, Decimal,
+    MinorUnits, ParseError,
 };
 
 const FIXTURE: &str = include_str!("parity_fixture.txt");
@@ -173,6 +174,33 @@ fn run_case(op: &str, args: &[&str]) -> String {
                 Err(e) => format!("E:{}", e.code()),
             }
         }
+        "rm" | "rq" => match parse_or_error(args[0]) {
+            Ok(value) => {
+                let result = if op == "rm" {
+                    require_money(&value)
+                } else {
+                    require_quantity(&value)
+                };
+                result
+                    .map(|v| dec_token(&v))
+                    .unwrap_or_else(|e| format!("E:{}", e.code()))
+            }
+            Err(e) => e,
+        },
+        "tmu" => match parse_or_error(args[0]) {
+            Ok(value) => to_minor_units(&value)
+                .map(|units| units.canonical())
+                .unwrap_or_else(|e| format!("E:{}", e.code())),
+            Err(e) => e,
+        },
+        "fmu" => {
+            let units = MinorUnits::parse(args[0]).expect("valid minor integer in fixture");
+            dec_token(&from_minor_units(&units))
+        }
+        "neg" => match parse_or_error(args[0]) {
+            Ok(value) => dec_token(&exact_neg(&value)),
+            Err(e) => e,
+        },
         other => panic!("unknown operation in fixture: {other}"),
     }
 }
