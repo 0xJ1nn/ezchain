@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod adapter_error;
+pub mod dispatch;
 pub mod framing;
 pub mod json_safe;
 pub mod method;

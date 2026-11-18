@@ -113,6 +113,14 @@ name = "ezchain-rpc"
 version = "0.0.0"
 
 [[package]]
+name = "ezchain-scheduler"
+version = "0.0.0"
+dependencies = [
+ "ezchain-core",
+ "ezchain-protection",
+]
+
+[[package]]
 name = "ezchain-seal"
 version = "0.0.0"
 dependencies = [

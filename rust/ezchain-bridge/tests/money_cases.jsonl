@@ -378,8 +378,6 @@
 {"fn": "from_raw", "args": [7456767455107650698348589, 26]}
 {"fn": "from_raw", "args": [-4560794064194057338278868, 9]}
 {"fn": "from_raw", "args": [266475151991964770959624, 14]}
-<<<<<<< HEAD
-=======
 {"fn": "decimal_str", "args": ["1_0"]}
 {"fn": "decimal_str", "args": ["1_000.25"]}
 {"fn": "decimal_str", "args": ["1__0"]}
@@ -417,4 +415,3 @@
 {"fn": "decimal_compare", "args": ["1_0", "10"]}
 {"fn": "decimal_compare", "args": ["١٢", "12.0"]}
 {"fn": "decimal_compare", "args": ["1e٣", "1000"]}
->>>>>>> origin/main

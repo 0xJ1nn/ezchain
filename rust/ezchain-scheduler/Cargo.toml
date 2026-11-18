@@ -1,0 +1,13 @@
+[package]
+name = "ezchain-scheduler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure orchestration of one engine scheduler tick, ported under recorded parity"
+
+[dependencies]
+# Both are workspace path crates, not new external dependencies. The kernels they
+# contain are reused, never reimplemented here.
+ezchain-core = { path = "../ezchain-core" }
+ezchain-protection = { path = "../ezchain-protection" }
