@@ -15,6 +15,7 @@ Every expected value is recorded as a token so the fixture is self-describing::
     V:<sign>|<coefficient digits>|<exponent>~<python str(Decimal)>   # decimal result
     I:<integer>                                                     # exact_precision
     C:<LT|EQ|GT>                                                    # comparison
+    N:<signed integer>                                              # to_minor_units
     P:<fill>;<worst|None>;<slip|None>;<venue_leg>;<platform>        # preview_cost sheet
     E:<ExceptionClassName>                                          # refusal
 
@@ -42,12 +43,17 @@ sys.path.insert(0, str(CORE_PY_SRC))
 
 from ezchain_core.money import (  # noqa: E402
     bps_fee,
+    exact_neg,
     exact_precision,
     exact_product,
     exact_sum,
     floor_money,
+    from_minor_units,
     preview_cost,
     quantize_money,
+    require_money,
+    require_quantity,
+    to_minor_units,
 )
 from ezchain_core.types import SourceRef  # noqa: E402
 
@@ -75,6 +81,18 @@ def rnd_dec(rng: random.Random, max_digits: int = 40, exp_lo: int = -12, exp_hi:
     sign = rng.choice(["", "", "", "-"])
     notation = rng.choice(["e", "E"])
     return f"{sign}{coefficient}{notation}{exponent:+d}"
+
+
+def rnd_whole(rng: random.Random) -> str:
+    """A whole number of minor units: exponent >= -8, so 1e-8 scaling is exact."""
+    return rnd_dec(rng, exp_lo=-8, exp_hi=6)
+
+
+def rnd_minor(rng: random.Random) -> str:
+    """A signed integer count of minor units (up to 40 digits)."""
+    length = rng.randint(1, 40)
+    digits = rng.choice("123456789") + "".join(rng.choice("0123456789") for _ in range(length - 1))
+    return rng.choice(["", "-"]) + digits
 
 
 def tricky_corpus() -> list[tuple[str, list[str]]]:
@@ -184,6 +202,62 @@ def tricky_corpus() -> list[tuple[str, list[str]]]:
         ("pc", ["jupiter", "0", "1", "None", "50"]),
         ("pc", ["jupiter", "100", "NaN", "10", "50"]),
         ("pc", ["jupiter", "100", "1", "10", "-1"]),
+        # require_money: representation is preserved; sub-minor values and
+        # non-finite spellings are refused at the boundary.
+        ("rm", ["1.5"]),
+        ("rm", ["1.500"]),
+        ("rm", ["-0.00000000"]),
+        ("rm", ["0E+5"]),
+        ("rm", [BIG + ".12345678"]),
+        ("rm", ["0.000000010"]),
+        ("rm", ["0.1"]),
+        ("rm", ["1.000000001"]),
+        ("rm", ["NaN"]),
+        ("rm", ["Infinity"]),
+        ("rm", ["sNaN"]),
+        # require_quantity: finite exact values pass without a scale limit.
+        ("rq", ["1.2345678901"]),
+        ("rq", ["-0"]),
+        ("rq", ["1E+3"]),
+        ("rq", ["0.000000010"]),
+        ("rq", [BIG]),
+        ("rq", ["NaN"]),
+        ("rq", ["-Infinity"]),
+        # to_minor_units: exact scaling, sign of zero, and both refusal codes.
+        ("tmu", ["1.5"]),
+        ("tmu", ["-2.5"]),
+        ("tmu", ["0"]),
+        ("tmu", ["-0"]),
+        ("tmu", ["1E+3"]),
+        ("tmu", ["0.000000010"]),
+        ("tmu", [BIG + ".12345678"]),
+        ("tmu", ["-" + BIG + ".12345678"]),
+        ("tmu", ["0.1"]),
+        ("tmu", ["0.000000009"]),
+        ("tmu", ["NaN"]),
+        ("tmu", ["Infinity"]),
+        # from_minor_units: inverse conversion for positive, negative, zero and
+        # arbitrarily large integer counts.
+        ("fmu", ["150000000"]),
+        ("fmu", ["-250000000"]),
+        ("fmu", ["0"]),
+        ("fmu", ["1"]),
+        ("fmu", ["-5"]),
+        ("fmu", ["100000000000"]),
+        ("fmu", ["123456789012345678901234567890"]),
+        ("fmu", ["-123456789012345678901234567890"]),
+        # exact_neg: flips the sign on the digits, including the sign of zero,
+        # with no ambient-context rounding of a long coefficient.
+        ("neg", ["1.5"]),
+        ("neg", ["-2.5"]),
+        ("neg", ["0"]),
+        ("neg", ["-0"]),
+        ("neg", ["-0.0"]),
+        ("neg", ["-0E-8"]),
+        ("neg", ["1E+3"]),
+        ("neg", ["0.000000010"]),
+        ("neg", [BIG + ".12345678"]),
+        ("neg", ["12345678901234567890123456789"]),
     ]
     return cases
 
@@ -202,6 +276,11 @@ def random_corpus() -> list[tuple[str, list[str]]]:
         "div": 70,
         "bps": 45,
         "pc": 45,
+        "rm": 50,
+        "rq": 45,
+        "tmu": 55,
+        "fmu": 55,
+        "neg": 50,
     }
     fee_choices = [0, 1, 5, 25, 30, 50, 99, 300, 2500, 9999, 10000]
     cases: list[tuple[str, list[str]]] = []
@@ -232,6 +311,14 @@ def random_corpus() -> list[tuple[str, list[str]]]:
                 venue = rnd_dec(rng)
                 amount = "None" if rng.random() < 0.3 else rnd_dec(rng)
                 args = [kind, notional, venue, amount, str(rng.choice(fee_choices))]
+            elif op in ("rm", "tmu"):
+                # Mix whole and sub-minor magnitudes so both the success path
+                # and SubQuantumError are exercised in the deterministic corpus.
+                args = [rnd_whole(rng) if rng.random() < 0.5 else rnd_dec(rng)]
+            elif op in ("rq", "neg"):
+                args = [rnd_dec(rng)]
+            elif op == "fmu":
+                args = [rnd_minor(rng)]
             else:  # cmp
                 args = [rnd_dec(rng), rnd_dec(rng)]
             cases.append((op, args))
@@ -285,6 +372,16 @@ def expected_for(op: str, args: list[str]) -> str:
             return dec_token(exact_sum(Decimal(s) for s in args))
         if op == "prod":
             return dec_token(exact_product(*(Decimal(s) for s in args)))
+        if op == "rm":
+            return dec_token(require_money(Decimal(args[0])))
+        if op == "rq":
+            return dec_token(require_quantity(Decimal(args[0])))
+        if op == "tmu":
+            return f"N:{to_minor_units(Decimal(args[0]))}"
+        if op == "fmu":
+            return dec_token(from_minor_units(int(args[0])))
+        if op == "neg":
+            return dec_token(exact_neg(Decimal(args[0])))
     except Exception as exc:  # noqa: BLE001 - the code name is the recorded answer
         return f"E:{type(exc).__name__}"
 
