@@ -1,0 +1,11 @@
+[package]
+name = "ezchain-seal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure ledger seal construction and verification order, byte-identical to ledger.py (ADR-0049/0050)"
+
+[dependencies]
+ezchain-fingerprint = { path = "../ezchain-fingerprint" }
+ezchain-jsoncanon = { path = "../ezchain-jsoncanon" }
