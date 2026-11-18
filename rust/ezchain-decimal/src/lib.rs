@@ -17,9 +17,10 @@ pub mod decimal;
 pub mod money;
 
 pub use biguint::BigUint;
-pub use decimal::{Decimal, ParseError, RoundMode};
+pub use decimal::{Context, Decimal, ParseError, RoundMode, DEFAULT_CONTEXT, MAX_EMAX, MAX_PREC};
 pub use money::{
-    bps_fee, compare, exact_neg, exact_precision, exact_product, exact_sum, floor_money,
-    from_minor_units, preview_cost, quantize_money, require_money, require_quantity,
-    to_minor_units, CostPreview, MinorUnits, MoneyError,
+    as_decimal, bps_fee, compare, exact_neg, exact_precision, exact_product, exact_sum,
+    floor_money, from_minor_units, from_minor_units_input, preview_cost, quantize_money,
+    require_money, require_quantity, to_minor_units, CostPreview, MinorUnits, MoneyError,
+    MoneyInput,
 };

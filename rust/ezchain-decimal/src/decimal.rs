@@ -2,7 +2,7 @@
 //! operations `money.py` actually uses.
 //!
 //! This is not a general decimal implementation. It deliberately implements only
-//! construction from string and integer, numeric comparison, context-rounded
+//! construction from string and integer, numeric comparison, context-checked
 //! addition, multiplication and division, context-precision derivation, and
 //! quantisation with half-even / floor. Currency conversion and canonical JSON
 //! are out of scope (see the crate README).
@@ -10,6 +10,11 @@
 //! Division produces the correctly rounded (half-even) quotient at a caller-
 //! supplied precision, including the preferred-exponent and trailing-zero
 //! behaviour of Python's `Decimal.__truediv__`.
+//!
+//! Operations take a [`Context`]. `money.py` overrides only `prec` in its
+//! `localcontext()` blocks; `emin`, `emax` and `clamp` stay at the interpreter
+//! defaults, which are captured by [`DEFAULT_CONTEXT`] / [`Context::with_precision`].
+//! That is the ambient context the money path actually runs under.
 
 use std::cmp::Ordering;
 
@@ -25,12 +30,55 @@ pub enum RoundMode {
     Floor,
 }
 
+/// The decimal context `money.py` inherits from the interpreter.
+///
+/// `money.py`'s `localcontext()` blocks set `context.prec` only. `emin`, `emax`
+/// and `clamp` remain at their defaults, so `DEFAULT_CONTEXT` and
+/// `Context::with_precision` model exactly the ambient context the money path
+/// runs under. Non-default `clamp`/`emin`/`emax` values are never set by
+/// `money.py` and are therefore not claimed as proven parity (README).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Context {
+    pub prec: i64,
+    pub emin: i64,
+    pub emax: i64,
+    pub clamp: bool,
+}
+
+/// Python's default context: `prec=28`, `Emin=-999999`, `Emax=999999`, `clamp=0`.
+pub const DEFAULT_CONTEXT: Context = Context {
+    prec: 28,
+    emin: -999_999,
+    emax: 999_999,
+    clamp: false,
+};
+
+/// CPython's `decimal.MAX_PREC` / `MAX_EMAX` on a 64-bit build. A context whose
+/// `prec` exceeds this makes `context.prec = n` raise `ValueError` before any
+/// operation runs; `money.py` does not catch that exception.
+pub const MAX_PREC: i64 = 999_999_999_999_999_999;
+/// The largest exponent `Decimal(str)` accepts on a 64-bit CPython build.
+pub const MAX_EMAX: i64 = 999_999_999_999_999_999;
+
+impl Context {
+    /// A context with a derived precision and the default exponent limits.
+    pub fn with_precision(prec: i64) -> Self {
+        Self {
+            prec,
+            ..DEFAULT_CONTEXT
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ParseError {
     /// A non-finite spelling (`NaN`, `sNaN`, `Infinity`, ...).
     NonFinite,
     /// A string that is not a valid decimal literal.
     Syntax,
+    /// An exponent outside CPython's constructible `Decimal` range
+    /// (`decimal.InvalidOperation` at construction).
+    ExpOutOfRange,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,8 +87,9 @@ pub struct Decimal {
     pub sign: bool,
     /// Unsigned coefficient digits (canonical, arbitrary precision).
     pub coef: BigUint,
-    /// Base-10 exponent.
-    pub exp: i32,
+    /// Base-10 exponent. `i64` spans CPython's whole constructible range
+    /// (`MAX_EMAX`), so exponents beyond the old `i32` representation are proven.
+    pub exp: i64,
 }
 
 impl Decimal {
@@ -78,10 +127,16 @@ impl Decimal {
         }
 
         let exp_override = if exponent.is_empty() {
-            0i32
+            0i64
         } else {
             let exponent = exponent.strip_prefix('+').unwrap_or(exponent);
-            exponent.parse::<i32>().map_err(|_| ParseError::Syntax)?
+            let value = exponent
+                .parse::<i64>()
+                .map_err(|_| ParseError::ExpOutOfRange)?;
+            if !(-MAX_EMAX..=MAX_EMAX).contains(&value) {
+                return Err(ParseError::ExpOutOfRange);
+            }
+            value
         };
 
         let mut digits = String::new();
@@ -107,7 +162,7 @@ impl Decimal {
 
         let coef = BigUint::from_digits_str(&digits).ok_or(ParseError::Syntax)?;
         let exp = exp_override
-            .checked_sub(fraction_len as i32)
+            .checked_sub(fraction_len as i64)
             .ok_or(ParseError::Syntax)?;
         Ok(Self { sign, coef, exp })
     }
@@ -128,8 +183,19 @@ impl Decimal {
         self.coef.is_zero()
     }
 
+    /// The adjusted exponent (`exp + coefficient_digits - 1`), computed in
+    /// `i128` so even a maximal `i64` exponent plus a long coefficient cannot
+    /// overflow. This is the value Python compares against `Emin`/`Emax`.
+    pub fn adjusted(&self) -> i128 {
+        self.exp as i128 + self.coef.digit_count() as i128 - 1
+    }
+
     /// Numeric comparison, ignoring representation (so `0.1 == 0.10` and
     /// `-0 == 0`). This is the comparison `money.py` operators perform.
+    ///
+    /// Non-zero same-sign values are ordered by adjusted exponent first, so a
+    /// comparison of two extreme exponents never tries to materialise an
+    /// aligned coefficient the way naive digit-padding would.
     pub fn compare_numeric(&self, other: &Self) -> Ordering {
         let self_zero = self.is_zero();
         let other_zero = other.is_zero();
@@ -158,6 +224,18 @@ impl Decimal {
             };
         }
 
+        let adjusted = self.adjusted();
+        let other_adjusted = other.adjusted();
+        if adjusted != other_adjusted {
+            return if self.sign {
+                other_adjusted.cmp(&adjusted)
+            } else {
+                adjusted.cmp(&other_adjusted)
+            };
+        }
+        // Equal adjusted exponents imply the exponent difference equals the
+        // coefficient-digit-count difference, which is bounded by the stored
+        // digits — aligning here cannot allocate an unbounded coefficient.
         let base = self.exp.min(other.exp);
         let a = self.coef.mul_pow10((self.exp - base) as usize);
         let b = other.coef.mul_pow10((other.exp - base) as usize);
@@ -169,10 +247,10 @@ impl Decimal {
         }
     }
 
-    /// Context-rounded addition with the given precision (half-even, the
-    /// default context rounding in `money.py`). The result exponent is the
-    /// smaller operand exponent, matching Python's addition.
-    pub fn add(&self, other: &Self, precision: usize) -> Self {
+    /// Context-checked addition. The result exponent is the smaller operand
+    /// exponent, matching Python's addition. An adjusted exponent above `Emax`
+    /// raises Python's `Overflow` (trapped by default).
+    pub fn add(&self, other: &Self, ctx: &Context) -> Result<Self, MoneyError> {
         let base = self.exp.min(other.exp);
         let a = self.coef.mul_pow10((self.exp - base) as usize);
         let b = other.coef.mul_pow10((other.exp - base) as usize);
@@ -190,45 +268,49 @@ impl Decimal {
             coef,
             exp: base,
         };
-        result.round_to_precision(precision);
-        result
+        result.round_to_precision(ctx.prec as usize);
+        result.check_overflow(ctx)?;
+        Ok(result)
     }
 
-    /// Context-rounded multiplication with the given precision (half-even).
-    pub fn mul(&self, other: &Self, precision: usize) -> Self {
+    /// Context-checked multiplication (half-even under `ctx.prec`).
+    pub fn mul(&self, other: &Self, ctx: &Context) -> Result<Self, MoneyError> {
         let coef = self.coef.mul(&other.coef);
-        let exp = self.exp + other.exp;
+        let exp = (self.exp as i128 + other.exp as i128)
+            .try_into()
+            .map_err(|_| MoneyError::Overflow)?;
         let mut result = Self {
             sign: self.sign ^ other.sign,
             coef,
             exp,
         };
-        result.round_to_precision(precision);
-        result
+        result.round_to_precision(ctx.prec as usize);
+        result.check_overflow(ctx)?;
+        Ok(result)
     }
 
-    /// Context-rounded division with the given precision (half-even), matching
-    /// Python's `Decimal.__truediv__` under `localcontext().prec = precision`.
+    /// Context-checked division with the given context precision (half-even),
+    /// matching Python's `Decimal.__truediv__` under `localcontext().prec`.
     ///
     /// The exact quotient of the coefficients is expanded digit by digit until
-    /// it terminates or has `precision + 1` significant digits, then rounded
-    /// half-even to `precision` digits. The result exponent is the preferred
+    /// it terminates or has `prec + 1` significant digits, then rounded
+    /// half-even to `prec` digits. The result exponent is the preferred
     /// exponent (`self.exp - other.exp`) minus the fractional digits generated,
-    /// plus any digits dropped during rounding. This reproduces Python's
-    /// preferred-exponent and trailing-zero behaviour (e.g. `1.00 / 2` stays
-    /// `50E-2`, while `1 / 3` becomes 28 significant digits at `exp = -28`).
-    pub fn div(&self, other: &Self, precision: usize) -> Result<Self, MoneyError> {
+    /// plus any digits dropped during rounding.
+    pub fn div(&self, other: &Self, ctx: &Context) -> Result<Self, MoneyError> {
         if other.is_zero() {
             return Err(MoneyError::DivisionByZero);
         }
+        let precision = ctx.prec as usize;
         let sign = self.sign ^ other.sign;
-        let preferred_exp = self.exp - other.exp;
+        let preferred_exp = self.exp as i128 - other.exp as i128;
         if self.is_zero() {
             // Python keeps the preferred exponent for a zero quotient.
+            let exp = preferred_exp.try_into().map_err(|_| MoneyError::Overflow)?;
             return Ok(Self {
                 sign,
                 coef: BigUint::zero(),
-                exp: preferred_exp,
+                exp,
             });
         }
 
@@ -247,7 +329,7 @@ impl Decimal {
             fractional_digits += 1;
         }
 
-        let mut exp = preferred_exp - fractional_digits as i32;
+        let mut exp = preferred_exp - fractional_digits as i128;
         let significant = coefficient.digit_count();
         if significant > precision {
             // Drop the excess low-order digits, rounding the retained prefix
@@ -276,22 +358,38 @@ impl Decimal {
                 }
             }
             coefficient = kept;
-            exp += drop as i32;
+            exp += drop as i128;
         }
 
-        Ok(Self {
+        let exp = exp.try_into().map_err(|_| MoneyError::Overflow)?;
+        let result = Self {
             sign,
             coef: coefficient,
             exp,
-        })
+        };
+        result.check_overflow(ctx)?;
+        Ok(result)
     }
 
     /// The quantize operation used by `quantize_money` / `floor_money`: round
     /// the value to `target_exp` under `mode` and return a value with exactly
-    /// that exponent. `precision` is the locally derived context size; it is
-    /// always large enough in this prototype's scope, so the result cannot
-    /// raise Python's `InvalidOperation` here.
-    pub fn quantize(&self, target_exp: i32, mode: RoundMode, _precision: usize) -> Self {
+    /// that exponent.
+    ///
+    /// Python raises `InvalidOperation` (trapped by default) when the result
+    /// would need more than `ctx.prec` digits or its adjusted exponent exceeds
+    /// `ctx.emax`. The `Emax` check runs *before* any coefficient is grown, so
+    /// an exponent such as `1E+9999999999` refuses instead of allocating a
+    /// ten-billion-digit coefficient. `money.py` catches that exception and
+    /// turns it into its own `MoneyError`.
+    pub fn quantize(
+        &self,
+        target_exp: i64,
+        mode: RoundMode,
+        ctx: &Context,
+    ) -> Result<Self, MoneyError> {
+        if self.adjusted() > ctx.emax as i128 {
+            return Err(MoneyError::InvalidOperation);
+        }
         let coef = if self.exp >= target_exp {
             self.coef.mul_pow10((self.exp - target_exp) as usize)
         } else {
@@ -319,11 +417,18 @@ impl Decimal {
             }
             quotient
         };
-        Self {
+        if coef.digit_count() as i64 > ctx.prec {
+            return Err(MoneyError::InvalidOperation);
+        }
+        let result = Self {
             sign: self.sign,
             coef,
             exp: target_exp,
+        };
+        if !result.is_zero() && result.adjusted() > ctx.emax as i128 {
+            return Err(MoneyError::InvalidOperation);
         }
+        Ok(result)
     }
 
     /// Canonical oracle encoding of the exact decimal triple:
@@ -340,12 +445,12 @@ impl Decimal {
     /// Python's `str(Decimal)` formatting, reproduced from the value's triple.
     pub fn str_repr(&self) -> String {
         let digits = self.coef.to_digits_be();
-        let adjusted = self.exp as i64 + digits.len() as i64 - 1;
+        let adjusted = self.adjusted();
         let body = if self.exp <= 0 && adjusted >= -6 {
             if self.exp == 0 {
                 digits
             } else {
-                let point = digits.len() as i64 + self.exp as i64;
+                let point = self.exp as i128 + digits.len() as i128;
                 if point > 0 {
                     let point = point as usize;
                     format!("{}.{}", &digits[..point], &digits[point..])
@@ -373,6 +478,16 @@ impl Decimal {
         }
     }
 
+    /// A non-zero result whose adjusted exponent exceeds `Emax` raises
+    /// Python's `Overflow` under the default (trapping) context.
+    fn check_overflow(&self, ctx: &Context) -> Result<(), MoneyError> {
+        if !self.is_zero() && self.adjusted() > ctx.emax as i128 {
+            Err(MoneyError::Overflow)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Round the coefficient to `precision` significant digits with
     /// half-even, adjusting the exponent. No-op when the value already fits.
     fn round_to_precision(&mut self, precision: usize) {
@@ -389,7 +504,7 @@ impl Decimal {
         {
             quotient = quotient.add_one();
         }
-        let mut exp = self.exp + drop as i32;
+        let mut exp = self.exp as i128 + drop as i128;
         if quotient.digit_count() > precision {
             // A carry turned 999...9 into 1000...0; renormalise to `precision`
             // digits by dividing out one ten and raising the exponent.
@@ -398,7 +513,7 @@ impl Decimal {
             exp += 1;
         }
         self.coef = quotient;
-        self.exp = exp;
+        self.exp = exp.try_into().expect("rounded exponent fits i64");
     }
 }
 
@@ -431,6 +546,12 @@ mod tests {
         assert_eq!(d("-0").compare_numeric(&d("0")), Ordering::Equal);
         assert_eq!(d("1E+3").compare_numeric(&d("1000")), Ordering::Equal);
         assert_eq!(d("-2.5").compare_numeric(&d("0.1")), Ordering::Less);
+        // Extreme exponents compare by adjusted exponent without materialising
+        // an aligned coefficient.
+        assert_eq!(
+            d("1E+9999999999").compare_numeric(&d("1E-9999999999")),
+            Ordering::Greater
+        );
     }
 
     #[test]
@@ -438,6 +559,17 @@ mod tests {
         for s in ["NaN", "sNaN", "Infinity", "-Infinity"] {
             assert_eq!(Decimal::parse(s), Err(ParseError::NonFinite));
         }
+    }
+
+    #[test]
+    fn exponents_outside_i32_are_supported() {
+        assert_eq!(d("1E+9999999999").exp, 9_999_999_999);
+        assert_eq!(d("1E-9999999999").exp, -9_999_999_999);
+        assert_eq!(d("1E+999999999999999999").exp, MAX_EMAX);
+        assert_eq!(
+            Decimal::parse("1E+9999999999999999999"),
+            Err(ParseError::ExpOutOfRange)
+        );
     }
 
     #[test]
@@ -458,10 +590,12 @@ mod tests {
             ("-1", "8", 28, "1|125|-3~-0.125"),
             ("0E+5", "5", 28, "0|0|5~0E+5"),
         ] {
-            let got = d(a).div(&d(b), precision).unwrap();
+            let ctx = Context::with_precision(precision as i64);
+            let got = d(a).div(&d(b), &ctx).unwrap();
             let token = format!("{}~{}", got.canonical(), got.str_repr());
             assert_eq!(token, expected, "{a}/{b}");
         }
-        assert!(d("1").div(&d("0"), 28).is_err());
+        let ctx = Context::with_precision(28);
+        assert!(d("1").div(&d("0"), &ctx).is_err());
     }
 }
