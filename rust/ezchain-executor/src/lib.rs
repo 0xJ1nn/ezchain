@@ -6,6 +6,9 @@
 //!
 //! - [`kill_switch`] — the operator switch read, its fail-closed read failure and the
 //!   entry-only refusal the pipeline applies to buys.
+//! - [`gates`] — the ordered gate tree of `ExecutionPipeline` (four entry-only kill-switch
+//!   reads, unknown-risk and missing/stale-quote refusals), its typed refusal codes and
+//!   the idempotency key-to-payload conflict rule.
 //! - [`binding`] — the "what is signed is what was approved" field comparison.
 //! - [`receipt`] — the pure checks a venue receipt must pass before it can be journaled.
 //!
@@ -20,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 pub mod binding;
+pub mod gates;
 pub mod kill_switch;
 pub mod receipt;
 

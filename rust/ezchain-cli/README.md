@@ -9,9 +9,19 @@ external crates, no network and no file I/O: it reads arguments and writes stdou
 |---|---|
 | `ezchain-cli version` | the CLI version, from the crate manifest |
 | `ezchain-cli mode` | `PAPER` — always. There is no flag to request live. |
-| `ezchain-cli contracts` | the ADR-0050 language map, one row per layer |
+| `ezchain-cli contracts` | the short ADR-0050 language map, one row per layer (`key -> language`) |
+| `ezchain-cli contracts --all` | the full ADR-0050 table, with the layer descriptions |
 | `ezchain-cli contracts --layer <key>` | one row of that map (`core`, `p2p`, `consensus`, `rpc`, `execution`, `cli`, `indexer`, `ai`, `strategy`, `ui`) |
+| `ezchain-cli policy` | the ADR-0052 ownership view: Rust trust/execution, Python application/intelligence, the RPC/API overlap and the integration contract |
+| `ezchain-cli policy --layer <key>` | one section: `rust`, `python`, `overlap` or `integration` |
+| `ezchain-cli gate` | the required port gates from the documented policy: `record → diff → gate → bench`, the three Rust gate commands and the local `tools/ci.sh` gate |
+| `ezchain-cli refuse <verb>` | demonstrate the typed refusal for a named operator verb (always exits `2`) |
 | `ezchain-cli help` | usage |
+
+All of these are pure reads of documented policy. None opens a file, a socket or a database,
+and none performs money arithmetic. `contracts`, `policy`, `gate` and `refuse` render strings
+from `policy.rs`; `refuse` deliberately reuses the same typed refusal as an operator verb typed
+at the top level, so it exits `2` and prints the same owner-blocked message.
 
 ## Refusals
 

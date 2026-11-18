@@ -74,6 +74,19 @@ mod tests {
             run(&argv(&["contracts", "--layer", "core"])).unwrap(),
             crate::commands::contracts(Some("core"))
         );
+        assert_eq!(
+            run(&argv(&["contracts", "--all"])).unwrap(),
+            crate::commands::contracts_all()
+        );
+        assert_eq!(
+            run(&argv(&["policy"])).unwrap(),
+            crate::commands::policy(None)
+        );
+        assert_eq!(
+            run(&argv(&["policy", "--layer", "rust"])).unwrap(),
+            crate::commands::policy(Some("rust"))
+        );
+        assert_eq!(run(&argv(&["gate"])).unwrap(), crate::commands::gate());
         assert_eq!(run(&argv(&["help"])).unwrap(), crate::commands::help());
     }
 
@@ -95,6 +108,46 @@ mod tests {
         assert_eq!(
             run(&argv(&["order", "--usd", "5"])),
             Err(CliError::Refused(expected))
+        );
+    }
+
+    #[test]
+    fn run_refuse_command_returns_the_existing_typed_refusal() {
+        for verb in ["order", "live", "sign", "quote", "backup"] {
+            let expected = crate::policy::refusal_for(verb).unwrap();
+            assert_eq!(
+                run(&argv(&["refuse", verb])),
+                Err(CliError::Refused(expected)),
+                "verb {verb}"
+            );
+        }
+    }
+
+    #[test]
+    fn run_wraps_new_parse_error_branches() {
+        assert_eq!(
+            run(&argv(&["contracts", "--layer"])),
+            Err(CliError::Parse(ParseError::MissingLayerValue))
+        );
+        assert_eq!(
+            run(&argv(&["policy", "--layer"])),
+            Err(CliError::Parse(ParseError::MissingPolicyLayerValue))
+        );
+        assert_eq!(
+            run(&argv(&["policy", "--layer", "nope"])),
+            Err(CliError::Parse(ParseError::UnknownPolicyLayer(
+                "nope".into()
+            )))
+        );
+        assert_eq!(
+            run(&argv(&["refuse"])),
+            Err(CliError::Parse(ParseError::MissingRefusalVerb))
+        );
+        assert_eq!(
+            run(&argv(&["refuse", "version"])),
+            Err(CliError::Parse(ParseError::UnknownRefusalVerb(
+                "version".into()
+            )))
         );
     }
 
