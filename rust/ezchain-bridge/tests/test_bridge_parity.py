@@ -44,6 +44,7 @@ def _load_bridge() -> Any:
     for profile in ("debug", "release"):
         target = CRATE.parent / "target" / profile
         candidates.append(target / "ezchain_bridge.so")
+        candidates.append(target / "libezchain_bridge.so")
         candidates.append(target / "libezchain_bridge.dylib")
     for path in candidates:
         if path.is_file():
