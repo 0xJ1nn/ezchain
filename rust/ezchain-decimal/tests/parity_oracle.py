@@ -19,6 +19,14 @@ Every expected value is recorded as a token so the fixture is self-describing::
     P:<fill>;<worst|None>;<slip|None>;<venue_leg>;<platform>        # preview_cost sheet
     E:<ExceptionClassName>                                          # refusal
 
+Boundary-input tokens (for the ``ad`` / ``fmg`` type-guard ops) preserve the
+Python type that reached ``_as_decimal`` / ``from_minor_units``::
+
+    D:<literal>     Decimal(literal)       I:<int>     int(literal)
+    F:<literal>     float(literal)         B:True|False bool
+    S:<text>        str (any other type)   N:          None
+    X:<spelling>    a non-finite Decimal (NaN/sNaN/±Infinity)
+
 The Python implementation stays the oracle until the Rust gate passes; this
 script writes its recorded answers, it does not read Rust output.
 """
@@ -42,6 +50,7 @@ FIXTURE = Path(os.environ.get("EZ_DECIMAL_FIXTURE", str(HERE / "parity_fixture.t
 sys.path.insert(0, str(CORE_PY_SRC))
 
 from ezchain_core.money import (  # noqa: E402
+    _as_decimal,
     bps_fee,
     exact_neg,
     exact_precision,
@@ -93,6 +102,47 @@ def rnd_minor(rng: random.Random) -> str:
     length = rng.randint(1, 40)
     digits = rng.choice("123456789") + "".join(rng.choice("0123456789") for _ in range(length - 1))
     return rng.choice(["", "-"]) + digits
+
+
+NON_FINITE = {"NaN", "sNaN", "Infinity", "-Infinity"}
+
+
+def parse_input(token: str) -> object:
+    """Decode a boundary-input token into a real Python value of that type."""
+    tag, _, payload = token.partition(":")
+    if tag == "D":
+        return Decimal(payload)
+    if tag == "I":
+        return int(payload)
+    if tag == "F":
+        return float(payload)
+    if tag == "B":
+        return payload == "True"
+    if tag == "S":
+        return payload
+    if tag == "N":
+        return None
+    if tag == "X" and payload in NON_FINITE:
+        return Decimal(payload)
+    raise AssertionError(f"unknown boundary input {token!r}")
+
+
+def rnd_input(rng: random.Random) -> str:
+    """A deterministic boundary-input token covering every Python input type."""
+    tag = rng.choice(["D", "I", "F", "B", "S", "N", "X"])
+    if tag == "D":
+        return "D:" + rnd_dec(rng)
+    if tag == "I":
+        return "I:" + rnd_minor(rng)
+    if tag == "F":
+        return "F:" + repr(rng.choice([0.0, 0.1, 1.5, -2.5, 1e30, -1e-30]))
+    if tag == "B":
+        return "B:" + rng.choice(["True", "False"])
+    if tag == "S":
+        return "S:" + rng.choice(["1.5", "", "0", "42"])
+    if tag == "N":
+        return "N:"
+    return "X:" + rng.choice(sorted(NON_FINITE))
 
 
 def tricky_corpus() -> list[tuple[str, list[str]]]:
@@ -258,6 +308,51 @@ def tricky_corpus() -> list[tuple[str, list[str]]]:
         ("neg", ["0.000000010"]),
         ("neg", [BIG + ".12345678"]),
         ("neg", ["12345678901234567890123456789"]),
+        # Python input-type guards at _as_decimal and from_minor_units.
+        ("ad", ["D:1.5"]),
+        ("ad", ["I:42"]),
+        ("ad", ["I:123456789012345678901234567890"]),
+        ("ad", ["I:-7"]),
+        ("ad", ["B:True"]),
+        ("ad", ["B:False"]),
+        ("ad", ["F:0.1"]),
+        ("ad", ["F:-0.0"]),
+        ("ad", ["F:1e30"]),
+        ("ad", ["S:1.5"]),
+        ("ad", ["S:"]),
+        ("ad", ["N:"]),
+        *[("ad", [f"X:{s}"]) for s in sorted(NON_FINITE)],
+        ("fmg", ["I:150000000"]),
+        ("fmg", ["I:-250000000"]),
+        ("fmg", ["I:0"]),
+        ("fmg", ["B:True"]),
+        ("fmg", ["B:False"]),
+        ("fmg", ["F:1.0"]),
+        ("fmg", ["S:1"]),
+        ("fmg", ["N:"]),
+        ("fmg", ["D:1"]),
+        # Ambient-context boundaries: Emax overflow / InvalidOperation and the
+        # MAX_PREC ValueError, reached through money.py's own localcontext().
+        ("q", ["1E+1000000"]),
+        ("f", ["1E+1000000"]),
+        ("q", ["1E-1000000"]),
+        ("q", ["1E+9999999999"]),
+        ("f", ["1E+9999999999"]),
+        ("q", ["1E-9999999999"]),
+        ("q", ["1E+999999999999999999"]),
+        ("tmu", ["1E+999999"]),
+        ("tmu", ["1E+1000000"]),
+        ("tmu", ["1E+9999999999"]),
+        ("tmu", ["1E+999999999999999999"]),
+        ("tmu", ["1E-999999"]),
+        ("prod", ["1E+999999", "1E+999999"]),
+        ("prod", ["1E+9999999999", "1"]),
+        ("prod", ["1E+999999999999999999", "1"]),
+        ("ep", ["8", "1E+9999999999"]),
+        ("ep", ["8", "1E+999999999999999999"]),
+        ("parse", ["1E+9999999999"]),
+        ("parse", ["1E-9999999999"]),
+        ("parse", ["1E+9999999999999999999"]),
     ]
     return cases
 
@@ -281,6 +376,8 @@ def random_corpus() -> list[tuple[str, list[str]]]:
         "tmu": 55,
         "fmu": 55,
         "neg": 50,
+        "ad": 45,
+        "fmg": 35,
     }
     fee_choices = [0, 1, 5, 25, 30, 50, 99, 300, 2500, 9999, 10000]
     cases: list[tuple[str, list[str]]] = []
@@ -319,6 +416,8 @@ def random_corpus() -> list[tuple[str, list[str]]]:
                 args = [rnd_dec(rng)]
             elif op == "fmu":
                 args = [rnd_minor(rng)]
+            elif op in ("ad", "fmg"):
+                args = [rnd_input(rng)]
             else:  # cmp
                 args = [rnd_dec(rng), rnd_dec(rng)]
             cases.append((op, args))
@@ -337,10 +436,13 @@ def pc_token(preview, venue_leg: Decimal) -> str:
 
 def expected_for(op: str, args: list[str]) -> str:
     """Run one case through the Python oracle and encode its answer."""
-    if op == "parse":
-        return dec_token(Decimal(args[0]))
-
     try:
+        if op == "parse":
+            return dec_token(Decimal(args[0]))
+        if op == "ad":
+            return dec_token(_as_decimal(parse_input(args[0]), field="x"))
+        if op == "fmg":
+            return dec_token(from_minor_units(parse_input(args[0])))
         if op == "div":
             precision = int(args[0])
             with localcontext() as context:
