@@ -11,6 +11,9 @@
 //!   the idempotency key-to-payload conflict rule.
 //! - [`binding`] — the "what is signed is what was approved" field comparison.
 //! - [`receipt`] — the pure checks a venue receipt must pass before it can be journaled.
+//! - [`state_machine`] — the typed `Intent → RiskDecision → Quote → Order → Fill →
+//!   Journal` state sequence and its early-refusal transitions, built by sequencing the
+//!   [`gates`] and [`receipt`] kernels with no I/O, keys, signing or money arithmetic.
 //!
 //! What is deliberately *not* ported: SHA-256 and JSON wire encoding/decoding (they need
 //! a crypto/JSON dependency; implementing either by hand at a money boundary is not safe),
@@ -26,6 +29,7 @@ pub mod binding;
 pub mod gates;
 pub mod kill_switch;
 pub mod receipt;
+pub mod state_machine;
 
 /// The side of an intent. Python carries this as the `"buy"`/`"sell"` string; the typed
 /// boundary admits only these two values.
