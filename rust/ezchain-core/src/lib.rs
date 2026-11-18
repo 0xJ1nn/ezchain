@@ -6,6 +6,7 @@
 //! their own parity-gated migration.
 
 pub mod append_log;
+pub mod due;
 pub mod freshness;
 pub mod freshness_policy;
 pub mod reason_codes;

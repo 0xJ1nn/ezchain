@@ -13,3 +13,4 @@ pub mod method;
 pub mod paper_order;
 pub mod scopes;
 pub mod wire;
+pub mod ws_frame;
