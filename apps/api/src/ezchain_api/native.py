@@ -1,28 +1,25 @@
-"""Typed client for the optional in-process PyO3 bridge (ADR-0052 integration contract).
+"""Typed client for the in-process PyO3 bridge (ADR-0052 integration contract).
 
-The compiled ``ezchain_bridge`` extension is optional. When it is importable the
-ported ``normalize_scopes`` kernel runs in Rust; otherwise the Python original is
-used unchanged. The fallback is silent in behaviour but visible through
-:func:`using_rust`, so a test or an operator can tell which implementation served a
-call without a config flag or telemetry.
+The compiled ``ezchain_bridge`` extension is a prerequisite, not an optional
+accelerator. It is probed once at import; if it is absent the failure is recorded and
+every wrapper raises :class:`NativeBridgeUnavailable` with the command that builds it
+(``bash tools/build-native.sh``). There is no Python fallback: a Rust-owned layer that
+silently ran the Python original hid a missing build artifact behind correct-looking
+results, which is unacceptable on a money path. ``using_rust()`` remains as a diagnostic
+so an operator can confirm which backend would serve a call.
 
-The client lives in ``apps/api`` rather than ``packages/core-py``: the fallback calls
-the Python original in this same layer, and a core-py module must never import the
-application layer. The import of that original is deferred to the fallback branch so
-there is no cycle with ``api_keys`` at module load.
+The client stays in ``apps/api`` rather than ``packages/core-py`` because the money and
+scope contracts it wraps belong to this application layer; a core-py module must never
+import the application layer. No wrapper imports the Python originals — doing so would
+reintroduce the fallback this module exists to remove.
 
 The money wrappers preserve the Python originals' signatures: they accept a ``Decimal``
-or an ``int``, take ``field`` as a keyword argument where the original does, and return
-the same type (``Decimal`` for ``quantize_money``/``floor_money``/``from_minor_units``,
-``int`` for ``to_minor_units``). A ``Decimal`` crosses the FFI as its exact string spelling because
-the bridge accepts decimal strings or ints, never ``Decimal`` objects; every other type
-is handed to the Python original so its own typed refusal decides the call. The string
-the bridge returns is parsed back into a ``Decimal``, so the boundary stays typed.
-
-No exception is caught around a bridge call: both paths raise the original exception
-class from the owning Python module (``ApiKeyError``, ``MoneyError`` and friends), with
-the original message, ``code`` and ``message`` attributes, so callers see one contract
-either way.
+or an ``int``, take ``field`` as a keyword argument, and return the same type. A
+``Decimal`` crosses the FFI as its exact string spelling because the bridge accepts
+decimal strings or ints, never ``Decimal`` objects. Every other value is passed to the
+bridge unchanged so the bridge's own typed refusals decide the call. No exception is
+caught around a bridge call: bridge-originated errors keep the original exception
+class, message, ``code`` and ``message`` attributes, so callers see one contract.
 """
 
 from __future__ import annotations
@@ -34,16 +31,38 @@ from typing import Any, cast
 
 _BRIDGE_MODULE = "ezchain_bridge"
 
+_UNAVAILABLE_MESSAGE = (
+    "ezchain_bridge native extension is unavailable; build and install it with "
+    "`bash tools/build-native.sh` before running the app or the gate"
+)
+
+
+class NativeBridgeUnavailable(RuntimeError):
+    """The compiled bridge is missing; no Python fallback will silently take over."""
+
+
+_BRIDGE_ERROR: BaseException | None = None
+
 
 def _load_bridge() -> Any:
-    """Try to import the compiled extension once. Return ``None`` if it is absent."""
+    """Import the compiled extension once; return ``None`` and record why on failure."""
+    global _BRIDGE_ERROR
     try:
         return importlib.import_module(_BRIDGE_MODULE)
-    except Exception:  # noqa: BLE001 - any load failure means the Python original is used
+    except Exception as exc:  # noqa: BLE001 - any load failure leaves the client fail-closed
+        _BRIDGE_ERROR = exc
         return None
 
 
 _BRIDGE: Any = _load_bridge()
+
+
+def _require_bridge() -> Any:
+    """Return the loaded bridge, or raise the typed fail-closed error."""
+    if _BRIDGE is None:
+        detail = f" ({_BRIDGE_ERROR})" if _BRIDGE_ERROR is not None else ""
+        raise NativeBridgeUnavailable(_UNAVAILABLE_MESSAGE + detail)
+    return _BRIDGE
 
 
 def using_rust() -> bool:
@@ -53,73 +72,44 @@ def using_rust() -> bool:
 
 def normalize_scopes(scopes: Sequence[str] | None) -> tuple[str, ...]:
     """Normalise a scope grant, raising ``ApiKeyError`` on refusal (unchanged contract)."""
-    if _BRIDGE is not None:
-        return cast(tuple[str, ...], _BRIDGE.normalize_scopes(scopes))
-    from ezchain_api.services.api_keys import normalize_scopes as python_normalize_scopes
-
-    return python_normalize_scopes(scopes)
+    return cast(tuple[str, ...], _require_bridge().normalize_scopes(scopes))
 
 
-def _bridge_money_arg(value: object) -> str | int | None:
-    """The bridge's accepted form of a money value, or ``None`` to use the oracle.
+def _bridge_money_arg(value: object) -> str | int | object:
+    """The bridge's accepted form of a money value.
 
     ``Decimal`` is the type callers use; the bridge takes its exact spelling instead.
-    An ``int`` (but not a ``bool``) is already exact and crosses unchanged. Every other
-    type is left to the Python original so it raises its own refusal — a string, for
-    example, is a valid decimal spelling to the bridge but not to ``money.py``.
+    Every other value (including a float or a bool) is handed to the bridge unchanged so
+    its original typed refusal decides the call. There is no Python original to fall
+    back to.
     """
     if isinstance(value, Decimal):
         return str(value)
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    return None
+    return value
 
 
 def quantize_money(value: object, *, field: str = "amount") -> Decimal:
     """Round a computed amount to the ledger quantum, half-even (unchanged contract)."""
-    if _BRIDGE is not None:
-        argument = _bridge_money_arg(value)
-        if argument is not None:
-            return Decimal(_BRIDGE.quantize_money(argument, field))
-    from ezchain_core.money import quantize_money as python_quantize_money
-
-    return python_quantize_money(value, field=field)
+    return Decimal(_require_bridge().quantize_money(_bridge_money_arg(value), field))
 
 
 def floor_money(value: object, *, field: str = "amount") -> Decimal:
     """Round a computed amount down to the ledger minor unit (unchanged contract)."""
-    if _BRIDGE is not None:
-        argument = _bridge_money_arg(value)
-        if argument is not None:
-            return Decimal(_BRIDGE.floor_money(argument, field))
-    from ezchain_core.money import floor_money as python_floor_money
-
-    return python_floor_money(value, field=field)
+    return Decimal(_require_bridge().floor_money(_bridge_money_arg(value), field))
 
 
 def to_minor_units(value: object, *, field: str = "amount") -> int:
     """Exact integer count of ledger minor units (unchanged contract)."""
-    if _BRIDGE is not None:
-        argument = _bridge_money_arg(value)
-        if argument is not None:
-            return cast(int, _BRIDGE.to_minor_units(argument, field))
-    from ezchain_core.money import to_minor_units as python_to_minor_units
-
-    return python_to_minor_units(value, field=field)
+    return cast(int, _require_bridge().to_minor_units(_bridge_money_arg(value), field))
 
 
 def from_minor_units(minor: int) -> Decimal:
     """Inverse scaling of an exact minor-unit count (unchanged contract)."""
-    if _BRIDGE is not None:
-        argument = _bridge_money_arg(minor)
-        if argument is not None:
-            return Decimal(_BRIDGE.from_minor_units(argument))
-    from ezchain_core.money import from_minor_units as python_from_minor_units
-
-    return python_from_minor_units(minor)
+    return Decimal(_require_bridge().from_minor_units(_bridge_money_arg(minor)))
 
 
 __all__ = [
+    "NativeBridgeUnavailable",
     "floor_money",
     "from_minor_units",
     "normalize_scopes",

@@ -61,6 +61,13 @@ fi
 
 step "7/7 runtime gates (when present)"
 ran=0
+# The bridge clients fail closed when the compiled extension is absent, so the
+# native module must be installed before any Python test runs. Host-native build
+# only; a toolchain-less machine cannot run the full gate (ADR-0052).
+if [ -f rust/Cargo.toml ] && command -v cargo >/dev/null 2>&1; then
+  bash tools/build-native.sh
+  ran=1
+fi
 # The project venv is the gate. Global tools run only when no venv exists, so the same
 # commit cannot pass on one machine and fail on another because of a stray global ruff.
 if [ ! -x .venv/bin/python ]; then

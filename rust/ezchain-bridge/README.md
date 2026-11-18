@@ -42,14 +42,25 @@ ledger writes; only pure, already-ported kernels are exposed.
 ## Build
 
 The extension is an `abi3-py39` module; this repository's oracle interpreter is the
-app's Python 3.11 venv. With the scratch toolchain used for the Rust migration:
+app's Python 3.11 venv. Build and install it with the host-native script from the
+repository root:
 
 ```bash
-SCRATCH=/private/var/folders/55/5z874h2x6tq_8xjr5zb2b76w0000gn/T/opencode/ez-rust-poc
-export CARGO_HOME="$SCRATCH/cargo" RUSTUP_HOME="$SCRATCH/rustup" PATH="$SCRATCH/cargo/bin:$PATH"
-cargo build -p ezchain-bridge
-cp rust/target/debug/libezchain_bridge.dylib rust/target/debug/ezchain_bridge.so
+bash tools/build-native.sh                       # .venv (or $VIRTUAL_ENV / $EZCHAIN_VENV)
+EZCHAIN_VENV=/path/to/venv bash tools/build-native.sh
 ```
+
+It builds the crate with `cargo build --locked --release -p ezchain-bridge` from `rust/`
+(so `rust/.cargo/config.toml` supplies the linker flags — callers never export
+`RUSTFLAGS`), then copies the cdylib into the venv's site-packages as
+`ezchain_bridge.so`: `libezchain_bridge.dylib` on macOS, `libezchain_bridge.so` on Linux.
+It checks that `cargo` and the venv Python exist, fails loudly with a remedy if either
+is missing, verifies the installed module imports, and is idempotent. No Docker is used.
+Windows is not supported or verified.
+
+The bridge is a prerequisite, not an optional accelerator: the API and executor clients
+fail closed with `NativeBridgeUnavailable` when it is absent. Run the script before
+starting the app or running `bash tools/ci.sh`.
 
 ### Why the macOS linker flag is required
 
@@ -91,10 +102,11 @@ the pinned counts are asserted only for the committed corpus.
 Python remains the behavioural oracle: a recorded case is never changed to make the Rust
 side pass. **The ledger remains the sole accountant (CONTRACT I1): routing arithmetic
 through these kernels does not make Rust an accountant and does not change the execution
-path.** Production callers in the API and the executor now use the typed bridge clients
-when the extension is installed, with the Python originals as the proven fallback;
-quantization and conversion call sites are the first ones routed this way. Python code
-that still owns orchestration, keys, risk decisions and ledger writes is unchanged.
+path.** Production callers in the API and the executor use the typed bridge clients,
+which fail closed with `NativeBridgeUnavailable` when the extension is absent — there is
+no silent Python fallback (the build prerequisite is documented above). Quantization and
+conversion call sites are the first ones routed this way. Python code that still owns
+orchestration, keys, risk decisions and ledger writes is unchanged.
 No speedup is claimed — a single call across FFI costs more than a small kernel, so any
 performance claim needs a loop or a whole service boundary and a recorded benchmark
 (ADR-0050).

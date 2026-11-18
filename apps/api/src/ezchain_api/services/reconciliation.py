@@ -48,8 +48,8 @@ from ..models import (
     StrategyRunRow,
 )
 
-# Pure conversions go through the typed bridge client (with a lazy Python fallback);
-# every other money rule in this module still reads the Python oracle directly.
+# Pure conversions go through the typed bridge client (compiled extension required:
+# bash tools/build-native.sh); every other money rule still reads the Python oracle.
 from ..native import from_minor_units, quantize_money, to_minor_units
 
 # Quantities are token amounts, not money: they are stored at 18 decimals and a dust
