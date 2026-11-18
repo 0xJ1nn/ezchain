@@ -9,10 +9,22 @@
 use std::cmp::Ordering;
 
 use ezchain_decimal::{
-    exact_precision, exact_product, exact_sum, floor_money, quantize_money, Decimal, ParseError,
+    bps_fee, exact_precision, exact_product, exact_sum, floor_money, preview_cost, quantize_money,
+    Decimal, ParseError,
 };
 
 const FIXTURE: &str = include_str!("parity_fixture.txt");
+
+/// The committed fixture is used by default; `EZ_DECIMAL_FIXTURE` lets a
+/// held-out corpus (generated with a different seed) be checked without
+/// overwriting it.
+fn fixture_text() -> String {
+    match std::env::var("EZ_DECIMAL_FIXTURE") {
+        Ok(path) => std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("cannot read held-out fixture {path}: {err}")),
+        Err(_) => FIXTURE.to_string(),
+    }
+}
 
 fn dec_token(value: &Decimal) -> String {
     format!("V:{}~{}", value.canonical(), value.str_repr())
@@ -92,6 +104,75 @@ fn run_case(op: &str, args: &[&str]) -> String {
                 Ordering::Greater => "C:GT".to_string(),
             }
         }
+        "div" => {
+            let precision = args[0]
+                .parse::<usize>()
+                .expect("valid precision in fixture");
+            let a = match parse_or_error(args[1]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let b = match parse_or_error(args[2]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            a.div(&b, precision)
+                .map(|v| dec_token(&v))
+                .unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
+        "bps" => {
+            let notional = match parse_or_error(args[0]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let fee_bps = args[1].parse::<i64>().expect("valid fee_bps in fixture");
+            bps_fee(&notional, fee_bps)
+                .map(|v| dec_token(&v))
+                .unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
+        "pc" => {
+            let kind = args[0];
+            let notional = match parse_or_error(args[1]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let venue = match parse_or_error(args[2]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let amount = if args[3] == "None" {
+                None
+            } else {
+                match parse_or_error(args[3]) {
+                    Ok(v) => Some(v),
+                    Err(e) => return e,
+                }
+            };
+            let fee_bps = args[4].parse::<i64>().expect("valid fee_bps in fixture");
+            match preview_cost(kind, &notional, &venue, amount.as_ref(), fee_bps) {
+                Ok(pc) => {
+                    let venue_leg = quantize_money(&venue).expect("venue fee is in scope");
+                    let worst = pc
+                        .worst_case_out
+                        .as_ref()
+                        .map(dec_token)
+                        .unwrap_or_else(|| "None".to_string());
+                    let slippage = pc
+                        .slippage_bps
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "None".to_string());
+                    format!(
+                        "P:{};{};{};{};{}",
+                        dec_token(&pc.fill_fee_usd),
+                        worst,
+                        slippage,
+                        dec_token(&venue_leg),
+                        dec_token(&pc.platform_fee_usd),
+                    )
+                }
+                Err(e) => format!("E:{}", e.code()),
+            }
+        }
         other => panic!("unknown operation in fixture: {other}"),
     }
 }
@@ -100,8 +181,9 @@ fn run_case(op: &str, args: &[&str]) -> String {
 fn python_oracle_parity() {
     let mut passed = 0usize;
     let mut failures: Vec<String> = Vec::new();
+    let fixture = fixture_text();
 
-    for (index, line) in FIXTURE.lines().enumerate() {
+    for (index, line) in fixture.lines().enumerate() {
         let fields: Vec<&str> = line.split('\t').collect();
         assert!(fields.len() >= 2, "malformed fixture line {}", index + 1);
         let op = fields[0];
@@ -119,7 +201,7 @@ fn python_oracle_parity() {
         }
     }
 
-    let total = FIXTURE.lines().count();
+    let total = fixture.lines().count();
     eprintln!("parity: {passed}/{total} cases match the Python oracle");
     if !failures.is_empty() {
         for failure in failures.iter().take(20) {
