@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
+from .native import stale_reason as native_stale_reason
 from .types import MARK_FUTURE_SKEW_SECONDS, MarkStatus, SourceRef, utcnow
 
 DEFAULT_MAX_AGE_SECONDS: Final = 60.0
@@ -115,7 +116,7 @@ class FreshnessPolicy:
             return FreshnessVerdict("future", None, None, source_class)
         age = source.age_seconds(now)
         if age > self.budget(source_class):
-            return FreshnessVerdict("stale", age, stale_reason(source_class), source_class)
+            return FreshnessVerdict("stale", age, native_stale_reason(source_class), source_class)
         return FreshnessVerdict("fresh", age, None, source_class)
 
     def price(
