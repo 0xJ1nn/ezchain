@@ -88,14 +88,16 @@ the pinned counts are asserted only for the committed corpus.
 
 ## Oracle and scope
 
-Python remains the behavioural oracle until the whole migrated surface passes parity.
-A recorded case is never changed to make the Rust side pass. **The ledger remains the
-sole accountant (CONTRACT I1): exposing these kernels does not make Rust an accountant,
-does not change any production caller and does not touch the money-path execution
-flow.** Money arithmetic stays in Python at the call site; these functions are available
-for a caller that explicitly chooses to use the proven kernel. No speedup is claimed —
-a single call across FFI costs more than a small kernel, so any performance claim needs
-a loop or a whole service boundary and a recorded benchmark (ADR-0050).
+Python remains the behavioural oracle: a recorded case is never changed to make the Rust
+side pass. **The ledger remains the sole accountant (CONTRACT I1): routing arithmetic
+through these kernels does not make Rust an accountant and does not change the execution
+path.** Production callers in the API and the executor now use the typed bridge clients
+when the extension is installed, with the Python originals as the proven fallback;
+quantization and conversion call sites are the first ones routed this way. Python code
+that still owns orchestration, keys, risk decisions and ledger writes is unchanged.
+No speedup is claimed — a single call across FFI costs more than a small kernel, so any
+performance claim needs a loop or a whole service boundary and a recorded benchmark
+(ADR-0050).
 
 The money functions are the eight listed above only. The rest of `ezchain-decimal`
 (`exact_sum`, `exact_product`, `bps_fee`, `preview_cost`, `require_money`,

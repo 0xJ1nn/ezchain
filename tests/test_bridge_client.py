@@ -24,6 +24,7 @@ from typing import Any
 import pytest
 
 from ezchain_api import native
+from ezchain_api.services import paper, trade_policy
 from ezchain_api.services.api_keys import ApiKeyError
 from ezchain_api.services.api_keys import normalize_scopes as python_normalize_scopes
 from ezchain_core import money
@@ -169,17 +170,24 @@ MONEY_CASES_PATH = ROOT / "rust/ezchain-bridge/tests/money_cases.jsonl"
 ALL_MONEY_CASES = [
     json.loads(line) for line in MONEY_CASES_PATH.read_text(encoding="utf-8").splitlines() if line
 ]
-MONEY_FNS = ("quantize_money", "to_minor_units", "from_minor_units")
+MONEY_FNS = ("quantize_money", "floor_money", "to_minor_units", "from_minor_units")
 MONEY_CASES = [case for case in ALL_MONEY_CASES if case["fn"] in MONEY_FNS]
-MONEY_RECORDED_COUNTS = {"quantize_money": 71, "to_minor_units": 48, "from_minor_units": 32}
+MONEY_RECORDED_COUNTS = {
+    "quantize_money": 71,
+    "floor_money": 50,
+    "to_minor_units": 48,
+    "from_minor_units": 32,
+}
 MONEY_RECORDED_OUTCOMES = {
     "quantize_money": (56, 15),
+    "floor_money": (41, 9),
     "to_minor_units": (34, 14),
     "from_minor_units": (28, 4),
 }
 
 PYTHON_MONEY: dict[str, Callable[..., Any]] = {
     "quantize_money": lambda value, *, field="amount": money.quantize_money(value, field=field),
+    "floor_money": lambda value, *, field="amount": money.floor_money(value, field=field),
     "to_minor_units": lambda value, *, field="amount": money.to_minor_units(value, field=field),
     "from_minor_units": lambda minor: money.from_minor_units(minor),
 }
@@ -268,6 +276,9 @@ class _MoneyBridge:
     def quantize_money(self, value: Any, field: str = "amount") -> Any:
         return self._dispatch("quantize_money", value, field)
 
+    def floor_money(self, value: Any, field: str = "amount") -> Any:
+        return self._dispatch("floor_money", value, field)
+
     def to_minor_units(self, value: Any, field: str = "amount") -> Any:
         return self._dispatch("to_minor_units", value, field)
 
@@ -345,7 +356,7 @@ def test_money_refusals_keep_the_original_exception_on_both_paths(
 ) -> None:
     bridge = _MoneyBridge(money_recorded)
     refusals = [case for case in MONEY_CASES if _case_outcome(case, money_recorded)[0] == "error"]
-    assert len(refusals) == 33
+    assert len(refusals) == 42
 
     for path in (bridge, None):
         monkeypatch.setattr(native, "_BRIDGE", path)
@@ -364,6 +375,28 @@ def test_money_field_keyword_reaches_the_bridge(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(native, "_BRIDGE", bridge)
     assert native.to_minor_units(Decimal("0.1"), field="notional") == 1000000
     assert bridge.calls == [("to_minor_units", "0.1", "notional")]
+
+
+def test_floor_money_field_keyword_reaches_the_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
+    bridge = _MoneyBridge(
+        {
+            ("floor_money", "str", "50.000000049", "resolved_size_usd"): (
+                "success",
+                "50.00000004",
+            )
+        }
+    )
+    monkeypatch.setattr(native, "_BRIDGE", bridge)
+    assert native.floor_money(Decimal("50.000000049"), field="resolved_size_usd") == Decimal(
+        "50.00000004"
+    )
+    assert bridge.calls == [("floor_money", "50.000000049", "resolved_size_usd")]
+
+
+def test_quantization_callers_route_through_the_client() -> None:
+    """The switched call sites must use the typed wrappers, not the core-py originals."""
+    assert paper.quantize_money is native.quantize_money
+    assert trade_policy.floor_money is native.floor_money
 
 
 def test_core_py_never_imports_the_api_client() -> None:
