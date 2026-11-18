@@ -51,6 +51,7 @@ name = "ezchain-bridge"
 version = "0.0.0"
 dependencies = [
  "ezchain-core",
+ "ezchain-decimal",
  "ezchain-rpc",
  "pyo3",
 ]
