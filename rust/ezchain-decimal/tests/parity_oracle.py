@@ -17,7 +17,14 @@ Every expected value is recorded as a token so the fixture is self-describing::
     C:<LT|EQ|GT>                                                    # comparison
     N:<signed integer>                                              # to_minor_units
     P:<fill>;<worst|None>;<slip|None>;<venue_leg>;<platform>        # preview_cost sheet
+    None                                                            # value_impact unknown leg
     E:<ExceptionClassName>                                          # refusal
+
+Conversion operations record the pure helpers in ``ezchain_adapters.quotes``:
+``tr`` = ``to_raw``, ``fr`` = ``from_raw``, ``qp`` = ``quote_price`` and
+``vi`` = ``value_impact``. Their USD↔token and raw-token conversions are pure
+arithmetic under the ambient 28-digit context; the network-dependent quote
+paths in that module are not oracle cases because they need a provider.
 
 Boundary-input tokens (for the ``ad`` / ``fmg`` type-guard ops) preserve the
 Python type that reached ``_as_decimal`` / ``from_minor_units``::
@@ -43,11 +50,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[2]
 CORE_PY_SRC = REPO_ROOT / "packages" / "core-py" / "src"
+ADAPTERS_PY_SRC = REPO_ROOT / "packages" / "adapters" / "src"
 # Seed/output overrides exist so a maintainer can regenerate a held-out corpus
 # (a different seed) to check the Rust type has not been overfit to one fixture.
 SEED = int(os.environ.get("EZ_DECIMAL_SEED", "20261118"))
 FIXTURE = Path(os.environ.get("EZ_DECIMAL_FIXTURE", str(HERE / "parity_fixture.txt")))
 sys.path.insert(0, str(CORE_PY_SRC))
+sys.path.insert(0, str(ADAPTERS_PY_SRC))
 
 from ezchain_core.money import (  # noqa: E402
     _as_decimal,
@@ -65,6 +74,12 @@ from ezchain_core.money import (  # noqa: E402
     to_minor_units,
 )
 from ezchain_core.types import SourceRef  # noqa: E402
+from ezchain_adapters.quotes import (  # noqa: E402
+    from_raw,
+    quote_price,
+    to_raw,
+    value_impact,
+)
 
 # SEED comes from the environment so a held-out corpus with a different seed can
 # be generated without overwriting the committed fixture (see the crate README).
@@ -353,6 +368,56 @@ def tricky_corpus() -> list[tuple[str, list[str]]]:
         ("parse", ["1E+9999999999"]),
         ("parse", ["1E-9999999999"]),
         ("parse", ["1E+9999999999999999999"]),
+        # Cross-asset conversion helpers (pure arithmetic, ambient context).
+        # to_raw: truncate toward zero, round at 28 digits, refuse bad decimals.
+        ("tr", ["1.5", "2"]),
+        ("tr", ["1.2345678901", "8"]),
+        ("tr", ["-2.5", "0"]),
+        ("tr", ["-0.9", "0"]),
+        ("tr", ["0.00000001", "8"]),
+        ("tr", ["-1.9999999999999999999999999999", "0"]),
+        ("tr", [BIG + ".12345", "6"]),
+        ("tr", ["1.5", "-1"]),
+        ("tr", ["1.5", "37"]),
+        ("tr", ["1.5", "36"]),
+        ("tr", ["1E+1000000", "36"]),
+        # from_raw: inverse scaling, long-int rounding, refused decimals.
+        ("fr", ["12345", "2"]),
+        ("fr", ["1", "2"]),
+        ("fr", ["100", "2"]),
+        ("fr", ["1", "18"]),
+        ("fr", ["123456789012345678901234567890", "18"]),
+        ("fr", ["-5", "2"]),
+        ("fr", ["0", "8"]),
+        ("fr", ["1", "36"]),
+        ("fr", ["10", "0"]),
+        ("fr", ["1", "-1"]),
+        ("fr", ["1", "37"]),
+        # quote_price: buy/sell inversion, published USD legs, preferred
+        # exponents, non-terminating quotients and both zero-divisor refusals.
+        ("qp", ["buy", "100", "0.5", "None", "None"]),
+        ("qp", ["buy", "100", "0.5", "100", "None"]),
+        ("qp", ["sell", "0.5", "100", "None", "None"]),
+        ("qp", ["sell", "0.5", "100", "None", "100"]),
+        ("qp", ["buy", "10.00", "4", "None", "None"]),
+        ("qp", ["buy", "0E+5", "5", "None", "None"]),
+        ("qp", ["buy", "100", "3", "None", "None"]),
+        ("qp", ["buy", "1", "0", "None", "None"]),
+        ("qp", ["buy", "0", "0", "None", "None"]),
+        ("qp", ["sell", "1", "0", "None", "None"]),
+        ("qp", ["sell", "0", "1", "None", "None"]),
+        # value_impact: ratio minus one, and the fail-closed None cases.
+        ("vi", ["100", "99"]),
+        ("vi", ["100", "101"]),
+        ("vi", ["100", "100"]),
+        ("vi", ["1", "3"]),
+        ("vi", ["3", "1"]),
+        ("vi", ["None", "99"]),
+        ("vi", ["100", "None"]),
+        ("vi", ["None", "None"]),
+        ("vi", ["0", "99"]),
+        ("vi", ["-1", "99"]),
+        ("vi", ["-0", "99"]),
     ]
     return cases
 
@@ -378,8 +443,13 @@ def random_corpus() -> list[tuple[str, list[str]]]:
         "neg": 50,
         "ad": 45,
         "fmg": 35,
+        "tr": 55,
+        "fr": 55,
+        "qp": 60,
+        "vi": 55,
     }
     fee_choices = [0, 1, 5, 25, 30, 50, 99, 300, 2500, 9999, 10000]
+    decimals_choices = [0, 1, 2, 6, 8, 18, 36, -1, 37]
     cases: list[tuple[str, list[str]]] = []
     for op, count in plan.items():
         for _ in range(count):
@@ -418,6 +488,30 @@ def random_corpus() -> list[tuple[str, list[str]]]:
                 args = [rnd_minor(rng)]
             elif op in ("ad", "fmg"):
                 args = [rnd_input(rng)]
+            elif op == "tr":
+                args = [rnd_dec(rng, exp_lo=-12, exp_hi=6), str(rng.choice(decimals_choices))]
+            elif op == "fr":
+                args = [rnd_minor(rng), str(rng.choice(decimals_choices))]
+            elif op == "qp":
+                side = rng.choice(["buy", "sell"])
+                amount_in, amount_out = rnd_dec(rng), rnd_dec(rng)
+                if rng.random() < 0.05:  # exercise both zero-divisor refusals
+                    zero = rng.choice(["0", "0E+5", "-0"])
+                    if side == "buy":
+                        amount_out = zero
+                    else:
+                        amount_in = zero
+                in_usd = "None" if rng.random() < 0.6 else rnd_dec(rng)
+                out_usd = "None" if rng.random() < 0.6 else rnd_dec(rng)
+                args = [side, amount_in, amount_out, in_usd, out_usd]
+            elif op == "vi":
+                a = (
+                    "None"
+                    if rng.random() < 0.2
+                    else (rng.choice(["0", "-1", "-0"]) if rng.random() < 0.2 else rnd_dec(rng))
+                )
+                b = "None" if rng.random() < 0.2 else rnd_dec(rng)
+                args = [a, b]
             else:  # cmp
                 args = [rnd_dec(rng), rnd_dec(rng)]
             cases.append((op, args))
@@ -484,6 +578,26 @@ def expected_for(op: str, args: list[str]) -> str:
             return dec_token(from_minor_units(int(args[0])))
         if op == "neg":
             return dec_token(exact_neg(Decimal(args[0])))
+        if op == "tr":
+            return f"N:{to_raw(Decimal(args[0]), int(args[1]))}"
+        if op == "fr":
+            return dec_token(from_raw(int(args[0]), int(args[1])))
+        if op == "qp":
+            return dec_token(
+                quote_price(
+                    side=args[0],
+                    amount_in=Decimal(args[1]),
+                    amount_out=Decimal(args[2]),
+                    amount_in_usd=None if args[3] == "None" else Decimal(args[3]),
+                    amount_out_usd=None if args[4] == "None" else Decimal(args[4]),
+                )
+            )
+        if op == "vi":
+            impact = value_impact(
+                amount_in_usd=None if args[0] == "None" else Decimal(args[0]),
+                amount_out_usd=None if args[1] == "None" else Decimal(args[1]),
+            )
+            return "None" if impact is None else dec_token(impact)
     except Exception as exc:  # noqa: BLE001 - the code name is the recorded answer
         return f"E:{type(exc).__name__}"
 
