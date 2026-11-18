@@ -98,6 +98,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ezchain-replay"
+version = "0.0.0"
+dependencies = [
+ "ezchain-decimal",
+]
+
+[[package]]
 name = "ezchain-rpc"
 version = "0.0.0"
 
