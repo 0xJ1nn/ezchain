@@ -40,6 +40,13 @@ name = "ezchain-p2p"
 version = "0.0.0"
 
 [[package]]
+name = "ezchain-protection"
+version = "0.0.0"
+dependencies = [
+ "ezchain-decimal",
+]
+
+[[package]]
 name = "ezchain-rpc"
 version = "0.0.0"
 
