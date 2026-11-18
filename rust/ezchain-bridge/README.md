@@ -46,8 +46,7 @@ does not change the module's behaviour.
 
 ```bash
 PYTHONPATH=apps/api/src:packages/core-py/src \
-  /Users/0xj1n/Projects/ezchain/.venv/bin/python \
-  -m pytest rust/ezchain-bridge/tests/test_bridge_parity.py -v
+  .venv/bin/python -m pytest rust/ezchain-bridge/tests/test_bridge_parity.py -v
 ```
 
 `tests/cases.jsonl` records 63 cases: 10 for `stale_reason` and 53 for
