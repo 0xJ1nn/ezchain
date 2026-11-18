@@ -13,6 +13,12 @@ use crate::decimal::{Decimal, RoundMode};
 /// The money constants from `money.py` that affect precision derivation.
 const MONEY_PRECISION: i32 = 60;
 const MONEY_SCALE: i32 = 8;
+/// Dividing by `BPS` shifts the exponent by four (BPS_DIGITS in `money.py`).
+const BPS_DIGITS: i32 = 4;
+/// The slippage window used by `preview_cost` (DEFAULT_SLIPPAGE_BPS in money.py).
+const DEFAULT_SLIPPAGE_BPS: i64 = 50;
+/// The non-executable mark kind; executable quotes pay the larger fee leg.
+const PAPER_MARK: &str = "paper_mark";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MoneyError {
@@ -20,12 +26,22 @@ pub enum MoneyError {
     NonFinite,
     /// `exact_product()` with no factors.
     EmptyProduct,
+    /// Division by zero (`Decimal.DivisionByZero` in Python).
+    DivisionByZero,
+    /// `bps_fee` with a negative `fee_bps` (`ValueError` in Python).
+    NegativeFeeBps,
+    /// `preview_cost` with a non-positive notional (`ValueError` in Python).
+    NonPositiveNotional,
 }
 
 impl MoneyError {
     /// The Python exception class name recorded by the oracle.
     pub fn code(&self) -> &'static str {
-        "MoneyError"
+        match self {
+            MoneyError::NegativeFeeBps | MoneyError::NonPositiveNotional => "ValueError",
+            MoneyError::DivisionByZero => "DivisionByZero",
+            _ => "MoneyError",
+        }
     }
 }
 
@@ -111,6 +127,87 @@ pub fn exact_product(values: &[Decimal]) -> Result<Decimal, MoneyError> {
     Ok(product)
 }
 
+/// Parity for `money.bps_fee`: `notional * fee_bps / BPS` under a context sized
+/// from both operands (`extra = MONEY_SCALE + BPS_DIGITS`), then quantized to
+/// the ledger minor unit half-even.
+pub fn bps_fee(notional: &Decimal, fee_bps: i64) -> Result<Decimal, MoneyError> {
+    if fee_bps < 0 {
+        return Err(MoneyError::NegativeFeeBps);
+    }
+    let fee_bps_dec = Decimal::from_i64(fee_bps);
+    let precision = exact_precision(
+        &[notional.clone(), fee_bps_dec.clone()],
+        MONEY_SCALE + BPS_DIGITS,
+    ) as usize;
+    let product = notional.mul(&fee_bps_dec, precision);
+    let fee = product.div(&Decimal::from_i64(10_000), precision)?;
+    quantize_money(&fee)
+}
+
+/// The numeric cost sheet produced by `money.preview_cost`.
+///
+/// `SourceRef`, `network_fee_usd` and `price_impact_pct` are pure echoes/nulls
+/// in `money.py` and carry no decimal arithmetic, so they are not part of this
+/// prototype. `to_dict`/JSON canonicalisation remains out of scope (README).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CostPreview {
+    pub platform_fee_usd: Decimal,
+    pub venue_fee_usd: Decimal,
+    pub slippage_bps: Option<i64>,
+    pub worst_case_out: Option<Decimal>,
+    pub fill_fee_usd: Decimal,
+}
+
+/// Parity for `money.preview_cost`: a paper mark pays the flat bps fee, an
+/// executable quote pays `max(bps leg, quantized venue leg)`; the receiver's
+/// worst case inside the slippage window is quantized half-even.
+pub fn preview_cost(
+    kind: &str,
+    notional: &Decimal,
+    venue_fee: &Decimal,
+    amount_out: Option<&Decimal>,
+    fee_bps: i64,
+) -> Result<CostPreview, MoneyError> {
+    // money.py validates/quantizes the venue field before the notional check.
+    let venue_leg = quantize_money(venue_fee)?;
+    if notional.compare_numeric(&Decimal::from_i64(0)) != Ordering::Greater {
+        return Err(MoneyError::NonPositiveNotional);
+    }
+    let paper_leg = bps_fee(notional, fee_bps)?;
+    let is_mark = kind == PAPER_MARK;
+    let fill_fee_usd = if is_mark {
+        paper_leg
+    } else if compare(&paper_leg, &venue_leg) == Ordering::Less {
+        venue_leg
+    } else {
+        paper_leg
+    };
+    let slippage_bps = if is_mark {
+        None
+    } else {
+        Some(DEFAULT_SLIPPAGE_BPS)
+    };
+    let worst_case_out = match (slippage_bps, amount_out) {
+        (Some(slippage), Some(amount)) => {
+            let precision =
+                exact_precision(std::slice::from_ref(amount), MONEY_SCALE + BPS_DIGITS) as usize;
+            let factor = Decimal::from_i64(10_000 - slippage);
+            let inside_window = amount
+                .mul(&factor, precision)
+                .div(&Decimal::from_i64(10_000), precision)?;
+            Some(quantize_money(&inside_window)?)
+        }
+        _ => None,
+    };
+    Ok(CostPreview {
+        platform_fee_usd: Decimal::from_i64(0),
+        venue_fee_usd: venue_fee.clone(),
+        slippage_bps,
+        worst_case_out,
+        fill_fee_usd,
+    })
+}
+
 /// Parity for the `Decimal` comparison operators `money.py` relies on.
 pub fn compare(a: &Decimal, b: &Decimal) -> Ordering {
     a.compare_numeric(b)
@@ -155,5 +252,44 @@ mod tests {
     #[test]
     fn empty_product_is_refused() {
         assert_eq!(exact_product(&[]), Err(MoneyError::EmptyProduct));
+    }
+
+    fn token(value: &Decimal) -> String {
+        format!("{}~{}", value.canonical(), value.str_repr())
+    }
+
+    #[test]
+    fn bps_fee_matches_python() {
+        for (notional, fee_bps, expected) in [
+            ("100", 50, "0|50000000|-8~0.50000000"),
+            ("0.1", 25, "0|25000|-8~0.00025000"),
+            ("-12.345678901", 50, "1|6172839|-8~-0.06172839"),
+            ("100", 0, "0|0|-8~0E-8"),
+            ("1", 3, "0|30000|-8~0.00030000"),
+        ] {
+            assert_eq!(token(&bps_fee(&d(notional), fee_bps).unwrap()), expected);
+        }
+        assert_eq!(bps_fee(&d("100"), -1), Err(MoneyError::NegativeFeeBps));
+    }
+
+    #[test]
+    fn preview_cost_matches_python() {
+        let mark = preview_cost("paper_mark", &d("100"), &d("999"), None, 50).unwrap();
+        assert_eq!(token(&mark.fill_fee_usd), "0|50000000|-8~0.50000000");
+        assert_eq!(mark.slippage_bps, None);
+        assert_eq!(mark.worst_case_out, None);
+
+        let executable = preview_cost("jupiter", &d("100"), &d("2.5"), Some(&d("10")), 50).unwrap();
+        assert_eq!(token(&executable.fill_fee_usd), "0|250000000|-8~2.50000000");
+        assert_eq!(executable.slippage_bps, Some(50));
+        assert_eq!(
+            token(&executable.worst_case_out.unwrap()),
+            "0|995000000|-8~9.95000000"
+        );
+
+        assert_eq!(
+            preview_cost("jupiter", &d("0"), &d("1"), None, 50),
+            Err(MoneyError::NonPositiveNotional)
+        );
     }
 }
