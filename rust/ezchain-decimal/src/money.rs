@@ -32,12 +32,9 @@ pub enum MoneyError {
     NegativeFeeBps,
     /// `preview_cost` with a non-positive notional (`ValueError` in Python).
     NonPositiveNotional,
-<<<<<<< HEAD
-=======
     /// An explicit value is not a whole number of minor units
     /// (`SubQuantumError` in Python).
     SubQuantum,
->>>>>>> origin/rust/migration
 }
 
 impl MoneyError {
@@ -46,10 +43,6 @@ impl MoneyError {
         match self {
             MoneyError::NegativeFeeBps | MoneyError::NonPositiveNotional => "ValueError",
             MoneyError::DivisionByZero => "DivisionByZero",
-<<<<<<< HEAD
-            _ => "MoneyError",
-        }
-=======
             MoneyError::SubQuantum => "SubQuantumError",
             _ => "MoneyError",
         }
@@ -95,7 +88,6 @@ impl MinorUnits {
         } else {
             format!("N:{digits}")
         }
->>>>>>> origin/rust/migration
     }
 }
 
@@ -262,8 +254,6 @@ pub fn preview_cost(
     })
 }
 
-<<<<<<< HEAD
-=======
 /// Parity for `money.require_quantity`: an exact, finite token quantity.
 ///
 /// `money.py` only calls `_as_decimal` here. In this prototype every `Decimal`
@@ -338,7 +328,6 @@ pub fn exact_neg(value: &Decimal) -> Decimal {
     }
 }
 
->>>>>>> origin/rust/migration
 /// Parity for the `Decimal` comparison operators `money.py` relies on.
 pub fn compare(a: &Decimal, b: &Decimal) -> Ordering {
     a.compare_numeric(b)
@@ -423,8 +412,6 @@ mod tests {
             Err(MoneyError::NonPositiveNotional)
         );
     }
-<<<<<<< HEAD
-=======
 
     #[test]
     fn require_money_preserves_representation_and_refuses_sub_quantum() {
@@ -498,5 +485,4 @@ mod tests {
             "1|12345678901234567890123456789|0~-12345678901234567890123456789"
         );
     }
->>>>>>> origin/rust/migration
 }
