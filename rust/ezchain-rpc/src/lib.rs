@@ -7,8 +7,10 @@
 #![forbid(unsafe_code)]
 
 pub mod adapter_error;
+pub mod framing;
 pub mod json_safe;
 pub mod method;
 pub mod paper_order;
 pub mod scopes;
 pub mod wire;
+pub mod ws_frame;

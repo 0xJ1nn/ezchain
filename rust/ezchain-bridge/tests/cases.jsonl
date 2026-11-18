@@ -1,0 +1,63 @@
+{"fn":"stale_reason","args":["quote"]}
+{"fn":"stale_reason","args":["mark"]}
+{"fn":"stale_reason","args":["candle"]}
+{"fn":"stale_reason","args":["feed"]}
+{"fn":"stale_reason","args":[""]}
+{"fn":"stale_reason","args":["QUOTE"]}
+{"fn":"stale_reason","args":["quote "]}
+{"fn":"stale_reason","args":["unknown-class"]}
+{"fn":"stale_reason","args":["ünïcödé"]}
+{"fn":"stale_reason","args":["日本語のテキスト"]}
+{"fn":"normalize_scopes","args":[null]}
+{"fn":"normalize_scopes","args":[[]]}
+{"fn":"normalize_scopes","args":[["read"]]}
+{"fn":"normalize_scopes","args":[["trade"]]}
+{"fn":"normalize_scopes","args":[["admin"]]}
+{"fn":"normalize_scopes","args":[["read","read","trade"]]}
+{"fn":"normalize_scopes","args":[["trade","read"]]}
+{"fn":"normalize_scopes","args":[["admin","trade","read"]]}
+{"fn":"normalize_scopes","args":[["read","trade","admin","read","trade"]]}
+{"fn":"normalize_scopes","args":[["bogus"]]}
+{"fn":"normalize_scopes","args":[["read","bogus","admin"]]}
+{"fn":"normalize_scopes","args":[["READ"]]}
+{"fn":"normalize_scopes","args":[["bogus","bogus"]]}
+{"fn":"normalize_scopes","args":[[""]]}
+{"fn":"normalize_scopes","args":[[" "]]}
+{"fn":"normalize_scopes","args":[["read "]]}
+{"fn":"normalize_scopes","args":[[" read"]]}
+{"fn":"normalize_scopes","args":[["read,trade"]]}
+{"fn":"normalize_scopes","args":[["trade|read"]]}
+{"fn":"normalize_scopes","args":[["ünïcödé"]]}
+{"fn":"normalize_scopes","args":[["日本語のテキスト"]]}
+{"fn":"normalize_scopes","args":[["a..b"]]}
+{"fn":"normalize_scopes","args":[["./x/**/*.json"]]}
+{"fn":"normalize_scopes","args":[["read","./x/**/*.json"]]}
+{"fn":"normalize_scopes","args":[["read","ünïcödé","日本語のテキスト","a..b"]]}
+{"fn":"normalize_scopes","args":[["READ","read"]]}
+{"fn":"normalize_scopes","args":[["Admin"]]}
+{"fn":"normalize_scopes","args":[["TRADE"]]}
+{"fn":"normalize_scopes","args":[["admin ","trade"]]}
+{"fn":"normalize_scopes","args":[["read","admin","nope"]]}
+{"fn":"normalize_scopes","args":[["bogus","foo","bar"]]}
+{"fn":"normalize_scopes","args":[["bar","foo","bogus"]]}
+{"fn":"normalize_scopes","args":[["read","read","bogus"]]}
+{"fn":"normalize_scopes","args":[["x"]]}
+{"fn":"normalize_scopes","args":[["y"]]}
+{"fn":"normalize_scopes","args":[["z"]]}
+{"fn":"normalize_scopes","args":[["scope"]]}
+{"fn":"normalize_scopes","args":[["all"]]}
+{"fn":"normalize_scopes","args":[["*"]]}
+{"fn":"normalize_scopes","args":[["admin:read"]]}
+{"fn":"normalize_scopes","args":[["read\n"]]}
+{"fn":"normalize_scopes","args":[["read\t"]]}
+{"fn":"normalize_scopes","args":[["rëad"]]}
+{"fn":"normalize_scopes","args":[["READ","TRADE","ADMIN"]]}
+{"fn":"normalize_scopes","args":[["unknown","READ"]]}
+{"fn":"normalize_scopes","args":[["read","trade","unknown"]]}
+{"fn":"normalize_scopes","args":[["None"]]}
+{"fn":"normalize_scopes","args":[["null"]]}
+{"fn":"normalize_scopes","args":[["true"]]}
+{"fn":"normalize_scopes","args":[["0"]]}
+{"fn":"normalize_scopes","args":[["-1"]]}
+{"fn":"normalize_scopes","args":[["quote"]]}
+{"fn":"normalize_scopes","args":[["ünïcödé","日本語のテキスト"]]}
