@@ -68,6 +68,15 @@ default loopback bind unless you have put it behind your own access control.
   loopback.
 - **Tools:** `curl`, `tar`, `awk`, `sed`, `openssl` and a SHA-256 tool (`sha256sum`,
   `shasum` or `openssl`). The installer checks for them.
+- **Rust toolchain (source checkout / development):** the API and executor call a
+  compiled PyO3 extension, `ezchain_bridge`, for money conversion and scope
+  normalisation (ADR-0052). There is **no Python fallback** — without the extension the
+  clients raise `NativeBridgeUnavailable` and the app or gate fails closed. Before
+  running the app or `bash tools/ci.sh`, build and install it once per venv with
+  `bash tools/build-native.sh`. The build is host-native — macOS and Linux are supported,
+  it uses the committed Cargo lock and the linker flags in `rust/.cargo/config.toml`, and
+  it needs no Docker and no caller-exported `RUSTFLAGS`. The script fails loudly when
+  cargo or the venv's Python is missing. Windows is not supported or verified.
 - **Access:** a user with `sudo` when Docker is not already installed.
 
 ## 4. Firewall

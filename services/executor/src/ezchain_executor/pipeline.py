@@ -86,7 +86,6 @@ from ezchain_core import (
     decode_transaction,
     exact_product,
     journal_from_fill,
-    quantize_money,
     risk_decision_from_intent,
     utcnow,
     verify_prepared_transaction,
@@ -95,6 +94,7 @@ from ezchain_core import (
 
 from .journal import JournalSink
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
+from .native import quantize_money
 from .outbox import AttemptLog, BroadcastAttempt, MemoryAttemptLog
 from .signing import SigningBoundary, SigningRefused
 from .venue import VenueError

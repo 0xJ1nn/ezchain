@@ -10,6 +10,10 @@ A string argument is the caller's encoding of an exact ``Decimal``: the oracle d
 ``Decimal(s)`` before calling the original, and the bridge parses the same string with
 the proven Rust decimal kernel. Ints and typed refusals (float/bool/None) are handed to
 both sides unchanged, so ``money.py``'s own guards are part of the comparison.
+The corpus also includes alternative spellings (underscores, Unicode Nd digits
+from the four mapped blocks, signs, exponents and end-whitespace): the oracle
+does ``Decimal(s)`` on them, and the bridge must return the same value rather
+than raising ``InvalidOperation``.
 
 Build the module first (see the crate README), then run::
 
@@ -49,19 +53,19 @@ CASES_PATH = Path(
 
 # Pinned counts for the committed corpus; a held-out run with a different path skips them.
 RECORDED_COUNTS = {
-    "decimal_str": 69,
-    "quantize_money": 65,
+    "decimal_str": 97,
+    "quantize_money": 71,
     "floor_money": 50,
     "to_minor_units": 48,
-    "decimal_compare": 43,
+    "decimal_compare": 46,
     "to_raw": 37,
     "from_raw": 36,
     "from_minor_units": 32,
 }
 RECORDED_OUTCOMES = {
-    "decimal_str": (65, 4),
-    "decimal_compare": (43, 0),
-    "quantize_money": (51, 14),
+    "decimal_str": (86, 11),
+    "decimal_compare": (46, 0),
+    "quantize_money": (56, 15),
     "floor_money": (41, 9),
     "to_minor_units": (34, 14),
     "from_minor_units": (28, 4),
@@ -69,7 +73,7 @@ RECORDED_OUTCOMES = {
     "from_raw": (34, 2),
 }
 RECORDED_ERROR_CLASSES = {
-    "InvalidOperation": 6,
+    "InvalidOperation": 14,
     "MoneyError": 31,
     "FloatMoneyError": 3,
     "SubQuantumError": 5,
