@@ -1,0 +1,15 @@
+[package]
+name = "ezchain-flow"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure composition of one scheduler tick into the one executor execution path"
+
+# Both kernels are reused by path dependency, never reimplemented here.
+[dependencies]
+ezchain-executor = { path = "../ezchain-executor" }
+ezchain-scheduler = { path = "../ezchain-scheduler" }
+
+[dev-dependencies]
+ezchain-protection = { path = "../ezchain-protection" }
