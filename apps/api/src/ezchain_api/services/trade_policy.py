@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import TRADE_RISK_PROFILES
-from ezchain_core.money import exact_product, floor_money
+from ezchain_core.money import exact_product
 from ezchain_core.trade_policy import (
     PROFILE_ORDER,
     PolicyError,
@@ -41,6 +41,7 @@ from ezchain_core.trade_policy import (
 
 from ..config import Settings
 from ..models import StrategyRow, StrategyRunRow
+from ..native import floor_money
 
 AUDIT_REASON = "TRADE_POLICY_UPDATED"
 SIZING_SOURCE = "policy"

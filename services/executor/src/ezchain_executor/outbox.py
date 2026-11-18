@@ -36,9 +36,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from ezchain_core import Fill, Journal, exact_product, journal_from_fill, quantize_money, utcnow
+from ezchain_core import Fill, Journal, exact_product, journal_from_fill, utcnow
 
 from .journal import JournalSink
+from .native import quantize_money
 
 AttemptState = Literal["broadcast", "journaled", "failed"]
 VenueState = Literal["filled", "not_found", "unknown"]
