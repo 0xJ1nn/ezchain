@@ -11,15 +11,25 @@ the Python original in this same layer, and a core-py module must never import t
 application layer. The import of that original is deferred to the fallback branch so
 there is no cycle with ``api_keys`` at module load.
 
-No exception is caught around a bridge call: the Rust path raises the original
-``ApiKeyError`` class, and the Python path raises the same class from the oracle, so
-callers see one contract either way.
+The money wrappers preserve the Python originals' signatures: they accept a ``Decimal``
+or an ``int``, take ``field`` as a keyword argument where the original does, and return
+the same type (``Decimal`` for ``quantize_money``/``from_minor_units``, ``int`` for
+``to_minor_units``). A ``Decimal`` crosses the FFI as its exact string spelling because
+the bridge accepts decimal strings or ints, never ``Decimal`` objects; every other type
+is handed to the Python original so its own typed refusal decides the call. The string
+the bridge returns is parsed back into a ``Decimal``, so the boundary stays typed.
+
+No exception is caught around a bridge call: both paths raise the original exception
+class from the owning Python module (``ApiKeyError``, ``MoneyError`` and friends), with
+the original message, ``code`` and ``message`` attributes, so callers see one contract
+either way.
 """
 
 from __future__ import annotations
 
 import importlib
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any, cast
 
 _BRIDGE_MODULE = "ezchain_bridge"
@@ -50,4 +60,58 @@ def normalize_scopes(scopes: Sequence[str] | None) -> tuple[str, ...]:
     return python_normalize_scopes(scopes)
 
 
-__all__ = ["normalize_scopes", "using_rust"]
+def _bridge_money_arg(value: object) -> str | int | None:
+    """The bridge's accepted form of a money value, or ``None`` to use the oracle.
+
+    ``Decimal`` is the type callers use; the bridge takes its exact spelling instead.
+    An ``int`` (but not a ``bool``) is already exact and crosses unchanged. Every other
+    type is left to the Python original so it raises its own refusal — a string, for
+    example, is a valid decimal spelling to the bridge but not to ``money.py``.
+    """
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def quantize_money(value: object, *, field: str = "amount") -> Decimal:
+    """Round a computed amount to the ledger quantum, half-even (unchanged contract)."""
+    if _BRIDGE is not None:
+        argument = _bridge_money_arg(value)
+        if argument is not None:
+            return Decimal(_BRIDGE.quantize_money(argument, field))
+    from ezchain_core.money import quantize_money as python_quantize_money
+
+    return python_quantize_money(value, field=field)
+
+
+def to_minor_units(value: object, *, field: str = "amount") -> int:
+    """Exact integer count of ledger minor units (unchanged contract)."""
+    if _BRIDGE is not None:
+        argument = _bridge_money_arg(value)
+        if argument is not None:
+            return cast(int, _BRIDGE.to_minor_units(argument, field))
+    from ezchain_core.money import to_minor_units as python_to_minor_units
+
+    return python_to_minor_units(value, field=field)
+
+
+def from_minor_units(minor: int) -> Decimal:
+    """Inverse scaling of an exact minor-unit count (unchanged contract)."""
+    if _BRIDGE is not None:
+        argument = _bridge_money_arg(minor)
+        if argument is not None:
+            return Decimal(_BRIDGE.from_minor_units(argument))
+    from ezchain_core.money import from_minor_units as python_from_minor_units
+
+    return python_from_minor_units(minor)
+
+
+__all__ = [
+    "from_minor_units",
+    "normalize_scopes",
+    "quantize_money",
+    "to_minor_units",
+    "using_rust",
+]
