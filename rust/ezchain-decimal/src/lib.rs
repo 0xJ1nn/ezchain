@@ -13,11 +13,13 @@
 #![forbid(unsafe_code)]
 
 pub mod biguint;
+pub mod conversion;
 pub mod decimal;
 pub mod money;
 pub mod todict;
 
 pub use biguint::BigUint;
+pub use conversion::{from_raw, quote_price, to_raw, value_impact, ConversionError};
 pub use decimal::{Context, Decimal, ParseError, RoundMode, DEFAULT_CONTEXT, MAX_EMAX, MAX_PREC};
 pub use money::{
     as_decimal, bps_fee, compare, exact_neg, exact_precision, exact_product, exact_sum,

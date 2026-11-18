@@ -10,8 +10,9 @@ use std::cmp::Ordering;
 
 use ezchain_decimal::{
     as_decimal, bps_fee, exact_neg, exact_precision, exact_product, exact_sum, floor_money,
-    from_minor_units, from_minor_units_input, preview_cost, quantize_money, require_money,
-    require_quantity, to_minor_units, Context, Decimal, MinorUnits, MoneyInput, ParseError,
+    from_minor_units, from_minor_units_input, from_raw, preview_cost, quantize_money, quote_price,
+    require_money, require_quantity, to_minor_units, to_raw, value_impact, Context, Decimal,
+    MinorUnits, MoneyInput, ParseError,
 };
 
 const FIXTURE: &str = include_str!("parity_fixture.txt");
@@ -212,6 +213,81 @@ fn run_case(op: &str, args: &[&str]) -> String {
                 from_minor_units_input(&input).map(|units| dec_token(&from_minor_units(&units)))
             };
             result.unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
+        "tr" => {
+            let amount = match parse_or_error(args[0]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let decimals = args[1].parse::<i32>().expect("valid decimals in fixture");
+            to_raw(&amount, decimals)
+                .map(|units| units.canonical())
+                .unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
+        "fr" => {
+            let raw = MinorUnits::parse(args[0]).expect("valid raw integer in fixture");
+            let decimals = args[1].parse::<i32>().expect("valid decimals in fixture");
+            from_raw(&raw, decimals)
+                .map(|v| dec_token(&v))
+                .unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
+        "qp" => {
+            let amount_in = match parse_or_error(args[1]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let amount_out = match parse_or_error(args[2]) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let in_usd = if args[3] == "None" {
+                None
+            } else {
+                match parse_or_error(args[3]) {
+                    Ok(v) => Some(v),
+                    Err(e) => return e,
+                }
+            };
+            let out_usd = if args[4] == "None" {
+                None
+            } else {
+                match parse_or_error(args[4]) {
+                    Ok(v) => Some(v),
+                    Err(e) => return e,
+                }
+            };
+            quote_price(
+                args[0],
+                &amount_in,
+                &amount_out,
+                in_usd.as_ref(),
+                out_usd.as_ref(),
+            )
+            .map(|v| dec_token(&v))
+            .unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
+        "vi" => {
+            let in_usd = if args[0] == "None" {
+                None
+            } else {
+                match parse_or_error(args[0]) {
+                    Ok(v) => Some(v),
+                    Err(e) => return e,
+                }
+            };
+            let out_usd = if args[1] == "None" {
+                None
+            } else {
+                match parse_or_error(args[1]) {
+                    Ok(v) => Some(v),
+                    Err(e) => return e,
+                }
+            };
+            match value_impact(in_usd.as_ref(), out_usd.as_ref()) {
+                Ok(Some(v)) => dec_token(&v),
+                Ok(None) => "None".to_string(),
+                Err(e) => format!("E:{}", e.code()),
+            }
         }
         other => panic!("unknown operation in fixture: {other}"),
     }
