@@ -7,3 +7,8 @@ publish.workspace = true
 description = "Dependency-free arbitrary-precision decimal prototype for money.py parity (ADR-0050 rule 4)"
 
 [dependencies]
+
+[dev-dependencies]
+# Byte-parity gate only: the library stays dependency-free and returns typed
+# field maps; the test uses ezchain-jsoncanon to emit the canonical JSON bytes.
+ezchain-jsoncanon = { path = "../ezchain-jsoncanon" }
