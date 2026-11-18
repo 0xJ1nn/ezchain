@@ -16,6 +16,12 @@ pub enum Command {
     Mode,
     /// Report the ADR-0050 language map, optionally filtered by layer key.
     Contracts(Option<String>),
+    /// Report the full ADR-0050 language map as an aligned table.
+    ContractsAll,
+    /// Report the ADR-0052 ownership view, optionally one named section.
+    Policy(Option<String>),
+    /// List the required port gates from the documented policy.
+    Gate,
     /// Print usage.
     Help,
     /// A recognised operator verb that policy refuses to run.
@@ -38,6 +44,14 @@ pub enum ParseError {
     MissingLayerValue,
     /// `contracts --layer` was given a key that is not in the ADR-0050 map.
     UnknownLayer(String),
+    /// `policy --layer` was given without a value.
+    MissingPolicyLayerValue,
+    /// `policy --layer` was given a key that is not an ADR-0052 section.
+    UnknownPolicyLayer(String),
+    /// `refuse` was given no verb to demonstrate.
+    MissingRefusalVerb,
+    /// `refuse` was given a verb that is not a recognised refused operator verb.
+    UnknownRefusalVerb(String),
 }
 
 impl std::fmt::Display for ParseError {
@@ -65,6 +79,27 @@ impl std::fmt::Display for ParseError {
                     "error: unknown layer '{key}' for 'contracts --layer'; try 'help'"
                 )
             }
+            ParseError::MissingPolicyLayerValue => {
+                write!(
+                    f,
+                    "error: 'policy --layer' requires a section key; try 'help'"
+                )
+            }
+            ParseError::UnknownPolicyLayer(key) => {
+                write!(
+                    f,
+                    "error: unknown section '{key}' for 'policy --layer'; try 'help'"
+                )
+            }
+            ParseError::MissingRefusalVerb => {
+                write!(f, "error: 'refuse' requires a verb; try 'help'")
+            }
+            ParseError::UnknownRefusalVerb(verb) => {
+                write!(
+                    f,
+                    "error: '{verb}' is not a refused operator verb for 'refuse'; try 'help'"
+                )
+            }
         }
     }
 }
@@ -77,6 +112,9 @@ pub fn parse(args: &[String]) -> Result<Command, ParseError> {
         "mode" => no_argument("mode", args, Command::Mode),
         "help" | "-h" | "--help" => no_argument("help", args, Command::Help),
         "contracts" => parse_contracts(args),
+        "policy" => parse_policy(args),
+        "gate" => no_argument("gate", args, Command::Gate),
+        "refuse" => parse_refuse(args),
         other => refusal_for(other)
             .map(Command::Refused)
             .ok_or_else(|| ParseError::UnknownCommand(other.to_string())),
@@ -101,7 +139,9 @@ fn parse_contracts(args: &[String]) -> Result<Command, ParseError> {
     match args.len() {
         1 => Ok(Command::Contracts(None)),
         2 => {
-            if args[1] == "--layer" {
+            if args[1] == "--all" {
+                Ok(Command::ContractsAll)
+            } else if args[1] == "--layer" {
                 Err(ParseError::MissingLayerValue)
             } else {
                 Err(ParseError::UnexpectedArgument {
@@ -126,6 +166,52 @@ fn parse_contracts(args: &[String]) -> Result<Command, ParseError> {
             command: "contracts",
             argument: args.get(3).cloned().unwrap_or_else(|| args[1].clone()),
         }),
+    }
+}
+
+fn parse_policy(args: &[String]) -> Result<Command, ParseError> {
+    match args.len() {
+        1 => Ok(Command::Policy(None)),
+        2 => {
+            if args[1] == "--layer" {
+                Err(ParseError::MissingPolicyLayerValue)
+            } else {
+                Err(ParseError::UnexpectedArgument {
+                    command: "policy",
+                    argument: args[1].clone(),
+                })
+            }
+        }
+        3 => {
+            if args[1] != "--layer" {
+                Err(ParseError::UnexpectedArgument {
+                    command: "policy",
+                    argument: args[1].clone(),
+                })
+            } else if !crate::commands::is_known_policy_layer(&args[2]) {
+                Err(ParseError::UnknownPolicyLayer(args[2].clone()))
+            } else {
+                Ok(Command::Policy(Some(args[2].clone())))
+            }
+        }
+        _ => Err(ParseError::UnexpectedArgument {
+            command: "policy",
+            argument: args.get(3).cloned().unwrap_or_else(|| args[1].clone()),
+        }),
+    }
+}
+
+fn parse_refuse(args: &[String]) -> Result<Command, ParseError> {
+    let verb = args.get(1).ok_or(ParseError::MissingRefusalVerb)?;
+    match refusal_for(verb.as_str()) {
+        Some(refusal) => match args.get(2) {
+            Some(extra) => Err(ParseError::UnexpectedArgument {
+                command: "refuse",
+                argument: extra.clone(),
+            }),
+            None => Ok(Command::Refused(refusal)),
+        },
+        None => Err(ParseError::UnknownRefusalVerb(verb.clone())),
     }
 }
 
@@ -155,15 +241,109 @@ mod tests {
             parse(&argv(&["contracts", "--layer", "core"])),
             Ok(Command::Contracts(Some("core".into())))
         );
+        assert_eq!(
+            parse(&argv(&["contracts", "--all"])),
+            Ok(Command::ContractsAll)
+        );
+    }
+
+    #[test]
+    fn policy_verb_parses() {
+        assert_eq!(parse(&argv(&["policy"])), Ok(Command::Policy(None)));
+        assert_eq!(
+            parse(&argv(&["policy", "--layer", "rust"])),
+            Ok(Command::Policy(Some("rust".into())))
+        );
+        assert_eq!(
+            parse(&argv(&["policy", "--layer", "integration"])),
+            Ok(Command::Policy(Some("integration".into())))
+        );
+    }
+
+    #[test]
+    fn policy_error_branches() {
+        assert_eq!(
+            parse(&argv(&["policy", "--layer"])),
+            Err(ParseError::MissingPolicyLayerValue)
+        );
+        assert_eq!(
+            parse(&argv(&["policy", "rust"])),
+            Err(ParseError::UnexpectedArgument {
+                command: "policy",
+                argument: "rust".into(),
+            })
+        );
+        assert_eq!(
+            parse(&argv(&["policy", "--layer", "nope"])),
+            Err(ParseError::UnknownPolicyLayer("nope".into()))
+        );
+        assert_eq!(
+            parse(&argv(&["policy", "--layer", "core"])),
+            Err(ParseError::UnknownPolicyLayer("core".into()))
+        );
+        assert_eq!(
+            parse(&argv(&["policy", "--layer", "rust", "extra"])),
+            Err(ParseError::UnexpectedArgument {
+                command: "policy",
+                argument: "extra".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn gate_verb_parses() {
+        assert_eq!(parse(&argv(&["gate"])), Ok(Command::Gate));
+    }
+
+    #[test]
+    fn refuse_verb_returns_the_typed_refusal_for_every_category() {
+        let cases = [
+            ("order", RefusalCategory::Money),
+            ("live", RefusalCategory::LiveMode),
+            ("sign", RefusalCategory::Keys),
+            ("quote", RefusalCategory::Venue),
+            ("backup", RefusalCategory::Database),
+        ];
+        for (verb, category) in cases {
+            assert_eq!(
+                parse(&argv(&["refuse", verb])),
+                Ok(Command::Refused(Refusal { verb, category })),
+                "verb {verb}"
+            );
+        }
+    }
+
+    #[test]
+    fn refuse_error_branches() {
+        assert_eq!(
+            parse(&argv(&["refuse"])),
+            Err(ParseError::MissingRefusalVerb)
+        );
+        assert_eq!(
+            parse(&argv(&["refuse", "bogus"])),
+            Err(ParseError::UnknownRefusalVerb("bogus".into()))
+        );
+        // A read-only command is never a refused verb, even through `refuse`.
+        assert_eq!(
+            parse(&argv(&["refuse", "version"])),
+            Err(ParseError::UnknownRefusalVerb("version".into()))
+        );
+        assert_eq!(
+            parse(&argv(&["refuse", "order", "extra"])),
+            Err(ParseError::UnexpectedArgument {
+                command: "refuse",
+                argument: "extra".into(),
+            })
+        );
     }
 
     #[test]
     fn unexpected_arguments_on_no_argument_commands_are_errors() {
-        for verb in ["version", "mode", "help"] {
+        for verb in ["version", "mode", "help", "gate"] {
             assert_eq!(
                 parse(&argv(&[verb, "extra"])),
                 Err(ParseError::UnexpectedArgument {
-                    command: if verb == "help" { "help" } else { verb },
+                    command: verb,
                     argument: "extra".into(),
                 })
             );
@@ -259,6 +439,22 @@ mod tests {
         assert_eq!(
             ParseError::UnknownLayer("x".into()).to_string(),
             "error: unknown layer 'x' for 'contracts --layer'; try 'help'"
+        );
+        assert_eq!(
+            ParseError::MissingPolicyLayerValue.to_string(),
+            "error: 'policy --layer' requires a section key; try 'help'"
+        );
+        assert_eq!(
+            ParseError::UnknownPolicyLayer("x".into()).to_string(),
+            "error: unknown section 'x' for 'policy --layer'; try 'help'"
+        );
+        assert_eq!(
+            ParseError::MissingRefusalVerb.to_string(),
+            "error: 'refuse' requires a verb; try 'help'"
+        );
+        assert_eq!(
+            ParseError::UnknownRefusalVerb("x".into()).to_string(),
+            "error: 'x' is not a refused operator verb for 'refuse'; try 'help'"
         );
     }
 }
