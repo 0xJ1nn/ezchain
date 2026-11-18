@@ -159,6 +159,14 @@ name = "ezchain-p2p"
 version = "0.0.0"
 
 [[package]]
+name = "ezchain-p2p-transport"
+version = "0.0.0"
+dependencies = [
+ "ezchain-p2p",
+ "tokio",
+]
+
+[[package]]
 name = "ezchain-protection"
 version = "0.0.0"
 dependencies = [
