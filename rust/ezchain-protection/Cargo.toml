@@ -1,0 +1,12 @@
+[package]
+name = "ezchain-protection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure protection-arm trigger decisions ported from ezchain_core.protection under recorded parity"
+
+[dependencies]
+# Already a workspace member; used for decimal parsing and numeric comparison only.
+# No arithmetic is performed here: thresholds are opaque, caller-computed lexemes.
+ezchain-decimal = { path = "../ezchain-decimal" }
