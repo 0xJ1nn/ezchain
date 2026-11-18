@@ -29,7 +29,9 @@ because `money.py` serialises values with `str()`.
 ## Proven operations (parity recorded against the Python oracle)
 
 Each operation below is implemented to match `packages/core-py/src/ezchain_core/money.py`
-under the local context precision that module derives. The oracle harness
+under the local context precision that module derives, or the pure conversion
+helpers in `packages/adapters/src/ezchain_adapters/quotes.py` under the ambient
+28-digit context those helpers actually run in. The oracle harness
 (`tests/parity_oracle.py`) runs the real Python functions under the project venv
 and records their results in `tests/parity_fixture.txt`; `tests/parity.rs` asserts
 the Rust output matches every recorded token, including exact triples
@@ -54,14 +56,18 @@ the Rust output matches every recorded token, including exact triples
 | `to_minor_units` | `to_minor_units(value)` | yes — exact 1e-8 scaling, signed integer magnitude, sub-quantum and non-finite refusal, round-trip checked |
 | `from_minor_units` | `from_minor_units(minor)` | yes — inverse conversion for arbitrary-precision signed integers |
 | `exact_neg` | `exact_neg(value)` | yes — sign flip on the digits with no context rounding, including the sign of zero |
-| Non-finite rejection | `_as_decimal` → `MoneyError` | yes — `NaN`, `sNaN`, `±Infinity` at every money boundary, including the new conversion helpers |
+| Non-finite rejection | `_as_decimal` → `MoneyError` | yes — `NaN`, `sNaN`, `±Infinity` at every money boundary |
 | Input-type guards | `_as_decimal` / `from_minor_units` | yes — `bool` → `MoneyError`, `float` → `FloatMoneyError`, `int` accepted as `Decimal(int)`, any other type → `MoneyError`; `from_minor_units(1.0)` → plain `MoneyError`, not `FloatMoneyError` |
 | Ambient-context boundaries | decimal `Emax` / `MAX_PREC` under `money.py`'s `localcontext()` | yes — quantize/floor past `Emax` → `MoneyError` (caught `InvalidOperation`), product past `Emax` → `Overflow`, derived precision past `MAX_PREC` → `ValueError`, `scaleb` past `Emax` in `to_minor_units` → `MoneyError` |
 | Exponents outside `i32` | `Decimal(str)` and money ops at ±1e10 and near `MAX_EMAX` | yes — parse, `str`, quantize refusal, `exact_precision`, product overflow and end-of-range construction refusal all match |
+| `to_raw` | `quotes.to_raw(amount, decimals)` | yes — token→raw integer, truncate toward zero, 28-digit rounding, signed zero, `NotFound` outside `0..=36` |
+| `from_raw` | `quotes.from_raw(raw, decimals)` | yes — raw→token inverse scaling, long-int rounding, `NotFound` outside `0..=36` |
+| `quote_price` | `quotes.quote_price(side, …)` | yes — buy/sell quote inversion, published USD legs when present, preferred exponents, `DivisionByZero` and `0/0 → InvalidOperation` |
+| `value_impact` | `quotes.value_impact(…)` | yes — `(out_usd / in_usd) - 1` under the ambient context, fail-closed `None` for missing or non-positive input legs |
 
-Corpus: **1087 deterministic cases** (fixed hand-picked tricky cases plus a seeded
-random corpus, up to 40 digits). A **held-out corpus of 1087 cases generated with a
-different seed (77123)** also matched 1087/1087, as a check against overfitting. Tricky
+Corpus: **1356 deterministic cases** (fixed hand-picked tricky cases plus a seeded
+random corpus, up to 40 digits). A **held-out corpus of 1356 cases generated with a
+different seed (90210)** also matched 1356/1356, as a check against overfitting. Tricky
 cases include `0.1 + 0.2`, 38-digit `NUMERIC(38, 8)` values, negative exponents,
 half-even ties (`5e-9 → 0E-8`, `15e-9 → 2E-8`), floor on negatives
 (`-1.234567895 → -1.23456790`), non-finite refusal, division preferred-exponent and
@@ -71,7 +77,11 @@ both preview cost-sheet branches, whole-versus-sub-quantum minor-unit conversion
 (`0.1 → 10000000`, `0.000000009 → SubQuantumError`), signed minor-unit round trips,
 `exact_neg` on long coefficients and signed zeros, every Python input type at both
 money boundaries, the `Emax`/`MAX_PREC` refusal boundaries and exponents up to
-`MAX_EMAX`.
+`MAX_EMAX`, and the conversion cases (`1.2345678901 @ 8 → 123456789`,
+`-0.9 @ 0 → 0`, a 29-digit value rounded before truncation,
+raw `123456789012345678901234567890 @ 18 → 123456789012.3456789012345679`,
+`100 / 0.5 → 2.0E+2`, `0 / 0 → InvalidOperation`, `100 → 99` impact `→ -0.01`,
+missing/non-positive legs → `None`).
 
 This proves **per-operation decimal parity only**. It does not establish a speed
 advantage, an FFI boundary, or that a whole money path is ready to move.
@@ -80,14 +90,21 @@ advantage, an FFI boundary, or that a whole money path is ready to move.
 
 These are explicitly out of this prototype. None may be treated as ready to port:
 
-- **Currency conversion** — no conversion between assets, quote inversion or
-  token-decimal scaling is implemented.
+- **Network-dependent quote paths** — `QuoteRouter._quantity_from_usd`,
+  `QuoteRouter._paper_mark` and `QuoteRouter._has_exit` in `quotes.py` ask a
+  provider or a DexScreener mark (and a mutable freshness/breaker state) for
+  their inputs. They are not pure functions of their arguments, so they stay in
+  Python; only their pure arithmetic core is ported above.
+- **Provider wire parsing** — `parse_decimal` and `parse_int` in `quotes.py` parse
+  provider payloads and are not currency conversion; they stay in Python too.
 - **JSON canonicalisation** — no canonical wire form; `to_dict`/JSON behaviour is
   not reproduced, including `CostPreview.to_dict` and `SourceRef` serialisation.
 - **SHA-256 fingerprint / seal hashing** — no hashing, no seal, no cryptography.
 
 Also not ported: the echoed `network_fee_usd` /
-`price_impact_pct` fields of a cost sheet. Context behaviour is proven only for
+`price_impact_pct` fields of a cost sheet, and the `parse_decimal` non-finite /
+blank / bool → `None` guard — a non-finite spelling passed straight to a
+conversion helper is not claimed as proven. Context behaviour is proven only for
 the **default ambient context** `money.py` actually runs under: `clamp = 0`,
 `Emin = -999999`, `Emax = 999999`, with `prec` derived per operation. A
 non-default `clamp`, custom `Emin`/`Emax`, and subnormal / underflow (`Emin`-edge)
@@ -104,15 +121,15 @@ From the `rust/` workspace, with the scratch Rust toolchain and the project venv
 ```
 cargo fmt --all -- --check                          # clean
 cargo clippy --workspace --all-targets -- -D warnings  # clean
-cargo test --workspace                              # 439 passed, 0 failed
-   └─ ezchain-decimal: 22 unit tests + 1 parity test (1087/1087 cases)
+cargo test --workspace                              # 455 passed, 0 failed
+   └─ ezchain-decimal: 29 unit tests + 1 parity test (1356/1356 cases)
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
-                                                    # OK: fixture matches oracle (1087 cases)
-EZ_DECIMAL_SEED=77123 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
+                                                    # OK: fixture matches oracle (1356 cases)
+EZ_DECIMAL_SEED=90210 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
   .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
-                                                     # wrote 1087 held-out cases
+                                                     # wrote 1356 held-out cases
 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
-  cargo test -p ezchain-decimal --test parity        # parity: 1087/1087 held-out cases match
+  cargo test -p ezchain-decimal --test parity        # parity: 1356/1356 held-out cases match
 ```
 
 Regenerate the recorded oracle fixture with:
