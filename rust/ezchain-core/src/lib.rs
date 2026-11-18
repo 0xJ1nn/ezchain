@@ -5,6 +5,7 @@
 //! I/O, configuration, keys and ledger writes stay in the Python control plane until
 //! their own parity-gated migration.
 
+pub mod append_log;
 pub mod freshness;
 pub mod freshness_policy;
 pub mod reason_codes;
