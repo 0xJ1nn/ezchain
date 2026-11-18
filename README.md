@@ -207,13 +207,15 @@ and Windows are not built or verified.
 
 ## Quick start — live paper slice
 
-Requires Node 22 + pnpm 9, Python 3.11 and Postgres 16.
+Requires Node 22 + pnpm 9, Python 3.11, Postgres 16 and the **Rust toolchain** (install
+it with [rustup](https://rustup.rs); the native build needs no Docker).
 
 ```bash
 createdb ezchain                 # once
 cp .env.example .env             # DB URL, API URL, paper limits
 bash tools/setup-web.sh
 PYTHON=python3.11 bash tools/setup-python.sh
+bash tools/build-native.sh       # build/install the abi3 ezchain-bridge extension into .venv
 .venv/bin/alembic -c apps/api/alembic.ini upgrade head   # once, forward-only
 bash tools/dev.sh                # API on :8000, web on :3000
 open http://localhost:3000
@@ -234,6 +236,15 @@ Both setup scripts install from the committed locks, not from the ranges: Python
 `requirements.lock` with `--require-hashes`, Node via `pnpm-lock.yaml --frozen-lockfile`.
 `python3 tools/check_pins.py --fast` verifies the pins without a network; the pin, audit
 and update ritual is [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
+The API and executor call a compiled PyO3 bridge for money conversion and scope
+normalisation (ADR-0052). There is **no Python fallback**: without the extension every
+wrapper raises `NativeBridgeUnavailable`, so the app and the gate fail closed. Build it
+once per venv with `bash tools/build-native.sh` — idempotent, host-native on macOS and
+Linux, using the committed Cargo lock and the linker flags in `rust/.cargo/config.toml`.
+Windows is not supported or verified. The gate (`bash tools/ci.sh`) has the same
+prerequisite; see [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md#3-server-sizing-and-prerequisites)
+and [rust/ezchain-bridge/README.md](rust/ezchain-bridge/README.md).
 
 - API docs: <http://127.0.0.1:8000/docs> · contract: [docs/API.md](docs/API.md)
 - Reason codes (every refusal and its meaning): [docs/REASON-CODES.md](docs/REASON-CODES.md)
