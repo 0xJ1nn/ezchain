@@ -15,6 +15,7 @@
 pub mod biguint;
 pub mod decimal;
 pub mod money;
+pub mod todict;
 
 pub use biguint::BigUint;
 pub use decimal::{Context, Decimal, ParseError, RoundMode, DEFAULT_CONTEXT, MAX_EMAX, MAX_PREC};
