@@ -81,6 +81,61 @@ pub enum ParseError {
     ExpOutOfRange,
 }
 
+/// Nd blocks this prototype maps to ASCII digits. Each entry is an inclusive
+/// ten-codepoint range. CPython's `Decimal(str)` accepts every Unicode Nd
+/// character; this explicit table covers only the four blocks listed here
+/// (see the crate README for the honest scope statement).
+const ND_DIGIT_BLOCKS: &[(u32, u32)] = &[
+    (0x0660, 0x0669), // Arabic-Indic
+    (0x06F0, 0x06F9), // Extended Arabic-Indic
+    (0x0966, 0x096F), // Devanagari
+    (0xFF10, 0xFF19), // Fullwidth
+];
+
+/// Translate one digit from a covered Nd block (or ASCII) to `0`..=`9`.
+fn covered_nd_digit(ch: char) -> Option<char> {
+    let cp = ch as u32;
+    if cp >= u32::from(b'0') && cp <= u32::from(b'9') {
+        return Some(ch);
+    }
+    ND_DIGIT_BLOCKS
+        .iter()
+        .find(|(start, end)| cp >= *start && cp <= *end)
+        .and_then(|(start, _)| char::from_digit(cp - start, 10))
+}
+
+/// Normalise a caller's spelling to the canonical ASCII form the parser reads,
+/// before sign extraction, the non-finite check, the exponent scan or arithmetic.
+///
+/// Measured against the real `decimal.Decimal` oracle, CPython's `Decimal(str)`:
+/// - strips leading/trailing whitespace using `str.isspace()`, which includes
+///   U+001C..=U+001F in addition to Rust's `char::is_whitespace()`;
+/// - ignores `_` **anywhere** in the string — including leading, trailing,
+///   doubled, adjacent to a point or exponent, inside an exponent and inside
+///   non-finite words (`_1_`, `1__0`, `1_.0`, `1_e2`, `Na_N` all parse); and
+/// - accepts Unicode Nd digits in both the coefficient and the exponent.
+///
+/// Underscores are dropped, not validated: a "digit on each side" rule would
+/// reject spellings the oracle accepts. Nd characters outside
+/// [`ND_DIGIT_BLOCKS`] are copied through unchanged and are therefore refused
+/// by the ASCII digit scan below — this is a documented, deliberate gap.
+fn normalize_spelling(input: &str) -> String {
+    let trimmed =
+        input.trim_matches(|ch: char| ch.is_whitespace() || matches!(ch, '\u{001c}'..='\u{001f}'));
+    let mut out = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch == '_' {
+            continue;
+        }
+        if let Some(digit) = covered_nd_digit(ch) {
+            out.push(digit);
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Decimal {
     /// `true` means negative; the sign of a zero is preserved, as in Python.
@@ -97,7 +152,11 @@ impl Decimal {
     /// that `money.py` accepts; non-finite spellings are reported separately
     /// so the money layer can raise the same `MoneyError` as `_as_decimal`.
     pub fn parse(input: &str) -> Result<Self, ParseError> {
-        let s = input.trim();
+        // Python accepts several spellings of the same value; canonicalise them
+        // to the ASCII literal form before any of the checks below run, so every
+        // downstream operation sees the same triple a canonical spelling gives.
+        let normalized = normalize_spelling(input);
+        let s = normalized.as_str();
         if s.is_empty() {
             return Err(ParseError::Syntax);
         }
@@ -118,25 +177,42 @@ impl Decimal {
             return Err(ParseError::NonFinite);
         }
 
-        let (mantissa, exponent) = match rest.find(['e', 'E']) {
-            Some(index) => (&rest[..index], &rest[index + 1..]),
-            None => (rest, ""),
+        let (mantissa, exponent, has_exponent) = match rest.find(['e', 'E']) {
+            Some(index) => (&rest[..index], &rest[index + 1..], true),
+            None => (rest, "", false),
         };
         if mantissa.is_empty() {
             return Err(ParseError::Syntax);
         }
 
-        let exp_override = if exponent.is_empty() {
+        // An exponent marker must be followed by at least one digit (after
+        // normalisation). A missing, doubled or stray-sign exponent is a
+        // ConversionSyntax in Python, *not* an out-of-range exponent; only a
+        // well-formed but enormous exponent raises InvalidOperation.
+        let exp_override = if !has_exponent {
             0i64
         } else {
-            let exponent = exponent.strip_prefix('+').unwrap_or(exponent);
-            let value = exponent
-                .parse::<i64>()
-                .map_err(|_| ParseError::ExpOutOfRange)?;
-            if !(-MAX_EMAX..=MAX_EMAX).contains(&value) {
+            let (negative, digits) = match exponent.as_bytes().first() {
+                Some(b'+') => (false, &exponent[1..]),
+                Some(b'-') => (true, &exponent[1..]),
+                _ => (false, exponent),
+            };
+            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(ParseError::Syntax);
+            }
+            // Saturate the magnitude so an over-long but well-formed exponent
+            // is classified as out of range rather than a syntax error.
+            let mut magnitude: i128 = 0;
+            for b in digits.bytes() {
+                magnitude = magnitude
+                    .saturating_mul(10)
+                    .saturating_add(i128::from(b - b'0'));
+            }
+            let value = if negative { -magnitude } else { magnitude };
+            if !(-(MAX_EMAX as i128)..=MAX_EMAX as i128).contains(&value) {
                 return Err(ParseError::ExpOutOfRange);
             }
-            value
+            value as i64
         };
 
         let mut digits = String::new();
@@ -570,6 +646,52 @@ mod tests {
             Decimal::parse("1E+9999999999999999999"),
             Err(ParseError::ExpOutOfRange)
         );
+    }
+
+    #[test]
+    fn accepted_spellings_normalize_to_the_canonical_triple() {
+        // Every expected triple below was recorded from the real Python oracle
+        // (tests/spelling_fixture.txt); the same cases are in that focused gate.
+        for (input, canonical, printed) in [
+            ("1_0", "0|10|0", "10"),
+            ("1__0", "0|10|0", "10"),
+            ("_1_", "0|1|0", "1"),
+            ("1_.0", "0|10|-1", "1.0"),
+            ("1_e2", "0|1|2", "1E+2"),
+            ("١٢.٣٤", "0|1234|-2", "12.34"),
+            ("۱۲e۳", "0|12|3", "1.2E+4"),
+            ("१२.३४", "0|1234|-2", "12.34"),
+            ("１２.３４", "0|1234|-2", "12.34"),
+            ("1٢3", "0|123|0", "123"),
+            ("1e٣", "0|1|3", "1E+3"),
+            ("\u{001c}1.5\u{001f}", "0|15|-1", "1.5"),
+            ("Na_N", "E:NonFinite", ""),
+        ] {
+            match Decimal::parse(input) {
+                Ok(value) => {
+                    assert_eq!(value.canonical(), canonical, "input {input:?}");
+                    assert_eq!(value.str_repr(), printed, "input {input:?}");
+                }
+                Err(ParseError::NonFinite) => {
+                    assert_eq!(canonical, "E:NonFinite", "input {input:?}")
+                }
+                Err(other) => panic!("unexpected {other:?} for {input:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn uncovered_nd_blocks_remain_rejected_by_design() {
+        // Python accepts every Nd block; this prototype maps only the four in
+        // ND_DIGIT_BLOCKS. Bengali digits are an intentional, documented gap —
+        // do not read this as full Unicode parity (crate README).
+        for input in ["\u{09e7}\u{09e8}", "\u{0e50}\u{0e51}", "\u{1040}\u{1041}"] {
+            assert_eq!(
+                Decimal::parse(input),
+                Err(ParseError::Syntax),
+                "input {input:?}"
+            );
+        }
     }
 
     #[test]

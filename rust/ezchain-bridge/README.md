@@ -35,7 +35,7 @@ are imported at error time from `ezchain_core.money`, `ezchain_adapters.errors` 
 be imported, the bridge fails closed with a `RuntimeError` naming the PYTHONPATH
 requirement instead of substituting a look-alike exception.
 
-Refusals were a deliberate part of the recorded corpus: 49 of the 380 money cases are
+Refusals were a deliberate part of the recorded corpus: 57 of the 417 money cases are
 errors, including every exception class above. The bridge carries no I/O, no keys and no
 ledger writes; only pure, already-ported kernels are exposed.
 
@@ -71,10 +71,13 @@ hard-coded values:
 
 - `tests/cases.jsonl` — 63 cases: 10 for `stale_reason` and 53 for `normalize_scopes`
   (7 successful grants, 46 refusals).
-- `tests/money_cases.jsonl` — 380 cases across the eight money functions:
-  `decimal_str` 69, `quantize_money` 65, `floor_money` 50, `to_minor_units` 48,
-  `decimal_compare` 43, `to_raw` 37, `from_raw` 36, `from_minor_units` 32.
-  Outcomes: 331 successes and 49 refusals (`MoneyError` 31, `InvalidOperation` 6,
+- `tests/money_cases.jsonl` — 417 cases across the eight money functions:
+  `decimal_str` 97, `quantize_money` 71, `floor_money` 50, `to_minor_units` 48,
+  `decimal_compare` 46, `to_raw` 37, `from_raw` 36, `from_minor_units` 32.
+  The added 37 cases cover alternative spellings (underscores, the four
+  mapped Unicode Nd blocks, signs, exponents and end-whitespace) so a bridge
+  that rejects a spelling Python accepts cannot pass this gate. Outcomes:
+  360 successes and 57 refusals (`MoneyError` 31, `InvalidOperation` 14,
   `SubQuantumError` 5, `NotFound` 4, `FloatMoneyError` 3).
 
 Each case calls both the Python original and the built module and compares the success

@@ -40,6 +40,7 @@ the Rust output matches every recorded token, including exact triples
 | Operation | `money.py` / Decimal counterpart | Proven |
 |---|---|---|
 | Construction from string | `Decimal(str)` | yes — finite literals, sign/zero/leading-zero/exponent handling |
+| Alternative spellings | `Decimal(str)` | yes — underscores, four Unicode Nd blocks, signs, exponents, whitespace, non-finite words (focused gate below) |
 | Comparison | `==`, `<`, `>` on `Decimal` | yes — representation-insensitive (`0.1 == 0.10`, `-0 == 0`) |
 | Addition (under derived context) | `a + b` used by `exact_sum` | yes |
 | Multiplication (under derived context) | `a * b` used by `exact_product` | yes |
@@ -92,6 +93,43 @@ The `to_dict` spellings have their own corpus: **592 deterministic cases** (171
 objects) with a **held-out corpus of 592 cases from a different seed (99173)**
 also matching 592/592.
 
+### Spelling parity (focused gate)
+
+The main corpus above uses canonical spellings only, so it cannot detect a parser
+that rejects another spelling of the same value. A separate oracle,
+`tests/spelling_oracle.py`, records the real `decimal.Decimal` outcome for
+**127 spelling cases** in `tests/spelling_fixture.txt`; `tests/spelling.rs`
+asserts the exact `str(Decimal)` output for accepted values and the exact
+refusal class for rejected ones (`ConversionSyntax`, `InvalidOperation`,
+`NonFinite`). Measured behaviour of the Python oracle:
+
+- **Underscores are ignored anywhere**, not only between digits. Python accepts
+  `1_0`, `1__0`, `_1_`, `1_.0`, `1._0`, `1_e2`, `1e+_2`, `1e+__2`, `+_1` and
+  even `Na_N` / `Inf_inity` / `s_NaN`. Leading, trailing, doubled or
+  point/exponent-adjacent underscores are **not** refused by `Decimal(str)` —
+  the familiar "between digits" rule belongs to Python numeric literals, not
+  to `Decimal`. `Decimal::parse` therefore drops underscores before any check.
+  Strings made only of underscores (`_`, `__`, `._`, `_e3`) are still refused.
+- **Unicode Nd digits** are accepted in both the coefficient and the exponent,
+  and may be mixed with ASCII digits and underscores. The explicit range table
+  in `decimal.rs` maps exactly these four blocks: **Arabic-Indic
+  U+0660–0669, Extended Arabic-Indic U+06F0–06F9, Devanagari U+0966–096F and
+  Fullwidth U+FF10–FF19**. Other Nd blocks — Bengali U+09E6–09EF, Thai
+  U+0E50–U+0E59, Myanmar U+1040–U+1049 among them — are **not** mapped and
+  remain refused by this crate. **This is not full Unicode parity.** Non-Nd
+  numerals such as superscript `²` (No) and Roman `Ⅳ` (Nl) are refused by both.
+- **Signs** are only ASCII `+` / `-`; fullwidth minus `－` and mathematical
+  minus `−` are refused. Unicode Nd digits after a sign are accepted.
+- **Exponents** accept a single optional `+`/`-`, with ASCII or covered-Nd
+  digits and underscores. A missing or malformed exponent (`1e`, `1e+`,
+  `1e++2`, `1ex`, `1e2x`) is a `ConversionSyntax` refusal; a well-formed
+  exponent beyond `MAX_EMAX` is `InvalidOperation` at construction.
+- **Whitespace** is stripped only at the ends, using Python's `isspace()` set
+  (which includes U+001C–U+001F in addition to Rust's `char::is_whitespace()`).
+  Interior whitespace, zero-width space U+200B and a trailing NUL are refused.
+- **Non-finite words** are case-insensitive and ignore underscores; this crate
+  reports `NonFinite` so the money layer raises its original `MoneyError`.
+
 This proves **per-operation decimal parity and the named `to_dict` spellings
 only**. It does not establish a speed advantage, an FFI boundary, or that a
 whole money path is ready to move.
@@ -112,7 +150,10 @@ These are explicitly out of this prototype. None may be treated as ready to port
 - **Transaction and ledger fingerprinting** — handled by `ezchain-fingerprint` and
   `ezchain-seal`, not by this crate.
 
-Also not ported: the `parse_decimal` non-finite /
+Also not ported: **Nd blocks outside the four listed above** (so Unicode
+decimal input from those scripts still fails at the bridge, where Python would
+succeed), custom `NaN` payload spellings, and exponents in non-ASCII digit
+scripts outside the same table. Also not ported: the `parse_decimal` non-finite /
 blank / bool → `None` guard — a non-finite spelling passed straight to a
 conversion helper is not claimed as proven. Context behaviour is proven only for
 the **default ambient context** `money.py` actually runs under: `clamp = 0`,
@@ -131,10 +172,12 @@ From the `rust/` workspace, with the scratch Rust toolchain and the project venv
 ```
 cargo fmt --all -- --check                          # clean
 cargo clippy --workspace --all-targets -- -D warnings  # clean
-cargo test --workspace                              # 455 passed, 0 failed
-   └─ ezchain-decimal: 29 unit tests + 1 parity test (1356/1356 cases)
+cargo test --workspace                              # 473 passed, 0 failed
+   └─ ezchain-decimal: 31 unit tests + parity 1356/1356 + spelling 127/127 + to_dict 2
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
                                                     # OK: fixture matches oracle (1356 cases)
+.venv/bin/python rust/ezchain-decimal/tests/spelling_oracle.py --check
+                                                    # OK: spelling fixture matches oracle (127 cases)
 EZ_DECIMAL_SEED=90210 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
   .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
                                                      # wrote 1356 held-out cases
@@ -146,6 +189,7 @@ Regenerate the recorded oracle fixtures with:
 
 ```
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
+.venv/bin/python rust/ezchain-decimal/tests/spelling_oracle.py
 .venv/bin/python rust/ezchain-decimal/tests/todict_oracle.py
 ```
 
