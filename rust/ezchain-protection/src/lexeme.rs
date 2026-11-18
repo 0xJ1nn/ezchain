@@ -32,7 +32,9 @@ impl DecimalLexeme {
         let raw = raw.into();
         let value = Decimal::parse(&raw).map_err(|e| match e {
             ParseError::NonFinite => LexemeError::NonFinite,
-            ParseError::Syntax => LexemeError::Syntax,
+            // An exponent beyond decimal's constructible range is just a
+            // malformed literal at this boundary (it never becomes a lexeme).
+            ParseError::Syntax | ParseError::ExpOutOfRange => LexemeError::Syntax,
         })?;
         Ok(Self { raw, value })
     }

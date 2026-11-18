@@ -9,9 +9,9 @@
 use std::cmp::Ordering;
 
 use ezchain_decimal::{
-    bps_fee, exact_neg, exact_precision, exact_product, exact_sum, floor_money, from_minor_units,
-    preview_cost, quantize_money, require_money, require_quantity, to_minor_units, Decimal,
-    MinorUnits, ParseError,
+    as_decimal, bps_fee, exact_neg, exact_precision, exact_product, exact_sum, floor_money,
+    from_minor_units, from_minor_units_input, preview_cost, quantize_money, require_money,
+    require_quantity, to_minor_units, Context, Decimal, MinorUnits, MoneyInput, ParseError,
 };
 
 const FIXTURE: &str = include_str!("parity_fixture.txt");
@@ -34,6 +34,9 @@ fn dec_token(value: &Decimal) -> String {
 fn parse_or_error(s: &str) -> Result<Decimal, String> {
     Decimal::parse(s).map_err(|err| match err {
         ParseError::NonFinite | ParseError::Syntax => "E:MoneyError".to_string(),
+        // Decimal("1E+9999999999999999999") raises decimal.InvalidOperation at
+        // construction in Python, before any money function is called.
+        ParseError::ExpOutOfRange => "E:InvalidOperation".to_string(),
     })
 }
 
@@ -43,7 +46,7 @@ fn run_case(op: &str, args: &[&str]) -> String {
             .map(|v| dec_token(&v))
             .unwrap_or_else(|e| e),
         "ep" => {
-            let extra = args[0].parse::<i32>().expect("valid extra in fixture");
+            let extra = args[0].parse::<i64>().expect("valid extra in fixture");
             let mut values = Vec::with_capacity(args.len() - 1);
             for s in &args[1..] {
                 match parse_or_error(s) {
@@ -106,9 +109,7 @@ fn run_case(op: &str, args: &[&str]) -> String {
             }
         }
         "div" => {
-            let precision = args[0]
-                .parse::<usize>()
-                .expect("valid precision in fixture");
+            let precision = args[0].parse::<i64>().expect("valid precision in fixture");
             let a = match parse_or_error(args[1]) {
                 Ok(v) => v,
                 Err(e) => return e,
@@ -117,7 +118,8 @@ fn run_case(op: &str, args: &[&str]) -> String {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            a.div(&b, precision)
+            let ctx = Context::with_precision(precision);
+            a.div(&b, &ctx)
                 .map(|v| dec_token(&v))
                 .unwrap_or_else(|e| format!("E:{}", e.code()))
         }
@@ -201,6 +203,16 @@ fn run_case(op: &str, args: &[&str]) -> String {
             Ok(value) => dec_token(&exact_neg(&value)),
             Err(e) => e,
         },
+        "ad" | "fmg" => {
+            let input = MoneyInput::parse(args[0])
+                .unwrap_or_else(|| panic!("invalid boundary input in fixture: {}", args[0]));
+            let result = if op == "ad" {
+                as_decimal(&input).map(|v| dec_token(&v))
+            } else {
+                from_minor_units_input(&input).map(|units| dec_token(&from_minor_units(&units)))
+            };
+            result.unwrap_or_else(|e| format!("E:{}", e.code()))
+        }
         other => panic!("unknown operation in fixture: {other}"),
     }
 }
