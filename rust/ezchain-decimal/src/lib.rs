@@ -16,6 +16,7 @@ pub mod biguint;
 pub mod conversion;
 pub mod decimal;
 pub mod money;
+pub mod todict;
 
 pub use biguint::BigUint;
 pub use conversion::{from_raw, quote_price, to_raw, value_impact, ConversionError};
