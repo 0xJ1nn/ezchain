@@ -24,7 +24,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ezchain_core import utcnow
-from ezchain_core.native import normalize_scopes as native_normalize_scopes
 
 from ..models import ApiKeyRow, new_id
 
@@ -82,6 +81,8 @@ def create_key(
     subject = subject.strip()
     if not subject or len(subject) > 120:
         raise ApiKeyError("API_KEY_SUBJECT_INVALID", "subject must be 1-120 characters")
+    from ezchain_api.native import normalize_scopes as native_normalize_scopes
+
     normalized = native_normalize_scopes(scopes)
     token = f"{TOKEN_PREFIX}{secrets.token_urlsafe(32)}"
     now = utcnow()
