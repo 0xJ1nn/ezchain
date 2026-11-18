@@ -1,0 +1,25 @@
+[package]
+name = "ezchain-p2p-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Minimal tokio TCP transport for the ezCHAIN gossip protocol kernel (ADR-0052)"
+
+[dependencies]
+# `ezchain-p2p` is a workspace-internal path dependency, not an external crate. It stays
+# dependency-free and pure; this crate is the only layer that touches sockets.
+ezchain-p2p = { path = "../ezchain-p2p" }
+
+# Exactly one EXTERNAL dependency, version-pinned: tokio is a standard, well-audited async
+# runtime, and ADR-0052 assigns node-facing networking / P2P to Rust. No runtime, crypto,
+# serde, bytes or utility crate is added here. Tokio's own transitive dependencies are part
+# of tokio, not additional direct dependencies of this crate.
+tokio = { version = "=1.54.1", features = [
+    "net",
+    "io-util",
+    "sync",
+    "rt-multi-thread",
+    "macros",
+    "time",
+] }
