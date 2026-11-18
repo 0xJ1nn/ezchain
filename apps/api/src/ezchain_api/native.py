@@ -13,8 +13,8 @@ there is no cycle with ``api_keys`` at module load.
 
 The money wrappers preserve the Python originals' signatures: they accept a ``Decimal``
 or an ``int``, take ``field`` as a keyword argument where the original does, and return
-the same type (``Decimal`` for ``quantize_money``/``from_minor_units``, ``int`` for
-``to_minor_units``). A ``Decimal`` crosses the FFI as its exact string spelling because
+the same type (``Decimal`` for ``quantize_money``/``floor_money``/``from_minor_units``,
+``int`` for ``to_minor_units``). A ``Decimal`` crosses the FFI as its exact string spelling because
 the bridge accepts decimal strings or ints, never ``Decimal`` objects; every other type
 is handed to the Python original so its own typed refusal decides the call. The string
 the bridge returns is parsed back into a ``Decimal``, so the boundary stays typed.
@@ -86,6 +86,17 @@ def quantize_money(value: object, *, field: str = "amount") -> Decimal:
     return python_quantize_money(value, field=field)
 
 
+def floor_money(value: object, *, field: str = "amount") -> Decimal:
+    """Round a computed amount down to the ledger minor unit (unchanged contract)."""
+    if _BRIDGE is not None:
+        argument = _bridge_money_arg(value)
+        if argument is not None:
+            return Decimal(_BRIDGE.floor_money(argument, field))
+    from ezchain_core.money import floor_money as python_floor_money
+
+    return python_floor_money(value, field=field)
+
+
 def to_minor_units(value: object, *, field: str = "amount") -> int:
     """Exact integer count of ledger minor units (unchanged contract)."""
     if _BRIDGE is not None:
@@ -109,6 +120,7 @@ def from_minor_units(minor: int) -> Decimal:
 
 
 __all__ = [
+    "floor_money",
     "from_minor_units",
     "normalize_scopes",
     "quantize_money",

@@ -65,7 +65,7 @@ from ezchain_core.ledger import (
     position_account,
     sell_entries,
 )
-from ezchain_core.money import MONEY_QUANTUM, exact_product, quantize_money
+from ezchain_core.money import MONEY_QUANTUM, exact_product
 from ezchain_core.reason_codes import message_for
 
 from ..actor import (
@@ -87,6 +87,7 @@ from ..models import (
     StrategyRow,
     new_id,
 )
+from ..native import quantize_money
 from . import approvals, buckets, market_snapshots, pnl, trade_policy
 from .system_flags import read_kill_switch
 
