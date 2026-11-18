@@ -22,8 +22,9 @@ from typing import Any
 
 import pytest
 
-from ezchain_api import native
+from ezchain_api import native, observability
 from ezchain_api.native import NativeBridgeUnavailable
+from ezchain_api.observability import normalize_method as python_normalize_method
 from ezchain_api.services import paper, trade_policy
 from ezchain_api.services.api_keys import ApiKeyError
 from ezchain_api.services.api_keys import normalize_scopes as python_normalize_scopes
@@ -160,6 +161,132 @@ def test_client_stays_in_the_api_layer() -> None:
     """A core-py client reversed the import boundary by importing ezchain_api."""
     assert native.__name__ == "ezchain_api.native"
     assert importlib.util.find_spec("ezchain_core.native") is None
+
+
+# --- HTTP method normalisation parity ------------------------------------------------
+
+
+# Recorded from ezchain_api.observability.normalize_method, the same 70 cases the Rust
+# kernel keeps in rust/ezchain-rpc/src/method.rs. Unicode full-casing edges are included:
+# poſt/optionſ/optıons uppercase INTO a safe method and must be accepted, while ß, ı and
+# the fullwidth spellings stay OTHER. Each expected value is the Python oracle's output.
+METHOD_CASES: list[tuple[str, str]] = [
+    ("GET", "GET"),
+    ("POST", "POST"),
+    ("PATCH", "PATCH"),
+    ("DELETE", "DELETE"),
+    ("PUT", "PUT"),
+    ("HEAD", "HEAD"),
+    ("OPTIONS", "OPTIONS"),
+    ("get", "GET"),
+    ("post", "POST"),
+    ("patch", "PATCH"),
+    ("delete", "DELETE"),
+    ("put", "PUT"),
+    ("head", "HEAD"),
+    ("options", "OPTIONS"),
+    ("Get", "GET"),
+    ("Post", "POST"),
+    ("Patch", "PATCH"),
+    ("Delete", "DELETE"),
+    ("Put", "PUT"),
+    ("Head", "HEAD"),
+    ("Options", "OPTIONS"),
+    ("gEt", "GET"),
+    ("pOsT", "POST"),
+    ("pAtCh", "PATCH"),
+    ("dElEtE", "DELETE"),
+    ("pUt", "PUT"),
+    ("hEaD", "HEAD"),
+    ("oPtIoNs", "OPTIONS"),
+    ("", "OTHER"),
+    (" ", "OTHER"),
+    ("BREW", "OTHER"),
+    ("brew", "OTHER"),
+    ("PROPFIND", "OTHER"),
+    ("TRACE", "OTHER"),
+    ("CONNECT", "OTHER"),
+    ("GET ", "OTHER"),
+    (" GET", "OTHER"),
+    ("GET\t", "OTHER"),
+    ("get\n", "OTHER"),
+    ("get/post", "OTHER"),
+    ("g3t", "OTHER"),
+    ("123", "OTHER"),
+    ("get;", "OTHER"),
+    ("GET\x00", "OTHER"),
+    ("GET\u200b", "OTHER"),
+    ("MKCOL", "OTHER"),
+    ("COPY", "OTHER"),
+    ("MOVE", "OTHER"),
+    ("LOCK", "OTHER"),
+    ("UNLOCK", "OTHER"),
+    ("SEARCH", "OTHER"),
+    ("ß", "OTHER"),
+    ("ı", "OTHER"),
+    ("i", "OTHER"),
+    ("İ", "OTHER"),
+    ("ﬁ", "OTHER"),
+    ("K", "OTHER"),
+    ("ｇｅｔ", "OTHER"),
+    ("é", "OTHER"),
+    ("gét", "OTHER"),
+    ("日本語", "OTHER"),
+    ("😀", "OTHER"),
+    ("poſt", "POST"),
+    ("optionſ", "OPTIONS"),
+    ("optıons", "OPTIONS"),
+    ("gęt", "OTHER"),
+    ("gÉt", "OTHER"),
+    ("GEſ", "OTHER"),
+    ("poſt ", "OTHER"),
+    ("poſt\n", "OTHER"),
+]
+
+
+def test_recorded_method_cases_match_the_python_oracle() -> None:
+    """The embedded corpus is the recorded case set, not a hand-picked subset."""
+    assert len(METHOD_CASES) == 70
+    assert dict(Counter(expected for _, expected in METHOD_CASES)) == {
+        "GET": 4,
+        "POST": 5,
+        "PATCH": 4,
+        "DELETE": 4,
+        "PUT": 4,
+        "HEAD": 4,
+        "OPTIONS": 6,
+        "OTHER": 39,
+    }
+    for method, expected in METHOD_CASES:
+        assert python_normalize_method(method) == expected
+
+
+def test_real_bridge_matches_python_oracle_for_every_recorded_method_case(
+    real_bridge: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(native, "_BRIDGE", real_bridge)
+    assert native.using_rust() is True
+    for method, expected in METHOD_CASES:
+        assert python_normalize_method(method) == expected
+        assert native.normalize_method(method) == expected
+    print(f"\nREAL method cases: {len(METHOD_CASES)}")
+
+
+def test_method_wrapper_fails_closed_when_extension_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native, "_BRIDGE", None)
+    assert native.using_rust() is False
+    for method, _ in METHOD_CASES:
+        with pytest.raises(NativeBridgeUnavailable) as caught:
+            native.normalize_method(method)
+        assert "bash tools/build-native.sh" in str(caught.value)
+    print(f"\nABSENT method cases (typed failure): {len(METHOD_CASES)}")
+
+
+def test_method_callers_route_through_the_client() -> None:
+    """The switched observability call sites must use the typed wrapper."""
+    assert observability.native.normalize_method is native.normalize_method
 
 
 # The money conversions use the bridge crate's recorded money corpus. A string case is
@@ -367,7 +494,11 @@ def test_no_wrapper_imports_a_python_original() -> None:
     """Fail-closed clients must not lazily import the Python originals."""
     path = Path(native.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    forbidden = {"ezchain_core.money", "ezchain_api.services.api_keys"}
+    forbidden = {
+        "ezchain_core.money",
+        "ezchain_api.services.api_keys",
+        "ezchain_api.observability",
+    }
     offenders: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module in forbidden:

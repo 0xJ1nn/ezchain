@@ -29,6 +29,8 @@ from starlette.types import ASGIApp
 from ezchain_adapters import PROVIDERS
 from ezchain_core.reason_codes import REASON_CODES
 
+from . import native
+
 ACCESS_LOGGER = "ezchain_api.access"
 UNMATCHED_ROUTE = "<unmatched>"
 MAX_SERIES = 500
@@ -155,7 +157,7 @@ class HttpMetrics:
         self._lock = threading.Lock()
 
     def observe(self, method: str, route: str, status: int, duration_ms: float) -> None:
-        method_key = normalize_method(method)
+        method_key = native.normalize_method(method)
         request_key = (method_key, route, str(status))
         duration_key = (method_key, route)
         with self._lock:
@@ -609,7 +611,7 @@ def access_log(
         "logger": ACCESS_LOGGER,
         "msg": "http_request",
         "request_id": request_id,
-        "method": normalize_method(method),
+        "method": native.normalize_method(method),
         "route": redact(route, secrets),
         "status": status,
         "duration_ms": round(max(0.0, duration_ms), 3),

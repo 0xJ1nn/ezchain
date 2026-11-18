@@ -40,6 +40,16 @@ fn stale_reason(source_class: &str) -> &'static str {
     ezchain_core::freshness::stale_reason(source_class)
 }
 
+/// Normalise an HTTP method to a bounded metric label.
+///
+/// Thin pass-through to `ezchain_rpc::method::normalize_method`, which owns the port and
+/// its recorded parity cases; the bridge adds no behaviour of its own.
+#[pyfunction]
+#[pyo3(signature = (method))]
+fn normalize_method(method: &str) -> &'static str {
+    ezchain_rpc::method::normalize_method(method)
+}
+
 /// The `(code, message)` pair the Python original passes to `ApiKeyError`.
 ///
 /// Kept separate from the FFI code so the exact strings are covered by Rust unit tests
@@ -499,6 +509,7 @@ fn from_raw<'py>(
 #[pymodule]
 fn ezchain_bridge(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(stale_reason, module)?)?;
+    module.add_function(wrap_pyfunction!(normalize_method, module)?)?;
     module.add_function(wrap_pyfunction!(normalize_scopes, module)?)?;
     module.add_function(wrap_pyfunction!(decimal_str, module)?)?;
     module.add_function(wrap_pyfunction!(decimal_compare, module)?)?;

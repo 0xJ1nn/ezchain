@@ -108,10 +108,16 @@ def from_minor_units(minor: int) -> Decimal:
     return Decimal(_require_bridge().from_minor_units(_bridge_money_arg(minor)))
 
 
+def normalize_method(method: str) -> str:
+    """Normalise an HTTP method to a bounded metric label (unchanged contract)."""
+    return cast(str, _require_bridge().normalize_method(method))
+
+
 __all__ = [
     "NativeBridgeUnavailable",
     "floor_money",
     "from_minor_units",
+    "normalize_method",
     "normalize_scopes",
     "quantize_money",
     "to_minor_units",
