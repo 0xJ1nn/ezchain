@@ -47,17 +47,37 @@ the Rust output matches every recorded token, including exact triples
 | Division (context-rounded) | `a / b` under a derived precision, half-even | yes — preferred exponent, terminating and non-terminating quotients, half-even ties |
 | `bps_fee` | `bps_fee(notional, fee_bps)` | yes — exact fee at 1e-8, negative-fee refusal |
 | `preview_cost` (numeric sheet) | `preview_cost(...)` fee legs and slippage window | yes — paper-mark flat fee, `max(bps leg, quantized venue leg)`, quantized `worst_case_out`; wire form stays blocked |
+<<<<<<< HEAD
 | Non-finite rejection | `_as_decimal` → `MoneyError` | yes — `NaN`, `sNaN`, `±Infinity` at every money boundary |
 
 Corpus: **659 deterministic cases** (fixed hand-picked tricky cases plus a seeded
 random corpus, up to 40 digits). A **held-out corpus of 659 cases generated with a
 different seed (77123)** also matched 659/659, as a check against overfitting. Tricky
+=======
+| `require_money` | `require_money(value)` | yes — representation preserved, sub-quantum refusal (`SubQuantumError`), non-finite refusal |
+| `require_quantity` | `require_quantity(value)` | yes — finite exact values pass without a scale limit |
+| `to_minor_units` | `to_minor_units(value)` | yes — exact 1e-8 scaling, signed integer magnitude, sub-quantum and non-finite refusal, round-trip checked |
+| `from_minor_units` | `from_minor_units(minor)` | yes — inverse conversion for arbitrary-precision signed integers |
+| `exact_neg` | `exact_neg(value)` | yes — sign flip on the digits with no context rounding, including the sign of zero |
+| Non-finite rejection | `_as_decimal` → `MoneyError` | yes — `NaN`, `sNaN`, `±Infinity` at every money boundary, including the new conversion helpers |
+
+Corpus: **962 deterministic cases** (fixed hand-picked tricky cases plus a seeded
+random corpus, up to 40 digits). A **held-out corpus of 962 cases generated with a
+different seed (88317)** also matched 962/962, as a check against overfitting. Tricky
+>>>>>>> origin/rust/migration
 cases include `0.1 + 0.2`, 38-digit `NUMERIC(38, 8)` values, negative exponents,
 half-even ties (`5e-9 → 0E-8`, `15e-9 → 2E-8`), floor on negatives
 (`-1.234567895 → -1.23456790`), non-finite refusal, division preferred-exponent and
 rounding cases (`1.00 / 2 → 0.50`, `100000 / 3` at precision 4 `→ 3.333E+4`,
+<<<<<<< HEAD
 `101 / 1000` at precision 2 `→ 0.10`, `1 / 3` at 28 digits), long-tail bps fees and
 both preview cost-sheet branches.
+=======
+`101 / 1000` at precision 2 `→ 0.10`, `1 / 3` at 28 digits), long-tail bps fees,
+both preview cost-sheet branches, whole-versus-sub-quantum minor-unit conversions
+(`0.1 → 10000000`, `0.000000009 → SubQuantumError`), signed minor-unit round trips,
+and `exact_neg` on long coefficients and signed zeros.
+>>>>>>> origin/rust/migration
 
 This proves **per-operation decimal parity only**. It does not establish a speed
 advantage, an FFI boundary, or that a whole money path is ready to move.
@@ -72,8 +92,12 @@ These are explicitly out of this prototype. None may be treated as ready to port
   not reproduced, including `CostPreview.to_dict` and `SourceRef` serialisation.
 - **SHA-256 fingerprint / seal hashing** — no hashing, no seal, no cryptography.
 
+<<<<<<< HEAD
 Also not ported: `require_money`, `require_quantity`, `to_minor_units`,
 `from_minor_units`, `exact_neg`, the echoed `network_fee_usd` /
+=======
+Also not ported: the echoed `network_fee_usd` /
+>>>>>>> origin/rust/migration
 `price_impact_pct` fields of a cost sheet, ambient-context overflow /
 `Emin`/`Emax`/`clamp`, context sizes that would raise Python's
 `InvalidOperation`, Python's `bool`/`float`/`int` input guards (the prototype is
@@ -89,6 +113,7 @@ From the `rust/` workspace, with the scratch Rust toolchain and the project venv
 ```
 cargo fmt --all -- --check                          # clean
 cargo clippy --workspace --all-targets -- -D warnings  # clean
+<<<<<<< HEAD
 cargo test --workspace                              # 331 passed, 0 failed
    └─ ezchain-decimal: 14 unit tests + 1 parity test (659/659 cases)
 .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
@@ -98,6 +123,17 @@ EZ_DECIMAL_SEED=77123 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
                                                      # wrote 659 held-out cases
 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
   cargo test -p ezchain-decimal --test parity        # parity: 659/659 held-out cases match
+=======
+cargo test --workspace                              # 428 passed, 0 failed
+   └─ ezchain-decimal: 18 unit tests + 1 parity test (962/962 cases)
+.venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
+                                                    # OK: fixture matches oracle (962 cases)
+EZ_DECIMAL_SEED=88317 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
+  .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
+                                                     # wrote 962 held-out cases
+EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
+  cargo test -p ezchain-decimal --test parity        # parity: 962/962 held-out cases match
+>>>>>>> origin/rust/migration
 ```
 
 Regenerate the recorded oracle fixture with:
