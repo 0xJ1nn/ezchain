@@ -1,0 +1,4 @@
+{
+  "version": "solo-1",
+  "peers": ["node-a"]
+}
