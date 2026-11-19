@@ -17,7 +17,20 @@ const noExternal = (page: Page) => {
 	return external;
 };
 
-test("token page renders live-shaped fixtures with source, age and a paper quote", async ({
+/** The Trade screen sends after a 650 ms hold. Every buy in these tests uses it. */
+async function hold(page: Page) {
+	const submit = page.getByTestId("trade-submit");
+	await expect(submit).toBeEnabled();
+	await submit.scrollIntoViewIfNeeded();
+	const box = await submit.boundingBox();
+	if (!box) throw new Error("no submit box");
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(760);
+	await page.mouse.up();
+}
+
+test("the trade screen renders live-shaped fixtures with source, age and a paper quote", async ({
 	page,
 }) => {
 	const external = noExternal(page);
@@ -28,18 +41,14 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 	await expect(page.getByText("LIVE ·")).toHaveCount(0);
 	await expect(page.locator(".page-actions .mono").first()).toHaveText("$0.00003142");
 
-	// Source and age are printed next to the price, and the chain registry supplies tier.
 	await expect(page.getByText(/Fixture · \d+s old/).first()).toBeVisible();
 	await expect(page.locator(".page-actions")).toContainText("Solana · T1");
 
-	// Pairs come from the token snapshot with the same source/age.
 	await expect(page.locator("#pairs tbody tr")).toHaveCount(3);
 	await expect(page.locator("#pairs tbody tr").first()).toContainText("raydium");
 	await expect(page.locator("#pairs tbody tr").first()).toContainText("$0.00003142");
 	await expect(page.locator("#pairs tbody tr").first()).toContainText(/Fixture · \d+s/);
 
-	// Safety is unknown everywhere. The page never promotes a miss to a pass.
-	// The rows are the four fields the data layer carries (GH-123); every one is unknown.
 	await expect(page.locator("#safety .panel-head .badge")).toHaveText("unknown");
 	await expect(page.locator("#safety tbody tr")).toHaveCount(4);
 	await expect(
@@ -47,7 +56,8 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 	).toHaveCount(4);
 	await expect(page.getByText("SAFETY_NOT_IMPLEMENTED").first()).toBeVisible();
 
-	// Quote panel: server-rendered Jupiter paper quote with PAPER on every number.
+	// One read-only quote panel keeps the route, source and age visible; the ticket
+	// below is the single place a paper order is sent.
 	const quotePanel = page.locator("#quote");
 	await expect(quotePanel.getByText("PAPER · JUPITER").first()).toBeVisible();
 	await expect(quotePanel).toContainText("Jupiter v6 → Raydium");
@@ -57,16 +67,15 @@ test("token page renders live-shaped fixtures with source, age and a paper quote
 	const paperBadges = await quotePanel.locator(".badge", { hasText: "PAPER" }).count();
 	expect(paperBadges).toBeGreaterThan(5);
 
-	// Quote side switch goes through the server (URL) and the paper ticket preview matches.
 	await expect(page.locator("#ticket")).toContainText("3,182,686.19 BONK");
-	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+	await expect(page.getByTestId("trade-submit")).toBeEnabled();
 
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
 
 	await page.screenshot({ path: ".shots/token-1440.png", fullPage: true });
 });
 
-test("paper buy reaches a success state with a client idempotency key", async ({ page }) => {
+test("a paper buy reaches a filled state with a client idempotency key", async ({ page }) => {
 	const posted: { body: Record<string, unknown> | null } = { body: null };
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		posted.body = route.request().postDataJSON() as Record<string, unknown>;
@@ -89,15 +98,12 @@ test("paper buy reaches a success state with a client idempotency key", async ({
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	const confirm = page.locator("#ticket").getByRole("button", { name: "Confirm paper order" });
-	await expect(confirm).toBeEnabled();
-	await confirm.click();
+	await hold(page);
 
-	await expect(page.getByText("PAPER FILL")).toBeVisible();
+	await expect(page.getByTestId("fill-stamp")).toContainText("PAPER FILLED");
 	await expect(page.locator("#ticket")).toContainText("ord_paper_01");
-	await expect(page.locator("#ticket")).toContainText("BUY $100.00");
+	await expect(page.locator("#ticket")).toContainText("$100.00");
 	await expect(page.locator("#ticket")).toContainText("No funds moved and no transaction was signed");
-	await expect(page.getByRole("button", { name: "Order submitted" })).toBeDisabled();
 
 	if (!posted.body) throw new Error("expected a POST body");
 	const body = posted.body;
@@ -113,7 +119,7 @@ test("paper buy reaches a success state with a client idempotency key", async ({
 	expect(body).not.toHaveProperty("api_key");
 });
 
-test("paper buy shows the API reason on rejection", async ({ page }) => {
+test("a paper buy shows the API reason on rejection", async ({ page }) => {
 	await page.route("**/api/v1/paper/orders", async (route) => {
 		await route.fulfill({
 			status: 502,
@@ -129,13 +135,13 @@ test("paper buy shows the API reason on rejection", async ({ page }) => {
 	});
 
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
-	await page.locator("#ticket").getByRole("button", { name: "Confirm paper order" }).click();
+	await hold(page);
 
-	await expect(page.locator("#ticket .note.err")).toBeVisible();
-	await expect(page.locator("#ticket")).toContainText("NO_SELL_ROUTE");
-	await expect(page.locator("#ticket")).toContainText("buy has no full-size sell route");
-	await expect(page.locator("#ticket")).toContainText("Nothing was filled");
-	await expect(page.getByText("PAPER FILL")).toHaveCount(0);
+	await expect(page.getByTestId("ticket-error")).toBeVisible();
+	await expect(page.getByTestId("ticket-error")).toContainText("NO_SELL_ROUTE");
+	await expect(page.getByTestId("ticket-error")).toContainText("buy has no full-size sell route");
+	await expect(page.locator("#ticket")).toContainText("Not filled");
+	await expect(page.getByTestId("fill-stamp")).toHaveCount(0);
 });
 
 test("scamcoin fails closed with no route and no confirmable order", async ({ page }) => {
@@ -144,15 +150,13 @@ test("scamcoin fails closed with no route and no confirmable order", async ({ pa
 	await expect(page.getByRole("heading", { name: /Scamcoin/, level: 1 })).toBeVisible();
 	await expect(page.locator(".page-actions .badge.err").first()).toHaveText("NO_SELL_ROUTE");
 
-	// No fabricated route or out amount survives; the reason is visible text.
 	await expect(page.locator("#quote")).toContainText("NO_SELL_ROUTE");
 	await expect(page.locator("#quote")).toContainText("buy has no full-size sell route");
 	await expect(page.locator("#quote")).toContainText("Reason from the API");
 	await expect(page.locator("#quote")).not.toContainText("Jupiter v6");
 	await expect(page.locator("#quote")).not.toContainText("3,182,686");
 
-	const confirm = page.locator("#ticket").getByRole("button", { name: "Confirm paper order" });
-	await expect(confirm).toBeDisabled();
+	await expect(page.getByTestId("trade-submit")).toBeDisabled();
 	await expect(page.locator("#ticket")).toContainText("NO_SELL_ROUTE");
 
 	await page.screenshot({ path: ".shots/token-scam-1440.png", fullPage: true });
@@ -167,7 +171,7 @@ test("a non-solana token is labelled PAPER · MARK, not an executable route", as
 	await expect(page.locator("#quote")).toContainText(
 		"This chain has no executable venue in P0",
 	);
-	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+	await expect(page.getByTestId("trade-submit")).toBeEnabled();
 });
 
 test("sell is sized from the USD notional and renders a paper quote", async ({ page }) => {
@@ -175,7 +179,7 @@ test("sell is sized from the USD notional and renders a paper quote", async ({ p
 
 	await expect(page.locator("#quote")).not.toContainText("NO_SELL_ROUTE");
 	await expect(page.locator("#quote")).toContainText("PAPER");
-	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
+	await expect(page.getByTestId("trade-submit")).toBeEnabled();
 });
 
 test("unknown chain or token ids return 404", async ({ page }) => {
