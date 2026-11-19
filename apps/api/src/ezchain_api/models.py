@@ -825,3 +825,8 @@ def _reject_protection_event_bulk_mutations(state: ORMExecuteState) -> None:
     if statement.table.compare(ProtectionEventRow.__table__):
         verb = "updated" if isinstance(statement, Update) else "deleted"
         raise AppendOnlyViolation(f"protection events are append-only and cannot be {verb}")
+
+
+# Register the wallet-tracking tables on the shared metadata. Imported last so the
+# helpers above are defined before the module that uses them is loaded.
+from .services import wallet_models  # noqa: E402,F401  (table registration)

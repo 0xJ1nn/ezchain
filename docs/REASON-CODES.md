@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 269 codes across 17 categories, 6 layers.
+**Scale:** 271 codes across 17 categories, 6 layers.
 
 ---
 
@@ -89,6 +89,8 @@ or a process-local refusal).
 | `ARM_NOT_EDITABLE` | api | 409 | no | warning | The arm is not armed, so it cannot be edited. |
 | `ARM_NOT_CANCELLABLE` | api | 409 | no | warning | The arm is not armed, so it cannot be cancelled. |
 | `CHAIN_NOT_FOUND` | api | 404 | no | warning | The chain is not in the registry. |
+| `WALLET_ERROR` | api | 422 | no | warning | A tracked-wallet request is not well formed. |
+| `WALLET_NOT_FOUND` | api | 404 | no | warning | No wallet is tracked under that id. |
 | `INVALID_CURSOR` | api | 400 | no | warning | The pagination cursor is not decodable. |
 | `INVALID_FILTER` | api | 422 | no | warning | A query filter is not a valid value for its field. |
 | `INVALID_PRECONDITION` | api | 400 | no | warning | The If-Match header is not an integer arm version. |

@@ -28,7 +28,7 @@ from ezchain_core import utcnow
 from ..models import ProviderKeyRow, new_id
 from .provider_secrets import CipherUnavailable, SecretCipher
 
-SUPPORTED_PROVIDERS = frozenset({"jupiter"})
+SUPPORTED_PROVIDERS = frozenset({"jupiter", "etherscan"})
 _PROVIDER = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
 MAX_SECRET_LENGTH = 4096
 FINGERPRINT_HEX_CHARS = 32

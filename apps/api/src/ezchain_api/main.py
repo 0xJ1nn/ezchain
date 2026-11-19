@@ -58,6 +58,7 @@ from .routers import (
     strategies,
     system,
     trade_policy,
+    wallets_tracked,
     watchlist,
 )
 from .services import provider_keys as provider_key_service
@@ -262,6 +263,7 @@ def create_app() -> FastAPI:
     app.include_router(provider_keys.router)
     app.include_router(trade_policy.router)
     app.include_router(watchlist.router)
+    app.include_router(wallets_tracked.router)
     return app
 
 

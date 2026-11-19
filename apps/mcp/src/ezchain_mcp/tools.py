@@ -13,10 +13,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from .client import EzchainClient
+
+Cost = Literal["free", "paid"]
+Effect = Literal["read", "configure", "trade"]
 
 
 def _seg(value: object) -> str:
@@ -43,6 +46,15 @@ class Tool:
     handler: Callable[[EzchainClient, dict[str, Any]], Any]
     read_only: bool = True
     destructive: bool = False
+    cost: Cost = "free"
+    effect: Effect | None = None
+
+    @property
+    def resolved_effect(self) -> Effect:
+        """A missing effect follows the tool's write class, never the caller's guess."""
+        if self.effect is not None:
+            return self.effect
+        return "read" if self.read_only else "configure"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +68,8 @@ class Tool:
                 "idempotentHint": self.read_only,
                 "openWorldHint": True,
             },
+            "cost": self.cost,
+            "effect": self.resolved_effect,
         }
 
 
@@ -638,3 +652,12 @@ def tool_by_name(allow_writes: bool) -> dict[str, Tool]:
 
 
 __all__ = ["READ_TOOLS", "WRITE_TOOLS", "Tool", "all_tools", "tool_by_name"]
+
+
+# Wallet tools live in their own module. The agent-core worker is replacing this
+# central list with module discovery; until that lands, registration stays here.
+from .tools_wallets import READ_TOOLS as _WALLET_READ_TOOLS  # noqa: E402
+from .tools_wallets import WRITE_TOOLS as _WALLET_WRITE_TOOLS  # noqa: E402
+
+READ_TOOLS += _WALLET_READ_TOOLS
+WRITE_TOOLS += _WALLET_WRITE_TOOLS
