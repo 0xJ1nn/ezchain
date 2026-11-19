@@ -10,6 +10,7 @@ import { getKillSwitch } from "@/lib/paper-api";
 import { getExecutionMode } from "@/lib/system-api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
+import { Logo } from "./brand/logo";
 
 // The switch state is read from the API on each render. It streams inside its own
 // boundary so a slow or unreachable API never holds the rest of the shell hostage.
@@ -93,10 +94,9 @@ export function Topbar() {
 	return (
 		<header className="topbar">
 			<div className="brand">
-				<Link className="brand-name" href="/">
-					ezCHAIN
+				<Link href="/" aria-label="ezCHAIN home">
+					<Logo size={17} />
 				</Link>
-				<span className="brand-tag">Workstation</span>
 			</div>
 			<Link className="ws-chip" href="/workspace" title="Workspace">
 				<span className="avatar" style={{ width: 18, height: 18, fontSize: 8 }}>
