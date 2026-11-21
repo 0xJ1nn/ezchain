@@ -123,7 +123,9 @@
       ],
       "icon": "resources/icon.png",
       "artifactName": "ezCHAIN-${version}-${arch}.${ext}",
-      "publisherName": "ezCHAIN contributors"
+      "signtoolOptions": {
+        "publisherName": "ezCHAIN contributors"
+      }
     },
     "nsis": {
       "oneClick": false,

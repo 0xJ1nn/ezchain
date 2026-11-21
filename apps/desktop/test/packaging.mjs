@@ -10,6 +10,7 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,38 @@ function plistKeys(file) {
 	assert.equal(new Set(keys).size, keys.length, `${file} repeats a key`);
 	return keys;
 }
+
+// electron-builder ships a JSON Schema for `build`, and it is the only authority on which
+// keys exist at which level. Using it instead of memory caught a real mistake in this
+// change: `publisherName` is not a `win` property, it belongs under `signtoolOptions`, so
+// the config above would have been rejected at build time on a Windows host — the one place
+// this repository cannot try it. The check is reported as skipped, not passed, when the
+// dependency tree is absent.
+test("the build config satisfies electron-builder's own schema", (t) => {
+	let Ajv;
+	let schemePath;
+	try {
+		const fromDesktop = createRequire(path.join(desktop, "package.json"));
+		const libPkg = createRequire(fromDesktop.resolve("electron-builder/package.json")).resolve(
+			"app-builder-lib/package.json",
+		);
+		Ajv = createRequire(libPkg)("ajv");
+		schemePath = path.join(path.dirname(libPkg), "scheme.json");
+	} catch {
+		t.skip("electron-builder is not installed; run bash tools/setup-web.sh");
+		return;
+	}
+	const scheme = JSON.parse(readFileSync(schemePath, "utf8"));
+	delete scheme.$schema; // a remote $schema would be fetched; the schema itself is local
+	const validate = new Ajv({
+		allErrors: true,
+		strict: false,
+		allowUnionTypes: true,
+		validateFormats: false,
+	}).compile(scheme);
+	const ok = validate(pkg.build);
+	assert.ok(ok, `electron-builder rejects build: ${JSON.stringify(validate.errors, null, 1)}`);
+});
 
 test("every desktop target this repository configures has an installer and a build case", () => {
 	const { mac, win, linux } = pkg.build;
