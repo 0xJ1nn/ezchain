@@ -190,20 +190,25 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 
 ## Native desktop app
 
-ezCHAIN also ships as a native Linux desktop app: a real window with a bundled Next
-server and a frozen FastAPI sidecar on an embedded SQLite database. It needs no Docker,
-Postgres or separately started API, never exposes a public listener, and stays alive in
-the tray with sidecar supervision.
+ezCHAIN also ships as a native desktop app: a real window with a bundled Next server and a
+frozen FastAPI sidecar on an embedded SQLite database. It needs no Docker, Postgres or
+separately started API, never exposes a public listener, and stays alive in the tray with
+sidecar supervision. The Linux build is the verified one; macOS (`dmg`, `zip`) and Windows
+(`nsis`, `portable`) targets exist and their platform-only defects are covered by tests that
+run on any host, but no package for either has been built or launched yet.
 
 ```bash
-bash tools/build-desktop.sh --package
-# AppImage and .deb land in apps/desktop/dist/
+bash tools/build-desktop.sh --package  # AppImage and .deb land in apps/desktop/dist/
 ```
+
+`--target win` and `--target mac` refuse on a Linux host with the reason: the API sidecar is a
+native PyInstaller freeze, so each platform's package is built on that platform.
 
 See [docs/DESKTOP.md](docs/DESKTOP.md) for install, data/log paths, recovery and
 cross-platform status. The AppImage launch, trader flow, persistence and sidecar recovery
-are verified on Linux. The `.deb` is built but its install flow was not exercised; macOS
-and Windows are not built or verified.
+are verified on Linux. The `.deb` is built but its install flow was not exercised; macOS and
+Windows have build targets and platform-specific fixes covered by unit tests, but no package
+for either has been built or launched.
 
 ## Install
 
