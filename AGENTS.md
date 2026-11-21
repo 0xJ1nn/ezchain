@@ -60,6 +60,48 @@ recorded case from the original matches and the Rust gate is green — never on 
 unchanged by the language decision. Money arithmetic stays in Python until decimal parity is
 proven (see ADR-0049/0050). P2P and consensus need their own design ADR before code.
 
+### The map is enforced, not advised (ADR-0053)
+
+`architecture/language-map.json` is the machine-readable form of this section and
+`tools/check-language-map.py` runs in `tools/ci.sh`. Read the map before adding a package, a
+crate, an import or a client component; a gate finding is the answer, not an obstacle. What it
+refuses:
+
+- a source file in a fourth language (three languages are the budget);
+- a Python package or Rust crate that is not declared in the map;
+- an import edge a layer's `may_import` does not allow;
+- an `ezchain_bridge` client other than the two declared in `python_entry_points`;
+- `pumpfire` outside `packages/adapters` and `services/ingest`;
+- a shipping crate that depends on a frozen one, or a binary the map does not list;
+- a crate declared shipping that no shipped entry point links (reachability is computed from
+  `rust_crates.entry_points`, so "shipping" cannot be claimed by relabelling);
+- `float(` or `round(` in the money oracle or the ledger;
+- Python or Rust source under `apps/web` or `packages/ui`, and a client component that reads
+  `EZCHAIN_API_TOKEN`.
+
+Two recorded import inversions (`engine` and `ingest` importing ORM rows from `apps/api`) are
+listed as known violations with their exact files. **That list may only shrink**, and the
+checker fails on a stale entry, so the fix deletes the entry in the same change.
+
+**Shipping means reachable.** The checker walks the crate graph from the two entry points (the
+PyO3 extension and the read-only CLI). A crate nothing links is listed as `shipping_unwired`
+with the wiring it lacks — today `ezchain-seal`, `ezchain-replay`, `ezchain-fingerprint`,
+`ezchain-executor`, `ezchain-protection`, `ezchain-scheduler` and `ezchain-flow`. Wiring one
+means moving it up in the same change, or the stale entry fails the gate. Reachability is not
+the same as delivery: the CLI links no other crate and still reaches no user, because no
+installer or desktop resource list carries it (RUST-08).
+
+**Frozen, not deleted:** `ezchain-p2p`, `ezchain-p2p-transport`, `ezchain-consensus`,
+`ezchain-node`, `ezchain-rpc-server`, and every `ezchain-rpc` module other than `scopes` and
+`method`. They build and their tests run; they are not deployed and take no new work. They
+unfreeze on one condition: a second, independently operated machine must agree on the same
+ordered tape, with an accepted P2P/consensus design. Do not add a consumer to make them look
+alive, and do not count them as migration progress.
+
+**Deployment:** the native host (venv + systemd user units) or the Electron desktop app is the
+primary target (ADR-0053). The container stack is secondary and must build the PyO3 bridge. A
+Rust artifact reaches a user only as the bridge extension or the read-only CLI.
+
 ---
 
 ## First thing every session — RECONNAISSANCE

@@ -22,22 +22,36 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/7 agent stubs"
+step "1/8 agent stubs"
 node tools/sync-agent-stubs.mjs --check
 
-step "2/7 design tokens"
+# The language map is a gate, not a document. It refuses a fourth language, a Python
+# module in a Rust-owned layer, an undeclared import edge, a second bridge client, a
+# frozen crate pulled into the shipped product, a float in the money oracle, and a token
+# in a client component. Architecture changes need an ADR that edits the map, never a
+# silenced check.
+step "2/8 language map"
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python tools/check-language-map.py
+elif command -v python3 >/dev/null 2>&1; then
+  python3 tools/check-language-map.py
+else
+  echo "not present yet: language map (no python3)"
+fi
+
+step "3/8 design tokens"
 node tools/build-tokens.mjs --check
 
-step "3/7 wireframe integrity"
+step "4/8 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "4/7 markdown links"
+step "5/8 markdown links"
 node tools/check-links.mjs
 
-step "5/7 secret scan"
+step "6/8 secret scan"
 node tools/check-secrets.mjs
 
-step "6/7 dependency pins"
+step "7/8 dependency pins"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -59,7 +73,7 @@ fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are audited separately: python3 tools/audit_pins.py --node
 
-step "7/7 runtime gates (when present)"
+step "8/8 runtime gates (when present)"
 ran=0
 # The bridge clients fail closed when the compiled extension is absent, so the
 # native module must be installed before any Python test runs. Host-native build
@@ -77,7 +91,7 @@ if [ ! -x .venv/bin/python ]; then
     ran=1
   fi
   if command -v mypy >/dev/null 2>&1 && [ -f pyproject.toml ]; then
-    mypy --strict packages services apps
+    mypy --strict --exclude '/build/' packages services apps
     ran=1
   fi
   if command -v pytest >/dev/null 2>&1 && [ -d tests ]; then
@@ -91,7 +105,10 @@ if [ -x .venv/bin/ruff ]; then
   ran=1
 fi
 if [ -x .venv/bin/mypy ]; then
-  .venv/bin/mypy --strict packages apps/api services
+  # `--exclude` matters: `pip install packages/...` in an install or an editable build leaves a
+  # `build/lib/<package>` copy in the tree, and without the exclusion mypy sees each module
+  # twice and fails on a duplicate-module error that has nothing to do with the diff.
+  .venv/bin/mypy --strict --exclude '/build/' packages apps/api services
   ran=1
 fi
 if [ -x .venv/bin/pytest ]; then

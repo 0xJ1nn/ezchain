@@ -77,8 +77,31 @@ iteration speed without lying about the topology.
 | `migrate` | Python | one-shot Alembic | run-to-completion |
 | `apps/desktop` | TypeScript / Electron + Python | native shell, private sidecar supervision, tray/background | 1 per desktop user |
 
-Single-node default = one `core` container (api+engine) + `executor` + `ingest` + data
-services. The same images scale out unchanged.
+For the secondary Compose artifact, the single-node starting point is one `core` container
+(api+engine) + `executor` + `ingest` + data services; the same images scale out unchanged.
+
+### Native host and the Rust artifacts that ship
+
+The deployment target is now a native host: a Python virtual environment under a system
+supervisor (systemd), or the Electron desktop app for a single user.
+[`tools/install-native.sh`](../tools/install-native.sh) is that install: it creates the
+venv, installs the hash-pinned runtime, builds the PyO3 bridge, builds and stages the
+Next.js standalone server, writes a mode-0600 environment file, migrates PostgreSQL and
+installs two systemd *user* units. [docs/SELF-HOSTING-NATIVE.md](SELF-HOSTING-NATIVE.md)
+documents it. Docker Compose stays as a secondary, reproducible artifact — a way to run
+the same services on a host that has Docker, not the primary install path.
+
+| Rust artifact | Language | Role | Deployment |
+|---|---|---|---|
+| `ezchain-bridge` | Rust / PyO3 | ported pure kernels called in-process by production Python | built into the venv; shipped |
+| `ezchain-cli` | Rust | read-only operator queries | binary builds and is useful, but is in no installer, Compose service or desktop `extraResources` |
+| `ezchain-seal`, `ezchain-replay` | Rust | ledger seal and balance-replay kernels | kernels only; no caller in the Python write path yet |
+| `ezchain-p2p`, `ezchain-p2p-transport`, `ezchain-consensus`, `ezchain-node`, `ezchain-rpc-server` | Rust | peer transport, agreement, node and node-facing RPC | not deployed |
+
+The last group is frozen: no second machine has to agree on one tape, and the wire contract
+is already published as `tests/contract/snapshots/openapi.json`. Only `ezchain-rpc`'s
+`scopes` and `method` modules are live because the bridge calls them; the rest of that crate
+is frozen with the transport crates.
 
 ### Desktop deployment
 
