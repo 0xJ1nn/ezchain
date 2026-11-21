@@ -205,6 +205,16 @@ cross-platform status. The AppImage launch, trader flow, persistence and sidecar
 are verified on Linux. The `.deb` is built but its install flow was not exercised; macOS
 and Windows are not built or verified.
 
+## Install
+
+- **Native host (primary):** one command installs the paper workstation on a Linux host you
+  own — venv, PyO3 bridge, Next.js server, PostgreSQL migration and two systemd *user* units,
+  no Docker and no root. See [docs/SELF-HOSTING-NATIVE.md](docs/SELF-HOSTING-NATIVE.md).
+- **Desktop app:** one user on one machine, bundled sidecars and SQLite; see
+  [docs/DESKTOP.md](docs/DESKTOP.md).
+- **Docker Compose (secondary):** a reproducible container stack, driven by the installer in
+  [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
+
 ## Quick start — live paper slice
 
 Requires Node 22 + pnpm 9, Python 3.11, Postgres 16 and the **Rust toolchain** (install

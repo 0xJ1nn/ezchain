@@ -4,12 +4,34 @@ Status: **PAPER only.** This guide covers running the paper workstation on one L
 server. It does not cover live trading, because live trading does not exist in this
 release. There are no keys, no signing, no executor and no venue order path.
 
-The supported install path is [`tools/install/install.sh`](../tools/install/install.sh),
-covered in [tools/install/README.md](../tools/install/README.md). The deployment contract
-behind it is [docs/INFRA.md](INFRA.md); incidents and recovery are in
-[docs/RUNBOOK.md](RUNBOOK.md).
+The primary install path is the native installer,
+[`tools/install-native.sh`](../tools/install-native.sh), documented in
+[docs/SELF-HOSTING-NATIVE.md](SELF-HOSTING-NATIVE.md). The container installer
+[`tools/install/install.sh`](../tools/install/install.sh) is the secondary path for a host
+that has Docker, covered in [tools/install/README.md](../tools/install/README.md). The
+deployment contract behind both is [docs/INFRA.md](INFRA.md); incidents and recovery are
+in [docs/RUNBOOK.md](RUNBOOK.md).
 
 ## 1. What the installer starts, and what it does not
+
+### Native install (recommended)
+
+The primary path is native: the Python virtual environment, the PyO3 bridge and the
+Next.js standalone server under two systemd user units, with no Docker and no root. It is
+[`tools/install-native.sh`](../tools/install-native.sh), documented in
+[docs/SELF-HOSTING-NATIVE.md](SELF-HOSTING-NATIVE.md). That guide covers prerequisites,
+database choice (PostgreSQL, not SQLite), the units, logs, upgrade and backup.
+
+```bash
+tools/install-native.sh \
+  --database-url 'postgresql+psycopg://ezchain:...@127.0.0.1:5432/ezchain'
+```
+
+### Container install (secondary)
+
+Everything below describes the Docker/Compose path. It is a secondary, reproducible
+artifact rather than the primary target: the same services and data under a different
+supervisor.
 
 The stack is Postgres, the one-shot Alembic migration job, the API, the Next.js web app
 and Caddy. Compose starts them in that order and Caddy is the only published host port.
@@ -106,6 +128,9 @@ sudo ufw status verbose
 ```
 
 ## 5. Install: verify before extract
+
+This section is the container path. For the native path, start with
+[docs/SELF-HOSTING-NATIVE.md §4](SELF-HOSTING-NATIVE.md#4-install).
 
 Download the archive and its checksum, verify the archive, then extract and run the
 installer. `<tag>` is a published release tag. At the time of writing no release tag has

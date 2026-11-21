@@ -21,6 +21,11 @@
 **/.next
 **/build
 **/.turbo
+# Cargo build output. apps/api/Dockerfile copies `rust/` into the bridge stage, so without
+# this line every host build ships its own 1.5 GB target directory as build context and
+# then discards it.
+rust/target
+**/.cargo
 **/__pycache__
 **/*.py[cod]
 **/.pytest_cache
