@@ -16,6 +16,12 @@ them. A watchdog restarts either sidecar if it exits.
 
 ## Install (Linux)
 
+The build produces a
+[fuse-hardened](https://www.electronjs.org/docs/latest/tutorial/fuses) binary: the packaged
+app refuses `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`, and loads only from its
+`app.asar`. `tools/build-desktop.sh` verifies those fuses by reading the packaged binary
+back, so a build that did not apply them fails instead of shipping.
+
 ```bash
 # AppImage — no install (requires FUSE 2)
 chmod +x ezCHAIN-0.1.0-x86_64.AppImage
@@ -36,14 +42,22 @@ and uses real market data in `PAPER` mode. It does not require Docker, Postgres 
 
 ## Build from source (Linux)
 
-Prerequisites: Node 22+, pnpm 9, Python 3.11, PyInstaller in the project venv.
+Prerequisites: Node 22+, pnpm 9, Python 3.11, PyInstaller in the project venv, and the Rust
+toolchain (the build compiles the PyO3 bridge before freezing the sidecar).
 
 ```bash
 pnpm install
 .venv/bin/pip install pyinstaller
 bash tools/build-desktop.sh            # unpacked build in apps/desktop/dist/linux-unpacked
 bash tools/build-desktop.sh --package  # AppImage + .deb
+bash tools/build-desktop.sh --check    # prove the frozen sidecar bundles the bridge
 ```
+
+The build fails, rather than shipping, when either native prerequisite is missing: step 1
+builds `ezchain_bridge` and step 5 loads it out of the frozen tree and calls
+`quantize_money`, because the sidecar imports the extension dynamically and PyInstaller's
+static analysis cannot see it. Step 7 reads the Electron fuse wire back. `--check` runs only
+that bundle probe against an existing freeze.
 
 Launch the unpacked build during development:
 
@@ -81,8 +95,29 @@ are recorded.
 - No Node integration in the renderer; `contextIsolation` and sandbox are on when the OS
   permits Chromium's sandbox. Electron-builder's AppImage launcher may add `--no-sandbox`
   on hosts without unprivileged user namespaces.
+- **One content-security policy for both surfaces.** `apps/web/lib/csp.ts` defines the
+  policy; `next.config.ts` sends it as a response header on every route, and the shell
+  applies the same string through `session.webRequest.onHeadersReceived` in `main.cjs`, so a
+  response is covered even if the Next copy were compiled out. Scripts are `'self'` plus
+  `'unsafe-inline'` (the App Router renders its bootstrap and RSC payload as inline
+  scripts); production never allows `'unsafe-eval'`. `apps/desktop/test/sender-validation.mjs`
+  fails if the two copies drift.
+- **Privileged IPC is bound to the app's own top frame.** Every handler goes through
+  `handleFromApp`, which validates `event.senderFrame` with `validateSenderFrame` — not
+  `event.sender` — and refuses a null frame, a subframe, another origin, or a same-origin
+  frame whose URL moved off-origin.
+- **Fuses are flipped and then read back.** `apps/desktop/package.json` disables
+  `RunAsNode`, `EnableNodeOptionsEnvironmentVariable` and `EnableNodeCliInspectArguments`, and
+  enables `OnlyLoadAppFromAsar`; `tools/build-desktop.sh` re-reads the packaged binary's fuse
+  wire and fails the build if a fuse did not apply. Consequence: the web sidecar cannot be a
+  second copy of the Electron binary started with `ELECTRON_RUN_AS_NODE=1` (measured on
+  Electron 45.0.0: that child exits 1 and serves nothing), so it runs as an Electron
+  **utility process** (`utilityProcess.fork`), which is a real Node runtime the app parents
+  and reaps. `apps/desktop/test/sidecar-wiring.mjs` fails if `main.cjs` ever spawns
+  `process.execPath` again.
 - External links open in the system browser; navigation outside the local origin is
-  blocked.
+  blocked. Camera, microphone, geolocation, notifications and clipboard reads are denied by
+  permission handlers.
 - There are no keys, signing or live execution in this build. `live_execute` is false.
 
 ## Verification

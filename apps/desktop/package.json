@@ -7,9 +7,11 @@
   "scripts": {
     "start": "electron .",
     "dist:dir": "electron-builder --linux dir",
-    "dist:linux": "electron-builder --linux AppImage deb"
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "test": "node --test \"test/*.mjs\""
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "electron": "45.0.0",
     "electron-builder": "26.15.3"
   },
@@ -24,8 +26,15 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "sender.js",
       "package.json"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
     "extraResources": [
       {
         "from": "build/backend",
