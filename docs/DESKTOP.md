@@ -118,9 +118,15 @@ standalone). Three things differ and are handled explicitly rather than by luck:
 | The frozen sidecar is `ezchain-api.exe` on Windows | `apps/desktop/platform.js` `sidecarName()` |
 | `app.getPath("userData")` contains backslashes on Windows, which SQLite treats as escapes | `sqliteUrl()` rewrites to forward slashes; `apps/desktop/test/platform.mjs` pins the exact URL for all three platforms |
 | Windows ships bsdtar at `%SystemRoot%\System32\tar.exe`, not on PATH | `tarBinary()` resolves it and falls back to `tar` |
+| The standalone web bundle carries 27 pnpm symlinks, and Windows needs a privilege to create one | `tools/build-desktop.sh` writes `web.tar.gz` with `--dereference` and fails if a symlink survives (25.39 MB → 25.43 MB) |
+| macOS rejects `com.apple.security.inherit` on a main app | two entitlement files: `entitlements.mac.plist` for the app and `entitlements.mac.inherit.plist` for its children |
+| Windows `chmod` only clears the read-only bit | the token's boundary there is the inherited `%APPDATA%` ACL, stated rather than implied |
+| An AppImage runs from a temporary mount | the autostart entry records `APPIMAGE`, not the mount path that disappears |
 
-`apps/desktop/test/platform.mjs` is the regression guard: each of those was a runtime
-failure that no Linux build could have shown.
+`apps/desktop/test/platform.mjs` and `test/packaging.mjs` are the regression guards: each row
+was a runtime failure or a build-time rejection that no Linux run could have shown.
+`test/packaging.mjs` validates `build` against electron-builder's own `scheme.json`, which is
+the only authority on which key belongs where.
 
 **Still unproven, and stated as such:** no macOS or Windows package has been built or
 launched on this machine. Each needs its own host (PyInstaller cannot cross-compile), an
@@ -147,7 +153,8 @@ recorded.
   response is covered even if the Next copy were compiled out. Scripts are `'self'` plus
   `'unsafe-inline'` (the App Router renders its bootstrap and RSC payload as inline
   scripts); production never allows `'unsafe-eval'`. `apps/desktop/test/sender-validation.mjs`
-  fails if the two copies drift.
+  fails if the two copies drift. The shell applies the policy itself rather than relying on
+  Next having answered: a response the Next server never produced still carries it.
 - **Privileged IPC is bound to the app's own top frame.** Every handler goes through
   `handleFromApp`, which validates `event.senderFrame` with `validateSenderFrame` — not
   `event.sender` — and refuses a null frame, a subframe, another origin, or a same-origin
