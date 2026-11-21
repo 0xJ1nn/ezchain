@@ -1,6 +1,6 @@
 // The More page's link groups, with the reference galleries kept out of production.
 //
-// The galleries (`/states`, `/components`, `/mobile`) are design documentation and their
+// The galleries (`/states`, `/components`) are design documentation and their
 // routes only exist in the development build (see `referenceSurfacesEnabled`). Keeping the
 // filter here, as a pure function, is what the browser test asserts: a production build
 // cannot render a link to a route it does not serve.
@@ -61,7 +61,6 @@ export const MORE_GROUPS: MoreGroup[] = [
 		links: [
 			["/states", "State gallery"],
 			["/components", "Components"],
-			["/mobile", "Mobile"],
 		],
 	},
 ];

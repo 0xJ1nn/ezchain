@@ -263,6 +263,15 @@ test("the k shortcut opens the confirmation and stays out of text fields", async
 	test.skip(live, fixtureOnly);
 	await page.goto("/");
 
+	// The top bar streams in its own Suspense boundary, so its document listener attaches
+	// after the page-level hydration marker. Wait for the shortcut to announce itself
+	// rather than for the page to look ready.
+	await page.waitForFunction(
+		() => document.documentElement.dataset.killShortcut === "ready",
+		undefined,
+		{ timeout: 30_000 },
+	);
+
 	await page.keyboard.press("k");
 	const dialog = page.getByRole("dialog", { name: "Arm the kill switch?" });
 	await expect(dialog).toBeVisible();

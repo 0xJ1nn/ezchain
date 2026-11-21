@@ -187,6 +187,49 @@ support and security review, and it waits for real mode.
 Status: **not started.** The current `integrations/` packs are local and explicitly
 labelled alpha.
 
+## Next — v1.0: a public release you can install
+
+Goal: `v1.0` is the first release a stranger can download and run — a **PAPER** workstation
+that installs natively on Windows, macOS and Linux, and can point at a host the operator
+owns. Nothing about the money path changes; the ledger, the paper gate and the
+no-custody boundary are exactly as they are today.
+
+The release exists because the app is already a native app on one platform and the remaining
+gap is portability and first-run, not a rewrite. Everything here is optional for the
+maintainer to reorder; nothing here is permission to promote paper to live.
+
+**Must — the release is not a release without these**
+
+- [ ] A signed, notarised macOS build and a signed Windows build, launched and recorded
+      (#438). The code defects are fixed; this needs machines and identities.
+- [ ] The window can attach to a local **or a remote** host (#439). This is what makes a VPS
+      useful and a sleeping laptop harmless, without moving a key anywhere.
+- [ ] First-run setup: mode, data directory, token, backup path (#440). A native app without
+      it needs a terminal.
+- [ ] The Rust ledger seal is actually called by the write path (#441, RUST-13). The
+      tamper-evidence claim currently rests on a kernel nothing links.
+- [ ] `DISCLAIMER.md`, a README section and in-app no-custody notices (#363).
+- [ ] Per-OS install, backup, restore and uninstall documentation, and an update path.
+
+**Should — the difference between "works" and "feels current"**
+
+- [ ] The modern shell and the four screens that decide whether the app feels contemporary:
+      Home, Trade, Markets, Positions (#345, #344, #351, #346). The other #344–#367 items
+      stay backlog; the UI bar is the maintainer's call.
+- [ ] One streaming transport for the agent and the browser, resumable and scope-checked
+      (#442). The runtime exists; the channel does not.
+- [ ] Official-build signing and the badge (#348), so a download can be checked.
+
+**Not in v1**
+
+- Managed hosting, accounts, tenancy and billing. Deferred by maintainer decision after v1;
+  it is also blocked on #234, because one deployment is one workspace today.
+- Live trading, key custody, mobile apps, P2P/consensus. Unchanged and frozen.
+
+Exit: a clean Windows, macOS and Linux machine can each install the app, finish setup, see
+live market data in `PAPER` mode and keep a strategy running while the window is closed; a
+remote host survives the client disconnecting. Recorded per platform, or stated as unproven.
+
 ## Later — M5: Discovery & watchlists
 
 - Watchlists as owned entities, with alerts and an optional automation scope (#33).
@@ -206,3 +249,8 @@ roadmap until the spike, a venue adapter, safety evidence and ADR-0009 are all i
 
 Derivatives execution, fiat on-ramp, lending, copy-trading marketplace, native mobile
 apps, managed hosting and subscription/payment billing. See `docs/PRODUCT.md` §5.
+
+Hosting is deferred by maintainer decision (2026-11-21) until after `v1.0`: the software
+ships free and self-hosted first, and the hosted product's ledger isolation (#234) is
+decided before a second customer exists. Hosting as a paid offering, when it comes, sells
+uptime for **paper** workstations and never custody: the host holds no venue key.

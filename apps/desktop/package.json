@@ -7,9 +7,13 @@
   "scripts": {
     "start": "electron .",
     "dist:dir": "electron-builder --linux dir",
-    "dist:linux": "electron-builder --linux AppImage deb"
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:win": "electron-builder --win nsis portable",
+    "test": "node --test \"test/*.mjs\""
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "electron": "45.0.0",
     "electron-builder": "26.15.3"
   },
@@ -24,8 +28,16 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "sender.js",
+      "platform.js",
       "package.json"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
     "extraResources": [
       {
         "from": "build/backend",
@@ -67,6 +79,62 @@
         "libatspi2.0-0",
         "libayatana-appindicator3-1"
       ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.finance",
+      "icon": "resources/icon.png",
+      "artifactName": "ezCHAIN-${version}-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "LSUIElement": false,
+        "NSHumanReadableCopyright": "AGPL-3.0-or-later · ezCHAIN contributors"
+      }
+    },
+    "dmg": {
+      "title": "ezCHAIN ${version}",
+      "contents": [
+        {
+          "x": 140,
+          "y": 200
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        "portable"
+      ],
+      "icon": "resources/icon.png",
+      "artifactName": "ezCHAIN-${version}-${arch}.${ext}",
+      "signtoolOptions": {
+        "publisherName": "ezCHAIN contributors"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ezCHAIN",
+      "deleteAppDataOnUninstall": false
     },
     "executableName": "ezchain"
   },

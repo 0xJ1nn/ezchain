@@ -14,8 +14,8 @@ architecture changes. Only the domain examples differ.
 
 ## Current project state
 
-- **Language policy (ADR-0050, refined by ADR-0052, accepted 2026-11-18):** Rust owns the core
-  engine, P2P/WebSockets, consensus/validation, node RPC transport, transaction execution,
+- **Language policy (ADR-0050, refined by ADR-0052 and enforced by ADR-0053):** Rust owns the
+  core engine, P2P/WebSockets, consensus/validation, node RPC transport, transaction execution,
   cryptography, storage, performance-critical and security-critical logic, and the shipped CLI;
   Python owns business logic/orchestration, AI/ML, analytics, strategy development, automation,
   monitoring, the application-level API and integrations, and developer tooling; TypeScript
@@ -23,6 +23,15 @@ architecture changes. Only the domain examples differ.
   integrate with PyO3 in-process or gRPC/IPC across services, with typed versioned interfaces
   and independent tests, benchmarks and deployment. Preserve working code and migrate
   bottlenecks incrementally behind recorded parity.
+- The map is a gate: `architecture/language-map.json` declares every layer and crate, and
+  `tools/check-language-map.py` refuses a fourth language, an undeclared import edge, a second
+  bridge client and a float in the money oracle. Change the map through an ADR, never by
+  widening an exception.
+- Deployment target: a native host (Python venv under systemd user units) or the Electron
+  desktop app. The container stack is a secondary artifact and must build the PyO3 bridge.
+- Frozen crates: `ezchain-p2p`, `ezchain-p2p-transport`, `ezchain-consensus`, `ezchain-node`,
+  `ezchain-rpc-server`, and `ezchain-rpc` beyond `scopes`/`method`. They unfreeze only when a
+  second machine must agree on one ordered tape.
 - Migration integration branch: `rust/migration`. One field per worker, one worktree per
   field; a port lands only after `record → diff → gate → bench` parity against the original.
   See ADR-0049 and ADR-0050 before touching a money path.

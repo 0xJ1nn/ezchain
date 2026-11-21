@@ -13,6 +13,9 @@ importers:
 
   apps/desktop:
     devDependencies:
+      '@electron/fuses':
+        specifier: 1.8.0
+        version: 1.8.0
       electron:
         specifier: 45.0.0
         version: 45.0.0

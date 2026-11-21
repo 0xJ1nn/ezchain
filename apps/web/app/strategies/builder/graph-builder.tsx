@@ -29,6 +29,7 @@ import {
 } from "@xyflow/react";
 import Link from "next/link";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui";
 import { usd } from "@/lib/format";
 import {
@@ -1592,71 +1593,73 @@ function BuilderInner({ mode, strategyId }: { mode: GraphMode; strategyId?: stri
 					/>
 				)}
 
-				{dialog && (
-					<div className={styles.dialogBackdrop} onClick={() => setDialog(null)}>
-						<div
-							className={styles.dialog}
-							onClick={(event) => event.stopPropagation()}
-							role="dialog"
-							aria-label={dialog.mode === "copy" ? "Graph JSON" : "Paste graph JSON"}
-						>
-							<div className={styles.dialogHead}>
-								<strong>{dialog.mode === "copy" ? "Graph JSON" : "Paste graph JSON"}</strong>
-								<span className="micro">schema {`ezchain.graph/1`}</span>
+				{dialog &&
+					createPortal(
+						<div className={styles.dialogBackdrop} onClick={() => setDialog(null)}>
+							<div
+								className={styles.dialog}
+								onClick={(event) => event.stopPropagation()}
+								role="dialog"
+								aria-label={dialog.mode === "copy" ? "Graph JSON" : "Paste graph JSON"}
+							>
+								<div className={styles.dialogHead}>
+									<strong>{dialog.mode === "copy" ? "Graph JSON" : "Paste graph JSON"}</strong>
+									<span className="micro">schema {`ezchain.graph/1`}</span>
+								</div>
+								<textarea
+									className={`textarea mono ${styles.dialogText}`}
+									value={dialog.text}
+									readOnly={dialog.mode === "copy"}
+									spellCheck={false}
+									aria-label="Graph document JSON"
+									onChange={(event) => setDialog({ ...dialog, text: event.target.value })}
+									data-testid="json-text"
+								/>
+								<div className={styles.dialogActions}>
+									{dialog.mode === "copy" ? (
+										<>
+											<button
+												className="btn sm"
+												type="button"
+												onClick={() => {
+													void navigator.clipboard?.writeText(dialog.text).catch(() => undefined);
+													setNotice({ tone: "ok", text: "Graph JSON copied to the clipboard." });
+												}}
+											>
+												Copy to clipboard
+											</button>
+											<button
+												className="btn ghost sm"
+												type="button"
+												onClick={() => setDialog(null)}
+											>
+												Close
+											</button>
+										</>
+									) : (
+										<>
+											<button
+												className="btn sm primary"
+												type="button"
+												onClick={() => applyPaste(dialog.text)}
+												data-testid="apply-paste"
+											>
+												Apply
+											</button>
+											<button
+												className="btn ghost sm"
+												type="button"
+												onClick={() => setDialog(null)}
+											>
+												Cancel
+											</button>
+										</>
+									)}
+								</div>
 							</div>
-							<textarea
-								className={`textarea mono ${styles.dialogText}`}
-								value={dialog.text}
-								readOnly={dialog.mode === "copy"}
-								spellCheck={false}
-								aria-label="Graph document JSON"
-								onChange={(event) => setDialog({ ...dialog, text: event.target.value })}
-								data-testid="json-text"
-							/>
-							<div className={styles.dialogActions}>
-								{dialog.mode === "copy" ? (
-									<>
-										<button
-											className="btn sm"
-											type="button"
-											onClick={() => {
-												void navigator.clipboard?.writeText(dialog.text).catch(() => undefined);
-												setNotice({ tone: "ok", text: "Graph JSON copied to the clipboard." });
-											}}
-										>
-											Copy to clipboard
-										</button>
-										<button
-											className="btn ghost sm"
-											type="button"
-											onClick={() => setDialog(null)}
-										>
-											Close
-										</button>
-									</>
-								) : (
-									<>
-										<button
-											className="btn sm primary"
-											type="button"
-											onClick={() => applyPaste(dialog.text)}
-											data-testid="apply-paste"
-										>
-											Apply
-										</button>
-										<button
-											className="btn ghost sm"
-											type="button"
-											onClick={() => setDialog(null)}
-										>
-											Cancel
-										</button>
-									</>
-								)}
-							</div>
-						</div>
-					</div>
-				)}
+						</div>,
+						document.body,
+					)}
 			</div>
 		</NodeActionsContext.Provider>
 	);

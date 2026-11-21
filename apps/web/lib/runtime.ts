@@ -10,7 +10,7 @@ export function webMode(): WebMode {
 }
 
 /**
- * Reference galleries (`/states`, `/components`, `/mobile`) are design documentation.
+ * Reference galleries (`/states`, `/components`) are design documentation.
  * They follow the one mode switch the app already has: a fixture build is the
  * development surface, live is the production one. Nothing else gates them.
  */

@@ -43,6 +43,16 @@ function Chart({ chart }: { chart: TileChart }) {
 	);
 }
 
+/**
+ * The tile fixture already classifies each mark as live, stale or dead (no usable mark).
+ * Map that verdict onto the freshness state classes; no new data or threshold is added.
+ */
+function markStateClass(tone: PositionTileView["markTone"]): string {
+	if (tone === "live") return "data-fresh";
+	if (tone === "stale") return "data-stale";
+	return "data-unknown";
+}
+
 export function PositionTile({ position }: { position: PositionTileView }) {
 	const { ladder } = position;
 	return (
@@ -77,7 +87,7 @@ export function PositionTile({ position }: { position: PositionTileView }) {
 				<span className={`px${position.priceTone === "muted" ? " mut" : ""}`}>
 					{position.price}
 				</span>
-				<span className={`small muted${position.markToneClass ? ` ${position.markToneClass}` : ""}`}>
+				<span className={`small muted${position.markToneClass ? ` ${position.markToneClass}` : ""} ${markStateClass(position.markTone)}`}>
 					<LiveDot tone={position.markTone} />
 					{position.mark}
 				</span>

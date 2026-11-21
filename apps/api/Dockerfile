@@ -7,6 +7,14 @@
 # The image is also the Alembic migration job; compose runs the same tag with
 # `alembic -c /app/alembic.ini upgrade head` before the API starts.
 
+# Python runtime for the API, plus the PyO3 bridge it cannot serve without.
+#
+# The bridge (`ezchain_bridge`) is a runtime prerequisite, not an optional accelerator:
+# apps/api/src/ezchain_api/native.py and the money path import it and raise
+# NativeBridgeUnavailable without it. A Python-only image therefore cannot serve a
+# request, so the extension is built in the `bridge` stage below from the committed Cargo
+# lock and copied into site-packages.
+
 # Base image pinned by manifest-list digest, resolved 2026-11-14.
 #   python:3.11-slim -> sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 # The digest is the multi-arch index, so the same line resolves to the right child on
@@ -47,6 +55,31 @@ RUN python -m pip install --prefix=/install --no-deps \
         ./apps/api \
         ./services/engine
 
+# The PyO3 bridge, in its own stage so a Python change never rebuilds it.
+#
+# `--locked` keeps rust/Cargo.lock authoritative. abi3-py39 is enabled in
+# rust/ezchain-bridge/Cargo.toml, so the extension does not link against a specific
+# libpython and needs no interpreter in this stage. The artifact is the cdylib
+# rust/target/release/libezchain_bridge.so, copied into the runtime site-packages below.
+#
+# The Rust image is pinned by manifest-list digest, resolved 2026-11-21.
+#   rust:1.100-slim-bookworm -> sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37
+# The digest is the multi-arch index, so the same line resolves to the right child on
+# amd64, arm64 and the rest. `:1.100-slim-bookworm` is kept in the reference because it
+# is the tag a human reads to update it; Docker builds the digest, never the tag. To move
+# it:
+#   docker buildx imagetools inspect rust:1.100-slim-bookworm   # take the top-level Digest
+# then change the digest below and this comment together, in one commit. The floor is set
+# by pyo3 0.30, which requires Rust 1.85 or newer.
+FROM rust:1.100-slim-bookworm@sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37 AS bridge
+
+WORKDIR /build
+
+# Only the Rust workspace: a change to Python code must not invalidate this layer.
+COPY rust ./rust
+
+RUN cargo build --locked --release -p ezchain-bridge --manifest-path rust/Cargo.toml
+
 # Same base, same digest as the builder above; keep the two in step.
 FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS runtime
 
@@ -61,6 +94,12 @@ RUN groupadd --gid 10001 ezchain \
 
 # Site-packages and console scripts (uvicorn, alembic) from the builder.
 COPY --from=builder /install /usr/local
+
+# The PyO3 bridge built in the `bridge` stage. Python imports it as `ezchain_bridge`,
+# so the platform-specific cdylib is installed under that name in the same site-packages
+# the builder populated. Without it the API and the money path fail closed with
+# NativeBridgeUnavailable at import, before serving any request.
+COPY --from=bridge /build/rust/target/release/libezchain_bridge.so /usr/local/lib/python3.11/site-packages/ezchain_bridge.so
 
 WORKDIR /app
 

@@ -31,3 +31,25 @@ arithmetic stays in Python until a Rust decimal can reproduce the per-operation 
 
 New crates follow the same rule: a crate owns one field, has its own tests, and never contains
 I/O, keys or ledger writes without an accepted ADR.
+
+## Frozen crates
+
+These crates are built and tested but are not deployed and receive no new work:
+
+- `ezchain-p2p`
+- `ezchain-p2p-transport`
+- `ezchain-consensus`
+- `ezchain-node`
+- `ezchain-rpc-server`
+- every module of `ezchain-rpc` other than `scopes` and `method`, the two the bridge calls.
+
+They are frozen because no second machine has to agree on one tape. Peer transport,
+consensus, the node and the node-facing RPC transport only earn a deployment when there is a
+second machine to agree with; there is none today. The wire contract is already published as
+`tests/contract/snapshots/openapi.json`, so that snapshot is authoritative and the RPC
+transport has no consumer to satisfy.
+
+The exact unfreeze condition: a second machine exists that must agree on one tape, and the
+P2P/consensus design ADR has been accepted. Without both, these crates stay out of the shipped
+product. `ezchain-seal` and `ezchain-replay` are not frozen; they are proven kernels that are
+not yet called from the Python write path.

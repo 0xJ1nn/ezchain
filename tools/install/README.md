@@ -1,10 +1,16 @@
 # Installer — one command on a server you own
 
+The primary path is native: [`tools/install-native.sh`](../install-native.sh) installs the
+Python venv, the PyO3 bridge, the Next.js standalone server and two systemd user units on
+a Linux host, with no Docker and no root. It is documented in
+[docs/SELF-HOSTING-NATIVE.md](../../docs/SELF-HOSTING-NATIVE.md). The container install
+below is the secondary, reproducible artifact; both run the same paper stack.
+
 `tools/install/install.sh` installs ezCHAIN on a fresh Linux server: Docker if it is
 missing, a checksum-verified release, the deployment secrets, and the PAPER stack
 (Postgres, migrations, API, web, Caddy).
 
-It is the supported path for a self-hosted server. The manual
+It is the supported path for a self-hosted server that has Docker. The manual
 [`infra/compose.yaml`](../../infra/compose.yaml) route still works and is what the
 installer drives.
 
