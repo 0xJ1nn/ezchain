@@ -591,6 +591,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Fixed
 
+- **The browser suite stops racing the streamed top bar.** The `k` shortcut opens the kill
+  switch confirmation from a document key listener, and the top bar arrives in its own
+  Suspense boundary, so the listener attaches after the page-level `data-hydrated` marker.
+  A spec that pressed `k` the moment the marker appeared was swallowed every time — 0 of 6
+  presses caught — which made the kill-switch spec fail on a loaded machine and looked like
+  a product bug. The control now publishes `data-kill-shortcut="ready"` from the same effect
+  that registers the listener and clears it with it, and the spec waits for the shortcut
+  itself instead of for a delay. The test harness also re-waits for the marker after
+  `page.reload`, which never went through the `page.goto` wrapper. Measured after the change:
+  6 of 6 presses caught immediately, and the spec, the theme spec and the proxy spec pass
+  against one warm dev server. No behaviour changed for a user; only the ready signal and
+  the wait did.
+
 - **The stored markets page is a bounded read (GH-104).** `GET /api/v1/markets/stored`
   fetched up to 100,000 rows, filtered them in Python and sliced a page out of the result,
   so one page view read tens of megabytes once a scan had stored a few thousand tokens. The
