@@ -7,6 +7,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **An architecture gate makes the language map enforceable.** The layer ownership in the
+  language policy now has a check in the local gate, so a Rust-owned layer drifting into
+  Python, or a Python-owned layer drifting into Rust, is caught before merge rather than left
+  to review. It also computes which Rust crates a shipped entry point actually links: a crate
+  declared shipping that nothing starts fails the gate instead of counting as progress. The
+  contract invariants, the ledger authority and the owner-blocked live mode are unchanged.
+- **A native install path is the primary deployment target.** `tools/install-native.sh`
+  installs the paper workstation on a Linux host the operator owns: a Python 3.11 venv, the
+  hash-pinned runtime, the PyO3 bridge built from the committed Cargo lock, the Next.js
+  standalone server, a migration to PostgreSQL, a mode-0600 environment file with generated
+  secrets, and two systemd *user* units — no Docker and no root. The Electron desktop app
+  stays the single-user path, and Docker Compose becomes the secondary, reproducible
+  artifact. [docs/SELF-HOSTING-NATIVE.md](docs/SELF-HOSTING-NATIVE.md) documents the install
+  and why a server install requires PostgreSQL rather than SQLite.
+- **Freshness and risk design tokens, and container queries.** The freshness and risk surfaces
+  read shared design tokens and lay out from the container's width instead of the viewport's,
+  so one component holds its layout in a narrow panel and a wide one without a second set of
+  rules. Every text-and-background pair in the palette is checked against WCAG 2.1 AA in the
+  gate: 4.5:1 for body text, 3:1 for large text and borders, in both themes. A state is never
+  colour alone — each carries a shape that survives grayscale.
+
 - **A gap in the pump.fun firehose is now visible and untradeable (ingest).** The
   firehose adapter's entry read, `FirehoseFeed.entries(now)`, raises `StaleFeed` once the
   newest observation is older than the 60 s budget, and the refusal carries the age, the
@@ -357,6 +378,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   timeout, a partial fill and a no-quote in the acceptance suite.
 
 ### Changed
+
+- **The API image now builds the bridge it cannot serve without.** The image installed Python
+  only, with no Rust and no `ezchain_bridge`, while the API imports the extension and the
+  money path raises `NativeBridgeUnavailable` without it: the shipped container answered no
+  request. A digest-pinned Rust builder stage now compiles the extension from the committed
+  Cargo lock and installs it into the runtime site-packages. Measured with rootless Podman on
+  this host: the image builds, `native.using_rust()` is `True` inside it, `/healthz` answers
+  200, and against PostgreSQL 16 at migration head `0031_pair_address_width` `/readyz` answers
+  `{"status":"ready","migration":"head"}`.
+- **The desktop shell hardens its CSP, IPC surface and fuses, and its sidecar follows.** One
+  content-security policy (`apps/web/lib/csp.ts`) is sent by the Next server and applied by the
+  Electron shell, so a response is covered even if the Next copy were missing; privileged IPC
+  is bound to the app's own top frame via `event.senderFrame`; and the packaged binary disables
+  `RunAsNode`, `NODE_OPTIONS` and `--inspect` and loads only from `app.asar`, with
+  `tools/build-desktop.sh` reading the fuse wire back instead of trusting the config. The
+  RunAsNode fuse exposed a real startup bug: the web sidecar was spawned as
+  `spawn(process.execPath, ..., {ELECTRON_RUN_AS_NODE: "1"})`, which is exactly what that fuse
+  forbids — measured on Electron 45.0.0 with the fuses applied, the child exits 1 and serves
+  nothing. It now runs as an Electron utility process, which is a real Node runtime the app
+  parents and reaps. The sidecars remain private loopback processes and the tray watchdog is
+  unchanged.
+- **The Rust migration records a freeze.** The peer, consensus, node and node-facing RPC crates
+  are built and tested but not deployed: no second machine has to agree on one tape, and the
+  wire contract is already published as `tests/contract/snapshots/openapi.json`. The PyO3
+  bridge extension is the only Rust artifact a user actually receives today; the read-only CLI
+  builds and is tested but no installer or desktop resource list ships it yet, and the ledger
+  seal and replay kernels are still unconnected to the Python write path. The freeze lifts when
+  a second machine must agree on one tape and the P2P/consensus design ADR is accepted.
 
 - **The review a pull request needs is now decided from its diff, not from a label
   (ops).** `tools/check_reviews.py` classifies a diff as money-path when it touches
@@ -1110,6 +1159,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   history no longer fails with a 500 (found by the stress harness cleanup check).
 
 ### Removed
+
+- **The fabricated-money equity chart is removed.** The equity surface no longer draws a
+  history from invented figures; an unavailable or unknown series stays unavailable, and every
+  number that remains comes from the server's measured read model.
+- **The duplicate `/mobile` gallery is removed.** The mobile design reference now has one home
+  instead of two competing galleries.
 
 - Removed unused `paper_mark_fee_bps` and the dead `cents_to_usd`/`usd_to_cents`
   helpers. Money is documented as decimal USD strings and exact `NUMERIC` storage, not
