@@ -177,12 +177,14 @@ fi
 # A tarball survives electron-builder's extraResources filtering. pnpm's standalone tree
 # contains symlinks (27 of them in the current build), and creating a symlink on Windows
 # needs either Developer Mode or SeCreateSymbolicLinkPrivilege — an unprivileged install
-# fails to extract the runtime. `--dereference` writes the link targets as real files
-# instead, which costs almost nothing (25.39 MB -> 25.43 MB measured) and makes extraction
-# a plain copy on every platform.
-tar --dereference -czf apps/desktop/build/web.tar.gz -C apps/desktop/build/web .
+# fails to extract the runtime. `-h` writes the link targets as real files instead, which
+# costs almost nothing (25.39 MB -> 25.43 MB measured) and makes extraction a plain copy on
+# every platform. `-h` is spelled the same by GNU tar and by the bsdtar Windows ships, which
+# matters because the tarball is also created on a Windows host for a Windows build.
+tar -czhf apps/desktop/build/web.tar.gz -C apps/desktop/build/web .
 if tar -tzvf apps/desktop/build/web.tar.gz | grep -q '^l'; then
   echo "build-desktop: FAIL web.tar.gz still contains symlinks" >&2
+  echo "  an unprivileged Windows extractor cannot create them; check that tar honoured -h" >&2
   exit 1
 fi
 

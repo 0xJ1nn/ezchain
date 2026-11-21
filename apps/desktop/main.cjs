@@ -296,7 +296,7 @@ function ensureWebRuntime() {
 	fs.rmSync(temp, { recursive: true, force: true });
 	fs.mkdirSync(temp, { recursive: true });
 	log(`extracting web runtime to ${webRoot}`);
-	// The tarball is written with `--dereference` (tools/build-desktop.sh step 3), so it
+	// The tarball is written with `tar -h` (tools/build-desktop.sh step 3), so it
 	// holds real files and extraction is a plain copy on every platform — Windows needs a
 	// privilege to create a symlink, and the standalone tree has 27 of them. Windows ships
 	// bsdtar at %SystemRoot%\System32 but not reliably on PATH, so it is resolved.

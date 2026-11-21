@@ -12,7 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   and pinned by tests that run everywhere: the frozen API sidecar is looked up as
   `ezchain-api.exe`, the SQLite URL is rewritten to forward slashes (backslashes reach sqlite
   as escapes), and the web-runtime extractor resolves the bsdtar Windows ships outside
-  `PATH`. The web runtime tarball is written with `--dereference`, so installing no longer
+  `PATH`. The web runtime tarball is written with `tar -h` (dereference), so installing no longer
   needs the symlink privilege; measured cost is 25.39 MB → 25.43 MB. macOS (`dmg`, `zip`,
   hardened-runtime entitlements) and Windows (`nsis`, `portable`) targets are added, with
   `tools/build-desktop.sh --target` refusing a target this host cannot build and saying why

@@ -118,7 +118,7 @@ standalone). Three things differ and are handled explicitly rather than by luck:
 | The frozen sidecar is `ezchain-api.exe` on Windows | `apps/desktop/platform.js` `sidecarName()` |
 | `app.getPath("userData")` contains backslashes on Windows, which SQLite treats as escapes | `sqliteUrl()` rewrites to forward slashes; `apps/desktop/test/platform.mjs` pins the exact URL for all three platforms |
 | Windows ships bsdtar at `%SystemRoot%\System32\tar.exe`, not on PATH | `tarBinary()` resolves it and falls back to `tar` |
-| The standalone web bundle carries 27 pnpm symlinks, and Windows needs a privilege to create one | `tools/build-desktop.sh` writes `web.tar.gz` with `--dereference` and fails if a symlink survives (25.39 MB → 25.43 MB) |
+| The standalone web bundle carries 27 pnpm symlinks, and Windows needs a privilege to create one | `tools/build-desktop.sh` writes `web.tar.gz` with `tar -h` (dereference) and fails if a symlink survives (25.39 MB → 25.43 MB) |
 | macOS rejects `com.apple.security.inherit` on a main app | two entitlement files: `entitlements.mac.plist` for the app and `entitlements.mac.inherit.plist` for its children |
 | Windows `chmod` only clears the read-only bit | the token's boundary there is the inherited `%APPDATA%` ACL, stated rather than implied |
 | An AppImage runs from a temporary mount | the autostart entry records `APPIMAGE`, not the mount path that disappears |
