@@ -45,8 +45,8 @@ svg { display: block; }
 /* ---------- shell ---------- */
 body {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: 24px 52px minmax(0, 1fr);
+  grid-template-columns: var(--layout-sidebar, 240px) minmax(0, 1fr);
+  grid-template-rows: 24px var(--layout-topbar, 52px) minmax(0, 1fr);
   min-height: 100vh;
 }
 /* The rail is a body class so the grid column, the nav and the toggle agree without
@@ -95,7 +95,7 @@ body.sidebar-collapsed {
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: var(--z-sticky, 40);
 }
 .brand { display: flex; align-items: baseline; gap: 8px; width: 200px; flex: 0 0 auto; }
 .brand-name { font-weight: 750; letter-spacing: -.02em; font-size: 15px; }
@@ -154,7 +154,7 @@ body.sidebar-collapsed {
 }
 .kill.pending { cursor: default; }
 .kill-pop {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: var(--z-overlay, 60);
   width: min(340px, calc(100vw - 20px)); padding: 12px; text-align: left;
   background: var(--surface); border: 1px solid var(--line-2);
   border-radius: var(--r-sm); box-shadow: var(--shadow);
@@ -234,7 +234,14 @@ body.sidebar-collapsed .sidebar-foot .micro { font-size: 8px; letter-spacing: 0;
   font-size: 11px; line-height: 1.3; white-space: nowrap; box-shadow: var(--elevation-2);
 }
 
-main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
+/* The main region is the primary query container. Pane-level breakpoints below measure
+   this box, not the window, so collapsing the sidebar or opening a drawer changes the
+   layout without a viewport resize. */
+main {
+  grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px;
+  container-type: inline-size;
+  container-name: main;
+}
 .page-head {
   display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px;
 }
@@ -255,7 +262,7 @@ main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: 14px; }
+.split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(var(--layout-pane-min, 320px), 1fr); gap: 14px; }
 .split-even { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -267,6 +274,9 @@ main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 .panel {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
   box-shadow: var(--shadow); min-width: 0;
+  max-width: var(--layout-pane-max, 1440px);
+  container-type: inline-size;
+  container-name: panel;
 }
 .panel-head {
   display: flex; align-items: center; gap: 8px; padding: 9px 12px;
@@ -306,6 +316,31 @@ main { grid-row: 3; grid-column: 2; min-width: 0; padding: 20px 22px 48px; }
 .badge.ghost { border-color: var(--line); color: var(--muted); background: transparent; }
 .tag { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 3px; padding: 2px 5px; }
 .pill { border-radius: 999px; }
+
+/* Freshness and risk are states, not decoration. Each one carries a left rule with its own
+   line style AND a distinct leading marker, so the state survives grayscale printing and
+   colour-vision deficiency. Colour is never the only signal. */
+.data-fresh, .data-stale, .data-unknown,
+.risk-ok, .risk-warn, .risk-block {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 1px 7px; border-left: 3px solid; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 11px; font-weight: 600; line-height: 18px;
+}
+.data-fresh::before, .data-stale::before, .data-unknown::before,
+.risk-ok::before, .risk-warn::before, .risk-block::before {
+  content: ""; width: 7px; height: 7px; flex: 0 0 auto;
+}
+.data-fresh { color: var(--color-data-fresh-text); background: var(--color-data-fresh-bg); border-left-color: var(--color-data-fresh-border); }
+.data-stale { color: var(--color-data-stale-text); background: var(--color-data-stale-bg); border-left-color: var(--color-data-stale-border); border-left-style: dashed; }
+.data-unknown { color: var(--color-data-unknown-text); background: var(--color-data-unknown-bg); border-left-color: var(--color-data-unknown-border); border-left-style: dotted; }
+.risk-ok { color: var(--color-risk-ok-text); background: var(--color-risk-ok-bg); border-left-color: var(--color-risk-ok-border); }
+.risk-warn { color: var(--color-risk-warn-text); background: var(--color-risk-warn-bg); border-left-color: var(--color-risk-warn-border); border-left-style: dashed; }
+.risk-block { color: var(--color-risk-block-text); background: var(--color-risk-block-bg); border-left-color: var(--color-risk-block-border); border-left-style: dotted; }
+.data-fresh::before, .risk-ok::before { border-radius: 50%; background: currentColor; }
+.data-stale::before { border-radius: 50%; border: 1px solid currentColor; }
+.data-unknown::before { border: 1px solid currentColor; }
+.risk-warn::before { border: 1px solid currentColor; transform: rotate(45deg); }
+.risk-block::before { content: "×"; width: auto; height: auto; font-weight: 700; }
 
 /* ---------- buttons ---------- */
 .btn {
@@ -432,6 +467,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .tile {
   background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r);
   display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  container-type: inline-size;
+  container-name: tile;
 }
 .tile.win { border-left: 3px solid var(--ok); }
 .tile.loss { border-left: 3px solid var(--err); }
@@ -581,7 +618,7 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 
 .drawer-demo { border: 1px solid var(--line-2); border-radius: var(--r); background: var(--surface); box-shadow: 0 8px 30px rgba(0,0,0,.08); }
 .modal-demo { border: 1px solid var(--line-2); border-radius: var(--r); background: var(--surface); box-shadow: 0 12px 40px rgba(0,0,0,.12); max-width: 460px; margin: 0 auto; }
-.toast-demo { border: 1px solid var(--line-2); border-left: 3px solid var(--ok); background: var(--surface); padding: 8px 10px; border-radius: 4px; display: flex; gap: 8px; align-items: center; }
+.toast-demo { position: relative; z-index: var(--z-toast, 70); border: 1px solid var(--line-2); border-left: 3px solid var(--ok); background: var(--surface); padding: 8px 10px; border-radius: 4px; display: flex; gap: 8px; align-items: center; }
 
 .mobile-frame {
   width: min(340px, 100%); border: 8px solid #1b1b1b; border-radius: 26px; background: var(--surface);
@@ -649,58 +686,99 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
 .route-error-card .row { margin-top: 16px; }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1439px) {
+/* A breakpoint that describes an individual pane is a @container rule: a grid, KPI band or
+   tile wraps when ITS OWN box is too narrow, not when the window is. The thresholds are the
+   old viewport widths translated to the main content box (viewport minus the 240px sidebar
+   and 44px main padding: 1439->1155, 1200->916, 1100->816, 768->744). Shell rules that
+   belong to the page - sidebar, topbar, banners, bottom nav - stay @media below. */
+
+@container main (max-width: 1155px) {
+  /* Pane-scoped: a tiles/4-up grid collapses when the content pane cannot fit four columns.
+     Collapsing the sidebar widens the pane and keeps the wider grid. */
   .cols-3.tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 1200px) {
-  /* The desktop shell can be tiled narrower than 1440; wrap the page actions and KPIs
-     instead of clipping them. */
+
+@container main (max-width: 916px) {
+  /* Pane-scoped: page actions and the KPI band wrap inside the pane so their values and
+     controls are never clipped by the pane edge. */
   .page-head { flex-wrap: wrap; gap: 10px 16px; }
   .page-actions { margin-left: 0; flex-wrap: wrap; }
   .kpi-band { flex-wrap: wrap; }
   .kpi-band .stat { flex: 1 1 30%; }
   /* The hero keeps a full row's room for its number when the band wraps. */
   .kpi-band .stat.hero-stat { flex: 1 1 auto; }
-  .topbar .ws-chip, .topbar .chip { display: none; }
-  .topbar .search { flex: 1 1 220px; max-width: 420px; }
   .panel-head { flex-wrap: wrap; row-gap: 6px; }
   .panel-head .right { flex-wrap: wrap; justify-content: flex-end; }
 }
+
+@media (max-width: 1200px) {
+  /* Page-level: the topbar spans the whole shell, so it reacts to the viewport. */
+  .topbar .ws-chip, .topbar .chip { display: none; }
+  .topbar .search { flex: 1 1 220px; max-width: 420px; }
+}
+
+@container main (max-width: 816px) {
+  /* Pane-scoped: split panes stack and dense grids thin out when the content pane is
+     narrow. cqi keeps the gutter proportional to the pane that owns it. */
+  .split, .split-even { grid-template-columns: minmax(0, 1fr); }
+  .cols-5, .cols-6 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(8px, 1.5cqi, 14px);
+  }
+}
+
 @media (max-width: 1100px) {
-  /* The sidebar stays expanded and labelled here; only the mobile breakpoint hides it. */
+  /* Page-level: the sidebar stays expanded and labelled here; only the mobile
+     breakpoint hides it. */
   .brand { width: auto; }
   .brand-tag { display: none; }
   .topbar .ws-chip { display: none; }
-  .split, .split-even { grid-template-columns: minmax(0, 1fr); }
-  .cols-5, .cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 768px) {
-  body { display: block; padding-bottom: 54px; }
-  .topbar { position: sticky; top: 0; flex-wrap: wrap; height: auto; padding: 6px 10px; gap: 6px; }
-  .brand { width: auto; }
-  /* Beat the <=1200 `.topbar .search` flex rule so the field takes its own full row. */
-  .topbar .search { order: 9; flex: 1 1 100%; max-width: none; }
-  .sidebar { display: none; }
-  main { padding: 14px 12px 30px; }
-  .cols-2, .cols-3, .cols-4, .cols-5, .cols-6, .cols-3.tiles { grid-template-columns: minmax(0, 1fr); }
+
+@container main (max-width: 744px) {
+  /* Pane-scoped: a phone-width content pane gets a single column and a wrapped KPI band.
+     The hero font is sized in cqmin so a large currency string scales with the pane, not
+     with the viewport. */
+  .cols-2, .cols-3, .cols-4, .cols-5, .cols-6, .cols-3.tiles {
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(8px, 2cqi, 14px);
+  }
   .kpi-band { flex-wrap: wrap; }
   .kpi-band .stat { flex: 1 1 45%; border-bottom: 1px solid var(--line); }
   .kpi-band .stat.hero-stat { flex: 1 1 100%; }
-  .tile-market { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .tile-market .mcell:nth-child(3) { border-right: 0; }
-  .tile-money { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .page-actions { margin-left: 0; width: 100%; }
-  .mobile-note { display: block; }
-  .desktop-only { display: none !important; }
+  .hero-stat .value { font-size: clamp(16px, 5.2cqmin, 26px); }
+  .page-head { flex-direction: column; }
+  .page-actions { margin-left: 0; width: 100%; justify-content: flex-start; }
   .steps { flex-wrap: wrap; row-gap: 8px; }
   .step-line { width: 14px; }
   .step-item { font-size: 10.5px; }
   .step-item .n { width: 18px; height: 18px; }
-  /* The hero takes the full band row here, so its value scales with the viewport instead
-     of holding the desktop 30px. At 30px a seven-digit balance is wider than a 360px
-     phone, and nowrap would either clip it or push the tile out of the band. */
-  .hero-stat .value { font-size: clamp(16px, 5.2vw, 26px); }
+}
+
+@container tile (max-width: 744px) {
+  /* Pane-scoped: a tile may be one of several in a grid, so its market/money grids and
+     action row respond to the tile's own width rather than the page width. */
+  .tile-market { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tile-market .mcell:nth-child(3) { border-right: 0; }
+  .tile-market .mcell:nth-child(-n + 3) { border-bottom: 1px solid var(--line); }
+  .tile-money { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile-actions { flex-wrap: wrap; }
+  .tile-actions .budget { flex: 1 1 100%; }
+  .budget .cap { white-space: normal; }
+}
+
+@media (max-width: 768px) {
+  /* Page-level: the shell changes to its mobile form - sidebar hidden, topbar wrapped and
+     a sticky bottom nav - so these stay viewport-driven. */
+  body { display: block; padding-bottom: 54px; }
+  .topbar { position: sticky; top: 0; flex-wrap: wrap; height: auto; padding: 6px 10px; gap: 6px; }
+  /* Beat the <=1200 `.topbar .search` flex rule so the field takes its own full row. */
+  .topbar .search { order: 9; flex: 1 1 100%; max-width: none; }
+  .sidebar { display: none; }
+  main { padding: 14px 12px 30px; }
+  .mobile-note { display: block; }
+  .desktop-only { display: none !important; }
 }
 .mobile-note { display: none; border: 1px dashed var(--dash); padding: 8px; font-size: 11px; color: var(--muted); margin-bottom: 12px; }
 
@@ -725,16 +803,11 @@ kbd { font: 10px var(--mono); border: 1px solid var(--line-2); border-bottom-wid
   .topbar .kill-wrap { margin-left: auto; }
   .topbar .kill { min-height: 44px; }
   .kill-name { display: none; }
-  .page-head { flex-direction: column; }
-  .page-actions { width: 100%; justify-content: flex-start; }
+  /* Page-level: the table's own width and touch scrolling follow the viewport shell. */
   .table { min-width: 0; }
   .table.compact { min-width: 0; }
   .table .col-hide-sm { display: none; }
   .table-wrap { overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
-  .tile-actions { flex-wrap: wrap; }
-  .tile-actions .budget { flex: 1 1 100%; }
-  .budget .cap { white-space: normal; }
-  .tile-market .mcell:nth-child(-n + 3) { border-bottom: 1px solid var(--line); }
   .chart-scroll { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
   .chart-scroll .chart { min-width: 560px; }
   .mobile-nav {

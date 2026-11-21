@@ -22,7 +22,7 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/8 agent stubs"
+step "1/9 agent stubs"
 node tools/sync-agent-stubs.mjs --check
 
 # The language map is a gate, not a document. It refuses a fourth language, a Python
@@ -30,7 +30,7 @@ node tools/sync-agent-stubs.mjs --check
 # frozen crate pulled into the shipped product, a float in the money oracle, and a token
 # in a client component. Architecture changes need an ADR that edits the map, never a
 # silenced check.
-step "2/8 language map"
+step "2/9 language map"
 if [ -x .venv/bin/python ]; then
   .venv/bin/python tools/check-language-map.py
 elif command -v python3 >/dev/null 2>&1; then
@@ -39,19 +39,26 @@ else
   echo "not present yet: language map (no python3)"
 fi
 
-step "3/8 design tokens"
+step "3/9 design tokens"
 node tools/build-tokens.mjs --check
 
-step "4/8 wireframe integrity"
+# Freshness, risk and the semantic states are colour plus shape, and the colour half has to
+# be readable. The threshold is WCAG 2.1 AA: 4.5:1 for body text, 3:1 for large text and
+# borders. A failing pair is fixed in design/tokens.json, in both themes, not by lowering
+# the bar here.
+step "4/9 contrast"
+node tools/check-contrast.mjs
+
+step "5/9 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "5/8 markdown links"
+step "6/9 markdown links"
 node tools/check-links.mjs
 
-step "6/8 secret scan"
+step "7/9 secret scan"
 node tools/check-secrets.mjs
 
-step "7/8 dependency pins"
+step "8/9 dependency pins"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -73,7 +80,7 @@ fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are audited separately: python3 tools/audit_pins.py --node
 
-step "8/8 runtime gates (when present)"
+step "9/9 runtime gates (when present)"
 ran=0
 # The bridge clients fail closed when the compiled extension is absent, so the
 # native module must be installed before any Python test runs. Host-native build

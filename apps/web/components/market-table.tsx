@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 import type { MarketRow } from "@/lib/api";
 import {
+	DASH,
 	ageLabel,
 	chainInitial,
 	changeText,
@@ -42,6 +43,17 @@ function Change({ value }: { value: string | null }) {
 
 function entryLabel(symbol: string, baseToken: string): string {
 	return symbol || shortAddress(baseToken);
+}
+
+/**
+ * Map the age text this cell already renders onto a freshness state. The em dash is the
+ * formatter's own unknown marker; second-scale ages are live, minute-scale and older are
+ * old. This only reads the existing label - it does not invent a new freshness threshold.
+ */
+function ageStateClass(iso: string, now: number): string {
+	const label = ageLabel(iso, now);
+	if (label === DASH) return "data-unknown";
+	return label.endsWith("s") ? "data-fresh" : "data-stale";
 }
 
 export function MarketTable({
@@ -177,7 +189,7 @@ export function MarketTable({
 										{formatUsdCompact(row.volume_24h_usd)}
 									</td>
 									<td>
-										<span className="small muted">
+										<span className={`small muted ${ageStateClass(row.source.observed_at, clock)}`}>
 											{sourceLabel(row.source.name)} · {ageLabel(row.source.observed_at, clock)}
 										</span>
 									</td>

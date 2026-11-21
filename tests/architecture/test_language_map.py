@@ -231,6 +231,9 @@ def test_the_gate_runs_this_check() -> None:
     """
     gate = (ROOT / "tools" / "ci.sh").read_text(encoding="utf-8")
     assert "tools/check-language-map.py" in gate
+    # The contrast gate is the same kind of promise: a palette that fails WCAG is caught
+    # before merge, not by whoever happens to look at the page next.
+    assert "tools/check-contrast.mjs" in gate
     # It must run through an interpreter whose absence is loud, not a bare `|| true`.
     line = next(line for line in gate.splitlines() if "tools/check-language-map.py" in line)
     assert "|| true" not in line
