@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# Build the Linux desktop app: traced Next server, frozen FastAPI sidecar, Electron shell.
+# Build the desktop app: traced Next server, frozen FastAPI sidecar, Electron shell.
 #
-#   bash tools/build-desktop.sh            # unpacked app (fast, for local launch)
-#   bash tools/build-desktop.sh --package  # AppImage + .deb
-#   bash tools/build-desktop.sh --check    # prove an existing frozen sidecar bundles the bridge
+#   bash tools/build-desktop.sh                 # unpacked app for this host
+#   bash tools/build-desktop.sh --package       # installers for this host
+#   bash tools/build-desktop.sh --check         # prove an existing frozen sidecar bundles the bridge
+#   bash tools/build-desktop.sh --target win    # refuse unless this host can build it
+#
+# ONE TARGET IS BUILT WHERE IT RUNS, and that is not a limitation of this script.
+# PyInstaller freezes the API sidecar into a host-native executable and cannot
+# cross-compile, so a Windows package needs a Windows runner, a macOS package a macOS
+# runner, and each needs its own CPU architecture. `--target` therefore exists to say so
+# clearly and to name what is missing, not to pretend a Linux host can produce a `.exe`.
+# `docs/DESKTOP.md` records which packages exist and which are unproven.
 #
 # The desktop app uses an embedded SQLite database and binds both sidecars to 127.0.0.1
 # on ephemeral ports. It is not a public web deployment.
@@ -12,16 +20,65 @@ cd "$(dirname "$0")/.."
 
 package=0
 check_only=0
-for arg in "$@"; do
-  case "$arg" in
+target="${EZCHAIN_DESKTOP_TARGET:-}"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --package) package=1 ;;
     --check) check_only=1 ;;
-    --help|-h) sed -n '2,8p' "$0"; exit 0 ;;
-    *) echo "build-desktop: unknown argument: $arg" >&2; exit 2 ;;
+    --target)
+      shift
+      target="${1-}"
+      [ -n "$target" ] || { echo "build-desktop: --target needs a value: linux, mac or win" >&2; exit 2; }
+      ;;
+    --target=*)
+      target="${1#--target=}"
+      [ -n "$target" ] || { echo "build-desktop: --target needs a value: linux, mac or win" >&2; exit 2; }
+      ;;
+    --help|-h) sed -n '2,17p' "$0"; exit 0 ;;
+    *) echo "build-desktop: unknown argument: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
+# Map a build target onto the host that can produce it. The sidecar is a native
+# executable, so there is no cross-build; the check is honest rather than aspirational.
+host_platform() {
+  case "$(uname -s)" in
+    Linux*) echo linux ;;
+    Darwin*) echo mac ;;
+    MINGW*|MSYS*|CYGWIN*) echo win ;;
+    *) echo unknown ;;
+  esac
+}
+if [ -n "$target" ]; then
+  case "$target" in linux|mac|win) ;; *) echo "build-desktop: unknown target '$target' (linux, mac, win)" >&2; exit 2 ;; esac
+  host="$(host_platform)"
+  if [ "$host" != "$target" ]; then
+    cat >&2 <<EOF
+build-desktop: cannot build the $target package on a $host host.
+
+  The API sidecar is frozen by PyInstaller into a native executable. PyInstaller does not
+  cross-compile, so a $target package has to be built on $target (with that platform's
+  Python, the Rust MSVC/Xcode toolchain, and, for an installed build, a signing identity).
+
+  What this host CAN build: the $host package.
+  What a $target host must run:  bash tools/build-desktop.sh --package
+  The steps are in docs/DESKTOP.md.
+EOF
+    exit 2
+  fi
+fi
+target="${target:-$(host_platform)}"
+
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+# The sidecar and the packaged executable carry a platform suffix. Getting this wrong is a
+# packaged-app failure, not a build failure, so it is decided once here.
+case "$target" in
+  win) sidecar="ezchain-api.exe"; electron_unpacked="win-unpacked"; electron_exe="ezchain.exe" ;;
+  mac) sidecar="ezchain-api"; electron_unpacked="mac"; electron_exe="ezchain" ;;
+  *)   sidecar="ezchain-api"; electron_unpacked="linux-unpacked"; electron_exe="ezchain" ;;
+esac
 
 # PyInstaller is a build tool in the project venv. A linked worktree may not have its own
 # .venv, so fall back to the main checkout's venv via the git common dir.
@@ -117,10 +174,17 @@ cp -a apps/web/.next/static apps/desktop/build/web/apps/web/.next/static
 if [ -d apps/web/public ]; then
   cp -a apps/web/public apps/desktop/build/web/apps/web/public
 fi
-# A tarball survives electron-builder's extraResources filtering and preserves pnpm's
-# symlinked standalone dependency tree. The app extracts it once per version into its data
-# directory at startup.
-tar -czf apps/desktop/build/web.tar.gz -C apps/desktop/build/web .
+# A tarball survives electron-builder's extraResources filtering. pnpm's standalone tree
+# contains symlinks (27 of them in the current build), and creating a symlink on Windows
+# needs either Developer Mode or SeCreateSymbolicLinkPrivilege — an unprivileged install
+# fails to extract the runtime. `--dereference` writes the link targets as real files
+# instead, which costs almost nothing (25.39 MB -> 25.43 MB measured) and makes extraction
+# a plain copy on every platform.
+tar --dereference -czf apps/desktop/build/web.tar.gz -C apps/desktop/build/web .
+if tar -tzvf apps/desktop/build/web.tar.gz | grep -q '^l'; then
+  echo "build-desktop: FAIL web.tar.gz still contains symlinks" >&2
+  exit 1
+fi
 
 step "4/7 freeze the API sidecar"
 rm -rf apps/desktop/build/backend apps/desktop/build/pyi
@@ -151,28 +215,45 @@ check_bridge_bundle "$FROZEN_DIR"
 step "6/7 electron package"
 # The fuses live in apps/desktop/package.json (build.electronFuses); electron-builder flips
 # them with its own pinned @electron/fuses right before signing.
-pnpm --filter @ezchain/desktop exec electron-builder --linux dir
-if [ "$package" -eq 1 ]; then
-  pnpm --filter @ezchain/desktop exec electron-builder --linux AppImage deb
-fi
+case "$target" in
+  linux)
+    pnpm --filter @ezchain/desktop exec electron-builder --linux dir
+    if [ "$package" -eq 1 ]; then
+      pnpm --filter @ezchain/desktop exec electron-builder --linux AppImage deb
+    fi
+    ;;
+  mac)
+    pnpm --filter @ezchain/desktop exec electron-builder --mac dir
+    if [ "$package" -eq 1 ]; then
+      pnpm --filter @ezchain/desktop exec electron-builder --mac dmg zip
+    fi
+    ;;
+  win)
+    pnpm --filter @ezchain/desktop exec electron-builder --win dir
+    if [ "$package" -eq 1 ]; then
+      pnpm --filter @ezchain/desktop exec electron-builder --win nsis portable
+    fi
+    ;;
+esac
 
 # Read the packaged binary back. A package whose fuses did not apply must never be
 # reported as built.
 step "7/7 verify electron fuses"
-node - apps/desktop/dist/linux-unpacked <<'JS'
+node - "apps/desktop/dist/$electron_unpacked" "$electron_exe" <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
 
 // electron-builder names the executable after build.executableName (apps/desktop/
-// package.json). Resolve it from the unpacked directory rather than trusting a literal, and
-// fail with the directory listing when it is not there.
+// package.json) and the unpacked directory after the target. Both arrive as arguments so
+// this check reads the build it actually produced, on every platform, rather than a Linux
+// path on a Windows build.
 const unpacked = path.resolve(process.argv[2]);
 if (!fs.existsSync(unpacked)) {
 	console.error(`build-desktop: FAIL no unpacked build at ${unpacked}`);
 	process.exit(1);
 }
-const exe = path.join(unpacked, "ezchain");
+const exe = path.join(unpacked, process.argv[3]);
 if (!fs.existsSync(exe)) {
 	console.error(
 		`build-desktop: FAIL ${exe} does not exist; the directory has: ` +

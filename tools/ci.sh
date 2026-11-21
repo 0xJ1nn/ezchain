@@ -22,7 +22,7 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/9 agent stubs"
+step "1/10 agent stubs"
 node tools/sync-agent-stubs.mjs --check
 
 # The language map is a gate, not a document. It refuses a fourth language, a Python
@@ -30,7 +30,7 @@ node tools/sync-agent-stubs.mjs --check
 # frozen crate pulled into the shipped product, a float in the money oracle, and a token
 # in a client component. Architecture changes need an ADR that edits the map, never a
 # silenced check.
-step "2/9 language map"
+step "2/10 language map"
 if [ -x .venv/bin/python ]; then
   .venv/bin/python tools/check-language-map.py
 elif command -v python3 >/dev/null 2>&1; then
@@ -39,26 +39,26 @@ else
   echo "not present yet: language map (no python3)"
 fi
 
-step "3/9 design tokens"
+step "3/10 design tokens"
 node tools/build-tokens.mjs --check
 
 # Freshness, risk and the semantic states are colour plus shape, and the colour half has to
 # be readable. The threshold is WCAG 2.1 AA: 4.5:1 for body text, 3:1 for large text and
 # borders. A failing pair is fixed in design/tokens.json, in both themes, not by lowering
 # the bar here.
-step "4/9 contrast"
+step "4/10 contrast"
 node tools/check-contrast.mjs
 
-step "5/9 wireframe integrity"
+step "5/10 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "6/9 markdown links"
+step "6/10 markdown links"
 node tools/check-links.mjs
 
-step "7/9 secret scan"
+step "7/10 secret scan"
 node tools/check-secrets.mjs
 
-step "8/9 dependency pins"
+step "8/10 dependency pins"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -80,8 +80,21 @@ fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are audited separately: python3 tools/audit_pins.py --node
 
-step "9/9 runtime gates (when present)"
-ran=0
+step "9/10 desktop shell"
+# The shell's unit tests are the only place the Windows- and macOS-only defects can be caught
+# on a Linux host, and they run in about 200 ms. They are gated unconditionally, not by the
+# web-diff heuristic: a change to the shell or to the installers does not touch apps/web, and
+# a packaging change that breaks `main.cjs` must not wait for a browser suite to notice.
+desktop_ran=0
+if [ -d apps/desktop/test ] && command -v node >/dev/null 2>&1; then
+  ( cd apps/desktop && node --test "test/*.mjs" )
+  desktop_ran=1
+else
+  echo "not present yet: desktop shell tests (no apps/desktop/test)"
+fi
+
+step "10/10 runtime gates (when present)"
+ran=$desktop_ran
 # The bridge clients fail closed when the compiled extension is absent, so the
 # native module must be installed before any Python test runs. Host-native build
 # only; a toolchain-less machine cannot run the full gate (ADR-0052).

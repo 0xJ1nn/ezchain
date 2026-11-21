@@ -15,6 +15,7 @@ const {
 	dialog,
 	ipcMain,
 	nativeImage,
+	powerMonitor,
 	session,
 	shell,
 	utilityProcess,
@@ -25,6 +26,16 @@ const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const { contentSecurityPolicy, validateSenderFrame } = require("./sender");
+const {
+	autostartEntry,
+	autostartExecPath,
+	autostartPath,
+	onPowerState,
+	sidecarName,
+	sqliteUrl,
+	tarBinary,
+	webRuntimeReady,
+} = require("./platform");
 
 const APP_NAME = "ezCHAIN";
 const isDev = !app.isPackaged;
@@ -41,7 +52,12 @@ const iconPath = isDev
 	? path.join(__dirname, "resources", "icon.png")
 	: path.join(process.resourcesPath, "icon.png");
 const resourcesRoot = isDev ? path.join(__dirname, "build") : process.resourcesPath;
-const backendBin = path.join(resourcesRoot, "backend", "ezchain-api", "ezchain-api");
+const backendBin = path.join(
+	resourcesRoot,
+	"backend",
+	"ezchain-api",
+	sidecarName(process.platform),
+);
 const webTar = path.join(resourcesRoot, "web.tar.gz");
 const webRoot = isDev
 	? path.join(resourcesRoot, "web")
@@ -158,6 +174,11 @@ let starting = false;
 let restarting = false;
 let quitting = false;
 let watchdogTimer = null;
+// Set while the machine is suspended. The watchdog interval keeps ticking through a sleep
+// (timers are not paused by the OS on every platform), and a probe issued while asleep
+// either times out and triggers a pointless restart or lands on a frozen child. So the
+// suspend handler closes this gate and the resume handler opens it and probes at once.
+let suspended = false;
 const intentionalStop = { api: false, web: false };
 const restartTimers = { api: null, web: null };
 let apiBackoff = 1000;
@@ -171,6 +192,11 @@ function loadToken() {
 		// Generate below.
 	}
 	const token = crypto.randomBytes(32).toString("hex");
+	// Mode 0600 is the POSIX guarantee. On Windows `chmod` only clears the read-only
+	// attribute, so the file's protection there is the ACL it inherits from
+	// `%APPDATA%\ezCHAIN`, which grants the current user, SYSTEM and Administrators and
+	// nobody else. That inheritance is the actual boundary on Windows; claiming 0600
+	// protects the token there would be false.
 	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
 	fs.chmodSync(tokenFile, 0o600);
 	return token;
@@ -189,7 +215,12 @@ function freePort() {
 }
 
 function databaseUrl() {
-	return `sqlite+pysqlite:///${dbFile}`;
+	return sqliteUrl(dbFile, process.platform);
+}
+
+/** Whether this launch came from autostart, in which case it stays in the tray. */
+function hiddenLaunch() {
+	return process.argv.includes("--hidden");
 }
 
 function childEnv(extra) {
@@ -247,7 +278,17 @@ function spawnBackend() {
 function ensureWebRuntime() {
 	if (isDev) return;
 	const marker = path.join(webRoot, ".complete");
-	if (fs.existsSync(webServer) && fs.existsSync(marker)) return;
+	if (
+		webRuntimeReady({
+			serverPath: webServer,
+			markerPath: marker,
+			version: app.getVersion(),
+			exists: (file) => fs.existsSync(file),
+			read: (file) => fs.readFileSync(file, "utf8"),
+		})
+	) {
+		return;
+	}
 	if (!fs.existsSync(webTar)) {
 		throw new Error(`web runtime archive missing at ${webTar}`);
 	}
@@ -255,7 +296,12 @@ function ensureWebRuntime() {
 	fs.rmSync(temp, { recursive: true, force: true });
 	fs.mkdirSync(temp, { recursive: true });
 	log(`extracting web runtime to ${webRoot}`);
-	const result = require("node:child_process").spawnSync("tar", ["-xzf", webTar, "-C", temp], {
+	// The tarball is written with `--dereference` (tools/build-desktop.sh step 3), so it
+	// holds real files and extraction is a plain copy on every platform — Windows needs a
+	// privilege to create a symlink, and the standalone tree has 27 of them. Windows ships
+	// bsdtar at %SystemRoot%\System32 but not reliably on PATH, so it is resolved.
+	const tar = tarBinary({ exists: (file) => fs.existsSync(file) });
+	const result = require("node:child_process").spawnSync(tar, ["-xzf", webTar, "-C", temp], {
 		stdio: "ignore",
 	});
 	if (result.status !== 0) {
@@ -329,7 +375,7 @@ function scheduleRestart(which) {
 	log(`scheduling ${which} restart in ${delay}ms`);
 	restartTimers[which] = setTimeout(async () => {
 		restartTimers[which] = null;
-		if (starting || restarting || quitting) return;
+		if (starting || restarting || quitting || suspended) return;
 		try {
 			if (which === "api" && !apiChild) {
 				spawnBackend();
@@ -505,8 +551,12 @@ function createWindow() {
 	mainWindow.loadURL(`${origin}/`);
 	mainWindow.once("ready-to-show", () => {
 		if (splash) splash.close();
-		mainWindow.show();
-		mainWindow.maximize();
+		// An autostart launch (`--hidden`) stays in the tray: the point of starting at login
+		// is that the strategies run, not that a window opens on a machine nobody is at.
+		if (!hiddenLaunch()) {
+			mainWindow.show();
+			mainWindow.maximize();
+		}
 		setTimeout(async () => {
 			const bounds = mainWindow.getBounds();
 			const viewport = await mainWindow.webContents.executeJavaScript(
@@ -555,7 +605,10 @@ function createTray() {
 		tray = new Tray(image);
 		tray.setToolTip(APP_NAME);
 		const rebuild = () => {
-			const login = app.getLoginItemSettings().openAtLogin;
+			const login =
+				process.platform === "linux"
+					? fs.existsSync(autostartPath(process.env.XDG_CONFIG_HOME || path.join(app.getPath("home"), ".config")))
+					: app.getLoginItemSettings().openAtLogin;
 			tray.setContextMenu(
 				Menu.buildFromTemplate([
 					{ label: "Open ezCHAIN", click: () => mainWindow?.show() },
@@ -563,16 +616,19 @@ function createTray() {
 					{ type: "separator" },
 					{ label: "Open logs", click: () => shell.openPath(logFile) },
 					{ label: "Open data folder", click: () => shell.openPath(dataDir) },
-					...(process.platform === "linux"
-						? []
-						: [
-								{
-									label: "Start at login",
-									type: "checkbox",
-									checked: login,
-									click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
-								},
-							]),
+					{
+						label: "Start at login",
+						type: "checkbox",
+						checked: login,
+						click: (item) => {
+							if (process.platform === "linux") {
+								applyAutostart(item.checked);
+							} else {
+								app.setLoginItemSettings({ openAtLogin: item.checked });
+							}
+							rebuild();
+						},
+					},
 					{ type: "separator" },
 					{ label: "Quit", click: () => app.quit() },
 				]),
@@ -583,6 +639,73 @@ function createTray() {
 	} catch (error) {
 		log(`tray unavailable: ${error.message}`);
 	}
+}
+
+// Linux has no `setLoginItemSettings`, so "start at login" is the XDG autostart file. It is
+// written only when the tray switch is turned on; turning it off deletes it. A packaged app
+// also honours `--hidden`, which is how an autostart launch stays in the tray instead of
+// opening a window on a machine nobody is sitting at.
+function applyAutostart(enable) {
+	if (process.platform !== "linux" || !app.isPackaged) return;
+	try {
+		const configHome = process.env.XDG_CONFIG_HOME || path.join(app.getPath("home"), ".config");
+		const file = autostartPath(configHome);
+		if (enable === false) {
+			fs.rmSync(file, { force: true });
+			return;
+		}
+		if (enable !== true) {
+			// Called with no argument during boot: leave the operator's choice alone.
+			return;
+		}
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		// In an AppImage, process.execPath is the ephemeral mount; the real file is in
+		// APPIMAGE. Removing the `--hidden` flag from a launch that never writes the entry
+		// is not a choice — the entry is how the hidden launch starts.
+		const execPath = autostartExecPath({
+			execPath: process.execPath,
+			appImage: process.env.APPIMAGE,
+		});
+		fs.writeFileSync(file, autostartEntry({ execPath }), { mode: 0o644 });
+		log(`autostart enabled at ${file} (exec ${execPath})`);
+	} catch (error) {
+		log(`autostart unavailable: ${error.message}`);
+	}
+}
+
+// Power state is not uptime. A suspended laptop runs no strategy and no watchdog, so the
+// shell stops pretending and reacts when the machine comes back. See platform.onPowerState.
+function watchPower() {
+	const act = (state) => {
+		// Close or open the gate before dispatching: a resume must be able to schedule a
+		// restart immediately, and a suspend must stop the watchdog from the same tick.
+		suspended = state === "suspend";
+		try {
+			const verdict = onPowerState({
+				state,
+				probeNow: () => {
+					if (apiPort) {
+						waitFor(`http://127.0.0.1:${apiPort}/healthz`, 3000).catch(() => {
+							if (apiChild) terminateForRestart(apiChild);
+						});
+					}
+				},
+				restartNow: () => {
+					for (const which of ["api", "web"]) {
+						if (!restartTimers[which] && (which === "api" ? !apiChild : !webChild)) {
+							scheduleRestart(which);
+						}
+					}
+				},
+			});
+			log(`power: ${state} -> ${verdict.message}`);
+		} catch (error) {
+			log(`power handler failed: ${error.message}`);
+		}
+	};
+	powerMonitor.on("suspend", () => act("suspend"));
+	powerMonitor.on("resume", () => act("resume"));
+	powerMonitor.on("unlock-screen", () => act("unlock"));
 }
 
 function createMenu() {
@@ -616,9 +739,11 @@ function createMenu() {
 async function boot() {
 	// Installed before any window loads a page, so no response escapes the headers.
 	hardenSession();
-	createSplash();
+	applyAutostart();
+	if (!hiddenLaunch()) createSplash();
 	createTray();
 	createMenu();
+	watchPower();
 	try {
 		await startServices();
 		createWindow();
@@ -634,7 +759,7 @@ async function boot() {
 	}
 	setInterval(rotateLog, 60000);
 	watchdogTimer = setInterval(async () => {
-		if (quitting || starting || restarting || !apiPort || !webPort) return;
+		if (quitting || suspended || starting || restarting || !apiPort || !webPort) return;
 		const probedApi = apiChild;
 		const probedWeb = webChild;
 		try {

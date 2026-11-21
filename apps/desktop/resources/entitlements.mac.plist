@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the macOS build.
+
+  The app is a supervised pair of sidecars, so it needs exactly two capabilities beyond a
+  plain sandbox-safe executable:
+
+    * JIT and unsigned executable memory, because Chromium's V8 needs them (this is the
+      standard Electron entitlement set; Electron does not run under the hardened runtime
+      without them);
+    * outgoing network access, because the app talks to its own loopback sidecars and to
+      the public market-data and chain RPC endpoints it is configured for.
+
+  It does NOT request `com.apple.security.app-sandbox` (the app supervises sidecars and
+  needs to spawn them, which the sandbox forbids), nor
+  `com.apple.security.cs.allow-dyld-environment-variables` / `disable-library-validation`:
+  those would weaken the same code-integrity boundary the Electron fuses harden. A sidecar
+  executable (the frozen PyInstaller API) is signed by the same identity and gets
+  `entitlements.mac.inherit.plist` instead, because `com.apple.security.inherit` is only
+  valid on a child process and is rejected in a main app's entitlements.
+
+  Notarisation is an operator step; a build without an Apple Developer ID cannot be
+  notarised, and `docs/DESKTOP.md` says so rather than implying it works.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+  </dict>
+</plist>

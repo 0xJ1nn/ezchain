@@ -7,6 +7,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 
 ### Added
 
+- **The desktop shell now handles its platform instead of assuming Linux, and it admits what
+  a desktop cannot do.** Three Windows-only defects that no Linux build could show are fixed
+  and pinned by tests that run everywhere: the frozen API sidecar is looked up as
+  `ezchain-api.exe`, the SQLite URL is rewritten to forward slashes (backslashes reach sqlite
+  as escapes), and the web-runtime extractor resolves the bsdtar Windows ships outside
+  `PATH`. The web runtime tarball is written with `--dereference`, so installing no longer
+  needs the symlink privilege; measured cost is 25.39 MB → 25.43 MB. macOS (`dmg`, `zip`,
+  hardened-runtime entitlements) and Windows (`nsis`, `portable`) targets are added, with
+  `tools/build-desktop.sh --target` refusing a target this host cannot build and saying why
+  (PyInstaller does not cross-compile). Background behaviour is now honest: `powerMonitor`
+  closes a gate on `suspend` so neither the watchdog nor a queued restart fires while the
+  machine is asleep, and probes both sidecars on `resume`/`unlock-screen` instead of waiting
+  for the next 15 s tick. "Start at login" works on Linux through an XDG autostart entry that
+  records the real AppImage path rather than the ephemeral mount it runs from, and an
+  autostart launch passes `--hidden` and stays in the tray. **No macOS or Windows package
+  has been built or launched**, and [docs/DESKTOP.md](docs/DESKTOP.md) says so.
 - **An architecture gate makes the language map enforceable.** The layer ownership in the
   language policy now has a check in the local gate, so a Rust-owned layer drifting into
   Python, or a Python-owned layer drifting into Rust, is caught before merge rather than left
