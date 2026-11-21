@@ -124,8 +124,9 @@ execution. See `docs/PLAN-LIVE-PAPER.md`.
 ### 5. Remaining system pages + component gallery — #14 (routes live; gallery polish open)
 
 - Every sidebar route is implemented; the placeholder catch-all is removed and unknown
-  routes return 404. `/states`, `/mobile` and `/components` are real galleries, served only
+  routes return 404. `/states` and `/components` are real galleries, served only
   in the development (fixture) build: production answers 404 and `/more` omits the group.
+  The duplicate `/mobile` gallery is removed; `/m` is the real phone-sized surface.
 - `/wallets` and `/security` state custody/live limits honestly rather than inventing a
   backend.
 

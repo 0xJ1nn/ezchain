@@ -13,15 +13,14 @@ describes that boundary, the surfaces that exist, and the ones that are still a 
 |---|---|---|
 | Workstation web UI | built, paper read/write with approvals | `apps/web`, `apps/api`, `apps/mcp` |
 | Phone-sized read-only workspace at `/m` | built | `apps/web/app/m/page.tsx`; force-dynamic, reads `getPaperSnapshot()`, `getPaperFills(5)` and `getKillSwitch()`, renders panels only, no order form |
-| Mobile reference gallery at `/mobile` | built as a development reference, not a client | `apps/web/app/mobile/page.tsx:17` calls `notFound()` unless `referenceSurfacesEnabled()`; its own "Not a native app" panel (lines 245–250) says there is no iOS/Android build, push notification or offline cache |
 | Native iOS / Android app | not built; out of scope for v1 | `ROADMAP.md` "Explicitly out of scope for v1" |
 | PWA install, service worker, push | not built | no manifest or service-worker file under `apps/web`; no push code under `apps/` or `services/` |
 | MCP read surface for external agents | built | `apps/mcp`, documented in [`AGENT-INTEGRATION.md`](AGENT-INTEGRATION.md) |
 | Telegram / Discord / email / webhook delivery | named as channels, not implemented | [`DOMAIN-MODEL.md`](DOMAIN-MODEL.md) §3 "Alert / Notification"; no client code under `apps/` or `services/` |
 
 The responsive shell is the same Next.js app at a narrow viewport: the sidebar becomes a
-bottom nav and tables scroll. `/mobile` documents those rules as a fixture gallery; `/m` is
-the real read-only workspace. Neither is a native client.
+bottom nav and tables scroll. `/m` is the real read-only workspace at a narrow width; there
+is no separate mobile gallery and no native client.
 
 ## 2. Remote-access architecture
 

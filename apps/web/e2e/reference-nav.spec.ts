@@ -14,7 +14,6 @@ const app = join(__dirname, "..", "app");
 const GALLERIES = [
 	{ label: "State gallery", path: "/states", source: "states/page.tsx" },
 	{ label: "Components", path: "/components", source: "components/page.tsx" },
-	{ label: "Mobile", path: "/mobile", source: "mobile/page.tsx" },
 ];
 
 test("the development build lists the reference galleries on More and reaches them", async ({

@@ -47,7 +47,7 @@ Open `design/wireframe/index.html`.
 Persistent rules:
 
 - Discovery leads: Browse and Signals are the first sidebar group. Reference galleries
-  (`/states`, `/components`, `/mobile`) are design documentation: they are listed under
+  (`/states`, `/components`) are design documentation: they are listed under
   `/more` and served only in the development (fixture) build, never in the primary nav.
 - Strategy and automation management is one surface: `/strategies`, with the scheduler view
   at `/strategies?view=automations`. `/automations` redirects there.
