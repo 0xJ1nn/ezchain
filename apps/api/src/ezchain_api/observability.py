@@ -4,6 +4,12 @@ No third-party observability dependency: one JSON line per request and a small,
 thread-safe in-process registry rendered as Prometheus text. Labels are bounded by the
 route template and a hard series cap; raw paths, query strings, request bodies and
 ``Authorization`` headers never reach the log.
+
+Nothing here calls the compiled bridge. Observability sits on the liveness and read paths,
+so a missing ``ezchain_bridge`` would turn a diagnostics module into a total outage: a
+metric label is not worth a native build artifact, and the local implementation is faster
+than the FFI crossing it would replace. The bridge keeps the money kernels and the scope
+normalisation, where the boundary is worth the build.
 """
 
 from __future__ import annotations
@@ -28,8 +34,6 @@ from starlette.types import ASGIApp
 
 from ezchain_adapters import PROVIDERS
 from ezchain_core.reason_codes import REASON_CODES
-
-from . import native
 
 ACCESS_LOGGER = "ezchain_api.access"
 UNMATCHED_ROUTE = "<unmatched>"
@@ -157,7 +161,7 @@ class HttpMetrics:
         self._lock = threading.Lock()
 
     def observe(self, method: str, route: str, status: int, duration_ms: float) -> None:
-        method_key = native.normalize_method(method)
+        method_key = normalize_method(method)
         request_key = (method_key, route, str(status))
         duration_key = (method_key, route)
         with self._lock:
@@ -611,7 +615,7 @@ def access_log(
         "logger": ACCESS_LOGGER,
         "msg": "http_request",
         "request_id": request_id,
-        "method": native.normalize_method(method),
+        "method": normalize_method(method),
         "route": redact(route, secrets),
         "status": status,
         "duration_ms": round(max(0.0, duration_ms), 3),

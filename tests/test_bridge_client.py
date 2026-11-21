@@ -285,8 +285,21 @@ def test_method_wrapper_fails_closed_when_extension_absent(
 
 
 def test_method_callers_route_through_the_client() -> None:
-    """The switched observability call sites must use the typed wrapper."""
-    assert observability.native.normalize_method is native.normalize_method
+    """The bridge port exists as a parity-checked oracle, and the request path does not use it.
+
+    ``normalize_method`` is a few hundred nanoseconds of string comparison, and the bridge
+    crossing costs about the same again: measured on this host, Python ran at a median of
+    457 ns per call and the bridge at 624 ns, so the bridge is never faster here and often
+    slower. It also sits on the liveness path (the observability middleware runs on every
+    request), so routing it through a native extension bought no speed and turned a missing
+    build artifact into a total outage: ``/healthz`` itself failed closed. The Python function
+    is the request path; the wrapper stays exported so the recorded corpus keeps proving the
+    two agree.
+    """
+    assert observability.normalize_method is not native.normalize_method
+    assert observability.normalize_method("get") == native.normalize_method("get") == "GET"
+    source = Path(observability.__file__).read_text(encoding="utf-8")
+    assert "native." not in source, "observability must not call the bridge"
 
 
 # The money conversions use the bridge crate's recorded money corpus. A string case is
