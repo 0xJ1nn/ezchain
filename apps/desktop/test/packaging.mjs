@@ -86,3 +86,24 @@ test("the build refuses a target this host cannot produce", () => {
 	const firstBuild = buildScript.indexOf("step \"1/7 build and install the native bridge\"");
 	assert.ok(refusal > 0 && firstBuild > 0 && refusal < firstBuild);
 });
+
+test("the gate runs these tests, unconditionally", () => {
+	// A suite nothing runs is a comment. The desktop tests must be a step in tools/ci.sh
+	// and must not be behind the web-diff heuristic: a shell or packaging change never
+	// touches apps/web, and this is the only place a Windows-only defect can be caught.
+	const gate = readFileSync(path.resolve(desktop, "../../tools/ci.sh"), "utf8");
+	const stepIndex = gate.indexOf('step "9/10 desktop shell"');
+	assert.ok(stepIndex > 0, "tools/ci.sh has no desktop step");
+	const block = gate.slice(stepIndex, gate.indexOf('step "10/10', stepIndex));
+	assert.ok(block.length > 0, "the desktop step has no body");
+	assert.match(block, /cd apps\/desktop/);
+	assert.match(block, /node --test "test\/\*\.mjs"/);
+	assert.match(gate, /^set -euo pipefail$/m, "the gate script must fail fast");
+	assert.doesNotMatch(block, /\|\| true/);
+	assert.doesNotMatch(
+		block,
+		/web_gate/,
+		"the desktop suite must not be conditional on a web diff",
+	);
+});
+
