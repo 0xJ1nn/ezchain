@@ -1,16 +1,23 @@
-"""Health, readiness, metrics and chain registry.
+"""Health, readiness, metrics, chain registry and build-source provenance.
 
 ``/healthz`` and ``/readyz`` are public orchestration probes. ``/health`` and ``/metrics``
 describe the process, the scheduler and paper order counts, so the auth middleware serves
-them only to a loopback client or to a request carrying the deployment token.
+them only to a loopback client or to a request carrying the deployment token. The
+build-source route verifies a signed attestation and reports why a build is not official.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -30,6 +37,125 @@ router = APIRouter(tags=["system"])
 
 PAPER_ORDER_STATUSES = ("pending", "pending_approval", "filled", "rejected")
 METRICS_MEDIA_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+
+OFFICIAL_REPOSITORY = "https://github.com/0xJ1nn/ezchain"
+DEFAULT_PUBLIC_KEY_PATH = "tools/release/official-public.pem"
+DEFAULT_ATTESTATION_PATH = "release/attestation.json"
+VERIFY_TIMEOUT_SECONDS = 10
+
+BuildSourceStatus = Literal[
+    "verified",
+    "no_public_key",
+    "no_attestation",
+    "no_signature",
+    "malformed_attestation",
+    "repository_mismatch",
+    "invalid_signature",
+    "verifier_unavailable",
+]
+
+BUILD_SOURCE_MESSAGES: dict[BuildSourceStatus, str] = {
+    "verified": "This build carries an attestation signed by the official release key.",
+    "no_public_key": (
+        "No release public key is configured for this installation, so the build source "
+        "cannot be checked."
+    ),
+    "no_attestation": "This installation carries no build attestation.",
+    "no_signature": "This installation's build attestation has no signature.",
+    "malformed_attestation": "This installation's build attestation is not a valid record.",
+    "repository_mismatch": "The signed attestation names a repository other than the official one.",
+    "invalid_signature": "The build attestation does not verify against the release public key.",
+    "verifier_unavailable": (
+        "Signature verification needs OpenSSL, which this host does not provide."
+    ),
+}
+
+
+class BuildSourceOut(BaseModel):
+    """The signed-provenance verdict, with a reason when the build is not official."""
+
+    official: bool
+    status: BuildSourceStatus
+    message: str
+    tag: str | None = None
+
+
+def _build_source_paths() -> tuple[Path, Path]:
+    """Locate the published public key and the running build's attestation.
+
+    Operators set absolute paths in production. Relative defaults keep a source checkout
+    honest: with no published key and no signed attestation it reports an unverified build.
+    """
+    key = Path(os.environ.get("EZCHAIN_RELEASE_PUBLIC_KEY", DEFAULT_PUBLIC_KEY_PATH))
+    attestation = Path(os.environ.get("EZCHAIN_BUILD_ATTESTATION", DEFAULT_ATTESTATION_PATH))
+    return key, attestation
+
+
+def _build_source_verdict(status: BuildSourceStatus, tag: str | None = None) -> BuildSourceOut:
+    return BuildSourceOut(
+        official=status == "verified",
+        status=status,
+        message=BUILD_SOURCE_MESSAGES[status],
+        tag=tag,
+    )
+
+
+def build_source_status() -> BuildSourceOut:
+    """Verify the on-disk attestation against the published key; fail closed on any gap.
+
+    The attestation is untrusted until its signature checks out. Only after verification
+    does its repository claim count, so a fork cannot name itself official and a reader of
+    this response never sees key material or a signature.
+    """
+    public_key, attestation = _build_source_paths()
+    if not public_key.is_file():
+        return _build_source_verdict("no_public_key")
+    if not attestation.is_file():
+        return _build_source_verdict("no_attestation")
+    signature = Path(f"{attestation}.sig")
+    if not signature.is_file():
+        return _build_source_verdict("no_signature")
+
+    try:
+        document = json.loads(attestation.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return _build_source_verdict("malformed_attestation")
+    if (
+        not isinstance(document, dict)
+        or not isinstance(document.get("repository"), str)
+        or not isinstance(document.get("tag"), str)
+    ):
+        return _build_source_verdict("malformed_attestation")
+
+    if shutil.which("openssl") is None:
+        return _build_source_verdict("verifier_unavailable")
+    try:
+        verified = (
+            subprocess.run(
+                [
+                    "openssl",
+                    "dgst",
+                    "-sha256",
+                    "-verify",
+                    str(public_key),
+                    "-signature",
+                    str(signature),
+                    str(attestation),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=VERIFY_TIMEOUT_SECONDS,
+                check=False,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return _build_source_verdict("verifier_unavailable")
+    if not verified:
+        return _build_source_verdict("invalid_signature")
+    if document["repository"] != OFFICIAL_REPOSITORY:
+        return _build_source_verdict("repository_mismatch")
+    return _build_source_verdict("verified", tag=document["tag"])
 
 
 def _rollback_quietly(session: Session) -> None:
@@ -205,6 +331,12 @@ def health(
 @router.get("/api/v1/chains", response_model=list[ChainOut])
 def chains() -> list[ChainOut]:
     return [ChainOut.model_validate(chain.to_dict()) for chain in CHAINS]
+
+
+@router.get("/api/v1/system/build-source", response_model=BuildSourceOut)
+def build_source() -> BuildSourceOut:
+    """Signed-provenance verdict for this installation, with the reason for a refusal."""
+    return build_source_status()
 
 
 @router.get("/api/v1/system/kill-switch", response_model=KillSwitchOut)
