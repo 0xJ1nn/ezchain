@@ -138,11 +138,10 @@ registry. Until they exist, do not describe the worker as a security sandbox.
 
 - Self-hosted: data stays on the operator's machine. No telemetry by default; opt-in
   crash reports are explicit and documented.
-- Logs redact keys, cookies, authorization headers, API keys and signed transactions.
-- PII: email only, hashed for lookups where possible; deletion is a documented admin
-  action, except ledger/audit records required for financial integrity (retained with
-  pseudonymous ids).
-- Backups are encrypted at rest; restore requires the vault key for key material.
+- Access logs redact bearer credentials and known secrets before writing them (section 3).
+- There is no login, account system or per-user identity, so this build collects no account
+  data: no email address and no person-linked profile. Audit records attribute actions to a
+  credential, not to a person (section 1).
 
 ## Part II — Target state (not implemented)
 
@@ -164,6 +163,9 @@ is visible and so a plan is never read as a control that is running.
   session and per key, with login lockout and exponential backoff.
 - State-changing form posts would use same-site cookies, an origin check and a double-submit
   token.
+- An account model, if one is introduced, would collect email only and hash it for lookups
+  where possible; deletion would be a documented administrative action, except ledger or
+  audit records retained for financial integrity under pseudonymous ids.
 
 None of these protects the current build. There is no passkey enrollment, TOTP, cookie
 session, second factor, role hierarchy, IP allowlist, login lockout or CSRF token.
@@ -200,7 +202,8 @@ an explicit opt-in), with the choice explained at key-add and at the automation 
 - The master key would be `EZCHAIN_VAULT_KEY` (env), a sealed file or KMS: never in the repo,
   the web bundle or a log. Unlock would be explicit at boot, with auto-lock after idle and
   an audit record for every unlock. Backup would be a user-initiated, passphrase-protected
-  export file, never stored server-side.
+  export file, never stored server-side. Backups would be encrypted at rest, and restore
+  would require the vault key for key material.
 - The executor would run with the minimum filesystem and network privileges; signing and
   broadcasting would be its only outbound calls apart from RPC. Key material would never
   enter a strategy process, and the SDK would have no signing API.
@@ -249,22 +252,22 @@ route is registered.
 
 ### 12. Threat table
 
-The table records the intended control for each threat. Where the control is not in Part I,
-it is a target and is not protecting a deployment today.
+The table records the intended control for each threat. An item marked "shipped" is in
+Part I and protects a deployment today; every other item is a target and does not.
 
-| Threat | Control | Residual |
+| Threat | Intended control | Residual |
 |---|---|---|
 | Stolen laptop | vault passphrase + OS keychain + auto-lock; watch-only survives | unlocked session can trade until lock |
-| Malicious plugin | containment (section 5), no keys, intent caps | a plugin can still lose its allocation via allowed intents; OS isolation is a target |
+| Malicious plugin | (shipped) containment (section 5), no keys, intent caps | a plugin can still lose its allocation via allowed intents; OS isolation is a target |
 | Compromised RPC | multi-provider, response sanity checks, quote divergence, simulation | a coordinated lie can still misprice; caps limit loss |
 | Malicious venue/aggregator | sell-quote requirement, route identity, min-out, simulation | exotic tokens may be unsellable — shown honestly |
-| Credential leak | three flat scopes, hashing, revocation, audit | `trade` or `admin` can still act until revoked; no per-user identity |
+| Credential leak | (shipped) three flat scopes, hashing, revocation, audit | `trade` or `admin` can still act until revoked; no per-user identity |
 | Supply chain | pinned digests, SBOM, scan, review | zero-day in a dependency |
 | Insider | audit log, approval threshold, no key export | the deployment token is shared; per-user roles are a target |
 | Replay/double-spend | intent idempotency, nonce tracking, receipt checks | chain reorg can reorder; adapter handles confirmation depth |
-| DoS | read rate limit, bounded queues, timeouts, backpressure | a public instance needs a reverse proxy or WAF |
+| DoS | read rate limit (shipped); bounded queues, timeouts and backpressure (remaining items are targets) | a public instance needs a reverse proxy or WAF |
 | Data loss | verified backups, restore drill, forward-only migrations | vault key loss is unrecoverable by design |
-| Prompt injection into an agent | scoped key, no approve/arm/mint tool, automation gate queues every agent order, hard budgets, no key in the loop, bucket reads scoped to the calling key | a compromised model that only lies in its prose: no structural control catches prose, so read the platform record — see [PROMPT-INJECTION.md](PROMPT-INJECTION.md) |
+| Prompt injection into an agent | scoped key, no approve/arm/mint tool, automation gate would queue every agent order, hard budgets, no key in the loop, bucket reads scoped to the calling key | a compromised model that only lies in its prose: no structural control catches prose, so read the platform record — see [PROMPT-INJECTION.md](PROMPT-INJECTION.md) |
 
 ## Reporting
 
