@@ -144,6 +144,43 @@ is `per_chain_sort`. `sort_semantics` and `ordered_by` say which ordering was us
 Coverage `reason` is `pairs`, `no_pairs`, `no_seeds` (nothing was requested, so the chain's
 population is unknown), `error` or `timeout`.
 
+### Token metadata
+
+`GET /api/tokens/{chain}/{address}/metadata` serves one token's market and safety evidence
+in a single read. It adds no mutation route and holds no key of its own. The response is
+grouped into `market` (price, market cap, FDV, liquidity and its change), `liquidity`
+(burned and locked percentages, lock duration and the resulting state), `holders` (count,
+one-hour change, top-10 and dev holdings), `pair_age_seconds`, `windows` and `safety`.
+
+Every value is an object with `value`, `known`, `unit`, `source` and `observed_at`. Money,
+percentages and ratios are decimal strings; counts and durations are strings. `source`
+carries the provider name, URL and observation time, so a number reported by a keyed
+provider is distinguishable from the same kind of number reported by a free source. A
+missing value is `null` with `known: false` and still names the source that was asked;
+no unavailable field is reported as zero.
+
+`windows` holds the `5m`, `1h`, `6h` and `24h` views. Each carries price change, buys,
+sells, buy and sell volume, buying and selling makers, and `bsr` (buys divided by sells,
+null when either count is unknown or sells is zero). A window whose duration exceeds the
+pair's age is null throughout and contributes `WINDOW_EXCEEDS_PAIR_AGE:<window>` to
+`degraded`: activity from before the pair existed is never presented as observation.
+
+`safety.checks` holds seven verdicts: `mint_revoked`, `freeze_revoked`,
+`lp_burned_or_locked`, `top_10_under_30`, `dev_under_5`, `sells_work` and `buy_sell_tax`.
+Each has `status` (`pass`, `fail` or `unknown`), an optional measured `value`, a `reason`,
+and the same provenance as the rest of the response. The top-10 and dev limits are 30%
+and 5%, and the buy and sell tax limit is 10%. A check with no evidence is `unknown` with
+reason `NO_EVIDENCE`, never a false pass; the buy and sell tax percentages themselves are
+also returned under `safety`.
+
+Sources are tried free first: DexScreener pairs for market and activity, and a public RPC
+for SPL mint and freeze authorities. Birdeye enrichment is attempted only when the caller
+has supplied its own credential; a keyless process never makes that request. All fetches
+are made by the API, none by the browser. Responses are cached per token for a short TTL.
+A source outage contributes `UNAVAILABLE:<source>[:<code>]` to `degraded`; the values the
+other sources answered are still returned, and a total outage is a response of nulls with
+a reason rather than an error or invented numbers.
+
 ### Market freshness
 
 Every market read model — `/markets` rows, `/markets/stored` rows and the token header —
