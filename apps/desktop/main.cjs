@@ -185,18 +185,31 @@ let apiBackoff = 1000;
 let webBackoff = 1000;
 
 function loadToken() {
+	let existing = null;
 	try {
-		const existing = fs.readFileSync(tokenFile, "utf8").trim();
-		if (existing.length >= 32 && existing.isWellFormed()) return existing;
+		existing = fs.readFileSync(tokenFile, "utf8").trim();
 	} catch {
-		// Generate below.
+		// No file yet; generate below.
+	}
+	if (existing !== null && existing.length >= 32 && existing.isWellFormed()) {
+		// A reused token is durable state, not a freshly created file: a legacy-data copy or
+		// a restored backup can leave it with a loose mode. Enforce 0600 on this path too, and
+		// refuse the token rather than return one we cannot protect.
+		try {
+			fs.chmodSync(tokenFile, 0o600);
+		} catch (error) {
+			throw new Error(
+				`refusing to reuse the deployment token: cannot tighten ${tokenFile} to mode 0600 (${error.message})`,
+			);
+		}
+		return existing;
 	}
 	const token = crypto.randomBytes(32).toString("hex");
-	// Mode 0600 is the POSIX guarantee. On Windows `chmod` only clears the read-only
-	// attribute, so the file's protection there is the ACL it inherits from
-	// `%APPDATA%\ezCHAIN`, which grants the current user, SYSTEM and Administrators and
-	// nobody else. That inheritance is the actual boundary on Windows; claiming 0600
-	// protects the token there would be false.
+	// On POSIX, mode 0600 keeps the token owner-only both here and on reuse. On Windows
+	// `chmod` only clears the read-only attribute, so the file's protection there is the ACL
+	// it inherits from `%APPDATA%\ezCHAIN`, which grants the current user, SYSTEM and
+	// Administrators and nobody else. That inheritance is the actual boundary on Windows;
+	// claiming 0600 protects the token there would be false.
 	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
 	fs.chmodSync(tokenFile, 0o600);
 	return token;

@@ -81,8 +81,8 @@ function autostartExecPath({ execPath, appImage } = {}) {
  *
  * `sqlite+pysqlite:///` plus an absolute path is the documented form. SQLite accepts
  * forward slashes on Windows, so one spelling covers all three platforms:
- * POSIX `/home/u/x.db` -> `sqlite+pysqlite:////home/u/x.db`,
- * Windows `C:\Users\u\x.db` -> `sqlite+pysqlite:///C:/Users/u/x.db`.
+ * POSIX `/home/user/x.db` -> `sqlite+pysqlite:////home/user/x.db`,
+ * Windows `C:\Users\user\x.db` -> `sqlite+pysqlite:///C:/Users/user/x.db`.
  */
 function sqliteUrl(dbFile, platform = process.platform) {
 	const normalized = platform === "win32" ? dbFile.replace(/\\/g, "/") : dbFile;

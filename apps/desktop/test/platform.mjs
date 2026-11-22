@@ -37,20 +37,20 @@ test("the sidecar name carries the platform's executable suffix", () => {
 
 test("the sqlite URL is absolute and uses forward slashes on every platform", () => {
 	assert.equal(
-		sqliteUrl("/home/u/.config/ezCHAIN/ezchain.db", "linux"),
-		"sqlite+pysqlite:////home/u/.config/ezCHAIN/ezchain.db",
+		sqliteUrl("/home/user/.config/ezCHAIN/ezchain.db", "linux"),
+		"sqlite+pysqlite:////home/user/.config/ezCHAIN/ezchain.db",
 	);
 	assert.equal(
-		sqliteUrl("/Users/u/Library/ezchain.db", "darwin"),
-		"sqlite+pysqlite:////Users/u/Library/ezchain.db",
+		sqliteUrl("/Users/user/Library/ezchain.db", "darwin"),
+		"sqlite+pysqlite:////Users/user/Library/ezchain.db",
 	);
 	assert.equal(
-		sqliteUrl("C:\\Users\\u\\AppData\\Roaming\\ezCHAIN\\ezchain.db", "win32"),
-		"sqlite+pysqlite:///C:/Users/u/AppData/Roaming/ezCHAIN/ezchain.db",
+		sqliteUrl("C:\\Users\\user\\AppData\\Roaming\\ezCHAIN\\ezchain.db", "win32"),
+		"sqlite+pysqlite:///C:/Users/user/AppData/Roaming/ezCHAIN/ezchain.db",
 	);
 	for (const url of [
-		sqliteUrl("/home/u/x.db", "linux"),
-		sqliteUrl("C:\\Users\\u\\x.db", "win32"),
+		sqliteUrl("/home/user/x.db", "linux"),
+		sqliteUrl("C:\\Users\\user\\x.db", "win32"),
 	]) {
 		assert.doesNotMatch(url, /\\/, `${url} carries a backslash`);
 	}

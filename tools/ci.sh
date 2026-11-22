@@ -36,7 +36,10 @@ if [ -x .venv/bin/python ]; then
 elif command -v python3 >/dev/null 2>&1; then
   python3 tools/check-language-map.py
 else
-  echo "not present yet: language map (no python3)"
+  # This is the headline check of the language-map change, not an optional tool: a runner
+  # without an interpreter must fail here instead of printing a skip and merging the change.
+  echo "language map is mandatory: no python3 found (install python3 to run the gate)" >&2
+  exit 1
 fi
 
 step "3/10 design tokens"

@@ -222,6 +222,58 @@ def test_known_violations_are_real_and_shrink_only() -> None:
     assert len(double_counted) == total
 
 
+def test_a_known_violation_is_exempt_only_for_its_recorded_edge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A listed file is excused for one recorded import, not for every import.
+
+    The map records engine -> api for a handful of files. If a listed file were exempt from
+    every import-edge rule, a developer could add a fresh engine -> executor edge in one of
+    them and the gate would stay green — the exact false negative this check must not have.
+    """
+    spec = checker.read_map()
+    listed = "services/engine/src/ezchain_engine/graph.py"
+    assert any(
+        listed in entry["files"]
+        and entry["from"] == "ezchain_engine"
+        and entry["to"] == "ezchain_api"
+        for entry in spec["known_violations"]
+    )
+    files = {listed}
+
+    # The recorded edge still passes: graph.py's ezchain_api import stays excused.
+    assert checker.check_import_edges(spec, files) == []
+
+    # A NEW forbidden edge from the same file is reported: executor is neither in
+    # engine.may_import nor a recorded engine -> executor exception.
+    real_imports_of = checker.imports_of
+
+    def with_new_edge(path: Path) -> set[str]:
+        imports = real_imports_of(path)
+        if str(path.relative_to(checker.ROOT)) == listed:
+            return imports | {"ezchain_executor"}
+        return imports
+
+    monkeypatch.setattr(checker, "imports_of", with_new_edge)
+    found = checker.check_import_edges(spec, files)
+    assert any(
+        item["kind"] == "undeclared-import" and item["where"] == f"{listed}:ezchain_executor"
+        for item in found
+    ), found
+
+
+def test_the_gate_cannot_skip_the_language_map() -> None:
+    """A missing interpreter must fail the gate, not echo 'not present yet' and move on."""
+    gate = (ROOT / "tools" / "ci.sh").read_text(encoding="utf-8")
+    lines = gate.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith('step "2/10 language map"'))
+    end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith('step "'))
+    block = lines[start:end]
+    assert not any("not present yet" in line for line in block), block
+    else_at = next(i for i, line in enumerate(block) if line.strip() == "else")
+    assert any("exit 1" in line for line in block[else_at:]), block
+
+
 def test_the_gate_runs_this_check() -> None:
     """A checker that no gate calls is a suggestion.
 

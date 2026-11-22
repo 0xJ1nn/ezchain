@@ -73,8 +73,8 @@ test("the autostart entry is a valid desktop file that launches hidden", () => {
 
 test("the autostart file lives in the XDG config home", () => {
 	assert.equal(
-		autostartPath("/home/u/.config"),
-		"/home/u/.config/autostart/ezchain.desktop",
+		autostartPath("/home/user/.config"),
+		"/home/user/.config/autostart/ezchain.desktop",
 	);
 });
 
@@ -82,7 +82,7 @@ test("an AppImage records the real file, not the ephemeral mount", () => {
 	// Getting this wrong writes an Exec line pointing into a mount that no longer exists
 	// after the session ends, so the app silently stops starting at login.
 	const execPath = "/tmp/.mount_ezCHAIab12cd/ezchain";
-	const real = "/home/u/Applications/ezCHAIN-0.1.0-x86_64.AppImage";
+	const real = "/home/user/Applications/ezCHAIN-0.1.0-x86_64.AppImage";
 	assert.equal(autostartExecPath({ execPath, appImage: real }), real);
 	assert.equal(autostartExecPath({ execPath, appImage: "" }), execPath);
 	assert.equal(autostartExecPath({ execPath, appImage: undefined }), execPath);

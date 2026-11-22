@@ -279,9 +279,12 @@ def check_import_edges(spec: dict[str, Any], files: set[str] | None = None) -> l
         if match:
             module_to_layer[match.group(1).replace("-", "_")] = key
 
-    exemptions: dict[str, set[str]] = {}
+    # An exemption belongs to one recorded edge, not to a whole layer. Keying it by the
+    # from-file alone would excuse a listed module for *every* target layer, so a fresh
+    # forbidden import in that file could slip through the gate unnoticed.
+    exemptions: dict[tuple[str, str], set[str]] = {}
     for entry in spec.get("known_violations", []):
-        exemptions.setdefault(entry["from"], set()).update(entry["files"])
+        exemptions.setdefault((entry["from"], entry["to"]), set()).update(entry["files"])
 
     out = []
     for layer, paths in by_layer.items():
@@ -296,7 +299,7 @@ def check_import_edges(spec: dict[str, Any], files: set[str] | None = None) -> l
                     continue
                 if module in allowed:
                     continue
-                if rel in exemptions.get(layer, set()):
+                if rel in exemptions.get((layer, target), set()):
                     continue
                 out.append(
                     finding(

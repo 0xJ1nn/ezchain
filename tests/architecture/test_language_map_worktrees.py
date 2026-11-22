@@ -33,7 +33,7 @@ _spec.loader.exec_module(checker)
 def _init_repo(root: Path) -> None:
     """A tiny real checkout: git, and an ignore rule for nested worktrees."""
     subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
-    (root / ".gitignore").write_text(".claude/\n.worktrees/\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".claude/\n.checkouts/\n", encoding="utf-8")
 
 
 def _write_checkout(root: Path, spec: dict) -> None:
@@ -65,7 +65,7 @@ def _write_checkout(root: Path, spec: dict) -> None:
 
 def _add_nested_checkout(root: Path, spec: dict) -> None:
     """A worktree parked under the checkout repeats its packages and product code."""
-    nested = root / ".claude" / "worktrees" / "duplicate"
+    nested = root / ".claude" / "checkouts" / "duplicate"
     _write_checkout(nested, spec)
     leak = nested / "services" / "ingest" / "src" / "ezchain_ingest" / "leak.py"
     leak.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +124,7 @@ def test_the_file_set_fallback_skips_hidden_dirs_and_nested_checkouts(
     """Without git, the walk ignores hidden directories and directories that are repos."""
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     (tmp_path / "visible.py").write_text("", encoding="utf-8")
-    hidden = tmp_path / ".claude" / "worktrees" / "clone"
+    hidden = tmp_path / ".claude" / "checkouts" / "clone"
     hidden.mkdir(parents=True)
     (hidden / "ghost.py").write_text("", encoding="utf-8")
     nested_repo = tmp_path / "vendor" / "other"
