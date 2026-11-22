@@ -8,6 +8,7 @@ build-source route verifies a signed attestation and reports why a build is not 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -42,6 +43,9 @@ OFFICIAL_REPOSITORY = "https://github.com/0xJ1nn/ezchain"
 DEFAULT_PUBLIC_KEY_PATH = "tools/release/official-public.pem"
 DEFAULT_ATTESTATION_PATH = "release/attestation.json"
 VERIFY_TIMEOUT_SECONDS = 10
+# Copied from the release notes at deployment time, never committed. A build cannot
+# authenticate its own key; the operator pins the fingerprint the maintainer published.
+RELEASE_KEY_FINGERPRINT_ENV = "EZCHAIN_RELEASE_KEY_FINGERPRINT"
 
 BuildSourceStatus = Literal[
     "verified",
@@ -51,11 +55,13 @@ BuildSourceStatus = Literal[
     "malformed_attestation",
     "repository_mismatch",
     "invalid_signature",
+    "key_not_pinned",
+    "key_fingerprint_mismatch",
     "verifier_unavailable",
 ]
 
 BUILD_SOURCE_MESSAGES: dict[BuildSourceStatus, str] = {
-    "verified": "This build carries an attestation signed by the official release key.",
+    "verified": "This build's attestation is signed by the pinned official release key.",
     "no_public_key": (
         "No release public key is configured for this installation, so the build source "
         "cannot be checked."
@@ -65,6 +71,13 @@ BUILD_SOURCE_MESSAGES: dict[BuildSourceStatus, str] = {
     "malformed_attestation": "This installation's build attestation is not a valid record.",
     "repository_mismatch": "The signed attestation names a repository other than the official one.",
     "invalid_signature": "The build attestation does not verify against the release public key.",
+    "key_not_pinned": (
+        "No official release-key fingerprint is configured for this installation, so the "
+        "installed key cannot be authenticated."
+    ),
+    "key_fingerprint_mismatch": (
+        "The installed release key does not match the fingerprint published for official builds."
+    ),
     "verifier_unavailable": (
         "Signature verification needs OpenSSL, which this host does not provide."
     ),
@@ -100,12 +113,40 @@ def _build_source_verdict(status: BuildSourceStatus, tag: str | None = None) -> 
     )
 
 
-def build_source_status() -> BuildSourceOut:
-    """Verify the on-disk attestation against the published key; fail closed on any gap.
+def _normalize_fingerprint(value: str) -> str:
+    """Drop separators and casing so a colon-separated fingerprint still matches."""
+    return "".join(char for char in value.lower() if char in "0123456789abcdef")
 
-    The attestation is untrusted until its signature checks out. Only after verification
-    does its repository claim count, so a fork cannot name itself official and a reader of
-    this response never sees key material or a signature.
+
+def _expected_fingerprint() -> str | None:
+    """The maintainer-supplied fingerprint, normalised; unset means fail closed."""
+    return _normalize_fingerprint(os.environ.get(RELEASE_KEY_FINGERPRINT_ENV, "").strip()) or None
+
+
+def _key_fingerprint(public_key: Path) -> str | None:
+    """SHA-256 of the DER-encoded public key, matching the fingerprint in release notes."""
+    try:
+        result = subprocess.run(
+            ["openssl", "pkey", "-pubin", "-in", str(public_key), "-outform", "DER"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=VERIFY_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return hashlib.sha256(result.stdout).hexdigest()
+
+
+def build_source_status() -> BuildSourceOut:
+    """Verify the on-disk attestation against the pinned key; fail closed on any gap.
+
+    The attestation is untrusted until its signature checks out, and the installed key is
+    untrusted until its fingerprint matches the value the maintainer published with the
+    release. Only then does its repository claim count, so a fork shipping its own key
+    cannot name itself official. This response never exposes key material or a signature.
     """
     public_key, attestation = _build_source_paths()
     if not public_key.is_file():
@@ -129,6 +170,14 @@ def build_source_status() -> BuildSourceOut:
 
     if shutil.which("openssl") is None:
         return _build_source_verdict("verifier_unavailable")
+    expected = _expected_fingerprint()
+    if expected is None:
+        return _build_source_verdict("key_not_pinned")
+    fingerprint = _key_fingerprint(public_key)
+    if fingerprint is None:
+        return _build_source_verdict("verifier_unavailable")
+    if fingerprint != expected:
+        return _build_source_verdict("key_fingerprint_mismatch")
     try:
         verified = (
             subprocess.run(

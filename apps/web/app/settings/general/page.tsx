@@ -22,8 +22,8 @@ export default async function GeneralSettingsPage() {
 					<h1>General</h1>
 					<p className="sub">
 						How this installation identifies itself. The badge appears only when the running
-						build&apos;s signature verifies against the published release key; every other case
-						states its reason instead.
+						build&apos;s signature verifies against the release key whose fingerprint was pinned
+						from the release notes; every other case states its reason instead.
 					</p>
 				</div>
 				<div className="page-actions">
@@ -45,7 +45,7 @@ export default async function GeneralSettingsPage() {
 							<Badge tone="warn">Unverified build</Badge>
 						)
 					}
-					footer="The API checks the attestation on disk. A fork, a source checkout or a missing release key cannot produce a positive result."
+					footer="The API checks the signature and the pinned key fingerprint. A fork or a source checkout cannot produce a positive result on an installation that pins the official key."
 				>
 					{!result.ok ? (
 						<Unavailable
@@ -128,8 +128,9 @@ export default async function GeneralSettingsPage() {
 			<Panel title="What the badge does not say" sub="honest boundary" className="mt-16">
 				<p className="small muted">
 					The verdict covers the build&apos;s own attestation, not the behaviour of the software or
-					the safety of a strategy. It stays absent when the signature cannot be checked, and it
-					never turns a paper deployment into a live one.
+					the safety of a strategy. It trusts the fingerprint the operator pinned from the release
+					notes; it does not fetch a key or a fingerprint from the network. It stays absent when
+					the signature cannot be checked, and it never turns a paper deployment into a live one.
 				</p>
 			</Panel>
 		</AppShell>

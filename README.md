@@ -359,11 +359,13 @@ The ezCHAIN name and logo are trademarks, separate from the AGPL and Apache code
 builds. No other domain, download site, social account, token or hosted service is an
 official ezCHAIN channel, and the project does not endorse third-party products.
 
-Official archives, the funding configuration and each build's attestation are signed with the
-release key. The public half of that key is published by the maintainer, and the steps for
-checking a download are in [docs/RELEASES.md](docs/RELEASES.md). Verify a release before
-running it. Settings → General shows a positive build badge only when the running build's
-attestation verifies against that key; when it does not, the page says why.
+Official releases sign the archive checksum, the funding configuration and each build's
+attestation with the maintainer's release key. The public half of that key, its fingerprint and
+the signed assets are published by the maintainer with the first signed tag; a source checkout
+carries none of them. The steps for checking a download are in
+[docs/RELEASES.md](docs/RELEASES.md). Verify a release before running it. Settings → General
+shows a positive build badge only when the running build's attestation verifies against a key
+whose fingerprint matches the published one; when it does not, the page says why.
 
 Forking is welcome under the code licences, but a fork that is distributed or hosted must use
 its own name and logo, keep the [NOTICE](NOTICE) file and remove the ezCHAIN marks from its
