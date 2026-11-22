@@ -10,6 +10,9 @@ cd "$(dirname "$0")/.."
 # second checkout, and NODE_ENV=production changes what Next builds and what pnpm installs.
 # The caller's environment is not modified: this script runs in a child shell.
 unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET PYTHONPATH NODE_ENV
+# An offline audit report is an explicit gate channel, not an inherited shell setting: a
+# caller exporting EZCHAIN_AUDIT_REPORT must not silently replace both live audits.
+unset EZCHAIN_AUDIT_REPORT
 
 # The one deliberate exception: a gate that runs a clone (rather than this checkout) points
 # imports at that clone's own package sources through EZCHAIN_GATE_PYTHONPATH, because the
@@ -57,12 +60,13 @@ fi
 # from a network service and are checked by the audit below.
 
 # Advisory audit of the pinned sets. Unlike the static pin check this needs a network:
-# pip-audit consults OSV/PyPI and pnpm audit consults the npm registry. A saved
-# `pip-audit --format json` report makes the verdict hermetic — point EZCHAIN_AUDIT_REPORT
-# at one and the same verdict code runs offline. Each live audit runs when its own tool is
-# present. Exit 1 (a blocking advisory) fails the gate; exit 2 ("could not run") is printed
-# as an explicit skip and never called a pass, matching the other tool-absent skips in this
-# gate. The dated result is recorded in docs/DEPENDENCIES.md.
+# pip-audit consults OSV/PyPI and pnpm audit consults the npm registry. An air-gapped
+# gate replays a saved report through the declared EZCHAIN_GATE_AUDIT_REPORT channel;
+# the ambient EZCHAIN_AUDIT_REPORT is scrubbed above, so a caller's shell cannot select
+# that path. The report needs a provenance sidecar bound to these exact locks. Exit 1
+# (a blocking advisory) and exit 2 ("could not run") both fail the gate: an unaudited
+# tree is not a clean tree. A missing tool is an explicit skip locally, but a declared
+# CI or release run fails closed. The dated result is in docs/DEPENDENCIES.md.
 audit_py=""
 if [ -x .venv/bin/python ]; then
   audit_py=.venv/bin/python
@@ -70,10 +74,10 @@ elif command -v python3 >/dev/null 2>&1; then
   audit_py=python3
 fi
 audit_status=0
-if [ -n "${EZCHAIN_AUDIT_REPORT:-}" ]; then
-  # A supplied report must be readable and clean; there is no skip in this path.
+if [ -n "${EZCHAIN_GATE_AUDIT_REPORT:-}" ]; then
+  # A replayed report must be readable, proven and clean; there is no skip in this path.
   [ -n "$audit_py" ] || { echo "dependency audit: no python to judge the report with" >&2; exit 1; }
-  "$audit_py" tools/audit_pins.py --report "$EZCHAIN_AUDIT_REPORT" || audit_status=$?
+  "$audit_py" tools/audit_pins.py --report "$EZCHAIN_GATE_AUDIT_REPORT" || audit_status=$?
   if [ "$audit_status" -ne 0 ]; then
     echo "dependency audit: the supplied report failed (exit $audit_status)" >&2
     exit 1
@@ -82,20 +86,26 @@ else
   audit_ran=0
   if [ -n "$audit_py" ] && "$audit_py" -c "import pip_audit" >/dev/null 2>&1; then
     "$audit_py" tools/audit_pins.py --python || audit_status=$?
-    audit_ran=1
+    audit_ran=$((audit_ran + 1))
   fi
   if [ -n "$audit_py" ] && [ "$audit_status" -eq 0 ] && command -v pnpm >/dev/null 2>&1; then
     "$audit_py" tools/audit_pins.py --node || audit_status=$?
-    audit_ran=1
+    audit_ran=$((audit_ran + 1))
   fi
   if [ "$audit_status" -eq 1 ]; then
     echo "dependency audit: a blocking advisory was reported" >&2
     exit 1
   fi
-  if [ "$audit_ran" -eq 0 ]; then
-    echo "dependency audit: skipped — no audit tools available (not a pass)"
-  elif [ "$audit_status" -eq 2 ]; then
-    echo "dependency audit: the advisory service was unreachable (exit 2) — not a pass; see docs/DEPENDENCIES.md" >&2
+  if [ "$audit_status" -eq 2 ]; then
+    echo "dependency audit: the audit could not run (exit 2) — not a pass; see docs/DEPENDENCIES.md" >&2
+    exit 1
+  fi
+  if [ "$audit_ran" -lt 2 ]; then
+    echo "dependency audit: skipped — an audit tool is absent (not a pass)"
+    if [ "${CI:-}" = "true" ] || [ "${EZCHAIN_GATE_RELEASE:-}" = "1" ]; then
+      echo "dependency audit: failing closed in CI/release without both live verdicts" >&2
+      exit 1
+    fi
   fi
 fi
 

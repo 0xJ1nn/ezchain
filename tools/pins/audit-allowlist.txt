@@ -1,3 +1,4 @@
 # Advisory ids accepted for a pin, one per line: <id> <reason>.
 # An entry without a reason is refused, so this cannot become a mute button.
-# Nothing is allowlisted today.
+# Nothing is allowlisted. The four advisories found on 2026-11-23 were fixed by
+# moving the Node lock to patched minimatch and next versions, not accepted here.

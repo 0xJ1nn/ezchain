@@ -24,7 +24,8 @@ shasum -a 256 requirements.lock requirements-runtime.lock requirements-keyring.l
 # cc02e169cfe48f47bb42d5df6103c12eaaebc24fda61ac3d2d9efae2d8db4d52  requirements.lock
 # 8c73d4a0b2403f9a9f2745facb0f20e61e77ce33cebdbb9d727df073d32c5fe8  requirements-runtime.lock
 # 867e5a9b28b7a1c0f7aec894b48c9532d70ae8196d99d8c11c73dd24fc80e41d  requirements-keyring.lock
-# fd7a7c9fd9d1d521896966657b4430bd66ce5e95b8218e7adb249925ae80b7cd  pnpm-lock.yaml
+# fd7a7c9fd9d1d521896966657b4430bd66ce5e95b8218e7adb249925ae80b7cd  pnpm-lock.yaml  (before the 2026-11-23 advisory fix)
+# 834bf2b3c959d3f2b655ad1d2ba525ba40a4cc00dba8559b628ea285368fcc35  pnpm-lock.yaml  (current)
 ```
 
 The locks were resolved on 2026-11-14 against the live indexes. They are newer than
@@ -124,9 +125,10 @@ echo $?
 # 0
 ```
 
-Last audited: **2026-11-14**, against the advisory data those two services served on that
-date. That is the whole claim. No advisory was consulted before that date, and nothing here
-asserts anything about a vulnerability published after it.
+Last audited: **2026-11-14** for Python and **2026-11-23** for Node, against the advisory
+data those services served on those dates. The later Node result and the four advisories it
+cleared are recorded in §10. That is the whole claim. No advisory was consulted before those
+dates, and nothing here asserts anything about a vulnerability published after them.
 
 The audit's failure path was proven, not assumed: judging a saved report for
 `jinja2==2.11.2` exits 1 and names the advisory and the version that fixes it, an allowlist
@@ -277,3 +279,89 @@ That is the behaviour the issue asks for: a bumped constraint fails before a res
 naming the pin and the range it no longer satisfies. The same path is asserted in
 `test_a_bumped_constraint_fails_the_check`, which uses a synthetic checkout rather than a
 copy of this one.
+
+## 10. Re-audit 2026-11-23 — four Node advisories fixed at the pin
+
+The gate's audit step exposed a current failure rather than only recording the 2026-11-14
+result. Measured again on this host (Linux x86_64, CPython 3.15.2, Node 24.22.3, pnpm
+9.15.9), before the fix:
+
+```bash
+python3 tools/audit_pins.py --node
+# vulnerable pin: ... minimatch >=7.0.0 <11.0.1 (moderate) GHSA-g3hv-75wg-m249
+# vulnerable pin: ... next >=15.0.0 <=15.5.28 (moderate) GHSA-7qx7-33qx-rqx2
+# vulnerable pin: ... next >=15.0.0 <=15.5.28 (moderate) GHSA-f3mh-rxg3-f5g2
+# vulnerable pin: ... next <=15.5.28 (moderate) GHSA-pc58-hwjq-p385
+# audit: FAILED for pnpm-lock.yaml
+# exit 1
+```
+
+All four are moderate. `pnpm audit --json` named the fixed lines: minimatch 11.0.1 and
+next 15.5.29. None was allowlisted; `tools/pins/audit-allowlist.txt` stays empty. The
+three Python advisories from the earlier run are not involved — the Python locks were not
+changed, and `pip-audit` is still not installed here.
+
+`package.json` now carries `pnpm.overrides` for `next` (15.5.29) and for the vulnerable
+`minimatch@>=7.0.0 <11.0.1` range (11.0.1). A range selector is used so the clean 3.x and
+5.x minimatch resolutions are not dragged across a major boundary. The lock was
+regenerated and checked:
+
+```bash
+pnpm install --lockfile-only                 # exit 0
+pnpm install --frozen-lockfile --lockfile-only  # exit 0 — lock agrees with the declarations
+python3 tools/audit_pins.py --node           # audit: ok — no unallowlisted advisory; exit 0
+pnpm audit --json                            # exit 0; advisories: 0; 599 dependencies
+python3 tools/check_pins.py --fast           # exit 0; 43/31/9 Python pins, 595 hashed Node resolutions
+bash -n tools/ci.sh                          # exit 0
+sha256sum pnpm-lock.yaml
+# 834bf2b3c959d3f2b655ad1d2ba525ba40a4cc00dba8559b628ea285368fcc35  pnpm-lock.yaml
+```
+
+The override moves `next` from 15.5.28 to 15.5.29 and both vulnerable minimatch
+resolutions (9.0.9 and 10.2.6) to 11.0.1. Those minimatch consumers are build and lint
+tooling, not shipped runtime code. The web package's own declaration still names 15.5.28;
+the override is what moves the resolution, and updating that declaration is separate work
+in the web package. No web build was run on this host, so that path is not reverified here;
+the frozen lock check, the zero-advisory audit and the static pin check are what was measured.
+
+### Offline-report probes
+
+The replay path now requires a provenance sidecar with the report digest, every lock
+digest, a timestamp and a source. Commands were run against the current tree; exit codes
+are those printed by the shell:
+
+| Probe | Command shape | Exit |
+|---|---|---|
+| Bound clean report | `--report clean.json` with matching `clean.json.provenance` | 0 |
+| Vulnerable report, bound | `--report vulnerable.json` with matching sidecar | 1 |
+| No sidecar | `--report forged.json` with no provenance | 2 |
+| Report bytes changed | `--report tampered.json` against another report's sidecar | 2 |
+| Stale lock digest | sidecar carrying the previous `pnpm-lock.yaml` digest | 2 |
+| Unreadable report | report path absent | 2 |
+| Allowlist entry with no reason | `--allowlist` pointing at a bad list | 2 |
+| Live audit could not run | `--python` with pip-audit absent | 2 |
+
+### Gate fail-closed probes
+
+The audit block of `tools/ci.sh` was extracted verbatim and run with stubbed audit tools,
+so the gate's own branches were exercised without running the full gate or a build:
+
+| Scenario | Result | Exit |
+|---|---|---|
+| Ambient `EZCHAIN_AUDIT_REPORT` exported, no declared channel | scrubbed; no offline replay is logged | 0 local |
+| Both live audits run clean | reaches the end of the block | 0 |
+| Python audit exits 2 | "could not run (exit 2) — not a pass" | 1 |
+| Node audit exits 1 | "a blocking advisory was reported" | 1 |
+| CI with no audit tools | "failing closed in CI/release" | 1 |
+| Release with no audit tools | "failing closed in CI/release" | 1 |
+| Declared report with no provenance | "the supplied report failed (exit 2)" | 1 |
+| Declared bound clean report | replay logged, reaches the end of the block | 0 |
+
+A local run with no tools still prints an explicit skip and reaches the end of the block;
+that is a deliberate local concession, not a clean audit. In CI or release it exits 1.
+
+### Still open
+
+The two-clean-build digest drill in §5 was not run here, and `pip-audit` was not installed,
+so this re-audit does not close the reproducibility half of the release acceptance. A
+release machine must record both digests and a fresh dated Python verdict.
