@@ -238,7 +238,7 @@ export function AppShell({ active, children }: { active: string; children: React
 				</span>
 				<span className="spacer" />
 				<span className="meta">
-					{fixture ? "P0 · fixture mode" : "P0 · DexScreener + multi-chain quotes"}
+					{fixture ? "Fixture mode" : "DexScreener + multi-chain quotes"}
 				</span>
 			</div>
 			<Topbar />

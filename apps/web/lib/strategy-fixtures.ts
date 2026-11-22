@@ -17,7 +17,7 @@ export interface Strategy {
 	status: StrategyStatus;
 	last_run_at: string | null;
 	created_at: string;
-	// Fixture-only sample. The P0 list endpoint does not return per-strategy PnL, so live
+	// Fixture-only sample. The list endpoint does not return per-strategy PnL, so live
 	// mode renders — rather than inventing a number.
 	pnl_usd?: string | null;
 	/** Manifest identity from the server. Absent means a built-in kind, not a plugin. */

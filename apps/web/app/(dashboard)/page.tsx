@@ -365,7 +365,7 @@ export default async function DashboardPage({
 								</table>
 							</div>
 						)}
-						<div className="small muted mt-8">Newest births first · safety and dev history unknown in P0.</div>
+						<div className="small muted mt-8">Newest births first · safety and developer history are unknown in this build.</div>
 						<div className="row mt-8">
 							<ButtonLink href="/launches" size="sm">
 								All launches
