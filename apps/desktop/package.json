@@ -25,6 +25,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "sender.js",
       "package.json"
     ],
     "extraResources": [

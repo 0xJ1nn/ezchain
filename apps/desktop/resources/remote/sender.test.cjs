@@ -85,6 +85,19 @@ test("a remote client cannot read credentials or operator-only state", () => {
 	}
 });
 
+test("encoded separators and traversal cannot bypass the read allowlist", () => {
+	// The URL parser leaves %2f and %5c encoded, so a path that starts with an allowed
+	// prefix still passes a raw prefix match even though a host may decode it elsewhere.
+	for (const path of [
+		"/api/v1/paper/account/..%2f..%2fadmin",
+		"/api/v1/paper/account/%2F..%2F..%2Fapi%2Fv1%2Fkeys",
+		"/api/v1/paper/account/..%5c..%5cadmin",
+		"/api/v1/paper/account/%2e%2e/%2e%2e/api/v1/keys",
+	]) {
+		denied("PATH_ENCODED_TRAVERSAL", () => sender.buildRemoteRequest({ baseUrl: HOST, path }));
+	}
+});
+
 test("no local credential is ever attached to a remote request", () => {
 	const request = sender.buildRemoteRequest({
 		baseUrl: HOST,
@@ -124,6 +137,8 @@ test("the read-only views contain no write path and no credential", () => {
 		assert.equal(/fetch\s*\(/.test(html), false);
 	}
 	assert.match(sender.REMOTE_VIEWER_HTML, /remoteRead\(/);
+	// Each read model is isolated: one non-200 response must not blank the whole view.
+	assert.match(sender.REMOTE_VIEWER_HTML, /readPanel\(/);
 	assert.match(sender.REMOTE_VIEWER_HTML, /Host unreachable/);
 	assert.match(sender.REMOTE_VIEWER_HTML, /Retry/);
 	assert.match(sender.FIRST_RUN_HTML, /remoteConnect\(/);

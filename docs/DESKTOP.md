@@ -70,10 +70,11 @@ credential server-side and decides whether reads need scoped authentication. Gra
 access to that host is granting access to the same paper account, so keep the origin
 private and do not share the address as if it were a login.
 
-The strategy engine runs on the host. Closing the client window or putting the laptop to
-sleep does not stop it: the shell starts no sidecar and sends no shutdown when it leaves.
-When the connection returns, the view reloads the host's read models and shows their source
-and age; a host that cannot be reached shows a retry state instead of stale numbers.
+The strategy engine runs on the host. The client starts no process there and sends no
+shutdown when it closes or when the laptop sleeps, so it has no mechanism to stop a host
+strategy; this is a design property, not a measured result on this machine. When the
+connection returns, the view reloads the host's read models; a host that cannot be reached
+shows a retry state instead of stale numbers.
 
 ## Build from source (Linux)
 

@@ -84,6 +84,7 @@ let rebuildTray = () => {};
 let role = null;
 let hostUrl = null;
 let viewerUrl = null;
+let loadedViewerUrl = null;
 let apiPort = null;
 let webPort = null;
 let apiToken = null;
@@ -436,6 +437,12 @@ function createFirstRun() {
 
 function createWindow() {
 	if (mainWindow) {
+		// A role change swaps the viewer (local web app vs remote read-only page). Reload
+		// when the target changed; an ordinary show must not interrupt in-page navigation.
+		if (loadedViewerUrl !== viewerUrl) {
+			loadedViewerUrl = viewerUrl;
+			mainWindow.loadURL(viewerUrl);
+		}
 		mainWindow.show();
 		mainWindow.focus();
 		return;
@@ -458,6 +465,7 @@ function createWindow() {
 		},
 	});
 	if (!viewerUrl) viewerUrl = `http://127.0.0.1:${webPort}/`;
+	loadedViewerUrl = viewerUrl;
 	mainWindow.loadURL(viewerUrl);
 	mainWindow.once("ready-to-show", () => {
 		if (splash) splash.close();
@@ -624,10 +632,36 @@ async function reconnectHost() {
 	}
 }
 
+// Leaving the local role tears down everything it owned: watchdog, restart timers and
+// both sidecars. A shell labelled remote must not still supervise a local host.
+async function stopLocalHost() {
+	if (watchdogTimer) {
+		clearInterval(watchdogTimer);
+		watchdogTimer = null;
+	}
+	for (const which of ["api", "web"]) {
+		if (restartTimers[which]) {
+			clearTimeout(restartTimers[which]);
+			restartTimers[which] = null;
+		}
+	}
+	await stopChild(webChild, "web");
+	webChild = null;
+	await stopChild(apiChild, "api");
+	apiChild = null;
+	apiToken = null;
+	apiPort = null;
+	webPort = null;
+}
+
 async function startRole(config) {
+	const previousRole = role;
 	role = config.role;
 	hostUrl = config.url || null;
 	const plan = sender.rolePlan(role);
+	if (!plan.spawnSidecars && (previousRole === "local" || apiChild || webChild || watchdogTimer)) {
+		await stopLocalHost();
+	}
 	if (plan.spawnSidecars) {
 		try {
 			await startServices();
@@ -708,14 +742,23 @@ ipcMain.handle("desktop:open-logs", () => shell.openPath(logFile));
 ipcMain.handle("desktop:open-data", () => shell.openPath(dataDir));
 
 // First-run choices. A URL is only stored after the probe succeeds, and choosing local
-// leaves the existing sidecar path exactly as it was.
+// leaves the existing sidecar path exactly as it was. The role is decided once: a script in
+// the local web app cannot later re-point this window or make it stop owning its host.
+function assertFirstRun() {
+	if (!firstRun || role !== null) {
+		throw new Error("the workstation role can only be chosen on first run");
+	}
+}
+
 ipcMain.handle("desktop:remote-connect", async (_event, rawUrl) => {
+	assertFirstRun();
 	const url = await testHost(rawUrl);
 	saveConfig({ role: "remote", url });
 	await startRole({ role: "remote", url });
 	return { role: "remote", url };
 });
 ipcMain.handle("desktop:choose-local", async () => {
+	assertFirstRun();
 	saveConfig({ role: "local" });
 	await startRole({ role: "local" });
 	return { role: "local" };

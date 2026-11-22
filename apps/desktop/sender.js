@@ -95,6 +95,12 @@ function buildRemoteRequest(options = {}) {
 	if (typeof method !== "string" || !ALLOWED_METHODS.includes(method.toUpperCase())) {
 		deny("METHOD_NOT_READ_ONLY", `remote attach allows only ${ALLOWED_METHODS.join(" and ")}`);
 	}
+	// The URL parser does not decode %2f or %5c, so a path that merely starts with an
+	// allowed prefix could reach a different endpoint once a host decodes it. Refuse
+	// encoded separators and dot segments outright instead of trusting the host's router.
+	if (typeof path === "string" && /%2f|%5c|%2e%2e/i.test(path)) {
+		deny("PATH_ENCODED_TRAVERSAL", "a read path must not contain encoded separators or traversal segments");
+	}
 	const base = normalizeHostUrl(baseUrl);
 	const url = remoteUrl(base, path);
 	const basePath = new URL(base).pathname.replace(/\/+$/, "");
@@ -205,6 +211,7 @@ h1{font-size:19px;margin:0}.mark{font:700 20px ui-monospace,monospace;letter-spa
   var panels = document.getElementById("panels");
   var host = document.getElementById("host");
   var state = { host: "" };
+  var UNAVAILABLE = { unavailable: true };
   function node(tag, cls, text) {
     var el = document.createElement(tag);
     if (cls) el.className = cls;
@@ -214,6 +221,10 @@ h1{font-size:19px;margin:0}.mark{font:700 20px ui-monospace,monospace;letter-spa
   function panel(title, rows) {
     var box = node("section", "panel");
     box.appendChild(node("h2", "", title));
+    if (rows === UNAVAILABLE) {
+      box.appendChild(node("div", "muted", "Unavailable on this host"));
+      return box;
+    }
     rows.forEach(function (row) {
       var line = node("div", "stat");
       line.appendChild(node("span", "muted", row[0]));
@@ -225,24 +236,32 @@ h1{font-size:19px;margin:0}.mark{font:700 20px ui-monospace,monospace;letter-spa
   function read(path) {
     return bridge.remoteRead(path).then(function (reply) { return JSON.parse(reply.body); });
   }
+  // Each read model is isolated: one failed read (a 405 on kill-switch, say) blanks only
+  // its own panel. The health read is the connection probe; only its failure, or a bridge
+  // failure, replaces the whole view with the retry state.
+  function readPanel(path) {
+    return read(path).catch(function () { return UNAVAILABLE; });
+  }
   function render() {
     return Promise.all([
       read("/healthz"),
-      read("/api/v1/agent/state"),
-      read("/api/v1/paper/account"),
-      read("/api/v1/paper/positions"),
-      read("/api/v1/paper/fills"),
-      read("/api/v1/system/kill-switch"),
+      readPanel("/api/v1/agent/state"),
+      readPanel("/api/v1/paper/account"),
+      readPanel("/api/v1/paper/positions"),
+      readPanel("/api/v1/paper/fills"),
+      readPanel("/api/v1/system/kill-switch"),
     ]).then(function (values) {
       var health = values[0], agent = values[1], account = values[2];
       var positions = values[3], fills = values[4], kill = values[5];
-      var list = Array.isArray(positions) ? positions : [];
-      var recent = Array.isArray(fills) ? fills : [];
+      var list = positions === UNAVAILABLE || !Array.isArray(positions) ? [] : positions;
+      var recent = fills === UNAVAILABLE || !Array.isArray(fills) ? [] : fills;
+      var mode = (agent !== UNAVAILABLE && agent && agent.mode) ||
+        (account !== UNAVAILABLE && account && account.mode) || "unknown";
       panels.replaceChildren(
-        panel("Host", [["Status", health && health.status || "unknown"], ["Mode", agent && agent.mode || account && account.mode || "unknown"]]),
-        panel("Paper account", [["Equity", account && account.equity_usd], ["Cash", account && account.cash_usd], ["Realized", account && account.realized_usd]]),
-        panel("Positions", [["Open", list.length], ["Fills shown", recent.length]]),
-        panel("Kill switch", [["Armed", kill && kill.armed], ["Updated", kill && kill.updated_at]]),
+        panel("Host", [["Status", health && health.status || "unknown"], ["Mode", mode]]),
+        panel("Paper account", account === UNAVAILABLE ? UNAVAILABLE : [["Equity", account && account.equity_usd], ["Cash", account && account.cash_usd], ["Realized", account && account.realized_usd]]),
+        panel("Positions", positions === UNAVAILABLE || fills === UNAVAILABLE ? UNAVAILABLE : [["Open", list.length], ["Fills shown", recent.length]]),
+        panel("Kill switch", kill === UNAVAILABLE ? UNAVAILABLE : [["Armed", kill && kill.armed], ["Updated", kill && kill.updated_at]]),
       );
       host.textContent = "Connected · read only · " + (state.host || "host");
     }).catch(function () {
