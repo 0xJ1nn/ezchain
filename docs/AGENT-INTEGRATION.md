@@ -380,6 +380,9 @@ the engine.
 
 ## 9.1 The headless command
 
+> §9 states the build status twice; its later duplicate, which calls the headless command
+> unbuilt, is stale and superseded by this section.
+
 `services/harness` is the loop's terminal entry point. `ezchain-harness` runs **one**
 session on the real `AgentLoop` — the same class, budgets, kill switch and approval path the
 panel drives — and prints each step to stdout as it happens. It implements no loop and keeps
@@ -490,21 +493,23 @@ columns without updating the test.
 ## 11. One end-to-end paper workflow
 
 The capabilities above are one workflow, not seven products. An agent works in a single paper
-workspace through one scoped surface: the MCP server in §1, or the headless command in §9.1
-where no interactive client is present. That surface exposes tools and resources; it holds no
-money authority of its own. It can find a token, author and test a strategy, propose an order
-and gather release evidence. It cannot request a live mode, approve its own proposal, raise its
-own cap or arm the kill switch. Those boundaries are enforced by the API, not by the client,
-and each stage leaves an artifact a person can inspect before the next one runs.
+workspace through one scoped key across the MCP surface and the REST edge (§1, §7): the MCP
+tools expose data and propose writes, while the mutations — setting a cap, changing the
+automation tier, approving an order — live on REST under a person's authority. The headless
+command in §9.1 drives the same MCP tools where no interactive client is present. None of it
+holds money authority of its own. It can find a token, author and test a strategy, propose an
+order and gather release evidence. It cannot request a live mode, approve its own proposal,
+raise its own cap or arm the kill switch. Those boundaries are enforced by the API, not by the
+client, and each stage leaves an artifact a person can inspect before the next one runs.
 
-| Stage | Surface capability | Artifact left behind | Who holds the authority |
+| Stage | Surface capability (MCP tool unless noted) | Artifact left behind | Who holds the authority |
 |---|---|---|---|
 | Discovery | `ezchain_list_markets`, `ezchain_get_token`, `ezchain_get_candles` | market rows, a token snapshot, closed bars | reads only |
 | Authoring | `ezchain_get_graph_catalogue`, `ezchain_validate_graph`, `ezchain_dry_run_graph`, `ezchain_create_strategy` | one validated strategy record | the agent proposes; a person may review before a run |
 | Testing | `ezchain_run_backtest`, `ezchain_get_backtest`, `ezchain_run_strategy`, `ezchain_get_strategy_runs` | immutable backtest rows and an append-only decision log | evidence, never a promotion |
-| Arming | `ezchain_get_automation`, `GET /api/v1/agent/buckets` | the automation tier and the agent's own cap | only a person sets a cap, changes the tier or arms the kill switch |
-| Coordination | `ezchain_list_approvals`, `ezchain_get_automation` | one approval queue for every agent in the workspace | only a person approves or rejects |
-| Launch | `ezchain-mcp`, `ezchain-harness`, `ezchain_run_strategy` | a running interface and one strategy tick | no client-supplied mode; the kill switch still applies |
+| Arming | `ezchain_get_automation`, `GET /api/v1/agent/buckets` (REST read); person-only `PUT /api/v1/agent/buckets/{agent_id}` and `PUT /api/v1/paper/automation` (REST) | the automation tier and the agent's own cap, where one is set | only a person sets a cap, changes the tier or arms the kill switch |
+| Coordination | `ezchain_list_approvals`, `ezchain_get_automation`; person-only `POST /api/v1/paper/approvals/{id}/approve` or `/reject` (REST) | one approval queue for every agent in the workspace | only a person approves or rejects |
+| Launch | `ezchain-mcp`, `ezchain-harness` (shell commands), `ezchain_run_strategy` | a running interface and one strategy tick | no client-supplied mode; the kill switch still applies |
 | Release tracking | `ezchain_get_live_readiness`, `ezchain_list_backtests` | paper-gate evidence keyed by strategy id | read-only: the tool never promotes to live |
 
 **Discovery.** `ezchain_list_markets` reads multi-chain market rows; `ezchain_get_token` reads
@@ -527,13 +532,14 @@ with `ezchain_list_backtests`. `ezchain_run_strategy` evaluates one paper cycle 
 does not move the account; a strategy run can place a paper order, which passes through the
 same kill-switch and approval gates as any other automated order.
 
-**Arming.** Before an agent order can fill, a person sets that agent's bucket cap with
-`PUT /api/v1/agent/buckets/{agent_id}` and leaves the automation tier at `manual` unless there
-is a deliberate opt-in and a recorded acknowledgement (`GET`/`PUT /api/v1/paper/automation`).
-The agent can read its own bucket and the tier but cannot set
-either; an agent key attempting a person-only route gets a typed `403`. The cap and the risk
-policy bind an order before the quote, and the operator arms the kill switch over REST (§3, §8).
-An approval that is not decided inside its window expires.
+**Arming.** Where an owner sets a bucket cap, it is set with
+`PUT /api/v1/agent/buckets/{agent_id}` before the order; an agent with no cap is unbounded by
+the bucket and governed by the account's other gates (§3). The automation tier stays at
+`manual` unless there is a deliberate opt-in and a recorded acknowledgement
+(`GET`/`PUT /api/v1/paper/automation`). The agent can read its own bucket and the tier but
+cannot set either; an agent key attempting a person-only route gets a typed `403`. A cap that
+is set, and the risk policy, bind an order before the quote, and the operator arms the kill
+switch over REST (§3, §8). An approval that is not decided inside its window expires.
 
 **Coordination.** Mint one scoped key per agent (§4); each key's orders draw from its own
 bucket, keyed on the key id, so one agent cannot spend another's room, and the tier belongs to
@@ -561,6 +567,7 @@ backtest id, the approval id and the decision log; measured results belong in
 owner action gated by the paper gate and the executor (§8).
 
 No stage grants money authority. Write tools are absent unless the operator enabled them for a
-verified scoped `read`/`trade` key (§1, §5), and the approval queue, the bucket cap and the kill
-switch are enforced at the API even for a caller that reached the surface with a valid key.
-That is what makes the workflow safe to hand to an unattended session under the budgets in §9.
+verified scoped `read`/`trade` key (§1, §5), and the approval queue, the kill switch and — where
+an owner has set one — the bucket cap are enforced at the API even for a caller that reached the
+surface with a valid key; an agent with no cap is unbounded by the bucket (§3). That is what
+makes the workflow safe to hand to an unattended session under the budgets in §9.
