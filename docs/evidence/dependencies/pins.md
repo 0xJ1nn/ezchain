@@ -240,10 +240,8 @@ exit code is recorded above:
   which is the optional `firehose` extra that this change documents as unpinnable. Its
   absence is the gap named in §7, not a hidden failure.
 
-`ruff check tools/` reports eight pre-existing `UP017` (`datetime.timezone.utc` →
-`datetime.UTC`) hits in `tools/model_router.py`, which this change does not touch and which
-the gate does not lint: `tools/ci.sh` runs ruff on `packages apps services`. Fixing them is
-not part of this item and was left alone rather than folded into a dependency commit.
+`ruff check tools/` reported eight pre-existing `UP017` hits in a helper script that has since
+been removed; the gate lints `packages apps services` only, so they were not part of this item.
 
 ## 9. The gate, and a constraint bumped by hand
 
