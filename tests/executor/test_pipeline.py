@@ -130,7 +130,7 @@ def pipeline(
             venue=venue,
             sink=journal,
             limits=limits(),
-            kill_switch=kill_switch or KillSwitch(),
+            kill_switch=kill_switch or KillSwitch(read=lambda: False),
             timeout_seconds=0.2,
         ),
         venue,
@@ -515,6 +515,34 @@ async def test_an_unreadable_kill_switch_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_switch_with_no_reader_fails_closed() -> None:
+    # A pipeline wired without a persistence reader must not approve new risk. The
+    # default is an unreadable switch, so every buy is refused before the venue.
+    pipe, venue, journal = pipeline(kill_switch=KillSwitch())
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "denied"
+    assert result.reason == "KILL_SWITCH_UNAVAILABLE"
+    assert venue.quote_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
+async def test_a_switch_with_no_reader_still_allows_an_exit() -> None:
+    # Fail closed means no new risk, not trapped funds. An exit only reduces the held
+    # position, so an unreadable switch leaves it alone.
+    pipe, venue, journal = pipeline(kill_switch=KillSwitch())
+    result = await pipe.run(sell(), snapshot=make_snapshot(), position=position("10", "20"))
+
+    assert result.status == "filled"
+    assert result.reason is None
+    assert result.order is not None
+    assert result.order.reduce_only is True
+    assert venue.submit_calls == 1
+    assert journal.groups != ()
+
+
+@pytest.mark.asyncio
 async def test_the_kill_switch_is_read_on_every_intent() -> None:
     state = {"armed": False}
     pipe, _, _ = pipeline(kill_switch=KillSwitch(read=lambda: state["armed"]))
@@ -559,7 +587,11 @@ async def test_a_journal_failure_is_reported_and_not_hidden() -> None:
             raise RuntimeError("disk full")
 
     pipe = ExecutionPipeline(
-        venue=FakeVenue(), sink=BrokenSink(), limits=limits(), timeout_seconds=0.2
+        venue=FakeVenue(),
+        sink=BrokenSink(),
+        limits=limits(),
+        kill_switch=KillSwitch(read=lambda: False),
+        timeout_seconds=0.2,
     )
     result = await pipe.run(buy(), snapshot=make_snapshot())
 

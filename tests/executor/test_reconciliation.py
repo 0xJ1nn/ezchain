@@ -33,6 +33,7 @@ from ezchain_executor import (
     ExecutionPipeline,
     FakeVenue,
     FileAttemptLog,
+    KillSwitch,
     MemoryAttemptLog,
     MemoryJournal,
     Reconciler,
@@ -185,6 +186,7 @@ def make_pipe(venue: FakeVenue, sink: Any, log: AttemptLog) -> ExecutionPipeline
         venue=venue,
         sink=sink,
         limits=limits(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
         attempts=log,
     )

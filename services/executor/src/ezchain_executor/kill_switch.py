@@ -17,6 +17,16 @@ class KillSwitchUnavailable(RuntimeError):
     code = "KILL_SWITCH_UNAVAILABLE"
 
 
+def _unreadable_switch() -> bool:
+    """The default reader: without a persistence reader the state cannot be read.
+
+    A caller that wires no reader must not be taken as an operator who left the switch
+    off. Refusing is the only safe answer, because an unreadable switch could be an
+    armed one the executor cannot see.
+    """
+    raise KillSwitchUnavailable("no kill switch reader is configured")
+
+
 @dataclass(frozen=True)
 class KillSwitch:
     """A fresh read of the persisted operator switch.
@@ -24,9 +34,11 @@ class KillSwitch:
     ``read`` is called on every decision, so arming takes effect on the next order
     without a restart. It is expected to raise when the state is unreadable; this class
     turns any failure into :class:`KillSwitchUnavailable` instead of assuming "off".
+    With no reader supplied the switch is unreadable rather than off, so a pipeline
+    wired without persistence fails closed instead of approving new risk.
     """
 
-    read: Callable[[], bool] = field(default=lambda: False)
+    read: Callable[[], bool] = field(default=_unreadable_switch)
 
     def active(self) -> bool:
         try:
