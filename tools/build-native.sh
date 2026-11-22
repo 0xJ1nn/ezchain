@@ -74,7 +74,12 @@ if [ ! -f "$src" ]; then
 fi
 
 dst="$SITE_PACKAGES/ezchain_bridge.so"
-cp "$src" "$dst"
+# Replace the module atomically. Copying over a loaded extension rewrites the file a running
+# interpreter has mapped and crashes it; a rename gives the new build a new file while every
+# running process keeps the copy it loaded.
+tmp="$dst.tmp.$$"
+cp "$src" "$tmp"
+mv -f "$tmp" "$dst"
 echo "native: installed $src -> $dst"
 
 # Prove the installed file is importable by the venv that will run the app/gate.
