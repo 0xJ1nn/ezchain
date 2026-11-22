@@ -28,7 +28,18 @@ from ezchain_core import utcnow
 from ..models import ProviderKeyRow, new_id
 from .provider_secrets import CipherUnavailable, SecretCipher
 
-SUPPORTED_PROVIDERS = frozenset({"jupiter"})
+# Jupiter is a market-data credential; the rest authenticate model providers whose keys
+# belong to this workspace. Local and free entries need no stored key and are absent here.
+SUPPORTED_PROVIDERS = frozenset(
+    {
+        "jupiter",
+        "anthropic",
+        "openai",
+        "openrouter",
+        "command_code",
+        "openai_compatible",
+    }
+)
 _PROVIDER = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
 MAX_SECRET_LENGTH = 4096
 FINGERPRINT_HEX_CHARS = 32
@@ -150,6 +161,13 @@ def _active_key(session: Session, workspace_id: str, provider: str) -> ProviderK
             ProviderKeyRow.revoked_at.is_(None),
         )
     )
+
+
+def has_active_key(session: Session, *, workspace_id: str, provider: str) -> bool:
+    """Whether this workspace has a live key for ``provider``. Metadata only, no secret."""
+    workspace = _validated_workspace(workspace_id)
+    provider_id = _validated_provider(provider)
+    return _active_key(session, workspace, provider_id) is not None
 
 
 def _discard(cipher: SecretCipher, stored: str) -> None:
@@ -381,6 +399,7 @@ __all__ = [
     "SUPPORTED_PROVIDERS",
     "create_key",
     "fingerprint",
+    "has_active_key",
     "list_keys",
     "public_key",
     "resolve_secret",

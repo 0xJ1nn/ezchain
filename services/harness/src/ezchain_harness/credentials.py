@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .errors import MissingCredential
+from .secrets import secret_override
 
 
 @dataclass(frozen=True)
@@ -26,8 +27,12 @@ class Credential:
 
     @classmethod
     def from_env(cls, name: str, *, env: Mapping[str, str] | None = None) -> Credential:
+        # A key resolved from the encrypted store is installed for one call by
+        # provide_secret. It wins over the process environment so a chat uses the key
+        # that belongs to the workspace, never an unrelated value a host happened to set.
+        override = secret_override(name) if env is None else None
         source = os.environ if env is None else env
-        value = source.get(name, "")
+        value = override if override is not None else source.get(name, "")
         if not value.strip():
             raise MissingCredential(name)
         return cls(env=name, _secret=value)
