@@ -56,6 +56,7 @@ from .routers import (
     provider_keys,
     signals,
     strategies,
+    stream,
     system,
     trade_policy,
     watchlist,
@@ -67,6 +68,7 @@ from .services.market_monitor import MarketMonitor
 from .services.paper import ensure_genesis, freshness_from_settings
 from .services.plugin_runtime import PaperPluginRuntime
 from .services.provider_secrets import build_secret_cipher
+from .services.stream import StreamHub
 from .services.system_flags import read_kill_switch, seed_kill_switch
 
 
@@ -225,6 +227,9 @@ def create_app() -> FastAPI:
         description="Live market browsing and paper execution. No keys, no live money.",
         lifespan=lifespan,
     )
+    # One process-wide hub: producers append a session's trace tail here and every SSE or
+    # WebSocket client on that session follows the same channel.
+    app.state.stream_hub = StreamHub()
     # Later additions are outermost: access logs wrap CORS, and CORS wraps auth so a
     # 401 still carries CORS headers for the browser. The read limiter runs inside
     # auth so it can see the resolved principal.
@@ -248,6 +253,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(markets.router)
     app.include_router(signals.router)
+    app.include_router(stream.router)
     app.include_router(discovery.router)
     app.include_router(paper.router)
     app.include_router(approvals.router)
