@@ -20,7 +20,12 @@ from starlette.websockets import WebSocketDisconnect
 
 from ezchain_agent_runtime import (
     TRACE_SCHEMA,
+    AgentLoop,
+    Answer,
+    BudgetLimits,
     MemoryTraceLog,
+    ModelTurn,
+    RuntimeConfig,
     SessionState,
     StopReason,
     TraceEvent,
@@ -39,7 +44,12 @@ from ezchain_api.routers.stream import (
 )
 from ezchain_api.services import api_keys
 from ezchain_api.services.stream import (
+    MAX_CHANNEL_EVENTS,
+    MAX_CHANNELS,
+    MAX_SUBSCRIBER_QUEUE,
+    EventCursorExpired,
     InvalidLastEventId,
+    Lagged,
     PrincipalMismatch,
     ScopeDenied,
     StreamEvent,
@@ -392,3 +402,183 @@ def test_websocket_refuses_a_read_key_with_a_typed_error(
 
     with client.websocket_connect("/api/v1/stream/session-1") as socket:
         assert socket.receive_json()["error"]["code"] == "STREAM_SCOPE_DENIED"
+
+
+# --- Producer: a real run is the source of the stream -------------------------------------
+
+
+class _AnswerModel:
+    """A one-turn model: no tools, no network, no provider credential."""
+
+    def complete(self, request: object) -> ModelTurn:
+        return ModelTurn(answer=Answer(summary="done"))
+
+
+class _EmptyToolbox:
+    """The empty tool surface a one-turn answer needs."""
+
+    def list_tools(self) -> tuple[()]:
+        return ()
+
+    def call_tool(self, name: str, arguments: object) -> object:
+        raise AssertionError("the scripted answer makes no tool call")
+
+
+def _limits() -> BudgetLimits:
+    return BudgetLimits(
+        session_turns=8,
+        session_tokens=10_000,
+        session_cost_usd=Decimal("1"),
+        daily_turns=50,
+        daily_tokens=100_000,
+        daily_cost_usd=Decimal("10"),
+    )
+
+
+def test_a_real_run_is_streamed_live_and_replayed_without_a_filled_hub() -> None:
+    hub = StreamHub()
+    principal = _principal()
+    store = MemoryTraceLog()
+    sink = hub.trace_sink("live", owner=principal, required_scope="trade", store=store)
+
+    # Attach before the run: everything in this queue arrived while the loop was executing,
+    # not from a snapshot assembled by the test.
+    _, live = hub.subscribe("live", principal)
+    loop = AgentLoop(
+        model=_AnswerModel(),
+        toolbox=_EmptyToolbox(),
+        limits=_limits(),
+        clock=lambda: FIXED_TIME,
+        trace=sink,
+        config=RuntimeConfig(session_id_factory=lambda: "live"),
+    )
+    outcome = loop.run("watch me")
+
+    recorded = list(store.read(outcome.session_id))
+    assert len(recorded) >= 3
+    delivered = [int(live.get_nowait().id) for _ in recorded]
+    assert live.get_nowait() is None  # the producer closed the channel at the outcome
+    assert delivered == [event.sequence for event in recorded]
+
+    replay, _ = hub.subscribe("live", principal)
+    assert [event.id for event in replay] == [str(event.sequence) for event in recorded]
+    resumed, _ = hub.subscribe("live", principal, last_event_id=str(recorded[0].sequence))
+    assert [int(event.id) for event in resumed] == [event.sequence for event in recorded[1:]]
+
+
+def test_the_producer_opens_the_channel_with_the_existing_trace() -> None:
+    store = MemoryTraceLog()
+    recorder = TraceRecorder(session_id="resumed", sink=store, clock=lambda: FIXED_TIME)
+    recorder.session_start(prompt="first prompt")
+    recorder.outcome(
+        state=SessionState.DONE,
+        reason=StopReason.COMPLETED,
+        detail=None,
+        turns=1,
+        tokens=1,
+        cost_usd=Decimal("0.01"),
+        numbers=0,
+    )
+
+    hub = StreamHub()
+    hub.trace_sink("resumed", owner=_principal(), required_scope="trade", store=store)
+
+    snapshot, _ = hub.subscribe("resumed", _principal())
+    assert [event.id for event in snapshot] == ["0", "1"]
+    assert [event.hash for event in snapshot] == [event.digest for event in store.read("resumed")]
+
+
+# --- Bounded history and slow subscribers -------------------------------------------------
+
+
+def _publish_events(hub: StreamHub, count: int) -> None:
+    for step in range(1, count + 1):
+        hub.publish("session-1", _trace(count=step)[-1])
+
+
+def test_channel_history_is_bounded_and_an_expired_cursor_is_typed() -> None:
+    hub = StreamHub()
+    _open(hub, count=0)
+    channel = hub._channels["session-1"]
+    _publish_events(hub, MAX_CHANNEL_EVENTS + 5)
+
+    assert len(channel.events) == MAX_CHANNEL_EVENTS
+    with pytest.raises(EventCursorExpired) as expired:
+        hub.subscribe("session-1", _principal(), last_event_id="0")
+    assert expired.value.code == "STREAM_CURSOR_EXPIRED"
+    assert expired.value.status_code == 410
+
+    oldest = channel.events[0].sequence
+    snapshot, _ = hub.subscribe("session-1", _principal(), last_event_id=str(oldest - 1))
+    assert len(snapshot) == MAX_CHANNEL_EVENTS
+
+
+def test_channel_count_is_capped() -> None:
+    hub = StreamHub()
+    for index in range(MAX_CHANNELS + 3):
+        hub.open(f"session-{index}", owner=_principal(), required_scope="trade")
+
+    assert len(hub.sessions()) == MAX_CHANNELS
+    assert "session-0" not in hub.sessions()
+
+
+def test_a_stalled_subscriber_is_closed_with_a_typed_lagged_event() -> None:
+    hub = StreamHub()
+    hub.open("session-1", owner=_principal(), required_scope="trade")
+    channel = hub._channels["session-1"]
+    _, stalled = hub.subscribe("session-1", _principal())
+
+    _publish_events(hub, MAX_SUBSCRIBER_QUEUE + 4)
+
+    assert stalled not in channel.subscribers
+    markers = []
+    while not stalled.empty():
+        markers.append(stalled.get_nowait())
+    lagged = [item for item in markers if isinstance(item, Lagged)]
+    assert len(lagged) == 1
+    assert lagged[0].envelope()["code"] == "STREAM_LAGGED"
+
+    _, kept = hub.subscribe("session-1", _principal())
+    hub.publish("session-1", _trace(count=MAX_SUBSCRIBER_QUEUE + 5)[-1])
+    assert kept.get_nowait().id == str(MAX_SUBSCRIBER_QUEUE + 4)
+
+
+def test_sse_ends_with_a_typed_lagged_frame(session: Session, settings: Settings) -> None:
+    hub = StreamHub()
+    _open(hub)
+    channel = hub._channels["session-1"]
+    original = channel.subscribe
+
+    def lagged_subscribe(after: int | None) -> tuple[list[StreamEvent], object]:
+        snapshot, queue = original(after)
+        queue.put_nowait(Lagged("session-1"))
+        return snapshot, queue
+
+    channel.subscribe = lagged_subscribe  # type: ignore[method-assign]
+    client = _sse_client(session, settings, hub, _principal())
+
+    response = client.get("/api/v1/stream/session-1")
+
+    assert response.status_code == 200
+    assert "event: lagged" in response.text
+    assert "STREAM_LAGGED" in response.text
+
+
+def test_websocket_ends_with_a_typed_lagged_frame(session: Session, settings: Settings) -> None:
+    hub = StreamHub()
+    _open(hub)
+    channel = hub._channels["session-1"]
+    original = channel.subscribe
+
+    def lagged_subscribe(after: int | None) -> tuple[list[StreamEvent], object]:
+        snapshot, queue = original(after)
+        queue.put_nowait(Lagged("session-1"))
+        return snapshot, queue
+
+    channel.subscribe = lagged_subscribe  # type: ignore[method-assign]
+    client = _ws_client(session, settings, hub, _principal())
+
+    with client.websocket_connect("/api/v1/stream/session-1") as socket:
+        for _ in range(3):
+            socket.receive_json()
+        assert socket.receive_json()["code"] == "STREAM_LAGGED"

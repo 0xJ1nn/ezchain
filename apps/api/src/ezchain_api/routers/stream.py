@@ -4,6 +4,11 @@ Both transports tail the same append-only trace through the stream hub. A client
 last event id it saw and receives only the later events, in order. The principal is resolved
 with the same scoped-key helpers as any other route, and the channel's owner and required
 scope are checked before a single event is sent.
+
+A WebSocket upgrade is authenticated by a bearer on the handshake header, so this transport is
+for server-side clients: a browser cannot set that header on a WebSocket. Browser clients must
+reach the stream through a server-side relay that holds the scoped key. The same is true of a
+browser EventSource, which cannot send an Authorization header either.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ from starlette.applications import Starlette
 from ..config import Settings, get_settings
 from ..deps import get_session
 from ..services import api_keys
-from ..services.stream import StreamError, StreamHub
+from ..services.stream import Lagged, StreamError, StreamHub
 
 router = APIRouter(prefix="/api/v1/stream", tags=["stream"])
 
@@ -163,6 +168,9 @@ async def stream_events(
                 event = await queue.get()
                 if event is None:
                     break
+                if isinstance(event, Lagged):
+                    yield event.sse()
+                    break
                 yield event.sse()
         finally:
             hub.unsubscribe(session_id, queue)
@@ -207,6 +215,8 @@ async def stream_socket(
             if event is None:
                 break
             await websocket.send_json(event.envelope())
+            if isinstance(event, Lagged):
+                break
     except WebSocketDisconnect:
         pass
     finally:
