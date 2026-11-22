@@ -499,7 +499,7 @@ export async function getLaunches(query: LaunchQuery = {}): Promise<LaunchList> 
 		return fixtures.fixtureLaunches(query);
 	}
 	// Live births are the newest pairs from the proven markets feed. Curve progress has
-	// no live source in P0, so it stays null and the pages print an em dash.
+	// no live source in this build, so it stays null and the pages print an em dash.
 	const list = await request<MarketList>("/v1/markets", {
 		params: {
 			chain: query.chain ?? "all",

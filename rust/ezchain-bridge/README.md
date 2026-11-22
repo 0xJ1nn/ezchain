@@ -42,10 +42,10 @@ ledger writes; only pure, already-ported kernels are exposed.
 ## Build
 
 The extension is an `abi3-py39` module; this repository's oracle interpreter is the
-app's Python 3.11 venv. With the scratch toolchain used for the Rust migration:
+app's Python 3.11 venv. With a local Rust toolchain:
 
 ```bash
-SCRATCH=/private/var/folders/55/5z874h2x6tq_8xjr5zb2b76w0000gn/T/opencode/ez-rust-poc
+SCRATCH="${TMPDIR:-/tmp}/ez-rust-poc"
 export CARGO_HOME="$SCRATCH/cargo" RUSTUP_HOME="$SCRATCH/rustup" PATH="$SCRATCH/cargo/bin:$PATH"
 cargo build -p ezchain-bridge
 cp rust/target/debug/libezchain_bridge.dylib rust/target/debug/ezchain_bridge.so

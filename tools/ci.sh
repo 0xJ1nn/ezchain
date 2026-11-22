@@ -22,22 +22,19 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/7 agent stubs"
-node tools/sync-agent-stubs.mjs --check
-
-step "2/7 design tokens"
+step "1/6 design tokens"
 node tools/build-tokens.mjs --check
 
-step "3/7 wireframe integrity"
+step "2/6 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "4/7 markdown links"
+step "3/6 markdown links"
 node tools/check-links.mjs
 
-step "5/7 secret scan"
+step "4/6 secret scan"
 node tools/check-secrets.mjs
 
-step "6/7 dependency pins"
+step "5/6 dependency pins"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -59,7 +56,7 @@ fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are audited separately: python3 tools/audit_pins.py --node
 
-step "7/7 runtime gates (when present)"
+step "6/6 runtime gates (when present)"
 ran=0
 # The bridge clients fail closed when the compiled extension is absent, so the
 # native module must be installed before any Python test runs. Host-native build

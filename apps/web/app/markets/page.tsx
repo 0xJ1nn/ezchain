@@ -770,7 +770,7 @@ export default async function MarketsPage({
 								Rows younger than an hour say so.
 							</div>
 							<div>
-								• <span className="ink">Safety</span> is unknown for every token in P0. A
+								• <span className="ink">Safety</span> is unknown for every token. A
 								miss is not a pass; execution gates stay fail-closed.
 							</div>
 							<div>

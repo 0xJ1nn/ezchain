@@ -196,7 +196,7 @@ export function MarketTable({
 										</td>
 									)}
 									<td>
-										<Badge tone="warn" title="Safety is not implemented in P0">
+										<Badge tone="warn" title="Safety checks are not implemented">
 											unknown
 										</Badge>
 									</td>

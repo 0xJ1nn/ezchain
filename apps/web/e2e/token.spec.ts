@@ -165,7 +165,7 @@ test("a non-solana token is labelled PAPER · MARK, not an executable route", as
 	await expect(page.getByText("PAPER · MARK").first()).toBeVisible();
 	await expect(page.locator("#quote")).toContainText("paper mark · no executable route");
 	await expect(page.locator("#quote")).toContainText(
-		"This chain has no executable venue in P0",
+		"This chain has no executable venue",
 	);
 	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 });
