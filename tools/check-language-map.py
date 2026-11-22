@@ -32,6 +32,7 @@ Usage:
     python3 tools/check-language-map.py            # gate: exit 1 on any finding
     python3 tools/check-language-map.py --json     # machine-readable findings
     python3 tools/check-language-map.py --explain  # print the rules, then the findings
+    python3 tools/check-language-map.py --root /path/to/ezchain  # check another checkout
 
 Exit status is 0 when clean, 1 on findings, 2 when the map itself cannot be read.
 """
@@ -41,6 +42,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -90,8 +92,34 @@ def read_map() -> dict[str, Any]:
         raise SystemExit(2) from None
 
 
-def tracked_files() -> list[Path]:
-    """Every tracked or untracked-but-not-ignored file, so a new file is checked too."""
+def walk_visible_files() -> set[str]:
+    """Files visible without git: no hidden directories and no nested checkouts.
+
+    A worktree kept inside the checkout has its own ``.git``. Descending into it would
+    report its duplicate packages as product source, so hidden directories and any
+    directory that is itself a repository are pruned before the walk goes deeper.
+    """
+    found: set[str] = set()
+    for directory, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if not name.startswith(".")
+            and name not in SKIP_DIRS
+            and not (Path(directory) / name / ".git").exists()
+        ]
+        for name in filenames:
+            found.add(str((Path(directory) / name).relative_to(ROOT)))
+    return found
+
+
+def source_file_set() -> set[str]:
+    """The one file set every scan uses: tracked plus untracked-but-not-ignored.
+
+    Git already omits an ignored nested worktree, so asking which files belong to this
+    checkout is both faster and stricter than walking the tree. The walk is the fallback
+    outside a checkout.
+    """
     import subprocess
 
     try:
@@ -103,17 +131,13 @@ def tracked_files() -> list[Path]:
             check=True,
         ).stdout
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # Outside a checkout: fall back to a walk, which is stricter and slower.
-        out = "\n".join(
-            str(path.relative_to(ROOT))
-            for path in ROOT.rglob("*")
-            if path.is_file() and not any(part in SKIP_DIRS for part in path.parts)
-        )
-    return [
-        Path(line.strip())
-        for line in out.splitlines()
-        if line.strip() and (ROOT / line.strip()).exists()
-    ]
+        return walk_visible_files()
+    return {rel for line in out.splitlines() if (rel := line.strip()) and (ROOT / rel).exists()}
+
+
+def tracked_files() -> list[Path]:
+    """Source-visible files as paths, for callers that want the list."""
+    return sorted(Path(path) for path in source_file_set())
 
 
 def is_test(rel: str) -> bool:
@@ -152,15 +176,18 @@ def check_forbidden_languages(files: list[Path], spec: dict[str, Any]) -> list[F
 # --- 2. declared layers -----------------------------------------------------------------
 
 
-def check_declared_layers(spec: dict[str, Any]) -> list[Finding]:
+def check_declared_layers(spec: dict[str, Any], files: set[str] | None = None) -> list[Finding]:
     declared = spec["python_layers"]
     out = []
-    for path in sorted(ROOT.glob("*/**/pyproject.toml")) + sorted(ROOT.glob("*/pyproject.toml")):
+    for rel in sorted(source_file_set() if files is None else files):
+        path = Path(rel)
+        if path.name != "pyproject.toml" or len(path.parts) < 2:
+            continue
         if any(part in SKIP_DIRS for part in path.parts):
             continue
         package_dir = path.parent
-        rel_dir = str(package_dir.relative_to(ROOT))
-        text = path.read_text(encoding="utf-8")
+        rel_dir = str(package_dir)
+        text = (ROOT / path).read_text(encoding="utf-8")
         match = re.search(r'^name\s*=\s*"([^"]+)"', text, re.MULTILINE)
         if not match:
             continue
@@ -207,17 +234,16 @@ def check_declared_layers(spec: dict[str, Any]) -> list[Finding]:
 # --- 3/4/5. import edges ----------------------------------------------------------------
 
 
-def python_files(layers: dict[str, Any]) -> dict[str, list[Path]]:
+def python_files(layers: dict[str, Any], files: set[str] | None = None) -> dict[str, list[Path]]:
+    visible = source_file_set() if files is None else files
     by_layer: dict[str, list[Path]] = {}
     for key, value in layers.items():
-        base = ROOT / value["path"]
+        base = value["path"]
         by_layer[key] = (
-            [
-                path
-                for path in base.rglob("*.py")
-                if not any(part in SKIP_DIRS for part in path.parts)
-            ]
-            if base.is_dir()
+            sorted(
+                ROOT / rel for rel in visible if rel.startswith(f"{base}/") and rel.endswith(".py")
+            )
+            if (ROOT / base).is_dir()
             else []
         )
     return by_layer
@@ -243,9 +269,9 @@ def imports_of(path: Path) -> set[str]:
     return found
 
 
-def check_import_edges(spec: dict[str, Any]) -> list[Finding]:
+def check_import_edges(spec: dict[str, Any], files: set[str] | None = None) -> list[Finding]:
     layers = spec["python_layers"]
-    by_layer = python_files(layers)
+    by_layer = python_files(layers, files)
     module_to_layer = {}
     for key, value in layers.items():
         text = (ROOT / value["path"] / "pyproject.toml").read_text(encoding="utf-8")
@@ -304,13 +330,15 @@ def imports_bridge(path: Path) -> bool:
     )
 
 
-def check_bridge_clients(spec: dict[str, Any]) -> list[Finding]:
+def check_bridge_clients(spec: dict[str, Any], files: set[str] | None = None) -> list[Finding]:
     allowed = {entry["path"] for entry in spec["python_entry_points"]}
     out = []
-    for path in ROOT.rglob("*.py"):
-        if any(part in SKIP_DIRS for part in path.parts):
+    for rel in sorted(source_file_set() if files is None else files):
+        if not rel.endswith(".py"):
             continue
-        rel = str(path.relative_to(ROOT))
+        if any(part in SKIP_DIRS for part in Path(rel).parts):
+            continue
+        path = ROOT / rel
         if is_test(rel) or is_oracle(rel) or is_tooling(rel):
             continue
         if not imports_bridge(path):
@@ -330,14 +358,17 @@ def check_bridge_clients(spec: dict[str, Any]) -> list[Finding]:
     return out
 
 
-def check_third_party_seams(spec: dict[str, Any]) -> list[Finding]:
+def check_third_party_seams(spec: dict[str, Any], files: set[str] | None = None) -> list[Finding]:
     out = []
+    visible = source_file_set() if files is None else files
     for module, rule in spec.get("third_party_seams", {}).items():
         allowed = rule["allowed"]
-        for path in ROOT.rglob("*.py"):
-            if any(part in SKIP_DIRS for part in path.parts):
+        for rel in sorted(visible):
+            if not rel.endswith(".py"):
                 continue
-            rel = str(path.relative_to(ROOT))
+            if any(part in SKIP_DIRS for part in Path(rel).parts):
+                continue
+            path = ROOT / rel
             if is_test(rel) or is_oracle(rel) or is_tooling(rel):
                 continue
             in_seam = any(rel.startswith(prefix + "/") for prefix in allowed)
@@ -359,17 +390,23 @@ def check_third_party_seams(spec: dict[str, Any]) -> list[Finding]:
 # --- 6. rust crates ---------------------------------------------------------------------
 
 
-def check_rust_crates(spec: dict[str, Any]) -> list[Finding]:
+def check_rust_crates(spec: dict[str, Any], files: set[str] | None = None) -> list[Finding]:
+    visible = source_file_set() if files is None else files
     out = []
     shipping = set(spec["rust_crates"]["shipping"])
     frozen = set(spec["rust_crates"]["frozen"])
     unwired = set(spec["rust_crates"].get("shipping_unwired", {}))
     declared = shipping | frozen | unwired
-    crates = {
-        path.name: path
-        for path in (ROOT / "rust").glob("ezchain-*")
-        if path.is_dir() and (path / "Cargo.toml").is_file()
-    }
+    crates = {}
+    for rel in visible:
+        parts = Path(rel).parts
+        if (
+            len(parts) == 3
+            and parts[0] == "rust"
+            and parts[1].startswith("ezchain-")
+            and parts[2] == "Cargo.toml"
+        ):
+            crates[parts[1]] = ROOT / "rust" / parts[1]
     for name in crates:
         if name not in declared:
             out.append(
@@ -407,13 +444,22 @@ def check_rust_crates(spec: dict[str, Any]) -> list[Finding]:
     # Only the map may name a binary; a crate that grows a second entry point is a
     # deployment the map does not describe.
     binaries = spec["rust_crates"].get("binaries", {})
-    for path in (ROOT / "rust").glob("ezchain-*/src/main.rs"):
-        name = path.parent.parent.name
+    for rel in sorted(visible):
+        parts = Path(rel).parts
+        if not (
+            len(parts) == 4
+            and parts[0] == "rust"
+            and parts[1].startswith("ezchain-")
+            and parts[2] == "src"
+            and parts[3] == "main.rs"
+        ):
+            continue
+        name = parts[1]
         if name not in binaries:
             out.append(
                 finding(
                     "undeclared-binary",
-                    str(path.relative_to(ROOT)),
+                    rel,
                     f"{name} builds a binary the language map does not list",
                     "Declare it in rust_crates.binaries and say whether an installer ships it.",
                 )
@@ -580,16 +626,17 @@ def check_renderer(spec: dict[str, Any], files: list[Path]) -> list[Finding]:
 
 
 def run(spec: dict[str, Any]) -> list[Finding]:
-    files = tracked_files()
+    files = source_file_set()
+    paths = [Path(rel) for rel in sorted(files)]
     findings: list[Finding] = []
-    findings += check_forbidden_languages(files, spec)
-    findings += check_declared_layers(spec)
-    findings += check_import_edges(spec)
-    findings += check_bridge_clients(spec)
-    findings += check_third_party_seams(spec)
-    findings += check_rust_crates(spec)
+    findings += check_forbidden_languages(paths, spec)
+    findings += check_declared_layers(spec, files)
+    findings += check_import_edges(spec, files)
+    findings += check_bridge_clients(spec, files)
+    findings += check_third_party_seams(spec, files)
+    findings += check_rust_crates(spec, files)
     findings += check_money_paths(spec)
-    findings += check_renderer(spec, files)
+    findings += check_renderer(spec, paths)
     return findings
 
 
@@ -600,11 +647,21 @@ def by_kind(findings: list[Finding]) -> dict[str, int]:
     return counts
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    global ROOT, MAP_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="print findings as JSON")
     parser.add_argument("--explain", action="store_true", help="print the rules first")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help="check this checkout instead of the one containing the script",
+    )
+    args = parser.parse_args(argv)
+    if args.root is not None:
+        ROOT = args.root.resolve()
+        MAP_PATH = ROOT / "architecture" / "language-map.json"
 
     spec = read_map()
     findings = run(spec)
