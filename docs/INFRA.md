@@ -44,6 +44,12 @@ required and no manifests are shipped.
 
 ## 2. Services in the PAPER stack
 
+The primary deployment target is a native host — a Python virtual environment under a system
+supervisor, or the Electron desktop app ([DESKTOP.md](DESKTOP.md)).
+[`tools/install-native.sh`](../tools/install-native.sh) installs it as two systemd user units
+([SELF-HOSTING-NATIVE.md](SELF-HOSTING-NATIVE.md)). Docker Compose is a secondary,
+reproducible artifact: the services below describe that Compose path.
+
 | Service | Image / build | Ports | Health | Budget |
 |---|---|---|---|---|
 | `postgres` | `postgres:16-alpine` | 5432 (internal) | `pg_isready` | 1 CPU / 1 GB |

@@ -7,8 +7,12 @@ native window. Closing the window hides to the tray; a watchdog restarts either 
 Build from the repository root:
 
 ```bash
-bash tools/build-desktop.sh            # unpacked
-bash tools/build-desktop.sh --package  # AppImage + .deb
+bash tools/build-desktop.sh            # unpacked, for this host
+bash tools/build-desktop.sh --package  # installers for this host
+(cd apps/desktop && node --test "test/*.mjs")  # shell unit tests, any host
 ```
+
+The sidecar is a native PyInstaller freeze, so a target is built on its own platform;
+`--target win|mac` refuses elsewhere and says so.
 
 User/operator documentation: [`docs/DESKTOP.md`](../../docs/DESKTOP.md).

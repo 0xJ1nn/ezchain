@@ -1979,3 +1979,98 @@ performance-critical, security-critical, a network transport, or part of the tru
 boundary, it is Rust; if it is business logic, model inference, analytics, automation or an
 integration, it is Python. UI stays TypeScript and belongs to Claude. Money arithmetic stays
 in Python until decimal parity is proven (ADR-0050 rule 4), and live mode stays owner-blocked.
+
+---
+
+## ADR-0053 — Native deployment, an enforced language map, and a frozen node stack
+
+**Date:** 2026-11-21 · **Status:** Accepted (explicit maintainer decision). Adds enforcement
+to ADR-0050 and ADR-0052; it does not change what either language owns.
+
+**Context:** three facts, each measured in this tree, made the policy above unenforceable by
+review alone.
+
+1. **The deployment target was wrong.** The only documented install path was Docker Compose,
+   but the product is a workstation an operator runs on their own machine, or a single-user
+   desktop app. The API image in `apps/api/Dockerfile` installed Python only, with no Rust and
+   no `ezchain_bridge`, while `apps/api/src/ezchain_api/observability.py` calls the bridge on
+   every request. The shipped image therefore answered no request at all, and the recorded
+   deployment evidence predated the bridge by three weeks. A language policy that a packaging
+   mistake can turn into a total outage is not enforced by being written down.
+2. **Review could not hold the line.** The map is prose, so nothing failed when a Python
+   module appeared in a Rust-owned layer, when a fourth implementation showed up, or when a
+   second compiled-bridge client grew its own probe and fallback after the first one had
+   deliberately removed it.
+3. **The Rust programme measured about twice its product value.** Of 18 crates, five
+   (`ezchain-p2p`, `ezchain-p2p-transport`, `ezchain-consensus`, `ezchain-node`,
+   `ezchain-rpc-server`, 5,118 source lines) had no consumer anywhere — no Python caller, no
+   Compose service, no installer, no desktop resource — and 5,617 of `ezchain-rpc`'s 5,856
+   lines were reached only by those five. ADR-0051 remains Proposed, its digest is explicitly
+   non-cryptographic, and no second machine exists to agree with. The ledger seal and the
+   replay projection, by contrast, are proven kernels with no caller in the Python write path.
+
+**Options:** (a) keep Docker as the primary install and patch the image; (b) keep the policy
+as prose and rely on review; (c) name the native host as the deployment target, record the
+freeze, and make the map a gate that fails a pull request; (d) delete the frozen crates.
+
+**Decision:**
+
+1. **The native host is the primary deployment.** A venv under a system supervisor
+   (systemd user units), or the Electron desktop app, runs the same API and web bundle. The
+   container stack stays as a secondary, reproducible artifact and must build the bridge.
+   Rust reaches a user through two artifacts only: the PyO3 extension and the read-only CLI.
+   The CLI is required to ship through the installer and the desktop resource list, not merely
+   to build. **Status:** the extension is wired; the CLI is not shipped yet — it builds and its
+   tests pass, and no installer or desktop resource list carries it — so RUST-08 stays open and
+   the map's `shipping`/`binaries` text says "not yet in any installer release" rather than
+   implying a user can obtain it.
+2. **`architecture/language-map.json` is normative and machine-read.** It declares every
+   Python layer with its allowed imports, every Rust crate as shipping or frozen, the two
+   sanctioned bridge clients, the third-party seams, and the forbidden shapes. A new
+   deployable or crate cannot appear without an entry. `tools/check-language-map.py` enforces
+   it in `tools/ci.sh` step 2/9 and in `tests/architecture/`.
+3. **The freeze is real because it is checked, and "shipping" is a reachability claim.** No
+   shipping crate may depend on a frozen one, and every crate is declared. The checker also
+   walks the crate graph from the two shipped entry points (the bridge extension and the CLI):
+   a crate nothing links is not shipping, however good its tests are. Seven proven but
+   uncalled kernels (`ezchain-seal`, `ezchain-replay`, `ezchain-fingerprint`,
+   `ezchain-executor`, `ezchain-protection`, `ezchain-scheduler`, `ezchain-flow`) are recorded
+   as unwired with the wiring each one lacks, and the gate fails a stale entry the moment that
+   wiring lands. This is the specific mistake the audit found: thirteen crates counted as
+   product value while nothing started six of them. The frozen set is the five crates above plus every
+   `ezchain-rpc` module other than `scopes` and `method`. They are built and tested; they are
+   not deleted, because they are a rehearsal of a topology the product may one day need, and
+   deleting them would discard 638 passing tests. They rejoin the product on one condition,
+   and only one: **a second, independently operated machine must agree on the same ordered
+   tape**, together with an accepted P2P/consensus design. Federation ambition is not that
+   condition.
+4. **Money stays Python-owned.** The Rust money kernels remain the faster, parity-proven
+   implementation of the functions they already cover (measured 2.25x for `quantize_money`,
+   7.85x for `to_minor_units`, 1.61x for `normalize_scopes`, on this host, through the typed
+   wrappers). But `normalize_method` is a single string comparison of a few hundred
+   nanoseconds, and the bridge crossing costs about the same again. Measured on this host
+   through the raw module (300,000 calls per sample, twelve interleaved samples, taskset
+   pinned), Python ran at a median of 457 ns per call and the bridge at 624 ns: the paired
+   ratio had a median of 1.56x with an interquartile range of 1.06x to 2.24x on a host under
+   heavy load. The honest reading is that the bridge is never *faster* here and often slower;
+   the exact ratio is below this machine's noise floor. It also sits on the liveness path, so
+   routing it through a compiled extension bought no speed and made a missing build artifact
+   fatal. It returns to Python, and the wrapper stays exported as a parity-checked oracle.
+   This reverses part of the change that routed the call through the bridge: the kernel and
+   its 70 recorded cases stay, the request path does not use them. The lesson is not "PyO3 is
+   slow" or "PyO3 is fast": a port must move a whole boundary measured on whole work units,
+   never a single small call.
+5. **The bridge must be able to be absent without taking the product down.** A component whose
+   absence fails a health probe, a boot or a read path may not sit behind a compiled
+   extension. The money kernels are mandatory and shipped; observability is neither.
+6. **The pump.fun firehose stays Python.** It is a third-party integration, not a trust
+   boundary, and a compiled rewrite cannot shorten a remote provider's timeout.
+
+**Consequences:** the local gate now fails on the architecture rules, so an agent that does
+not read this ADR still cannot break it. Two recorded import inversions (`engine` and `ingest`
+importing `ezchain_api` rows) are listed as known violations with file paths; the list may
+only shrink, and the checker fails on a stale entry so a fixed inversion cannot leave an
+exception behind. Every new Python package or Rust crate needs a map edit, which is the review
+point. The freeze means the migration board must stop counting unstarted crates as progress,
+and the ledger seal must be wired into the Python write path before any further Rust work is
+called migration.

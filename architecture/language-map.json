@@ -1,0 +1,223 @@
+{
+  "$comment": "Machine-readable form of ADR-0050 / ADR-0052 / ADR-0053. This file is normative: tools/check-language-map.py enforces it in the gate, and a layer that is not declared here cannot be added. Prose lives in docs/DECISIONS.md; when the two disagree, the ADR wins and this file is the bug.",
+  "adr": "ADR-0053",
+  "enforced_by": "tools/check-language-map.py",
+  "deployment": {
+    "primary": "native host or the Electron desktop app",
+    "secondary": "container stack (Docker Compose), kept for operators who already run one",
+    "note": "The product is not a hosted web service. A native install is a venv, two systemd user units and a database on the operator's own machine; the desktop app is the same API and web bundle inside Electron."
+  },
+  "languages": {
+    "rust": {
+      "owns": "the trust boundary, deterministic kernels, the shipped CLI and every node-facing transport",
+      "integration": "PyO3 in-process for kernels; a loopback socket for the signer",
+      "rule": "A Python module in a Rust-owned layer is a review failure. A Rust crate that nothing links is frozen, not shipped."
+    },
+    "python": {
+      "owns": "business logic, orchestration, the product HTTP and WebSocket surface, integrations, analytics, AI/ML, strategy plugins, developer tooling",
+      "integration": "FastAPI/ASGI in-process; the compiled bridge only through the declared clients",
+      "rule": "Money arithmetic stays in Python until decimal parity is proven per kernel. No float arithmetic in a money path."
+    },
+    "typescript": {
+      "owns": "the dashboard and every product UI surface, including the desktop renderer",
+      "rule": "The renderer never receives the API token, never computes money and never holds a key."
+    }
+  },
+  "python_layers": {
+    "ezchain_core": {
+      "path": "packages/core-py",
+      "role": "domain types, money, ledger, risk policy, reason codes",
+      "language": "python",
+      "may_import": [],
+      "reason": "The living oracle for every parity fixture and the only accountant (CONTRACT I1). Ownership is the asset."
+    },
+    "ezchain_adapters": {
+      "path": "packages/adapters",
+      "role": "venue and chain adapters, market data normalisation",
+      "language": "python",
+      "may_import": ["ezchain_core"],
+      "reason": "Remote provider deadlines dominate. A compiled rewrite cannot shorten a network timeout."
+    },
+    "ezchain_sdk": {
+      "path": "packages/sdk-py",
+      "role": "public, Apache-2.0 strategy plugin SDK",
+      "language": "python",
+      "may_import": [],
+      "reason": "A stranger's first plugin must stay approachable."
+    },
+    "ezchain_ingest": {
+      "path": "services/ingest",
+      "role": "market data acquisition, retention and the pump.fun firehose seam",
+      "language": "python",
+      "may_import": ["ezchain_core", "ezchain_adapters"],
+      "reason": "I/O orchestration over a Python client. The firehose stays Python: it is an integration, not a trust boundary."
+    },
+    "ezchain_engine": {
+      "path": "services/engine",
+      "role": "scheduler, plugin supervision, protection evaluation",
+      "language": "python",
+      "may_import": ["ezchain_core", "ezchain_sdk"],
+      "reason": "Control plane over subprocess workers. The only Rust candidate is a clock kernel, and only if a profile asks."
+    },
+    "ezchain_executor": {
+      "path": "services/executor",
+      "role": "execution pipeline, gates, receipts, signer seam",
+      "language": "python",
+      "may_import": ["ezchain_core"],
+      "reason": "The orchestration is Python; the pure kernels behind it are Rust. The signer itself is a separate Rust process."
+    },
+    "ezchain_agent_runtime": {
+      "path": "services/agent-runtime",
+      "role": "the built-in agent runtime, speaking only MCP",
+      "language": "python",
+      "may_import": ["ezchain_core"],
+      "reason": "Model clients and tool policy are Python-first, and the runtime holds no I/O of its own."
+    },
+    "ezchain_harness": {
+      "path": "services/harness",
+      "role": "model provider registry and stress harness",
+      "language": "python",
+      "may_import": ["ezchain_core", "ezchain_agent_runtime"],
+      "reason": "Developer tooling."
+    },
+    "ezchain_api": {
+      "path": "apps/api",
+      "role": "the product HTTP API, WebSocket gateway and the in-process engine host",
+      "language": "python",
+      "may_import": ["ezchain_core", "ezchain_adapters", "ezchain_sdk", "ezchain_engine"],
+      "reason": "83 routes, auth, rate limits and observability already exist here. A Rust rewrite of the edge buys nothing a server swap would not."
+    },
+    "ezchain_mcp": {
+      "path": "apps/mcp",
+      "role": "MCP surface over the product API",
+      "language": "python",
+      "may_import": ["ezchain_core", "ezchain_api"],
+      "reason": "A thin adapter over the API. Not a language decision."
+    }
+  },
+  "python_entry_points": [
+    {
+      "module": "ezchain_api.native",
+      "path": "apps/api/src/ezchain_api/native.py",
+      "reason": "The API's only compiled-bridge client; money and scope kernels cross here."
+    },
+    {
+      "module": "ezchain_executor.native",
+      "path": "services/executor/src/ezchain_executor/native.py",
+      "reason": "The executor is a separate deployable and cannot import the API's client."
+    }
+  ],
+  "rust_crates": {
+    "entry_points": ["ezchain-bridge", "ezchain-cli"],
+    "shipping": {
+      "ezchain-bridge": "the PyO3 extension the product imports, built by tools/build-native.sh",
+      "ezchain-cli": "the read-only operator CLI; it builds and passes its tests, and no installer or desktop resource list ships it yet (RUST-08)",
+      "ezchain-core": "pure deterministic kernels, linked by the bridge",
+      "ezchain-decimal": "arbitrary-precision money, parity-proven against money.py, linked by the bridge",
+      "ezchain-jsoncanon": "canonical JSON for seals and fingerprints, linked by decimal",
+      "ezchain-rpc": "the wire contract; the bridge links only its method and scopes kernels"
+    },
+    "frozen": {
+      "ezchain-p2p": "no second machine must agree on one tape exists",
+      "ezchain-p2p-transport": "same reason as ezchain-p2p",
+      "ezchain-consensus": "ADR-0051 is Proposed and the product has no validator set",
+      "ezchain-node": "it starts transports nothing consumes",
+      "ezchain-rpc-server": "it serves health acks only, and the product contract is the OpenAPI snapshot"
+    },
+    "shipping_unwired": {
+      "ezchain-seal": "the tape seal is proven against fixtures and has no Python caller; ledger.py seals with its own implementation. Wiring it is the highest-value remaining Rust work, because a kernel nothing calls cannot be the thing that makes the tape tamper-evident.",
+      "ezchain-replay": "same as ezchain-seal: the deterministic projection is proven and never called.",
+      "ezchain-fingerprint": "linked only by ezchain-seal, so it inherits the seal's missing caller.",
+      "ezchain-executor": "pure execution kernels that nothing links; the executor service runs its Python pipeline.",
+      "ezchain-protection": "pure protection kernels that nothing links; the engine evaluates protection in Python.",
+      "ezchain-scheduler": "pure scheduling kernels that nothing links; the engine schedules in Python.",
+      "ezchain-flow": "it composes executor, protection and scheduler, so it is unwired for the same reason all three are."
+    },
+    "unfreeze_condition": "A second, independently operated machine must agree on the same ordered tape. Not a federation ambition; a machine that exists, runs, and must not diverge.",
+    "binaries": {
+      "ezchain-cli": "read-only operator CLI; built and tested, not yet in any installer release",
+      "ezchain-node": "frozen node runtime"
+    }
+  },
+  "typescript": {
+    "apps/web": {
+      "path": "apps/web",
+      "role": "the product UI and its token-injecting BFF"
+    },
+    "packages/ui": {
+      "path": "packages/ui",
+      "role": "design tokens and shared primitives"
+    },
+    "apps/desktop": {
+      "path": "apps/desktop",
+      "role": "the Electron shell that supervises the API and web sidecars"
+    }
+  },
+  "forbidden": {
+    "languages": {
+      "extensions": [".go", ".java", ".rb", ".php", ".cs", ".swift", ".kt", ".scala", ".ex", ".exs", ".erl", ".hs", ".ml", ".clj", ".dart", ".lua", ".pl"],
+      "reason": "Three languages are the budget. A fourth needs its own ADR, not a commit."
+    },
+    "rust_in_ui": {
+      "paths": ["apps/web", "packages/ui"],
+      "reason": "The UI is TypeScript. Rust reaches it only through the Python API."
+    },
+    "python_in_ui": {
+      "paths": ["apps/web", "packages/ui"],
+      "reason": "No second set of rules and no server code inside the renderer. The one sanctioned exception is the frozen sidecar entrypoint apps/desktop/backend_entry.py, which is the same FastAPI app the server deployment runs, not a second implementation."
+    },
+    "token_in_renderer": {
+      "marker": "EZCHAIN_API_TOKEN",
+      "client_marker": "\"use client\"",
+      "reason": "The token reaches the API through the server-side proxy only (CONTRACT I4). A client component that reads process.env.EZCHAIN_API_TOKEN would embed it in the browser bundle."
+    },
+    "float_money": {
+      "paths": ["packages/core-py/src/ezchain_core/money.py", "packages/core-py/src/ezchain_core/ledger.py"],
+      "reason": "Exact decimal arithmetic only; a float has already lost the amount (ADR-0046)."
+    }
+  },
+  "third_party_seams": {
+    "pumpfire": {
+      "allowed": ["packages/adapters", "services/ingest"],
+      "reason": "pumpfun-firehose is an optional MIT extra consumed by the adapter and the ingest source. Nothing else may import it, so the API image stays free of it."
+    }
+  },
+  "known_violations": [
+    {
+      "from": "ezchain_engine",
+      "to": "ezchain_api",
+      "files": [
+        "services/engine/src/ezchain_engine/graph.py",
+        "services/engine/src/ezchain_engine/plugin_runtime.py",
+        "services/engine/src/ezchain_engine/protection.py",
+        "services/engine/src/ezchain_engine/scheduler.py"
+      ],
+      "reason": "The ORM rows live in apps/api/models.py. The engine should import a shared model package instead; until then the inversion is recorded, not blessed. The list may only shrink.",
+      "fix": "Move the shared rows into a lower package and drop this entry."
+    },
+    {
+      "from": "ezchain_ingest",
+      "to": "ezchain_api",
+      "files": [
+        "services/ingest/src/ezchain_ingest/__main__.py",
+        "services/ingest/src/ezchain_ingest/retention.py",
+        "services/ingest/src/ezchain_ingest/store.py"
+      ],
+      "reason": "Same cause as the engine inversion: market rows and settings live in apps/api. The list may only shrink.",
+      "fix": "Same fix as the engine inversion."
+    }
+  ],
+  "money_parity": {
+    "oracle": "packages/core-py/src/ezchain_core/money.py",
+    "rust_candidates": ["ezchain-decimal", "ezchain-seal", "ezchain-replay", "ezchain-jsoncanon", "ezchain-fingerprint"],
+    "rule": "A kernel flips to Rust only when every recorded case matches for class, message and code, and the benchmark is measured on whole work units. A single small call is not evidence."
+  },
+  "switch_triggers": {
+    "product_api_to_rust": "Never. The ASGI edge is the product. Replacing the server (Granian) is the permitted move.",
+    "granian": "A measured p99 that is attributable to uvicorn rather than the handler.",
+    "tauri": "The WebKitGTK build passes the whole Playwright suite with no rendering regression.",
+    "duckdb": "Analytics outgrows SQLite or Postgres in a measured query, and a second concurrent writer is not needed.",
+    "wasm_plugins": "A strategy authored by someone who is not the operator must run in the same process tree.",
+    "local_vault": "Users measurably refuse external signers. Until then external-signer-first, and no vault.json."
+  }
+}

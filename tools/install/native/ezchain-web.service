@@ -1,0 +1,79 @@
+# ezCHAIN web — systemd *user* unit for a native host install.
+#
+# Installed by tools/install-native.sh next to ezchain-api.service and enabled with
+# `systemctl --user enable --now ezchain-web`. The installer rewrites
+# %h/.local/share/ezchain to the chosen install root before installing, so this file is
+# the default-root form.
+#
+# The service runs the Next.js standalone server (apps/web/server.js from the traced
+# build, staged under the install root). It is the only listener the browser talks to:
+# /api/* is proxied server-side to the loopback API with the deployment token added by
+# the route handler, so the token never reaches the browser.
+#
+# Directive notes (why each line is here):
+#   After=ezchain-api starts only once the API unit has started, so the first page load
+#        does not race the debug server; it does not need the API to be healthy.
+#   Type=simple                        node runs in the foreground and logs to the journal.
+#   EnvironmentFile                    the generated ezchain.env (mode 0600): API URL,
+#                                      public origin, web mode and the API token.
+#   Environment=PORT/HOSTNAME/NODE_ENV the standalone server reads its bind from the
+#                                      environment; loopback only, production build.
+#   Environment=NEXT_TELEMETRY_DISABLED  no framework telemetry, ever.
+#   ExecStart=/usr/bin/env node         resolved to an absolute node path by the installer
+#                                      (`/usr/bin/env` would look on systemd's PATH, which
+#                                      may not contain a per-user Node install).
+#   Restart=on-failure / RestartSec    restart a crash, not a clean stop.
+#   NoNewPrivileges                    no privilege gain through a setuid helper.
+#   PrivateTmp                         private temp directories.
+#   ProtectSystem=strict               read-only filesystem except ReadWritePaths.
+#   ProtectHome=read-only              $HOME readable, not writable; the staged bundle is
+#                                      walked at start and only read afterwards.
+#   ReadWritePaths=.../data            the web server's only writable directory (its
+#                                      cache, if it ever writes one, stays inside the data
+#                                      directory rather than the bundle).
+#   PrivateDevices / ProtectKernel*    no device nodes, kernel tunables, modules or logs.
+#   RestrictNamespaces / LockPersonality / RestrictSUIDSGID / RestrictRealtime
+#                                      remove escalation paths the server does not need.
+#   RestrictAddressFamilies            it dials the loopback API over IPv4/IPv6 only.
+#   UMask=0077                         anything written is owner-only.
+
+[Unit]
+Description=ezCHAIN PAPER web (native install)
+After=ezchain-api.service
+Wants=ezchain-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/ezchain/web/apps/web
+EnvironmentFile=%h/.local/share/ezchain/ezchain.env
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/env node %h/.local/share/ezchain/web/apps/web/server.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+UMask=0077
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=%h/.local/share/ezchain/data
+
+[Install]
+WantedBy=default.target

@@ -303,6 +303,13 @@ export function TopbarKillSwitch({
 		return () => document.removeEventListener("keydown", onKey);
 	}, [asking, pending, initialError]);
 
+	// The shortcut is a document listener that only exists after this component hydrates,
+	// and the top bar arrives in its own streamed Suspense boundary. Server HTML therefore
+	// shows the button before the listener is attached, so a test (or a fast user) that
+	// presses "k" the instant the page looks ready gets nothing. Publish the listener's
+	// existence as a document flag, set only after the listener is attached and cleared
+	// with it, so the browser suite can wait for the shortcut itself instead of guessing at
+	// a delay. It is one attribute; it changes no behaviour.
 	useEffect(() => {
 		function onKey(event: KeyboardEvent) {
 			if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -322,7 +329,11 @@ export function TopbarKillSwitch({
 			setNotice(null);
 		}
 		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
+		document.documentElement.dataset.killShortcut = "ready";
+		return () => {
+			document.removeEventListener("keydown", onKey);
+			delete document.documentElement.dataset.killShortcut;
+		};
 	}, [asking, initialError]);
 
 	return (

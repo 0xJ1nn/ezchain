@@ -22,22 +22,46 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/7 agent stubs"
+step "1/10 agent stubs"
 node tools/sync-agent-stubs.mjs --check
 
-step "2/7 design tokens"
+# The language map is a gate, not a document. It refuses a fourth language, a Python
+# module in a Rust-owned layer, an undeclared import edge, a second bridge client, a
+# frozen crate pulled into the shipped product, a float in the money oracle, and a token
+# in a client component. Architecture changes need an ADR that edits the map, never a
+# silenced check.
+step "2/10 language map"
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python tools/check-language-map.py
+elif command -v python3 >/dev/null 2>&1; then
+  python3 tools/check-language-map.py
+else
+  # This is the headline check of the language-map change, not an optional tool: a runner
+  # without an interpreter must fail here instead of printing a skip and merging the change.
+  echo "language map is mandatory: no python3 found (install python3 to run the gate)" >&2
+  exit 1
+fi
+
+step "3/10 design tokens"
 node tools/build-tokens.mjs --check
 
-step "3/7 wireframe integrity"
+# Freshness, risk and the semantic states are colour plus shape, and the colour half has to
+# be readable. The threshold is WCAG 2.1 AA: 4.5:1 for body text, 3:1 for large text and
+# borders. A failing pair is fixed in design/tokens.json, in both themes, not by lowering
+# the bar here.
+step "4/10 contrast"
+node tools/check-contrast.mjs
+
+step "5/10 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "4/7 markdown links"
+step "6/10 markdown links"
 node tools/check-links.mjs
 
-step "5/7 secret scan"
+step "7/10 secret scan"
 node tools/check-secrets.mjs
 
-step "6/7 dependency pins"
+step "8/10 dependency pins"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -59,8 +83,21 @@ fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are audited separately: python3 tools/audit_pins.py --node
 
-step "7/7 runtime gates (when present)"
-ran=0
+step "9/10 desktop shell"
+# The shell's unit tests are the only place the Windows- and macOS-only defects can be caught
+# on a Linux host, and they run in about 200 ms. They are gated unconditionally, not by the
+# web-diff heuristic: a change to the shell or to the installers does not touch apps/web, and
+# a packaging change that breaks `main.cjs` must not wait for a browser suite to notice.
+desktop_ran=0
+if [ -d apps/desktop/test ] && command -v node >/dev/null 2>&1; then
+  ( cd apps/desktop && node --test "test/*.mjs" )
+  desktop_ran=1
+else
+  echo "not present yet: desktop shell tests (no apps/desktop/test)"
+fi
+
+step "10/10 runtime gates (when present)"
+ran=$desktop_ran
 # The bridge clients fail closed when the compiled extension is absent, so the
 # native module must be installed before any Python test runs. Host-native build
 # only; a toolchain-less machine cannot run the full gate (ADR-0052).
@@ -77,7 +114,7 @@ if [ ! -x .venv/bin/python ]; then
     ran=1
   fi
   if command -v mypy >/dev/null 2>&1 && [ -f pyproject.toml ]; then
-    mypy --strict packages services apps
+    mypy --strict --exclude '/build/' packages services apps
     ran=1
   fi
   if command -v pytest >/dev/null 2>&1 && [ -d tests ]; then
@@ -91,7 +128,10 @@ if [ -x .venv/bin/ruff ]; then
   ran=1
 fi
 if [ -x .venv/bin/mypy ]; then
-  .venv/bin/mypy --strict packages apps/api services
+  # `--exclude` matters: `pip install packages/...` in an install or an editable build leaves a
+  # `build/lib/<package>` copy in the tree, and without the exclusion mypy sees each module
+  # twice and fails on a duplicate-module error that has nothing to do with the diff.
+  .venv/bin/mypy --strict --exclude '/build/' packages apps/api services
   ran=1
 fi
 if [ -x .venv/bin/pytest ]; then

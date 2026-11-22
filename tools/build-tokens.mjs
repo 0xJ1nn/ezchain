@@ -20,14 +20,35 @@ function flatten(value, path = [], out = []) {
 	return out;
 }
 
-const entries = flatten({
-	color: tokens.color,
-	space: tokens.space,
-	radius: tokens.radius,
-	type: tokens.type,
-	elevation: tokens.elevation,
-	motion: tokens.motion,
-});
+// Theme-independent groups. A group that is declared in tokens.json but not listed here
+// is invisible to the CSS: the stylesheet's `var(--name, fallback)` then always takes the
+// fallback and the JSON quietly stops being the source of truth. `layout` and `z` are
+// here so the shell's column widths and the stacking order come from the same file as
+// the colours.
+const SHARED_GROUPS = ["color", "layout", "z", "space", "radius", "type", "elevation", "motion"];
+
+// A group added to the JSON but not emitted is the silent-fallback bug above, so the
+// generator refuses it instead of writing CSS that cannot use it.
+const META_GROUPS = new Set(["$schema", "name", "note", "dark"]);
+const undeclared = Object.keys(tokens).filter(
+	(key) => !META_GROUPS.has(key) && !SHARED_GROUPS.includes(key),
+);
+if (undeclared.length > 0) {
+	console.error(
+		`tokens.json declares group(s) the generator does not emit: ${undeclared.join(", ")}. ` +
+			"Add the group to SHARED_GROUPS in tools/build-tokens.mjs, or remove it from the JSON.",
+	);
+	process.exit(1);
+}
+
+const entries = flatten(
+	Object.fromEntries(
+		SHARED_GROUPS.filter((group) => tokens[group] !== undefined).map((group) => [
+			group,
+			tokens[group],
+		]),
+	),
+);
 
 // Dark "Instrument" theme: every color role defined for light must be declared for
 // dark under `dark.color`. Non-color groups (space/radius/type/elevation/motion)

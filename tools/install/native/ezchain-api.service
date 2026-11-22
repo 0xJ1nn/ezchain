@@ -1,0 +1,81 @@
+# ezCHAIN API — systemd *user* unit for a native host install.
+#
+# Installed by tools/install-native.sh into $XDG_CONFIG_HOME/systemd/user (usually
+# ~/.config/systemd/user, or the directory in EZCHAIN_SYSTEMD_DIR) and enabled with
+# `systemctl --user enable --now ezchain-api`.
+# The installer rewrites %h/.local/share/ezchain to the chosen install root before
+# installing, so this file is the default-root form.
+#
+# The service runs the FastAPI edge (HTTP + WebSocket gateway, inline PAPER engine and
+# market scanner) from the install root's virtual environment. It binds loopback only;
+# the deployment token and every other setting come from the environment file.
+#
+# Directive notes (why each line is here):
+#   After/Wants=network-online.target  wait for a routable network before the first market
+#                                      read, without making the boot hang. Migrations run in
+#                                      the installer, not here.
+#   Type=simple                        uvicorn runs in the foreground and logs to the
+#                                      journal; systemd is the supervisor.
+#   EnvironmentFile                    the generated ezchain.env (mode 0600). It is the
+#                                      only place the API token and database URL live.
+#   Environment=PYTHONDONTWRITEBYTECODE  the venv and source tree are read-only to this
+#                                      unit; Python must not try to write __pycache__.
+#   Restart=on-failure / RestartSec    a crash is restarted with a short backoff; a clean
+#                                      SIGTERM stop is not.
+#   NoNewPrivileges                    a compromised process cannot gain privileges through
+#                                      a setuid helper.
+#   PrivateTmp                         private /tmp and /var/tmp, so another local process
+#                                      cannot read or race this service's temp files.
+#   ProtectSystem=strict               the whole filesystem is read-only except the paths
+#                                      named in ReadWritePaths.
+#   ProtectHome=read-only              $HOME is readable but not writable (ReadWritePaths
+#                                      re-opens the data directory explicitly).
+#   ReadWritePaths=.../data            the only writable directory: the operator's data.
+#   PrivateDevices / ProtectKernel*    no raw device nodes, no kernel tunables, no module
+#                                      loading, no cgroup edits.
+#   ProtectClock / ProtectHostname     no clock or hostname changes.
+#   RestrictNamespaces / LockPersonality / RestrictSUIDSGID / RestrictRealtime
+#                                      remove namespace, personality, setuid/setgid and
+#                                      real-time scheduling escalation paths.
+#   RestrictAddressFamilies            the service may open only UNIX, IPv4, IPv6 and
+#                                      netlink sockets; it never needs exotic families.
+#   UMask=0077                         anything the service does write is owner-only.
+
+[Unit]
+Description=ezCHAIN PAPER API (native install)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/ezchain/apps/api
+EnvironmentFile=%h/.local/share/ezchain/ezchain.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/.local/share/ezchain/venv/bin/python -m uvicorn ezchain_api.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+UMask=0077
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=%h/.local/share/ezchain/data
+
+[Install]
+WantedBy=default.target

@@ -10,6 +10,8 @@ larger because the statement walks the index and stops at the page.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -54,12 +56,44 @@ def _client(session: Session) -> TestClient:
     return TestClient(app)
 
 
+@contextmanager
+def _frozen_clock(now: datetime) -> Iterator[None]:
+    """Pin the router's read clock to ``now`` for the duration of the block.
+
+    The endpoint reads ``markets.datetime.now(UTC)``; the Python pass this file compares it
+    with is measured at ``NOW``. Those two clocks are seconds apart in isolation but
+    minutes apart when the whole suite runs, and a pair-age filter boundary sits inside
+    that gap: with a 3,000 s suite the same assertion compared 4,274 rows with 4,273.
+    Pinning the clock is what makes the comparison about the SQL, not about how long the
+    gate took to reach this test.
+
+    Only ``datetime`` on the router module is replaced. ``datetime.now`` is called once per
+    request there, and no other module holds a reference to that name, so nothing else
+    sees a different clock. The subclass keeps ``astimezone``/arithmetic working for the
+    ``_aware`` helper the router applies to stored timestamps.
+    """
+
+    class _FrozenClock(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    original = markets.datetime
+    markets.datetime = _FrozenClock
+    try:
+        yield
+    finally:
+        markets.datetime = original
+
+
 def _rows(count: int, *, chain: str = "ethereum") -> list[dict[str, Any]]:
     """A seed whose order is the same in SQL and in Python: distinct liquidity and time.
 
-    Pair ages sit half a minute off every whole minute, so the endpoint's read clock — a
-    moment after ``NOW`` — cannot move a row across a pair-age filter's boundary while its
-    page is compared with the Python pass measured at ``NOW``.
+    Pair ages sit half a minute off every whole minute, so a read clock only a few seconds
+    after ``NOW`` cannot move a row across a pair-age filter's boundary. A test that
+    compares the endpoint with a Python pass measured at ``NOW`` must still pin the read
+    clock (``_frozen_clock``): the gate takes minutes, and a half-minute of slack is not
+    enough once the suite has been running.
     """
     rows: list[dict[str, Any]] = []
     for index in range(count):
@@ -238,7 +272,11 @@ def test_the_page_statement_carries_a_limit(caplog: pytest.LogCaptureFixture) ->
 
 
 def test_a_ten_thousand_row_table_returns_the_page_the_old_code_would() -> None:
-    """The SQL filters and the SQL slice agree with the Python pass they replaced."""
+    """The SQL filters and the SQL slice agree with the Python pass they replaced.
+
+    The read clock is pinned to ``NOW`` so the comparison is about the SQL, not about how
+    long the gate took to reach this test (see ``_frozen_clock``).
+    """
     engine = _memory_engine()
     _seed(engine, _rows(10_000))
     session = sessionmaker(bind=engine, expire_on_commit=False)()
@@ -254,9 +292,11 @@ def test_a_ten_thousand_row_table_returns_the_page_the_old_code_would() -> None:
         now=NOW,
     )
 
-    body = client.get(
-        "/api/v1/markets/stored", params={**PAGE_FILTERS, "chain": "all", "limit": 20, "offset": 60}
-    ).json()
+    with _frozen_clock(NOW):
+        body = client.get(
+            "/api/v1/markets/stored",
+            params={**PAGE_FILTERS, "chain": "all", "limit": 20, "offset": 60},
+        ).json()
 
     assert [row["token_address"] for row in body["rows"]] == [
         f"0x{int(row_id.rsplit('-', 1)[1]):040x}" for row_id in expected_ids

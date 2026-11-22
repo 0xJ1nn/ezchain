@@ -30,15 +30,15 @@ const MAIN_ROUTES = [
 	"/more",
 	"/states",
 	"/components",
-	"/mobile",
 ];
 
 // A targeted responsive overflow matrix, not an all-route x all-width sweep. `next dev`
 // compiles a route on first hit, and the full 24-route x 6-width scan (36 tests, 144 cold
 // navigations) overloaded the dev server under parallel load and timed out even though the
 // layout was correct. The layout regression this guards is width-driven: the sidebar made
-// /mobile and /reports overflow near the 768px breakpoint. The routes below cover that
-// regression plus the main data surfaces at each reviewed width. Assertions are unchanged:
+// /reports overflow near the 768px breakpoint. The routes below cover that regression plus
+// the main data surfaces at each reviewed width, including the real responsive surface /m.
+// Assertions are unchanged:
 // the document must not scroll sideways at all.
 const OVERFLOW_MATRIX = [
 	{
@@ -53,7 +53,7 @@ const OVERFLOW_MATRIX = [
 		],
 	},
 	{ width: 761, routes: ["/reports"] },
-	{ width: 768, routes: ["/mobile", "/m", "/markets", "/positions"] },
+	{ width: 768, routes: ["/m", "/markets", "/positions"] },
 	{ width: 1100, routes: ["/", "/markets"] },
 	{ width: 1440, routes: ["/"] },
 ];
@@ -85,7 +85,6 @@ test("Discovery is the first sidebar group and holds Launches, Browse then Signa
 	// Reference galleries are documentation, not production navigation.
 	await expect(sidebar(page).getByRole("link", { name: "State gallery" })).toHaveCount(0);
 	await expect(sidebar(page).getByRole("link", { name: "Components" })).toHaveCount(0);
-	await expect(sidebar(page).getByRole("link", { name: "Mobile" })).toHaveCount(0);
 
 	// The footer is the one low-emphasis desktop route into /more and its galleries.
 	const more = sidebar(page).getByRole("link", { name: "More & reference" });
@@ -383,7 +382,6 @@ test("More keeps the reference galleries and reaches discovery first", async ({ 
 	).toBeVisible();
 	await expect(page.getByRole("link", { name: "State gallery" })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Components" })).toBeVisible();
-	await expect(page.getByRole("link", { name: "Mobile" })).toBeVisible();
 
 	// The panel points at the surfaces that own chain scope; it is not a chain chip
 	// pretending the shell can filter them.
@@ -413,19 +411,20 @@ test("desktop reaches /more and every reference gallery from the sidebar footer"
 	for (const [label, path, heading] of [
 		["State gallery", "/states", "State gallery"],
 		["Components", "/components", "Components"],
-		["Mobile", "/mobile", "Mobile"],
 	]) {
 		await page.getByRole("link", { name: label, exact: true }).click();
 		await expect(page).toHaveURL(new RegExp(`${path}$`));
 		await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
 		await sidebar(page).getByRole("link", { name: "More & reference" }).click();
 		await expect(page).toHaveURL(/\/more$/);
+		// Wait for the rendered page before the next click: a URL change alone can land
+		// while React is still swapping trees, and that click is silently dropped.
+		await expect(page.getByRole("heading", { name: "More", level: 1 })).toBeVisible();
 	}
 
 	// The galleries stay off the primary nav even though they are one footer click away.
 	await expect(sidebar(page).getByRole("link", { name: "State gallery" })).toHaveCount(0);
 	await expect(sidebar(page).getByRole("link", { name: "Components" })).toHaveCount(0);
-	await expect(sidebar(page).getByRole("link", { name: "Mobile" })).toHaveCount(0);
 });
 
 test("sidebar fits its viewport at 1440x900 and 1100x900", async ({ page }) => {

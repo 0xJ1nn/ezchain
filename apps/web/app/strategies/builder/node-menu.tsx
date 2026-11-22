@@ -7,6 +7,7 @@
 // creates it at the drop point and wires it in one gesture.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { acceptsType, producesType, searchNodes } from "@/lib/graph-catalogue";
 import type { CatalogueNode, GraphCatalogue, GraphPinType } from "@/lib/graph-types";
 import styles from "./builder.module.css";
@@ -79,7 +80,7 @@ export function NodeMenu({
 	const left = Math.max(8, Math.min(request.x, (globalThis.innerWidth ?? 1440) - 356));
 	const top = Math.max(8, Math.min(request.y, (globalThis.innerHeight ?? 900) - 420));
 
-	return (
+	return createPortal(
 		<div className={styles.menuOverlay} onClick={onClose} data-testid="node-menu">
 			<div
 				className={styles.menu}
@@ -144,6 +145,7 @@ export function NodeMenu({
 					))}
 				</div>
 			</div>
-		</div>
+		</div>,
+		document.body,
 	);
 }
