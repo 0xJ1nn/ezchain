@@ -59,8 +59,12 @@ def check_lp_protected(observation: TokenMetadataObservation) -> dict[str, objec
     duration = observation.lp_lock_duration_seconds
     if burned is not None and burned >= FULLY_BURNED_PERCENT:
         return _check("pass")
-    if locked is not None and locked > 0 and (duration is None or duration > 0):
+    if locked is not None and locked > 0 and duration is not None and duration > 0:
         return _check("pass")
+    if locked is not None and locked > 0:
+        # A claimed lock without a known positive duration is not evidence of a
+        # permanent lock, so the check stays unknown rather than passing on it.
+        return _check("unknown", reason=REASON_NO_EVIDENCE)
     if burned is not None and locked is not None:
         return _check("fail", reason=REASON_LP_UNPROTECTED)
     return _check("unknown", reason=REASON_NO_EVIDENCE)

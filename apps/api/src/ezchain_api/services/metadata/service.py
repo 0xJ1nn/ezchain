@@ -56,6 +56,12 @@ class MetadataService:
                 address=address,
                 degraded=(f"UNAVAILABLE:{exc.code}",),
             )
+        except Exception:
+            observation = self._observation_type(
+                chain=chain,
+                address=address,
+                degraded=("UNAVAILABLE:FETCHER_ERROR",),
+            )
         result = build_response(observation)
         self._cache.set(key, result)
         return result

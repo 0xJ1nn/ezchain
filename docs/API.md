@@ -181,6 +181,13 @@ A source outage contributes `UNAVAILABLE:<source>[:<code>]` to `degraded`; the v
 other sources answered are still returned, and a total outage is a response of nulls with
 a reason rather than an error or invented numbers.
 
+This read model is advisory: it never emits the risk gate's `verified` verdict and does not
+by itself permit a buy. Buys stay gated until an owner-reviewed mapping from this evidence
+to the gate is agreed. A liquidity lock counts as protection only when its duration is known
+and positive; a reported lock without a duration leaves `lp_burned_or_locked` as `unknown`.
+Negative counts from a provider and a pair timestamp in the future are reported as unknown
+rather than clamped to zero.
+
 ### Market freshness
 
 Every market read model — `/markets` rows, `/markets/stored` rows and the token header —

@@ -119,7 +119,7 @@ def _int(value: object) -> int | None:
         parsed = int(str(value))
     except (TypeError, ValueError):
         return None
-    return max(0, parsed)
+    return parsed if parsed >= 0 else None
 
 
 def _bool(value: object) -> bool | None:
@@ -265,7 +265,7 @@ def parse_mint_authorities(data: object) -> tuple[bool | None, bool | None]:
         raw = base64.b64decode(data, validate=True)
     except (binascii.Error, ValueError):
         return None, None
-    if len(raw) < SPL_MINT_ACCOUNT_BYTES:
+    if len(raw) != SPL_MINT_ACCOUNT_BYTES:
         return None, None
     mint_revoked = int.from_bytes(raw[0:4], "little") == 0
     freeze_revoked = (
@@ -321,6 +321,7 @@ def normalize_birdeye(
         "lp_burned_pct",
         "lp_locked_pct",
         "top_10_pct",
+        "dev_holdings_pct",
         "holders_change_h1_pct",
         "buy_tax_pct",
         "sell_tax_pct",

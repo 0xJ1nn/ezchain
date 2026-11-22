@@ -8,6 +8,7 @@ outage returns what is known with a reason instead of invented numbers.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ezchain_adapters.errors import AdapterError, UpstreamError
+from ezchain_adapters.errors import UpstreamError
 from ezchain_adapters.metadata import WindowFacts
 from ezchain_api.routers.metadata import get_metadata_service, router
 from ezchain_api.services.metadata.service import MetadataService
@@ -35,7 +36,7 @@ RPC = SourceRef("solana-rpc", "https://rpc.example.invalid", NOW - timedelta(sec
 class FakeFetcher:
     """A recorded source with a call counter, so the cache can be pinned."""
 
-    def __init__(self, observation: Any | None = None, error: AdapterError | None = None) -> None:
+    def __init__(self, observation: Any | None = None, error: Exception | None = None) -> None:
         self.observation = observation
         self.error = error
         self.calls = 0
@@ -278,3 +279,52 @@ def test_response_is_cached_per_token() -> None:
     _get(client, MAJOR)
     _get(client, MAJOR)
     assert fetcher.calls == 1
+
+
+def test_dev_holdings_above_limit_is_a_failing_check() -> None:
+    observation = replace(_major(), dev_holdings_pct=Decimal("40"))
+    body = _get(_client(FakeFetcher(observation)), MAJOR)
+    check = body["safety"]["checks"]["dev_under_5"]
+    assert check["status"] == "fail"
+    assert check["value"] == "40"
+    assert check["reason"] == "DEV_ABOVE_LIMIT"
+
+
+def test_lp_lock_without_a_known_duration_stays_unknown() -> None:
+    partial = replace(
+        _major(),
+        lp_burned_pct=Decimal("0"),
+        lp_locked_pct=Decimal("20"),
+        lp_lock_duration_seconds=None,
+    )
+    body = _get(_client(FakeFetcher(partial)), MAJOR)
+    check = body["safety"]["checks"]["lp_burned_or_locked"]
+    assert check["status"] == "unknown"
+    assert check["reason"] == "NO_EVIDENCE"
+
+    locked = replace(partial, lp_lock_duration_seconds=86400)
+    body = _get(_client(FakeFetcher(locked)), MAJOR)
+    assert body["safety"]["checks"]["lp_burned_or_locked"]["status"] == "pass"
+
+
+def test_pair_created_in_the_future_has_unknown_age() -> None:
+    observation = replace(_launch(), pair_created_at=NOW + timedelta(hours=1))
+    body = _get(_client(FakeFetcher(observation)), LAUNCH)
+    assert body["pair_age_seconds"]["value"] is None
+    assert body["pair_age_seconds"]["known"] is False
+
+
+def test_unexpected_fetcher_error_degrades_with_nulls() -> None:
+    fetcher = FakeFetcher(error=ValueError("unexpected"))
+    body = _get(_client(fetcher), LAUNCH)
+    assert "UNAVAILABLE:FETCHER_ERROR" in body["degraded"]
+    assert all(metric["value"] is None for metric in body["market"].values())
+    assert all(check["status"] == "unknown" for check in body["safety"]["checks"].values())
+
+
+def test_metadata_route_is_registered_on_the_real_app() -> None:
+    from ezchain_api.main import create_app
+
+    app = create_app()
+    paths = app.openapi()["paths"]
+    assert "/api/tokens/{chain}/{address}/metadata" in paths

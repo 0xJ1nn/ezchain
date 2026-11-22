@@ -72,7 +72,8 @@ def _pair_age(observation: TokenMetadataObservation) -> int | None:
     seen = source.observed_at
     created = created.astimezone(UTC) if created.tzinfo else created.replace(tzinfo=UTC)
     seen = seen.astimezone(UTC) if seen.tzinfo else seen.replace(tzinfo=UTC)
-    return max(0, int((seen - created).total_seconds()))
+    delta = (seen - created).total_seconds()
+    return int(delta) if delta >= 0 else None
 
 
 def _window(

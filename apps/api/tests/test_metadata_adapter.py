@@ -112,6 +112,16 @@ def test_missing_pairs_report_the_provider_was_asked() -> None:
     assert observation.degraded == ("NO_PAIRS:dexscreener",)
 
 
+def test_negative_provider_counts_are_unknown_not_zero() -> None:
+    pair = _pair()
+    pair["txns"]["m5"]["buys"] = -5
+    observation = normalize_dexscreener_pairs(
+        "solana", LAUNCH, [pair], observed_at=OBSERVED, source=_source()
+    )
+    assert observation.windows["5m"].buys is None
+    assert observation.windows["5m"].sells == 30
+
+
 def test_mint_layout_decodes_authority_options() -> None:
     raw = bytearray(82)
     raw[0:4] = (0).to_bytes(4, "little")
@@ -120,6 +130,8 @@ def test_mint_layout_decodes_authority_options() -> None:
     assert parse_mint_authorities(encoded) == (True, False)
     assert parse_mint_authorities("not base64!!") == (None, None)
     assert parse_mint_authorities(base64.b64encode(b"short").decode()) == (None, None)
+    # Only the exact SPL mint layout is decoded: a longer account is not a mint.
+    assert parse_mint_authorities(base64.b64encode(bytes(100)).decode()) == (None, None)
 
 
 def test_recorded_birdeye_payload_enriches_without_overwriting_free_values() -> None:
@@ -150,6 +162,7 @@ def test_recorded_birdeye_payload_enriches_without_overwriting_free_values() -> 
     observation = normalize_birdeye(payload, source=source, chain="solana", address=LAUNCH)
     assert observation.market_cap_usd == Decimal("89000000000")
     assert observation.top_10_pct == Decimal("12.5")
+    assert observation.dev_holdings_pct == Decimal("1.2")
     assert observation.windows["1h"].buying_makers == 610
     holders_source = observation.source_for("holders")
     assert holders_source is not None
