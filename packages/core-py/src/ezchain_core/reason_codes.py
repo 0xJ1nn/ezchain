@@ -1741,6 +1741,18 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "No pool was found.",
         severity="info",
     ),
+    # ------------------------------------------------------------ api: request budget
+    _S(
+        "WRITE_RATE_LIMITED",
+        "protection",
+        "api",
+        "ezchain_api/rate_limit.py",
+        "A principal exceeded its per-minute state-changing request budget; the request "
+        "was refused before a handler ran.",
+        "Too many state-changing requests.",
+        http_status=429,
+        retryable=True,
+    ),
     # ------------------------------------------------------------ api: auth and keys
     _S(
         "UNAUTHORIZED",
