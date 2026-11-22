@@ -31,6 +31,13 @@ that repository. Anything else is not the official ezCHAIN, whatever it is calle
   strategy, signals or returns.
 - Change the logo or combine it with another mark.
 
+## Selling and hosting
+
+The code licences let anyone sell copies of ezCHAIN or run it for other people. The name does
+not come with them. A paid build, a hosted service or a ready-made server image may be offered
+under the ezCHAIN name only by an approved partner with written permission; anyone else offers it
+under their own name, following the rules for forks below.
+
 ## Forks
 
 Forking is welcome under the code licences. A fork that is distributed or offered as a service must

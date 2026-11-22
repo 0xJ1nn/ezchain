@@ -404,5 +404,12 @@ plugins and [integrations/README.md](integrations/README.md) for the agent packs
 
 ## License
 
-AGPL-3.0-or-later. Strategies authored by users are their own; the plugin SDK is
-Apache-2.0 so strategies can be distributed under any license.
+ezCHAIN is free and open source under AGPL-3.0-or-later, for personal and commercial use.
+Strategies authored by users are their own; the plugin SDK is Apache-2.0 so strategies can be
+distributed under any license.
+
+You may run, change, sell or host ezCHAIN under the AGPL. The ezCHAIN name and logo are
+trademarks and do not come with the code: a fork, build or hosted service must use its own name
+unless it has written permission ([TRADEMARKS.md](TRADEMARKS.md)). The project holds no user
+keys or funds; how it is funded, and what it will never charge for, is in
+[docs/FUNDING.md](docs/FUNDING.md).
