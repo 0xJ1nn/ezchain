@@ -34,7 +34,7 @@ node tools/check-links.mjs
 step "4/6 secret scan"
 node tools/check-secrets.mjs
 
-step "5/6 dependency pins"
+step "5/6 dependency pins and advisory audit"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -54,7 +54,50 @@ else
   echo "              run: PYTHON=python3.11 bash tools/setup-python.sh"
 fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
-# from a network service and are audited separately: python3 tools/audit_pins.py --node
+# from a network service and are checked by the audit below.
+
+# Advisory audit of the pinned sets. Unlike the static pin check this needs a network:
+# pip-audit consults OSV/PyPI and pnpm audit consults the npm registry. A saved
+# `pip-audit --format json` report makes the verdict hermetic — point EZCHAIN_AUDIT_REPORT
+# at one and the same verdict code runs offline. Each live audit runs when its own tool is
+# present. Exit 1 (a blocking advisory) fails the gate; exit 2 ("could not run") is printed
+# as an explicit skip and never called a pass, matching the other tool-absent skips in this
+# gate. The dated result is recorded in docs/DEPENDENCIES.md.
+audit_py=""
+if [ -x .venv/bin/python ]; then
+  audit_py=.venv/bin/python
+elif command -v python3 >/dev/null 2>&1; then
+  audit_py=python3
+fi
+audit_status=0
+if [ -n "${EZCHAIN_AUDIT_REPORT:-}" ]; then
+  # A supplied report must be readable and clean; there is no skip in this path.
+  [ -n "$audit_py" ] || { echo "dependency audit: no python to judge the report with" >&2; exit 1; }
+  "$audit_py" tools/audit_pins.py --report "$EZCHAIN_AUDIT_REPORT" || audit_status=$?
+  if [ "$audit_status" -ne 0 ]; then
+    echo "dependency audit: the supplied report failed (exit $audit_status)" >&2
+    exit 1
+  fi
+else
+  audit_ran=0
+  if [ -n "$audit_py" ] && "$audit_py" -c "import pip_audit" >/dev/null 2>&1; then
+    "$audit_py" tools/audit_pins.py --python || audit_status=$?
+    audit_ran=1
+  fi
+  if [ -n "$audit_py" ] && [ "$audit_status" -eq 0 ] && command -v pnpm >/dev/null 2>&1; then
+    "$audit_py" tools/audit_pins.py --node || audit_status=$?
+    audit_ran=1
+  fi
+  if [ "$audit_status" -eq 1 ]; then
+    echo "dependency audit: a blocking advisory was reported" >&2
+    exit 1
+  fi
+  if [ "$audit_ran" -eq 0 ]; then
+    echo "dependency audit: skipped — no audit tools available (not a pass)"
+  elif [ "$audit_status" -eq 2 ]; then
+    echo "dependency audit: the advisory service was unreachable (exit 2) — not a pass; see docs/DEPENDENCIES.md" >&2
+  fi
+fi
 
 step "6/6 runtime gates (when present)"
 ran=0
