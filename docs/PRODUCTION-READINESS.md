@@ -33,7 +33,7 @@ no copy-trading. `live_execute` is `false` for every chain.
 | OpenClaw | OpenClaw 2026.10.6, isolated profile, bundle install | `format: bundle`, `bundleFormat: agent`, capabilities `skills` + `mcpServers`, `ezchain-trading` skill ready. Evidence: [openclaw.md](evidence/agent-integration/openclaw.md) |
 | Observability | `/healthz`, `/readyz`, `/metrics`, JSON logs | 200/200/200 with DB at head; request id/path/status/duration logged |
 | Stress | `--mode all` against real Postgres + live data | PASS, 0 findings: smoke, idempotency, 27 fuzz cases, 4-way sell race, kill switch, chain matrix. Evidence: [stress-all-2026-10-23.md](evidence/p0-production/stress-all-2026-10-23.md) |
-| Stress → issue loop | `--strategy-order-usd 1500` | filed #71; PR #72 fixed it; same run now passes and files nothing |
+| Stress → issue loop | `--strategy-order-usd 1500` | filed and fixed; the same run now passes and files nothing |
 | Web truth | dashboard, strategy builder | live reads carry `PAPER`/source/age; fixture mode is labelled; DCA/dip vocabularies match the validator |
 | Graph strategies | `/api/v1/graph/catalogue`, `/validate`, `/dry-run`, `/backtests` | validated live against Base WETH; dry run placed no order; backtest returned `BACKTEST` with GeckoTerminal closed bars. Evidence: [graph-api-paper.md](evidence/p0-production/graph-api-paper.md) |
 | Paper read models | `/paper/ledger`, `/performance`, `/attribution`, `/limits`, `/alerts`, CSV exports | server-computed from the ledger; unknown marks stay `null`; covered by the 1124-test gate |
@@ -61,7 +61,7 @@ These are explicit gaps, not silent assumptions:
    requires `EZCHAIN_API_TOKEN` from every other client. The API boundary is covered by
    tests, but the Docker edge has not been re-drilled with a remote scrape.
 4. **Live execution, keys, executor, vault.** Not built in `main`. The unmerged
-   `feat/live-executor` foundation was reviewed and **BLOCKED** (venue transactions not
+   live-executor foundation was reviewed and **BLOCKED** (venue transactions not
    bound to the intent, sell cap bypass, confirmed-sell bookkeeping gap). `services/ingest`
    and the Redis/NATS/OTel topology remain blueprint-only. `live_execute` is false.
 5. **EVM execution.** Non-Solana paper fills are `paper_mark` (capped buys, reduce-only
@@ -71,8 +71,9 @@ These are explicit gaps, not silent assumptions:
 7. **The dashboard is live** against `/paper/account`, `/paper/positions`, `/paper/limits`,
    `/paper/alerts` and the strategy/market reads. It does not draw an equity curve because
    no equity-snapshot history is stored. Wallets have no backend yet; the page says so.
-8. **Timescale retention / market-event ingest / replay harness** are M2, not part of this
-   stack. Snapshot storage is current-state `market_snapshots`, not a tick history.
+8. **Timescale retention / market-event ingest / replay harness** are planned for a later
+   stage, not part of this stack. Snapshot storage is current-state `market_snapshots`, not a
+   tick history.
 9. **Attribution scope.** `/paper/attribution` is per token, and
    `/strategies/{id}/performance` is per strategy from the ledger groups attributed to its
    own fills. There is no position-level attribution when a paper position is shared by

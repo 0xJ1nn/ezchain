@@ -32,33 +32,6 @@ SDK. It ships with **no strategies** — the platform, not the alpha, is the pro
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
 
-## The fee math — read this first (PAPER)
-
-Terminals charge a platform fee on every trade. Every figure in the table below
-was read from the terminal's own documentation on 2026-11-07. The round-trip
-figure is twice the published per-trade rate; protocol, network, priority and
-bribe payments are additional, and each source page describes them separately.
-ezCHAIN is PAPER only: it charges no platform fee, and no money reaches a
-venue or network. Each paper fill still journals a simulated fee — 30 bps by
-default on a paper mark, or the quote's own venue cost when that is larger — so
-paper PnL is not overstated. Live venue and network fees would be the only
-per-trade costs once live execution exists.
-
-| Terminal | Published platform fee, per trade | Platform cost of one buy plus one sell | Source, read 2026-11-07 |
-|---|---|---|---|
-| Axiom | Net 0.95% at the entry tier (Wood, 1X) down to 0.75% at the top tier (Champion, 5X), with stated cashback of 0.05% to 0.25% | 1.90% at the entry tier down to 1.50% at the top tier | [Axiom fees](https://docs.axiom.trade/getting-started/fees/axiom-fees.md) |
-| BullX | 1% for every buy and sell, plus protocol fees of 0.15% to 5% (1% on PumpFun; typically 0.25% for PumpFun tokens migrated to Raydium) | 2.00% before protocol fees; (1% + 0.25%) × 2 = 2.50% for a Raydium-migrated round trip before network, priority and bribe payments | [BullX fees and gas](https://bullx.gitbook.io/bullx-neo-docs/fees-and-gas.md) |
-| GMGN | 1% handling fee per transaction; each token issuance platform adds its own fee (1% on Pump.Fun, per the GMGN page) | 2.00% before issuance-platform fees | [GMGN fees and settings](https://docs.gmgn.ai/index/gmgn-fees-settings.md) |
-| Photon | 1% of the initial token amount for every buy and sell transaction | 2.00% before network and priority fees | [Photon fees](https://pies-organization.gitbook.io/photon-trading/photon-on-sol/photon-fees-sol.md) |
-| Self-hosted ezCHAIN (PAPER) | No platform fee and no subscription or billing surface; paper fills journal a simulated fee but nothing is paid to a venue | 0% platform cost | [docs/API.md](docs/API.md), [docs/PLAN-LIVE-PAPER.md](docs/PLAN-LIVE-PAPER.md) |
-
-The published rate depends on the tier, the pool and the route, so no single
-blended number is quoted. Adding the protocol fees the terminals publish
-alongside the platform fee — for example the 0.25% BullX states for migrated
-Raydium pools — pushes a single round trip past 2% before any network,
-priority or bribe payment. A self-hosted PAPER workstation adds no platform
-fee on top of that math.
-
 ## Six structural edges, each with its evidence
 
 **Self-custody and local keys.** Keys stay on the operator's machine. The
@@ -149,26 +122,23 @@ into the engine, and one chain only.
 ezCHAIN inverts that: a small, boring, modular platform with hard invariants, where a
 strategy is a removable rule set and a chain is an adapter.
 
-Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
-[ADR log](docs/DECISIONS.md) for the decisions that follow from it,
-[ROADMAP.md](ROADMAP.md) for what is current, and
-[docs/PLAN-LIVE-PAPER.md](docs/PLAN-LIVE-PAPER.md) for the P0 contract.
+Read the [ADR log](docs/DECISIONS.md) for the decisions behind the platform and
+[ROADMAP.md](ROADMAP.md) for what is current and what is next.
 
 ## What is in this repo
 
 | Path | What |
 |---|---|
-| `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
 | `apps/web/` | Next.js UI: dashboard, positions, markets, token page, strategies, visual graph builder, performance, activity/ledger, reports, risk, alerts, chains, operations |
 | `apps/api/` | FastAPI edge: live markets, quotes, paper orders, strategy CRUD/run |
-| `services/engine/` | Declarative strategy evaluator and scheduler (inline in P0) |
+| `services/engine/` | Declarative strategy evaluator and scheduler |
 | `packages/core-py/` | Domain, append-only ledger, paper accounting, risk, strategy rules |
 | `packages/sdk-py/` | Apache-2.0 strategy plugin SDK (manifest, context, intents) |
 | `packages/adapters/` | DexScreener market data, Jupiter quotes, 25-chain registry |
 | `apps/mcp/` | MCP 2025-11-25 server for Hermes, OpenClaw and other agents |
 | `integrations/` | Hermes skill/installer and OpenClaw Agent Plugins bundle |
 | `packages/ui/` | Generated design tokens shared by the web app |
-| `docs/` | API contract, product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
+| `docs/` | API contract, product, architecture, domain, chains, infra, security and production readiness |
 | `design/wireframe/` | 32-page clickable low-fi wireframe (open `index.html`) |
 | `infra/` | Docker Compose PAPER stack, Caddy edge, Prometheus, future-service blueprint |
 | `tools/` | Local gates, setup and the combined dev runner |
@@ -178,7 +148,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 1. **The ledger is the only accountant.** Cash is `SUM(ledger_entries.usd_value)`; every
    fill writes its journal entries in the same transaction as the position update.
 2. **One execution path.** Paper, testnet and live share the same pipeline; only the venue
-   adapter and custodian differ. P0 implements paper only.
+   adapter and custodian differ. This release implements paper only.
 3. **Strategies are user-defined packages, never platform code.** The platform
    ships declarative momentum/dip/DCA/threshold rules and loads external Python
    plugins in a supervised worker; no strategy lives in this repository.
@@ -322,9 +292,8 @@ curl -sS -X POST http://127.0.0.1:8000/api/v1/agent/keys \
 ```
 
 Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md),
-[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md),
-[integrations/README.md](integrations/README.md) and the 2026 evidence note
-[docs/RESEARCH-2026.md](docs/RESEARCH-2026.md). There is no live order tool; the API
+[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md) and
+[integrations/README.md](integrations/README.md). There is no live order tool; the API
 refuses `EZCHAIN_EXECUTION_MODE=live` until the executor ships.
 
 ## Wireframe
@@ -396,11 +365,11 @@ useful contributions are:
 - **Docs and reproducibility** — a measured README, a failing-then-passing test, or a
   clearer runbook is a real contribution.
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
-the [issue templates](.github/ISSUE_TEMPLATE/), and `project.md` (canonical engineering
-rules). Good first issues are labelled `good first issue`; design and architecture
-changes need an ADR before code. Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md) for
-plugins and [integrations/README.md](integrations/README.md) for the agent packs.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+and the [issue templates](.github/ISSUE_TEMPLATE/). Good first issues are labelled
+`good first issue`; design and architecture changes need a recorded decision before code.
+Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md) for plugins and
+[integrations/README.md](integrations/README.md) for the agent packs.
 
 ## License
 

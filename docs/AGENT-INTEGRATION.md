@@ -302,8 +302,7 @@ agent must hold it in its own secret store, never in a prompt or a model context
 - **Tool poisoning is real.** MCP tool descriptions, resource text and plugin metadata
   are untrusted data. Keep MCP servers allowlisted, review plugin manifests before
   install, and do not let an agent follow instructions embedded in market text. See
-  OWASP MCP03 (tool poisoning) and Microsoft's MCP control-plane guidance in
-  [`RESEARCH-2026.md`](RESEARCH-2026.md).
+  OWASP MCP03 (tool poisoning) and Microsoft's MCP control-plane guidance.
 - **No autonomous promotion.** `ezchain_get_live_readiness` reports evidence; it cannot
   promote. Live promotion is an owner action, gated by the paper gate and the executor.
 - **The runtime is outside the money path.** The built-in runtime is designed to speak only

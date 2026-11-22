@@ -95,7 +95,7 @@ Persistent rules:
 | 26 | `26-workspace.html` | Workspace | Who else is here? | members, roles, invites, approval policy |
 | 27 | `27-states.html` | State gallery | Every non-happy state | loading, empty, stale, unsellable, no route, offline, quarantine |
 | 28 | `28-mobile.html` | Mobile | Responsive proof | dashboard, positions, tile, kill switch |
-| 29 | `29-components.html` | Components | Handoff reference | tile anatomy, chart frame, table, badges, drawers, modals, toasts |
+| 29 | `29-components.html` | Components | Component reference | tile anatomy, chart frame, table, badges, drawers, modals, toasts |
 | 30 | `30-launches.html` | Launches | What launched most recently? | births feed table, age, curve progress, dev history, safety, LP custody, Trade |
 
 ## 3. Primary flows
@@ -225,7 +225,7 @@ a full row and the topbar wraps.
   insufficient cash, paper-mode badges) match the existing ticket; unknown stays `—`.
 - **Data:** `/quote`, `/paper/orders`, `/protection/arms` (no new API surface).
 
-## 10. Handoff to visual design
+## 10. Visual design inputs
 
 `design/BRIEF.md` defines the design tokens, tone, component inventory and the pages in
 priority order. The wireframe deliberately uses grayscale and dashed placeholders so that
