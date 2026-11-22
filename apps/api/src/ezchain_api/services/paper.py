@@ -2207,124 +2207,130 @@ async def place_order(
                 session.refresh(order)
                 return order
 
-        stamp = utcnow()
-        if funded_shortfall > 0:
-            funding_group = f"funding:{order.id}"
-            funding_legs = funding_entries(funded_shortfall)
-            for entry in funding_legs:
-                # The no-risk top-up is settlement capital, not a venue settlement: its
-                # cash leg names the settlement wallet so the journal says where the money
-                # went. The ``funding:USD`` contra leg is not a cash account and carries
-                # no wallet id. The attribution is part of the entry itself, so the seal
-                # taken over the persisted tape covers it. The top-up is settlement
-                # capital from outside the account, not the agent's own cash coming back,
-                # so it carries no bucket: the trade's own cash legs already charge the
-                # bucket the full ticket, and crediting the top-up here would cancel part
-                # of that charge — room the bucket never had. Only an exit returns cash
-                # to a bucket.
+        try:
+            stamp = utcnow()
+            if funded_shortfall > 0:
+                funding_group = f"funding:{order.id}"
+                funding_legs = funding_entries(funded_shortfall)
+                for entry in funding_legs:
+                    # The no-risk top-up is settlement capital, not a venue settlement: its
+                    # cash leg names the settlement wallet so the journal says where the money
+                    # went. The ``funding:USD`` contra leg is not a cash account and carries
+                    # no wallet id. The attribution is part of the entry itself, so the seal
+                    # taken over the persisted tape covers it. The top-up is settlement
+                    # capital from outside the account, not the agent's own cash coming back,
+                    # so it carries no bucket: the trade's own cash legs already charge the
+                    # bucket the full ticket, and crediting the top-up here would cancel part
+                    # of that charge — room the bucket never had. Only an exit returns cash
+                    # to a bucket.
+                    stamped = replace(
+                        entry,
+                        group_id=funding_group,
+                        created_at=stamp,
+                        wallet_id=SETTLEMENT_WALLET_ID if entry.account == cash_account() else None,
+                        actor_kind=placed_by.kind,
+                        actor_id=placed_by.id,
+                    )
+                    session.add(LedgerEntryRow(**stamped.to_row(funding_group)))
+            # Who owns the position this fill touches decides who its cash belongs to. A buy
+            # opens shares for the bucket that will own them (the caller's, or none for a
+            # person). An exit credits the bucket that owns the shares — never the caller, so a
+            # person closing an agent's position returns the agent's cash, a protection arm
+            # with no actor returns it too, and an agent selling a person's position gets no
+            # credit it never earned.
+            cash_bucket = (
+                bucket_key
+                if payload.side == "buy"
+                else _sell_attribution(replay.position_claims.get(account, {}), fill_quantity)
+            )
+            if payload.side == "buy":
+                entries = buy_entries(
+                    chain=payload.chain,
+                    token_address=payload.token_address,
+                    quantity=fill_quantity,
+                    price_usd=quote.price,
+                    fee_bps=settings.paper_fee_bps,
+                    notional_usd=notional,
+                    fee_usd=fee,
+                )
+            else:
+                avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
+                if fill_quantity == held_qty:
+                    basis = held_cost
+                else:
+                    basis = min(
+                        quantize_money(
+                            exact_product(fill_quantity, avg_cost), field="cost_basis_usd"
+                        ),
+                        held_cost,
+                    )
+                entries = sell_entries(
+                    chain=payload.chain,
+                    token_address=payload.token_address,
+                    quantity=fill_quantity,
+                    price_usd=quote.price,
+                    avg_cost_usd=avg_cost,
+                    fee_bps=settings.paper_fee_bps,
+                    proceeds_usd=notional,
+                    cost_basis_usd=basis,
+                    fee_usd=fee,
+                )
+
+            session.add(
+                PaperFillRow(
+                    id=new_id(),
+                    order_id=order.id,
+                    chain=payload.chain,
+                    token_address=payload.token_address,
+                    side=payload.side,
+                    quantity=fill_quantity,
+                    price_usd=quote.price,
+                    notional_usd=notional,
+                    fee_usd=fee,
+                    quote_kind=quote.kind,
+                    created_at=stamp,
+                )
+            )
+            for entry in entries:
+                # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
+                # learns who placed the order, without joining back to ``paper_orders``. It is
+                # carried on the entry, so the seal over the persisted tape covers it too.
+                cash = entry.account == cash_account()
+                # A cash leg is attributed to the bucket that owns the position it settles,
+                # not to whoever placed the order. Only cash moves the deployment; a
+                # position or fee leg names none, so the replay charges the bucket for what
+                # left the account and credits it for what an exit returned.
                 stamped = replace(
                     entry,
-                    group_id=funding_group,
+                    group_id=order.id,
                     created_at=stamp,
-                    wallet_id=SETTLEMENT_WALLET_ID if entry.account == cash_account() else None,
+                    wallet_id=settlement_wallet_id if cash else None,
+                    bucket_id=cash_bucket if cash else None,
                     actor_kind=placed_by.kind,
                     actor_id=placed_by.id,
                 )
-                session.add(LedgerEntryRow(**stamped.to_row(funding_group)))
-        # Who owns the position this fill touches decides who its cash belongs to. A buy
-        # opens shares for the bucket that will own them (the caller's, or none for a
-        # person). An exit credits the bucket that owns the shares — never the caller, so a
-        # person closing an agent's position returns the agent's cash, a protection arm
-        # with no actor returns it too, and an agent selling a person's position gets no
-        # credit it never earned.
-        cash_bucket = (
-            bucket_key
-            if payload.side == "buy"
-            else _sell_attribution(replay.position_claims.get(account, {}), fill_quantity)
-        )
-        if payload.side == "buy":
-            entries = buy_entries(
-                chain=payload.chain,
-                token_address=payload.token_address,
-                quantity=fill_quantity,
-                price_usd=quote.price,
-                fee_bps=settings.paper_fee_bps,
-                notional_usd=notional,
-                fee_usd=fee,
-            )
-        else:
-            avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
-            if fill_quantity == held_qty:
-                basis = held_cost
-            else:
-                basis = min(
-                    quantize_money(exact_product(fill_quantity, avg_cost), field="cost_basis_usd"),
-                    held_cost,
+                session.add(LedgerEntryRow(**stamped.to_row(order.id)))
+
+            order.status = "filled"
+            order.filled_at = stamp
+            order.quote_kind = quote.kind
+            order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+            if funded_shortfall > 0:
+                order.reason = "SHORTFALL_FUNDED"
+                order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
+                order.funding_json = _funding_audit(
+                    order.id,
+                    replay.cash,
+                    replay.cash + funded_shortfall,
+                    funded_shortfall,
+                    settings,
+                    TOPUP_TRIGGER,
                 )
-            entries = sell_entries(
-                chain=payload.chain,
-                token_address=payload.token_address,
-                quantity=fill_quantity,
-                price_usd=quote.price,
-                avg_cost_usd=avg_cost,
-                fee_bps=settings.paper_fee_bps,
-                proceeds_usd=notional,
-                cost_basis_usd=basis,
-                fee_usd=fee,
-            )
-
-        session.add(
-            PaperFillRow(
-                id=new_id(),
-                order_id=order.id,
-                chain=payload.chain,
-                token_address=payload.token_address,
-                side=payload.side,
-                quantity=fill_quantity,
-                price_usd=quote.price,
-                notional_usd=notional,
-                fee_usd=fee,
-                quote_kind=quote.kind,
-                created_at=stamp,
-            )
-        )
-        for entry in entries:
-            # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
-            # learns who placed the order, without joining back to ``paper_orders``. It is
-            # carried on the entry, so the seal over the persisted tape covers it too.
-            cash = entry.account == cash_account()
-            # A cash leg is attributed to the bucket that owns the position it settles,
-            # not to whoever placed the order. Only cash moves the deployment; a
-            # position or fee leg names none, so the replay charges the bucket for what
-            # left the account and credits it for what an exit returned.
-            stamped = replace(
-                entry,
-                group_id=order.id,
-                created_at=stamp,
-                wallet_id=settlement_wallet_id if cash else None,
-                bucket_id=cash_bucket if cash else None,
-                actor_kind=placed_by.kind,
-                actor_id=placed_by.id,
-            )
-            session.add(LedgerEntryRow(**stamped.to_row(order.id)))
-
-        order.status = "filled"
-        order.filled_at = stamp
-        order.quote_kind = quote.kind
-        order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-        if funded_shortfall > 0:
-            order.reason = "SHORTFALL_FUNDED"
-            order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
-            order.funding_json = _funding_audit(
-                order.id,
-                replay.cash,
-                replay.cash + funded_shortfall,
-                funded_shortfall,
-                settings,
-                TOPUP_TRIGGER,
-            )
-        session.commit()
-        return order
+            session.commit()
+            return order
+        except Exception:  # noqa: BLE001 - never leave a half-written fill group staged
+            session.rollback()
+            raise
 
 
 async def approve_order(
