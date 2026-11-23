@@ -65,7 +65,10 @@ def _rate(input_per_million: str, output_per_million: str) -> ModelPricing:
 
 
 # One client per wire protocol. A provider names one of these; it never supplies a client.
-WIRE_CLIENTS = {
+# Naming the concrete constructors keeps the factory's client provably non-abstract.
+WireClient = type[AnthropicClient] | type[OpenAICompatibleClient]
+
+WIRE_CLIENTS: dict[str, WireClient] = {
     "anthropic": AnthropicClient,
     "openai": OpenAICompatibleClient,
 }
