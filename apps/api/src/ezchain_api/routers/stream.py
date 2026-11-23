@@ -14,6 +14,7 @@ browser EventSource, which cannot send an Authorization header either.
 from __future__ import annotations
 
 import hmac
+from collections.abc import AsyncIterator
 
 from fastapi import (
     APIRouter,
@@ -160,18 +161,18 @@ async def stream_events(
     except StreamError as exc:
         raise _http_error(exc) from exc
 
-    async def frames():
+    async def frames() -> AsyncIterator[str]:
         try:
             for event in snapshot:
                 yield event.sse()
             while True:
-                event = await queue.get()
-                if event is None:
+                item = await queue.get()
+                if item is None:
                     break
-                if isinstance(event, Lagged):
-                    yield event.sse()
+                if isinstance(item, Lagged):
+                    yield item.sse()
                     break
-                yield event.sse()
+                yield item.sse()
         finally:
             hub.unsubscribe(session_id, queue)
 
@@ -211,11 +212,11 @@ async def stream_socket(
         for event in snapshot:
             await websocket.send_json(event.envelope())
         while True:
-            event = await queue.get()
-            if event is None:
+            item = await queue.get()
+            if item is None:
                 break
-            await websocket.send_json(event.envelope())
-            if isinstance(event, Lagged):
+            await websocket.send_json(item.envelope())
+            if isinstance(item, Lagged):
                 break
     except WebSocketDisconnect:
         pass
