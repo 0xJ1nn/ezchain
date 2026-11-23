@@ -14,6 +14,7 @@ import hmac
 import ipaddress
 import json
 import os
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -309,7 +310,17 @@ def _readiness(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="ezchain-api")
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "gateway":
+        # The supervised unit has its own argument tree and its own entry point. Keeping
+        # the delegation here lets one installed command explain the whole product.
+        from .gateway.cli import main as gateway_main
+
+        return gateway_main(arguments[1:])
+
+    parser = argparse.ArgumentParser(
+        prog="ezchain-api", epilog="Run 'ezchain-api gateway --help' for the supervised unit."
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("migrate", help="apply Alembic migrations up to head")
     ready = commands.add_parser(
@@ -325,7 +336,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help=f"oldest acceptable backup in hours (default {DEFAULT_MAX_BACKUP_AGE_HOURS:g})",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
 
     if args.command == "migrate":
         run_migrations()
