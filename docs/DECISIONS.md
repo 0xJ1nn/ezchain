@@ -619,11 +619,12 @@ only.
   until the executor ships. Paper-to-live readiness is a computed, read-only report.
 
 **Consequences:** plugins can use any package in their own environment (numpy,
-scikit-learn, torch), while the host owns risk and accounting. Spawning a worker costs
-tens of milliseconds per strategy start and the worker is restarted on a config change;
-that is acceptable for minute-scale strategies and deliberately not a high-frequency
-path. In-memory plugin state is not durable by design — only `ctx.state` is. Plugin
-backtesting, signed packages, a bwrap/seccomp profile and per-user scoped tokens remain
+scikit-learn, torch), while the host owns risk and accounting. Spawning a worker is
+estimated to cost tens of milliseconds per strategy start — an unrecorded figure, not a
+committed measurement — and the worker is restarted on a config change; that is acceptable
+for minute-scale strategies and deliberately not a high-frequency path. In-memory plugin
+state is not durable by design — only `ctx.state` is. Plugin backtesting, signed packages,
+a bwrap/seccomp profile and per-user scoped tokens remain
 open and are not claimed by this ADR. A future real sandbox or a separate plugin service
 would need its own ADR and must keep the intent-only contract.
 
@@ -1708,7 +1709,9 @@ this repository. The only recorded timing is end-to-end HTTP latency in the stre
 (`tools/stress/http.py:494`) and the release-drill report
 (`docs/evidence/p0-production/stress-all-2026-10-23.md`); neither profiles a single function,
 and CONTRACT I12 requires a claim to name what was measured. Every bottleneck below is
-therefore **unmeasured**, with the measurement that would settle it named in its place.
+therefore **unmeasured**, with the measurement that would settle it named in its place; the
+required run fields and the current "no run recorded" state are kept in the kernel benchmark
+evidence ([benchmarks README](evidence/benchmarks/README.md)).
 
 | Hot path | Where it lives | Bottleneck today | What would measure it |
 |---|---|---|---|
@@ -1759,12 +1762,14 @@ listed below. ADR-0049's parity and benchmark gate is retained and made mandator
 multi-chain trading platform with an AI harness, built to be trusted for performance,
 footprint, stability and safety. Rust is the language for the components where those
 properties matter most. The Python-only state of the repository is a starting point, not the
-target design. A scratch parity proof, recorded in a private workspace note rather than a
-committed benchmark artifact, showed that a small scope normaliser ported to Rust through
-pyo3 matched all 53 recorded cases but ran at roughly 0.6x (slower), because the FFI crossing
-cost more than the function's work. It is a lesson about granularity, not a claim of a speed
-win: port loops and whole boundaries, not individual small functions, and prove parity before
-replacing anything.
+target design. A scratch parity proof in an uncommitted note reported that a small scope
+normaliser ported to Rust through pyo3 matched all 53 recorded cases but ran slower, because
+the FFI crossing cost more than the function's work. The parity half is reproducible: the
+committed harness and corpus are listed in the kernel benchmark evidence
+([benchmarks README](evidence/benchmarks/README.md)). No timing harness, corpus or raw output
+was committed with the note, so its speed figure is **unrecorded** — it cannot be reproduced
+or dated, and no multiplier is claimed here. The lesson stands on its own: port loops and
+whole boundaries, not individual small functions, and prove parity before replacing anything.
 
 **Decision — the language map is normative:**
 
