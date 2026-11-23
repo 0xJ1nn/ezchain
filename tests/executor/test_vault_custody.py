@@ -259,7 +259,7 @@ def custody_pipeline(
         venue=venue,
         sink=journal,
         limits=limits(),
-        kill_switch=KillSwitch(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
         signing=SigningBoundary(
             cluster=CLUSTER,
@@ -508,7 +508,7 @@ async def test_paper_without_custody_still_submits_unsigned_unchanged() -> None:
         venue=venue,
         sink=journal,
         limits=limits(),
-        kill_switch=KillSwitch(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
     )
     result = await pipe.run(buy(), snapshot=make_snapshot())
@@ -524,7 +524,7 @@ async def test_live_without_a_signing_boundary_refuses_before_the_venue() -> Non
         venue=venue,
         sink=MemoryJournal(),
         limits=limits(),
-        kill_switch=KillSwitch(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
         mode="live",
     )
@@ -541,7 +541,7 @@ async def test_live_with_an_in_memory_signer_refuses_for_want_of_custody() -> No
         venue=venue,
         sink=MemoryJournal(),
         limits=limits(),
-        kill_switch=KillSwitch(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
         signing=SigningBoundary(
             cluster=CLUSTER,
@@ -766,7 +766,7 @@ async def test_a_signers_handle_of_the_wrong_type_refuses_instead_of_crashing() 
         venue=venue,
         sink=MemoryJournal(),
         limits=limits(),
-        kill_switch=KillSwitch(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
         signing=SigningBoundary(
             cluster=CLUSTER,
@@ -828,7 +828,7 @@ async def test_the_pipeline_itself_refuses_a_cross_user_order_whatever_the_signe
         venue=venue,
         sink=MemoryJournal(),
         limits=limits(),
-        kill_switch=KillSwitch(),
+        kill_switch=KillSwitch(read=lambda: False),
         timeout_seconds=0.2,
         signing=SigningBoundary(
             cluster=CLUSTER,
