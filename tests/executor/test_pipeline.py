@@ -528,6 +528,19 @@ async def test_a_switch_with_no_reader_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_switch_reading_no_state_fails_closed() -> None:
+    # A persistence read can yield a falsy non-bool: a missing flag decodes to None.
+    # That is an unknown state, not "switch off", so it must deny before the venue.
+    pipe, venue, journal = pipeline(kill_switch=KillSwitch(read=lambda: None))
+    result = await pipe.run(buy(), snapshot=make_snapshot())
+
+    assert result.status == "denied"
+    assert result.reason == "KILL_SWITCH_UNAVAILABLE"
+    assert venue.quote_calls == 0
+    assert journal.groups == ()
+
+
+@pytest.mark.asyncio
 async def test_a_switch_with_no_reader_still_allows_an_exit() -> None:
     # Fail closed means no new risk, not trapped funds. An exit only reduces the held
     # position, so an unreadable switch leaves it alone.

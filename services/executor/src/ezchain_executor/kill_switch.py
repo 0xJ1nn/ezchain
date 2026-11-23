@@ -42,9 +42,15 @@ class KillSwitch:
 
     def active(self) -> bool:
         try:
-            return bool(self.read())
+            value = self.read()
         except Exception as exc:  # noqa: BLE001 - any read failure is fail-closed
             raise KillSwitchUnavailable("kill switch state is unreadable") from exc
+        # A falsy non-bool (a missing flag decoded to None, for example) is an
+        # unknown state, not "switch off". Treat it as unreadable rather than
+        # fabricating a zero that would approve new risk.
+        if not isinstance(value, bool):
+            raise KillSwitchUnavailable("kill switch state is unreadable")
+        return value
 
     def check(self) -> None:
         """Raise when execution must not proceed."""
