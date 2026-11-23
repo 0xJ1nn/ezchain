@@ -264,6 +264,12 @@ export default async function TokenPage({
 					) : (
 						<Badge tone="err">{quoteReason?.code ?? "NO_QUOTE"}</Badge>
 					)}
+					<Link
+						className="btn primary"
+						href={`/trade?${new URLSearchParams({ chain, token: token.address, side, amount, timeframe }).toString()}`}
+					>
+						Open Trade screen
+					</Link>
 					<Link className="btn" href={`/markets?chain=${chain}`}>
 						Back to markets
 					</Link>
