@@ -73,3 +73,10 @@ body:
           required: true
         - label: This is not a security vulnerability (those go to SECURITY.md)
           required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: State the observable conditions that must hold for this item to be complete.
+    validations:
+      required: true

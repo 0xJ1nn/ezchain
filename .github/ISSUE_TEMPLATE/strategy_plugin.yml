@@ -44,3 +44,10 @@ body:
           required: true
         - label: No strategy code is proposed for this repository
           required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: State the observable conditions that must hold for this item to be complete.
+    validations:
+      required: true

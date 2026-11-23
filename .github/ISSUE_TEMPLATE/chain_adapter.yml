@@ -47,3 +47,10 @@ body:
           required: true
         - label: No core `if chain == …` branch is needed
           required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: State the observable conditions that must hold for this item to be complete.
+    validations:
+      required: true
