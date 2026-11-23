@@ -1877,6 +1877,17 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "A provider key pepper is required.",
         http_status=503,
     ),
+    # ------------------------------------------------------------ api: model chats
+    _S(
+        "MODEL_CHAT_ERROR",
+        "validation",
+        "api",
+        "ezchain_api/services/agent_models.py",
+        "A model chat cannot start: the prompt is empty, the model is unknown, the named "
+        "provider disagrees, the gateway is unconfigured, or the provider key is missing.",
+        "The chat could not be started.",
+        http_status=422,
+    ),
     # ------------------------------------------------------------ api: market routes
     _S(
         "CHAIN_NOT_FOUND",

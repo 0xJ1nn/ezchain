@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 269 codes across 17 categories, 6 layers.
+**Scale:** 270 codes across 17 categories, 6 layers.
 
 ---
 
@@ -79,10 +79,11 @@ or a process-local refusal).
 | `PROVIDER_KEY_FORGET_FAILED` | api | 503 | no | warning | The stored credential could not be deleted. |
 | `PROVIDER_KEY_PEPPER_REQUIRED` | api | 503 | no | warning | Provider keys cannot be stored without a pepper. |
 
-### Request validation and not-found (11)
+### Request validation and not-found (12)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
+| `MODEL_CHAT_ERROR` | api | 422 | no | warning | The chat could not be started. |
 | `STRATEGY_NOT_FOUND` | api | 404 | no | warning | No strategy has that id. |
 | `PROFILE_NOT_FOUND` | api | 404 | no | warning | No protection profile has that name. |
 | `ARM_NOT_FOUND` | api | 404 | no | warning | No protection arm has that id. |
