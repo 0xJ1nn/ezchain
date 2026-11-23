@@ -2,10 +2,11 @@
 
 // ezCHAIN desktop supervisor.
 //
-// The app owns two private sidecars: the FastAPI paper API on an embedded SQLite database
-// and the traced Next.js server. Both bind to 127.0.0.1 on ephemeral ports and are never
-// exposed. Closing the window hides it to the tray; the services keep running and are
-// restarted if they crash. Quit stops them.
+// One product, two roles. As a host the app owns two private sidecars: the FastAPI paper
+// API on an embedded SQLite database and the traced Next.js server. Both bind to 127.0.0.1
+// on ephemeral ports and are never exposed. As a shell the app owns no process and no key:
+// it opens a read-only view of a host the operator chose, and only GETs on an allowlist of
+// read paths leave the window. Closing the window hides it to the tray either way.
 
 const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell } = require("electron");
 const { spawn } = require("node:child_process");
@@ -13,6 +14,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
+const sender = require("./sender.js");
 
 const APP_NAME = "ezCHAIN";
 const isDev = !app.isPackaged;
@@ -22,6 +24,7 @@ const logsDir = path.join(dataDir, "logs");
 const logFile = path.join(logsDir, "desktop.log");
 const dbFile = path.join(dataDir, "ezchain.db");
 const tokenFile = path.join(dataDir, "api-token");
+const configFile = path.join(dataDir, "host.json");
 const iconPath = isDev
 	? path.join(__dirname, "resources", "icon.png")
 	: path.join(process.resourcesPath, "icon.png");
@@ -76,6 +79,12 @@ function log(message) {
 let mainWindow = null;
 let splash = null;
 let tray = null;
+let firstRun = null;
+let rebuildTray = () => {};
+let role = null;
+let hostUrl = null;
+let viewerUrl = null;
+let loadedViewerUrl = null;
 let apiPort = null;
 let webPort = null;
 let apiToken = null;
@@ -101,6 +110,36 @@ function loadToken() {
 	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
 	fs.chmodSync(tokenFile, 0o600);
 	return token;
+}
+
+// The role and the host address live in the user data directory, never in the repository.
+// A malformed or missing file is a first run, not a reason to guess a host.
+function loadConfig() {
+	try {
+		const saved = JSON.parse(fs.readFileSync(configFile, "utf8"));
+		if (saved && saved.role === "remote" && typeof saved.url === "string") {
+			return { role: "remote", url: sender.normalizeHostUrl(saved.url) };
+		}
+		if (saved && saved.role === "local") return { role: "local" };
+	} catch {
+		// No usable configuration yet; the first-run screen decides.
+	}
+	return null;
+}
+
+function saveConfig(config) {
+	fs.mkdirSync(dataDir, { recursive: true });
+	fs.writeFileSync(configFile, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+}
+
+// A URL is tested before it is saved. The probe is a read-only GET over TLS, so a failed
+// test leaves no configuration behind and the chooser stays open with a retry message.
+async function testHost(rawUrl) {
+	const probe = sender.hostProbeRequest(rawUrl);
+	const response = await fetch(probe.url, { ...probe.init, signal: AbortSignal.timeout(5000) });
+	if (!response.ok) throw new Error(`host returned HTTP ${response.status}`);
+	await response.arrayBuffer();
+	return sender.normalizeHostUrl(rawUrl);
 }
 
 function freePort() {
@@ -325,6 +364,8 @@ async function stopChild(child, name) {
 }
 
 async function restartServices() {
+	// A shell has no sidecars to restart; the tray's restart action reconnects instead.
+	if (role === "remote") return reconnectHost();
 	if (starting || restarting) return;
 	restarting = true;
 	for (const which of ["api", "web"]) {
@@ -370,8 +411,38 @@ function createSplash() {
 	splash.on("closed", () => (splash = null));
 }
 
+function createFirstRun() {
+	if (firstRun) {
+		firstRun.show();
+		firstRun.focus();
+		return;
+	}
+	firstRun = new BrowserWindow({
+		width: 560,
+		height: 620,
+		title: `${APP_NAME} — choose a host`,
+		backgroundColor: "#161615",
+		autoHideMenuBar: true,
+		resizable: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.cjs"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: true,
+		},
+	});
+	firstRun.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(sender.FIRST_RUN_HTML)}`);
+	firstRun.on("closed", () => (firstRun = null));
+}
+
 function createWindow() {
 	if (mainWindow) {
+		// A role change swaps the viewer (local web app vs remote read-only page). Reload
+		// when the target changed; an ordinary show must not interrupt in-page navigation.
+		if (loadedViewerUrl !== viewerUrl) {
+			loadedViewerUrl = viewerUrl;
+			mainWindow.loadURL(viewerUrl);
+		}
 		mainWindow.show();
 		mainWindow.focus();
 		return;
@@ -393,8 +464,9 @@ function createWindow() {
 			webSecurity: true,
 		},
 	});
-	const origin = `http://127.0.0.1:${webPort}`;
-	mainWindow.loadURL(`${origin}/`);
+	if (!viewerUrl) viewerUrl = `http://127.0.0.1:${webPort}/`;
+	loadedViewerUrl = viewerUrl;
+	mainWindow.loadURL(viewerUrl);
 	mainWindow.once("ready-to-show", () => {
 		if (splash) splash.close();
 		mainWindow.show();
@@ -413,19 +485,25 @@ function createWindow() {
 		mainWindow.hide();
 	});
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-		if (url.startsWith("http://127.0.0.1:") || url.startsWith("https://")) {
-			shell.openExternal(url);
-		}
+		const allowed =
+			role === "remote"
+				? url.startsWith("https://")
+				: url.startsWith("http://127.0.0.1:") || url.startsWith("https://");
+		if (allowed) shell.openExternal(url);
 		return { action: "deny" };
 	});
 	mainWindow.webContents.on("will-navigate", (event, url) => {
-		let same = false;
-		try {
-			same = new URL(url).origin === `http://127.0.0.1:${webPort}`;
-		} catch {
-			same = false;
+		let same = url === viewerUrl;
+		if (!same && role !== "remote") {
+			try {
+				same = new URL(url).origin === `http://127.0.0.1:${webPort}`;
+			} catch {
+				same = false;
+			}
 		}
 		if (!same) {
+			// A remote view never loads the host's web app. Its only navigation target is
+			// the local read-only page, so a link to the operator's origin leaves the app.
 			event.preventDefault();
 			if (url.startsWith("http")) shell.openExternal(url);
 		}
@@ -446,12 +524,16 @@ function createTray() {
 		if (image.isEmpty()) return;
 		tray = new Tray(image);
 		tray.setToolTip(APP_NAME);
-		const rebuild = () => {
+		rebuildTray = () => {
 			const login = app.getLoginItemSettings().openAtLogin;
+			const remote = role === "remote";
 			tray.setContextMenu(
 				Menu.buildFromTemplate([
-					{ label: "Open ezCHAIN", click: () => mainWindow?.show() },
-					{ label: "Restart services", click: () => void restartServices() },
+					{ label: "Open ezCHAIN", click: () => (mainWindow || firstRun)?.show() },
+					{
+						label: remote ? "Reconnect to host" : "Restart services",
+						click: () => void (remote ? reconnectHost() : restartServices()),
+					},
 					{ type: "separator" },
 					{ label: "Open logs", click: () => shell.openPath(logFile) },
 					{ label: "Open data folder", click: () => shell.openPath(dataDir) },
@@ -470,8 +552,8 @@ function createTray() {
 				]),
 			);
 		};
-		rebuild();
-		tray.on("click", () => mainWindow?.show());
+		rebuildTray();
+		tray.on("click", () => (mainWindow || firstRun)?.show());
 	} catch (error) {
 		log(`tray unavailable: ${error.message}`);
 	}
@@ -505,24 +587,8 @@ function createMenu() {
 	);
 }
 
-async function boot() {
-	createSplash();
-	createTray();
-	createMenu();
-	try {
-		await startServices();
-		createWindow();
-	} catch (error) {
-		log(`startup failed: ${error.message}`);
-		if (splash) splash.close();
-		dialog.showErrorBox(
-			`${APP_NAME} could not start`,
-			`${error.message}\n\nLogs: ${logFile}`,
-		);
-		// Keep the supervisor alive so the tray can retry.
-		if (tray) tray.displayBalloon?.({ title: APP_NAME, content: "Services failed to start. Use Restart services." });
-	}
-	setInterval(rotateLog, 60000);
+function startWatchdog() {
+	if (watchdogTimer) return;
 	watchdogTimer = setInterval(async () => {
 		if (quitting || starting || restarting || !apiPort || !webPort) return;
 		const probedApi = apiChild;
@@ -550,14 +616,100 @@ async function boot() {
 	}, 15000);
 }
 
+// Reconnecting is a read-only probe and a reload of the local view. It never touches a
+// process on the host, so a lost connection cannot end a strategy running there.
+async function reconnectHost() {
+	if (role !== "remote") return restartServices();
+	try {
+		hostUrl = await testHost(hostUrl);
+		saveConfig({ role: "remote", url: hostUrl });
+		if (mainWindow) mainWindow.loadURL(viewerUrl);
+		return true;
+	} catch (error) {
+		log(`reconnect failed: ${error.message}`);
+		dialog.showErrorBox(`${APP_NAME} could not reconnect`, `${error.message}\n\nLogs: ${logFile}`);
+		return false;
+	}
+}
+
+// Leaving the local role tears down everything it owned: watchdog, restart timers and
+// both sidecars. A shell labelled remote must not still supervise a local host.
+async function stopLocalHost() {
+	if (watchdogTimer) {
+		clearInterval(watchdogTimer);
+		watchdogTimer = null;
+	}
+	for (const which of ["api", "web"]) {
+		if (restartTimers[which]) {
+			clearTimeout(restartTimers[which]);
+			restartTimers[which] = null;
+		}
+	}
+	await stopChild(webChild, "web");
+	webChild = null;
+	await stopChild(apiChild, "api");
+	apiChild = null;
+	apiToken = null;
+	apiPort = null;
+	webPort = null;
+}
+
+async function startRole(config) {
+	const previousRole = role;
+	role = config.role;
+	hostUrl = config.url || null;
+	const plan = sender.rolePlan(role);
+	if (!plan.spawnSidecars && (previousRole === "local" || apiChild || webChild || watchdogTimer)) {
+		await stopLocalHost();
+	}
+	if (plan.spawnSidecars) {
+		try {
+			await startServices();
+		} catch (error) {
+			log(`startup failed: ${error.message}`);
+			if (splash) splash.close();
+			dialog.showErrorBox(`${APP_NAME} could not start`, `${error.message}\n\nLogs: ${logFile}`);
+			// Keep the supervisor alive so the tray can retry.
+			if (tray) tray.displayBalloon?.({ title: APP_NAME, content: "Services failed to start. Use Restart services." });
+			return false;
+		}
+		viewerUrl = `http://127.0.0.1:${webPort}/`;
+	} else {
+		viewerUrl = `data:text/html;charset=utf-8,${encodeURIComponent(sender.REMOTE_VIEWER_HTML)}`;
+	}
+	if (splash) splash.close();
+	if (firstRun) {
+		firstRun.close();
+		firstRun = null;
+	}
+	createWindow();
+	rebuildTray();
+	if (plan.watchdog) startWatchdog();
+	return true;
+}
+
+async function boot() {
+	setInterval(rotateLog, 60000);
+	const config = loadConfig();
+	createTray();
+	createMenu();
+	if (!config) {
+		createFirstRun();
+		return;
+	}
+	createSplash();
+	await startRole(config);
+}
+
 if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
 	app.setAppUserModelId("io.ezchain.workstation");
 	app.on("second-instance", () => {
-		if (mainWindow) {
-			mainWindow.show();
-			mainWindow.focus();
+		const windowToShow = mainWindow || firstRun;
+		if (windowToShow) {
+			windowToShow.show();
+			windowToShow.focus();
 		}
 	});
 	app.on("before-quit", async (event) => {
@@ -580,6 +732,7 @@ if (!app.requestSingleInstanceLock()) {
 	});
 	app.on("activate", () => {
 		if (mainWindow) mainWindow.show();
+		else if (firstRun) firstRun.show();
 	});
 	app.whenReady().then(boot);
 }
@@ -587,6 +740,43 @@ if (!app.requestSingleInstanceLock()) {
 ipcMain.handle("desktop:restart", () => restartServices());
 ipcMain.handle("desktop:open-logs", () => shell.openPath(logFile));
 ipcMain.handle("desktop:open-data", () => shell.openPath(dataDir));
+
+// First-run choices. A URL is only stored after the probe succeeds, and choosing local
+// leaves the existing sidecar path exactly as it was. The role is decided once: a script in
+// the local web app cannot later re-point this window or make it stop owning its host.
+function assertFirstRun() {
+	if (!firstRun || role !== null) {
+		throw new Error("the workstation role can only be chosen on first run");
+	}
+}
+
+ipcMain.handle("desktop:remote-connect", async (_event, rawUrl) => {
+	assertFirstRun();
+	const url = await testHost(rawUrl);
+	saveConfig({ role: "remote", url });
+	await startRole({ role: "remote", url });
+	return { role: "remote", url };
+});
+ipcMain.handle("desktop:choose-local", async () => {
+	assertFirstRun();
+	saveConfig({ role: "local" });
+	await startRole({ role: "local" });
+	return { role: "local" };
+});
+ipcMain.handle("desktop:remote-config", () => ({ role, url: hostUrl }));
+
+// The only channel from the read-only view to a host. The sender refuses every write
+// method and every path outside the read allowlist, and drops all credential headers.
+ipcMain.handle("desktop:remote-read", async (_event, requestPath) => {
+	if (role !== "remote" || !hostUrl) {
+		throw new Error("remote reads are only available after attaching to a host");
+	}
+	const request = sender.buildRemoteRequest({ baseUrl: hostUrl, path: requestPath });
+	const response = await fetch(request.url, request.init);
+	const body = await response.text();
+	if (!response.ok) throw new Error(`host returned HTTP ${response.status}`);
+	return { status: response.status, body };
+});
 
 process.on("uncaughtException", (error) => log(`uncaught: ${error.stack || error.message}`));
 process.on("unhandledRejection", (error) => log(`unhandled: ${String(error)}`));
