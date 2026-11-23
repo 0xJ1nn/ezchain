@@ -253,9 +253,20 @@ def _recorded(store: TraceSink, session_id: str) -> tuple[TraceEvent, ...]:
     if reader is None:
         return ()
     try:
-        return reader(session_id)
+        events = reader(session_id)
     except TraceStoreError:
         return ()
+    # ``read`` is not part of the TraceSink protocol, so its result is untyped here. A store
+    # that returns anything other than a sequence of recorded events is treated as holding
+    # none, rather than trusting the untyped value to satisfy the declared return type.
+    if not isinstance(events, (list, tuple)):
+        return ()
+    recorded: list[TraceEvent] = []
+    for event in events:
+        if not isinstance(event, TraceEvent):
+            return ()
+        recorded.append(event)
+    return tuple(recorded)
 
 
 class StreamHub:

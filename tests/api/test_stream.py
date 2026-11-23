@@ -488,6 +488,29 @@ def test_the_producer_opens_the_channel_with_the_existing_trace() -> None:
     assert [event.hash for event in snapshot] == [event.digest for event in store.read("resumed")]
 
 
+def test_a_store_returning_a_wrong_type_seeds_no_events() -> None:
+    class _MalformedStore:
+        @property
+        def key(self) -> bytes | None:
+            return None
+
+        def append(self, event: TraceEvent) -> None:
+            raise AssertionError("opening a channel must not append to the store")
+
+        def read(self, session_id: str) -> tuple[str, ...]:
+            return ("not a trace event",)
+
+    hub = StreamHub()
+    hub.trace_sink(
+        "malformed",
+        owner=_principal(),
+        required_scope="trade",
+        store=_MalformedStore(),
+    )
+    snapshot, _ = hub.subscribe("malformed", _principal())
+    assert snapshot == []
+
+
 # --- Bounded history and slow subscribers -------------------------------------------------
 
 
