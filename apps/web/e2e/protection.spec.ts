@@ -1,5 +1,9 @@
 import { expect, test } from "./test";
 
+const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+const TRADE_URL = `/trade?chain=solana&token=${BONK_MINT}`;
+const ARMS_KEY = "ezchain-fixture-protection-arms";
+
 // Position protection: arm a stop from the positions page, edit it, and see
 // the armed arm reflected on the strategy surface's automations view. Fixture
 // mode only; the fixture never pretends to write to the API.
@@ -40,4 +44,54 @@ test("arm a stop-loss from the positions page, edit it, and list it in automatio
 	await expect(arms).toContainText("stop-loss");
 	await expect(arms).toContainText("armed");
 	await expect(arms).toContainText("BONK");
+});
+
+test("trade exits panel is linked both ways to the chart and saves through the protection client", async ({
+	page,
+}) => {
+	await page.goto(TRADE_URL);
+
+	const panel = page.getByTestId("exits-panel");
+	await expect(panel).toBeVisible();
+
+	// Three targets, each with its own partial size, and a live reward-to-risk.
+	for (const index of [0, 1, 2]) {
+		await expect(page.getByTestId(`exit-target-row-${index}`)).toBeVisible();
+		await expect(page.getByTestId(`exit-tp-${index}-size`)).toHaveValue(
+			["40", "35", "25"][index]!,
+		);
+	}
+	await expect(page.getByTestId("reward-risk")).toContainText("1 :");
+
+	// Move to breakeven writes the entry into the stop field.
+	const entry = await page.getByTestId("trade-entry").textContent();
+	await page.getByTestId("exit-breakeven").click();
+	await expect(page.getByTestId("exit-stop-input")).toHaveValue(entry?.trim() ?? "");
+
+	// Panel -> chart: typing a target price moves its line.
+	await page.getByTestId("exit-tp-0-input").fill("0.00004200");
+	const line = page.getByTestId("exit-line-tp-0");
+	await expect.poll(async () => Number(await line.getAttribute("aria-valuenow"))).toBeCloseTo(
+		0.000042,
+		10,
+	);
+
+	await page.getByTestId("save-exits").click();
+	await expect(page.getByTestId("exits-status")).toContainText("Exits armed");
+
+	const stored = await page.evaluate((key) => sessionStorage.getItem(key), ARMS_KEY);
+	if (!stored) throw new Error("expected the protection client to store the arms");
+	const kinds = (JSON.parse(stored) as { kind: string }[]).map((arm) => arm.kind);
+	expect(kinds).toEqual(expect.arrayContaining(["stop_loss", "take_profit", "trailing_stop"]));
+});
+
+test("trade exits fail closed on an invalid stop without storing an arm", async ({ page }) => {
+	await page.goto(TRADE_URL);
+
+	await page.getByTestId("exit-stop-input").fill("0");
+	await page.getByTestId("save-exits").click();
+
+	await expect(page.getByTestId("exits-status")).toContainText("positive stop price");
+	const stored = await page.evaluate((key) => sessionStorage.getItem(key), ARMS_KEY);
+	expect(stored).toBeNull();
 });
