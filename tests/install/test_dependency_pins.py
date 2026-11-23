@@ -390,6 +390,31 @@ def test_a_node_advisory_fails_the_audit_and_is_named() -> None:
     assert "GHSA-qx2v-qp2m-jg93" in errors[0]
 
 
+def _bind_report(report: Path) -> Path:
+    """Write the sidecar that authorises replaying a saved report offline.
+
+    It uses the audit's own digest helper and the same lock set the verifier
+    checks, so a report bound this way is judged while any drift is refused.
+    """
+    sidecar = Path(f"{report}.provenance")
+    locks = {
+        name: audit_pins._sha256(audit_pins.ROOT / name)
+        for name in (*audit_pins.PYTHON_LOCKS, audit_pins.NODE_LOCK)
+    }
+    sidecar.write_text(
+        json.dumps(
+            {
+                "report_sha256": audit_pins._sha256(report),
+                "locks": locks,
+                "generated_at": "2026-11-23T00:00:00Z",
+                "source": "pip-audit --format json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return sidecar
+
+
 def test_a_saved_report_is_judged_with_the_same_verdict(tmp_path: Path) -> None:
     report = tmp_path / "report.json"
     report.write_text(
@@ -402,8 +427,47 @@ def test_a_saved_report_is_judged_with_the_same_verdict(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    _bind_report(report)
 
     assert audit_pins.main(["--report", str(report)]) == 1
+
+
+def test_a_bound_clean_report_passes_the_replay(tmp_path: Path) -> None:
+    report = tmp_path / "report.json"
+    report.write_text(
+        json.dumps({"dependencies": [{"name": "fastapi", "version": "0.162.7", "vulns": []}]}),
+        encoding="utf-8",
+    )
+    _bind_report(report)
+
+    assert audit_pins.main(["--report", str(report)]) == 0
+
+
+def test_an_unbound_report_is_refused(tmp_path: Path) -> None:
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"dependencies": []}), encoding="utf-8")
+
+    assert audit_pins.main(["--report", str(report)]) == 2
+
+
+def test_a_tampered_report_is_refused(tmp_path: Path) -> None:
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"dependencies": []}), encoding="utf-8")
+    _bind_report(report)
+
+    # The report changes after it was bound, so the recorded digest no longer fits.
+    report.write_text(
+        json.dumps(
+            {
+                "dependencies": [
+                    {"name": "jinja2", "version": "2.11.2", "vulns": [{"id": "PYSEC-2021-66"}]}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert audit_pins.main(["--report", str(report)]) == 2
 
 
 def test_an_audit_that_cannot_run_is_not_a_pass(tmp_path: Path) -> None:

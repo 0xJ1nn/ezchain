@@ -56,7 +56,8 @@ pnpm 9.15.9):
   carries hashes, every Node resolution carries integrity, every declared range is still
   satisfied by its pin, every package pyproject's third-party requirement is pinned or
   named as a gap, and every Dockerfile base image is a digest with its tag comment. This is
-  step 6 of `tools/ci.sh`; it needs no network.
+  the static part of step 5 of `tools/ci.sh` and needs no network; the advisory audit in the
+  same step does.
 - `tools/check_pins.py --full` — a fresh venv installs `requirements.lock` with
   `--require-hashes --no-cache-dir` and `pip freeze` matches the pins exactly: 43 pinned,
   43 installed.
@@ -66,10 +67,11 @@ pnpm 9.15.9):
   install from a local wheelhouse with `--no-index`: 43 from a 43-wheel directory, and
   31 from a 31-wheel directory for the runtime set. The wheelhouse digests are in
   [docs/evidence/dependencies/pins.md](evidence/dependencies/pins.md).
-- `tools/audit_pins.py --python` against the live advisory service, and
-  `tools/audit_pins.py --node` against the npm registry: both exit 0, last run
-  **2026-11-14**. What that means, exactly: no advisory was published or matched against
-  these pins as of that date. Nothing here speaks for a later advisory.
+- `tools/audit_pins.py --python` against the live advisory service last exited 0 on
+  **2026-11-14**; it was not re-run here because `pip-audit` is absent. The Node audit was
+  re-run on **2026-11-23** and now exits 0 after the four advisories below were fixed at
+  the pin. What a clean exit means, exactly: no advisory was published or matched against
+  those pins as of that date. Nothing here speaks for a later advisory.
 - The base-image digests were resolved from the registry on 2026-11-14 and fetched back by
   digest; no image was pulled or built.
 - `bash tools/ci.sh` and the full suite (2099 passed, 20 skipped).
@@ -92,19 +94,35 @@ Not proven here, and not claimed:
   with its reason in `tools/pins/unpinned.txt`; no version was invented for it.
 - **`keyring`.** `requirements-keyring.lock` is generated and audited, but no deployment
   installs it, so it is unexercised outside the resolver.
+- **Two clean builds with identical digests.** This is the second half of the release
+  acceptance and it has not been run on this host — the machine has too little free memory
+  for two simultaneous clean installs. §5 gives the drill; until it is run and recorded,
+  byte-for-byte reproducibility is a procedure, not a measured result. This item does not
+  close that acceptance: a release machine must record both digests first.
 
 ## 2. The audit step
 
 ```bash
 python3 tools/audit_pins.py --python    # the three Python locks, via pip-audit (OSV/PyPI)
 python3 tools/audit_pins.py --node      # the pnpm workspace, via the npm registry
-python3 tools/audit_pins.py --report saved-pip-audit.json   # judge a report offline
+python3 tools/audit_pins.py --report saved-pip-audit.json   # judge a report offline (needs saved-pip-audit.json.provenance)
 bash tools/pins/install.sh --audit      # the Python path through the install wrapper
 ```
 
+The audit is wired into step 5 of `tools/ci.sh` beside the static pin check. On a machine
+with `pip-audit` and `pnpm` it runs both commands, so one missing tool cannot hide the
+other's verdict. An air-gapped gate replays a saved report through the declared
+`EZCHAIN_GATE_AUDIT_REPORT` channel; the ambient `EZCHAIN_AUDIT_REPORT` is scrubbed at the
+top of the gate, so a caller's shell cannot select that path. A replay is accepted only
+with a `.provenance` sidecar binding the report's digest and every lock's digest to this
+checkout, and the replay is logged. A report that is unbound, stale or unreadable fails the
+gate rather than being skipped. A missing audit tool is an explicit "not a pass" skip on a
+local machine; a run declared as CI (`CI=true`) or release (`EZCHAIN_GATE_RELEASE=1`) fails
+closed without both live verdicts.
+
 It **fails** — exit 1 — on any advisory whose id is not allowlisted, naming the pin, the
 id and the fixed version. Exit 2 means the audit could not run (tool absent, no network,
-unreadable report), and the script says so; exit 2 is never treated as a pass.
+unreadable report); the script says so and the gate treats it as a failure, never a pass.
 
 `tools/pins/audit-allowlist.txt` is the only way an advisory stops failing the build. Each
 line needs an id and a reason; an entry without a reason is itself an error, so the file
@@ -118,12 +136,20 @@ pip install 'pip-audit>=2,<3'
 ```
 
 Offline, the verdict is the same code path: run `pip-audit --format json -o report.json`
-where a network exists, copy the report, and judge it with `--report`.
+where a network exists, copy the report and its lock digests, write `report.json.provenance`
+with `report_sha256`, `locks`, `generated_at` and `source`, then judge it with `--report`.
+The sidecar makes a replay a declared, checkable act rather than an ambient file.
 
-**Last audited: 2026-11-14.** The two commands exited 0 against the advisory data the
-services served that day, and the transcript is in
-[the evidence doc §5](evidence/dependencies/pins.md). Read that as a date-stamped fact,
-not a standing guarantee.
+**Audit status 2026-11-23: Node clean, Python not re-run.** The Python locks could not be
+audited here — `pip-audit` is not installed — so the last clean Python verdict is the one
+recorded on 2026-11-14 in [the evidence doc §5](evidence/dependencies/pins.md); nothing here
+claims a newer Python result. The Node audit was re-run on 2026-11-23 and now exits 0 after
+four moderate advisories were fixed at the pin rather than allowlisted: `minimatch`
+(GHSA-g3hv-75wg-m249) moved to 11.0.1 for the vulnerable 9.x and 10.x resolutions, and
+`next` (GHSA-7qx7-33qx-rqx2, GHSA-f3mh-rxg3-f5g2, GHSA-pc58-hwjq-p385) moved to 15.5.29.
+The overrides and the regenerated lock are in `package.json` and `pnpm-lock.yaml`; the
+dated verdict is in [the evidence doc §10](evidence/dependencies/pins.md). An entry in
+`tools/pins/audit-allowlist.txt` needs a written reason and is a decision, not a fix.
 
 What the audit does **not** cover, stated plainly so nobody over-reads the green run:
 
@@ -163,7 +189,7 @@ What the audit does **not** cover, stated plainly so nobody over-reads the green
    result, and any advisory accepted with its reason. Update the "last audited" date in §2;
    a date that stops moving is the signal that the audit stopped running.
 6. **Commit the lock with the declaration.** A commit that changes one without the other
-   fails step 6 of `tools/ci.sh`, and that is deliberate.
+   fails step 5 of `tools/ci.sh`, and that is deliberate.
 
 **Moving a base image** is the same shape: resolve the tag with
 `docker buildx imagetools inspect <tag>`, change the `FROM` line and its tag comment in one
@@ -176,9 +202,10 @@ release, and at least once a month, and move the §2 date. A pin that nobody has
 a year is not a stable pin; it is an untouched one.
 
 **Node overrides.** `pnpm.overrides` in `package.json` is the only supported way to move a
-transitive pin inside a dependency (`postcss` is the current case). It is reviewed like a
-direct dependency: the advisory it clears is quoted, and the frozen reinstall plus a web
-build is the proof.
+pin without editing another package's declaration. It carries `postcss`, `next` and the
+vulnerable `minimatch` range today. It is reviewed like a direct dependency: the advisory
+it clears is quoted, and the frozen lock check plus a web build is the proof. A range
+selector is used for `minimatch` so the patched 3.x and 5.x resolutions are left alone.
 
 Who reviews: any dependency change is reviewed like code — CODEOWNERS for the touched
 scope, and for a runtime dependency in the API image or anything that reaches keys, funds
@@ -205,7 +232,43 @@ keystore, a hardware-wallet library, a custody API client — needs an ADR in
 The test `test_the_pinned_set_carries_no_signer_or_custody_library` fails when such a
 package appears in a lock without that decision being recorded in this document.
 
-## 5. Reproducibility limits
+## 5. Reproducible build — two clean builds, one digest
+
+Pins and hashes make the *inputs* exact. The release claim is stronger: two independent
+clean environments must turn those inputs into the same artifact. The drill compares a
+digest of each clean install; the two environments share nothing but the committed locks,
+so a stale lock or a constraint that resolves differently produces two different digests.
+
+```bash
+# Two independent clean environments, each installing only from the lock.
+for n in 1 2; do
+  venv="/tmp/ezchain-repro-$n"
+  python3.11 -m venv "$venv"
+  "$venv/bin/pip" install --require-hashes --no-cache-dir --disable-pip-version-check \
+    -r requirements.lock
+  "$venv/bin/pip" freeze --all | LC_ALL=C sort > "/tmp/ezchain-repro-$n.freeze"
+  sha256sum "/tmp/ezchain-repro-$n.freeze"
+done
+diff /tmp/ezchain-repro-1.freeze /tmp/ezchain-repro-2.freeze   # no output == identical
+```
+
+The artifact digest is the sha256 of the sorted `pip freeze` for each install. Repeating
+the drill with `requirements-runtime.lock` covers the API image's set. The offline path
+makes the same comparison without a network on the second run: fill a wheelhouse with
+`bash tools/pins/install.sh --wheelhouse DIR`, hash the sorted wheel filenames, then install
+twice from it with `EZCHAIN_WHEELHOUSE=DIR bash tools/pins/install.sh --full --offline` and
+compare the freeze digests. `check_pins.py --full` already proves one clean install resolves
+to exactly the pins; running it from two separate empty environments is the "build twice"
+proof. This is a release drill, not a default gate step: two fresh installs are heavy and a
+small host will swap.
+
+**Status: not verified on this host.** The two clean installs were not run here — the
+machine has about 1.5 GB free RAM with heavy swap use. No "two builds, identical digests"
+result is claimed. A release machine must run the drill above and record both digests in
+[the evidence doc](evidence/dependencies/pins.md); until then this half of the acceptance is
+open.
+
+## 6. Reproducibility limits
 
 - **One interpreter.** The locks are resolved for CPython 3.11. A 3.12 install would
   re-resolve and could pick different versions; `requires-python` is `>=3.11`, which is
