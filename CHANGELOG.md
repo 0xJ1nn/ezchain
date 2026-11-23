@@ -368,7 +368,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   non-zero exit, so an outage cannot read as consent. The gate itself now calls the
   checker for every PR instead of grepping comment bodies for "approved". `0xJ1nn` is
   currently the only reviewing account, so a money-path PR is refused until a second
-  account with write access approves it; [WORKFLOW §3](docs/WORKFLOW.md) says exactly that.
+  account with write access approves it; the review rule says exactly that.
 
 - **The dependency set is pinned, hashed, audited and reproducible (security).** The three
   Python range files now have generated locks — `requirements.lock` (43 pins),
@@ -830,8 +830,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   2025-11-25 over stdio with read tools/resources and paper-only mutation tools; writes
   are hidden unless `EZCHAIN_MCP_ALLOW_WRITES=1` and still require the API bearer token.
 - `docs/STRATEGY-SDK.md` is now the implemented contract; `docs/AGENT-INTEGRATION.md`
-  documents Hermes/OpenClaw setup and `docs/RESEARCH-2026.md` records the competitor,
-  trader and agent evidence behind ADR-0028.
+  documents Hermes/OpenClaw setup and the evidence behind ADR-0028.
 - **First-class Hermes and OpenClaw packs**: `integrations/hermes` installs the
   `ezchain-trading` skill and prints the MCP registration; `integrations/openclaw` is an
   Agent Plugins 1.0.0 bundle that OpenClaw detects as `format: bundle` with skills and an
@@ -1006,8 +1005,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   separates runnable local pieces from the unverified Docker blueprint, and
   `docs/RUNBOOK.md` documents migrate-on-deploy, legacy `stamp 0001_baseline` then upgrade, probe semantics and
   401 triage.
-- `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md` and `docs/PLAN-LIVE-PAPER.md` now
-  describe the P0 live paper slice; the web defaults to live and tests set `fixture`.
+- `README.md`, `ROADMAP.md` and `docs/ARCHITECTURE.md` now describe the P0 live paper
+  slice; the web defaults to live and tests set `fixture`.
 - `docs/CHAINS.md` now presents a **target** support matrix with a `Verified today`
   column; Solana is marked paper-verified, not live-verified.
 - `docs/PRODUCT.md` labels the v1 scope table as a target, not shipped.

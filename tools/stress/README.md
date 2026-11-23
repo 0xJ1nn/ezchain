@@ -8,7 +8,6 @@ All runs are **PAPER**. The harness never signs, never handles keys, never calls
 venue and refuses to start unless the API reports `mode: paper`.
 
 - Normative invariants: [`docs/CONTRACT.md`](../../docs/CONTRACT.md)
-- Paper slice plan: [`docs/PLAN-LIVE-PAPER.md`](../../docs/PLAN-LIVE-PAPER.md)
 - Operator procedures: [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md)
 
 ## Run it

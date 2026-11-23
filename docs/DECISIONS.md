@@ -3,17 +3,6 @@
 Format: context → options → decision → consequences. Superseded ADRs keep their entry and
 gain a `Superseded by` line.
 
-**Status review (2026-11-16, #39).** ADR-0014, 0015, 0016, 0018 and 0019 were written in a
-background documentation pass and marked Accepted without explicit maintainer review. They
-are now **Proposed** and are not decisions of record; ADR-0017 was already Proposed on spike
-#35. What unblocks each: the maintainer must confirm the "Verified today" matrix convention
-(0014), the Jupiter-first execution plan (0015), the no-browser-key custody boundary (0016),
-watchlists as owned entities (0018), and the one reason-code taxonomy (0019). A review can
-also revise or reject any of them. The M1–M5 roadmap in `ROADMAP.md` carries the same status;
-no code is blocked on #39. Note that ADR-0019's taxonomy is implemented in code (ADR-0043)
-and ADR-0015's executor pipeline exists (ADR-0026) — working code does not turn an unreviewed
-decision into an accepted one.
-
 ---
 
 ## ADR-0001 — Modular monolith plus an isolated executor
@@ -1790,7 +1779,7 @@ replacing anything.
 | Indexer / analytics | **Python** | Data tooling and rapid queries |
 | AI / ML components, agent harness integration | **Python** | Ecosystem and model clients |
 | Strategy plugins | **Python** | Third-party authors, SDK stays approachable |
-| Dashboard and all product UI | **TypeScript** | Web UI; UI work belongs to Claude |
+| Dashboard and all product UI | **TypeScript** | Web UI; the TypeScript lane owns all product UI |
 
 **Migration rules:**
 
@@ -1977,5 +1966,5 @@ paragraph is the single place to change.
 **Consequences:** agents must classify a new component before writing it: if it is
 performance-critical, security-critical, a network transport, or part of the trust/money
 boundary, it is Rust; if it is business logic, model inference, analytics, automation or an
-integration, it is Python. UI stays TypeScript and belongs to Claude. Money arithmetic stays
+integration, it is Python. UI stays TypeScript. Money arithmetic stays
 in Python until decimal parity is proven (ADR-0050 rule 4), and live mode stays owner-blocked.

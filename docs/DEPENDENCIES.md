@@ -183,7 +183,7 @@ build is the proof.
 Who reviews: any dependency change is reviewed like code — CODEOWNERS for the touched
 scope, and for a runtime dependency in the API image or anything that reaches keys, funds
 or the ledger, the maintainer's explicit approval in the PR thread (the same rule as a
-money-path change, [WORKFLOW §3](WORKFLOW.md)). A security-motivated bump (an advisory
+money-path change). A security-motivated bump (an advisory
 whose fix version moved) is merged ahead of feature work rather than queued behind it.
 
 What a reviewer checks: the version diff is explainable; no new package was added that
