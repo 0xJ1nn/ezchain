@@ -1,8 +1,11 @@
 """Liveness and readiness probes for the supervised unit.
 
-Liveness is a process fact and never touches storage. Readiness is a storage fact: it fails
-while the applied schema revision is behind the migration head, and it says so without
-leaking a connection string or an exception.
+The API process serves the real HTTP probes at ``/healthz`` and ``/readyz``. The gateway
+subcommands of the same names are CLI probes for an orchestrator without an HTTP client;
+they build their bodies from the same facts and keep the same exit contract. Liveness is a
+process fact and never touches storage. Readiness is a storage fact that also checks that
+each recorded process is still alive, so a stale state file cannot call a dead API ready,
+and it fails while the applied schema revision is behind the migration head.
 """
 
 from __future__ import annotations
@@ -10,6 +13,8 @@ from __future__ import annotations
 from typing import Any
 
 from .model import GatewayStatus
+
+HTTP_PROBE_PATHS = ("/healthz", "/readyz")
 
 
 def liveness() -> dict[str, str]:

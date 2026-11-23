@@ -11,7 +11,7 @@ import argparse
 import json
 from collections.abc import Callable, Sequence
 
-from .config import GatewayConfig, load_config
+from .config import GatewayConfig, GatewayConfigError, load_config
 from .model import build_status
 from .probes import liveness, readiness
 from .supervisor import Supervisor, launch_process, terminate_process
@@ -56,9 +56,17 @@ def _safe_probe(probe: MigrationProbe) -> str | None:
 def run_start(config: GatewayConfig) -> int:
     """Bring the unit up and publish the state file the status command reads."""
     supervisor = Supervisor(config, launcher=launch_process, terminator=terminate_process)
-    states = supervisor.start()
+    try:
+        states = supervisor.start()
+    except GatewayConfigError as exc:
+        print(f"gateway: refused to start: {exc}")
+        return 2
+    failed = [state.name for state in states if state.status in {"stopped", "unreadable"}]
+    if failed:
+        print(f"gateway: start failed for {', '.join(failed)}")
+        return 1
     print(f"gateway: started {len(states)} components")
-    return 0 if all(state.readable for state in states) else 1
+    return 0
 
 
 def run_stop(config: GatewayConfig) -> int:
@@ -86,7 +94,7 @@ def run_readyz(
 ) -> int:
     """Print the readiness probe body; fail while the schema is behind the head."""
     applied, head = _resolve(applied_revision, head_revision)
-    status = build_status(config, applied_revision=applied, head_revision=head)
+    status = build_status(config, applied_revision=applied, head_revision=head, check_live=True)
     ready, body = readiness(status)
     print(json.dumps(body))
     return 0 if ready else 1
@@ -108,8 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
         ("start", "bring the full unit up"),
         ("stop", "bring the full unit down"),
         ("status", "report component state, bind address, TLS, mode and migration head"),
-        ("readyz", "readiness probe: fail while the schema is behind the Alembic head"),
-        ("healthz", "liveness probe: report that the unit is answering"),
+        (
+            "readyz",
+            "CLI readiness probe (mirrors GET /readyz): fail behind the Alembic head",
+        ),
+        ("healthz", "CLI liveness probe (mirrors GET /healthz): report the unit answers"),
         ("liveness", "alias for healthz"),
         ("readiness", "alias for readyz"),
     ):
@@ -121,21 +132,30 @@ def build_parser() -> argparse.ArgumentParser:
             "--tls",
             action=argparse.BooleanOptionalAction,
             default=None,
-            help="report TLS enabled or disabled for this unit",
+            help="serve the listener over TLS; non-loopback binds require it",
         )
+        command.add_argument("--tls-cert", default=None, help="TLS certificate file for the API")
+        command.add_argument("--tls-key", default=None, help="TLS key file for the listener")
         command.add_argument("--mode", default=None, help="execution mode reported by status")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args: argparse.Namespace = build_parser().parse_args(argv)
-    config = load_config(
-        args.config,
-        data_dir=args.data_dir,
-        bind=args.bind,
-        tls=args.tls,
-        mode=args.mode,
-    )
+    try:
+        config = load_config(
+            args.config,
+            data_dir=args.data_dir,
+            bind=args.bind,
+            tls=args.tls,
+            mode=args.mode,
+            tls_cert=args.tls_cert,
+            tls_key=args.tls_key,
+            validate_security=(args.command == "start"),
+        )
+    except GatewayConfigError as exc:
+        print(f"gateway: refused to start: {exc}")
+        return 2
     if args.command == "start":
         return run_start(config)
     if args.command == "stop":

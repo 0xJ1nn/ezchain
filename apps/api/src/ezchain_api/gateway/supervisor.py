@@ -1,9 +1,10 @@
 """Bring the unit up as one group and tear it down through the same supervisor.
 
-Libraries run inside the gateway process. Components that need their own address space are
-launched by the supervisor, and every launched process is stopped and waited for by that
-same supervisor. The executor remains a separate process: money authority never moves into
-the gateway, and the gateway never imports it.
+The API process hosts the engine and the market scan: those two library components run
+inside the API that the supervisor launches, not inside the gateway command. Components
+that need their own address space — the API, the executor and the agent runtime — are
+started and reaped by this supervisor. The executor remains a separate process: money
+authority never moves into the gateway, and the gateway never imports it.
 """
 
 from __future__ import annotations
@@ -16,38 +17,48 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .config import GatewayConfig
-from .model import COMPONENTS, IN_PROCESS_COMPONENTS, ComponentState
+from .config import TOKEN_ENV, GatewayConfig, split_bind, validate_bind_security
+from .model import API_RESIDENT_COMPONENTS, COMPONENTS, ComponentState
 from .state import read_states, write_states
 
-Launcher = Callable[[Sequence[str], Path], int]
+Launcher = Callable[[Sequence[str], Path, dict[str, str]], int]
 Terminator = Callable[[int], None]
 
 STOP_GRACE_SECONDS = 5.0
 _POLL_SECONDS = 0.05
 
 
-def _address(config: GatewayConfig) -> tuple[str, str]:
-    host, separator, port = config.bind.rpartition(":")
-    if not separator or not host or not port:
-        return config.bind, "8000"
-    return host, port
+def child_environment(config: GatewayConfig) -> dict[str, str]:
+    """The environment a component is started with, including the API token."""
+    environment = dict(os.environ)
+    if config.token:
+        environment[TOKEN_ENV] = config.token
+    return environment
 
 
 def commands_for(config: GatewayConfig) -> dict[str, tuple[str, ...]]:
     """The process-backed components and the argv that starts each one."""
-    host, port = _address(config)
+    host, port = split_bind(config.bind)
+    api: list[str] = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "ezchain_api.main:app",
+        "--host",
+        host,
+        "--port",
+        port,
+    ]
+    if config.tls and config.tls_cert and config.tls_key:
+        # A TLS label without real files must never produce a plaintext listener.
+        api += [
+            "--ssl-certfile",
+            str(config.tls_cert),
+            "--ssl-keyfile",
+            str(config.tls_key),
+        ]
     return {
-        "api": (
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "ezchain_api.main:app",
-            "--host",
-            host,
-            "--port",
-            port,
-        ),
+        "api": tuple(api),
         "executor": (sys.executable, "-m", "ezchain_api.gateway.resident", "ezchain_executor"),
         "agent-runtime": (
             sys.executable,
@@ -58,13 +69,14 @@ def commands_for(config: GatewayConfig) -> dict[str, tuple[str, ...]]:
     }
 
 
-def launch_process(command: Sequence[str], log_path: Path) -> int:
+def launch_process(command: Sequence[str], log_path: Path, environment: dict[str, str]) -> int:
     """Start one component with its stdout and stderr merged into the unit's log."""
     with log_path.open("ab") as stream:
         child = subprocess.Popen(  # noqa: S603 - argv is assembled by commands_for
             list(command),
             stdout=stream,
             stderr=subprocess.STDOUT,
+            env=environment,
         )
     return int(child.pid)
 
@@ -104,16 +116,19 @@ class Supervisor:
 
     def start(self) -> tuple[ComponentState, ...]:
         """Create the data directory, start process-backed components and record state."""
+        validate_bind_security(self.config)
         self.config.data_dir.mkdir(parents=True, exist_ok=True)
         self.config.save()
         commands = commands_for(self.config)
+        environment = child_environment(self.config)
         states: list[ComponentState] = []
         for name in COMPONENTS:
-            if name in IN_PROCESS_COMPONENTS:
-                states.append(ComponentState(name=name, status="in_process"))
+            if name in API_RESIDENT_COMPONENTS:
+                # Engine and ingest live inside the API process the supervisor launches.
+                states.append(ComponentState(name=name, status="in_api"))
                 continue
             try:
-                pid = self._launch(commands[name], self.config.log_path)
+                pid = self._launch(commands[name], self.config.log_path, environment)
             except OSError:
                 states.append(
                     ComponentState(name=name, status="stopped", detail="component did not start")
