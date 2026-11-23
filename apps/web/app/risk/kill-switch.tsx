@@ -322,7 +322,15 @@ export function TopbarKillSwitch({
 			setNotice(null);
 		}
 		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
+		// The root mount marker is not enough for keyboard tests: this listener sits
+		// behind a Suspense boundary and binds after the root effect has run. Publish a
+		// signal from the same effect so a test pressing k waits for the handler itself,
+		// and clear it on cleanup so a torn-down control cannot claim to be ready.
+		document.documentElement.dataset.killShortcutReady = "true";
+		return () => {
+			document.removeEventListener("keydown", onKey);
+			delete document.documentElement.dataset.killShortcutReady;
+		};
 	}, [asking, initialError]);
 
 	return (
