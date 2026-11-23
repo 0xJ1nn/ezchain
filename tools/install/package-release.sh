@@ -2,26 +2,35 @@
 #
 # Build the release archive the installer verifies.
 #
-# A release is two GitHub release assets:
+# A release is three GitHub release assets:
 #   ezchain-<tag>.tar.gz
 #   ezchain-<tag>.tar.gz.sha256
+#   ezchain-<tag>.tar.gz.sha256.sig
 #
-# The installer downloads both and refuses to run unless the archive's SHA-256 matches.
-# Publish the pair from a clean tag, never from a working tree.
+# The installer downloads the first two and refuses to run unless the archive's SHA-256
+# matches. The third is the maintainer's signature over the checksum file; anyone can
+# check it with tools/release/verify.sh and the published public key. Signing needs the
+# maintainer's private key, which this script never reads except through the environment
+# variable it passes to tools/release/sign.sh. Publish the set from a clean tag, never
+# from a working tree.
 #
 # Usage:
 #   tools/install/package-release.sh --tag v0.2.0 [--out dist]
+#   tools/install/package-release.sh --tag v0.2.0 --sign       # signs the checksum
 #   tools/install/package-release.sh --tag v0.2.0 --worktree   # local testing only
 #
 # --worktree archives the current checkout (uncommitted files included) and is intended
-# for tests. A published release must be built from a tag.
+# for tests. A published release must be built from a tag. --sign requires
+# EZCHAIN_SIGNING_KEY and appends .sig to the checksum file.
 
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAG=""
 OUT_DIR="$ROOT/dist"
 WORKTREE=0
+SIGN=0
 SOURCE=""
 
 usage() {
@@ -35,6 +44,7 @@ while [ "$#" -gt 0 ]; do
     --out) OUT_DIR="${2:?--out needs a value}"; shift 2 ;;
     --out=*) OUT_DIR="${1#*=}"; shift ;;
     --worktree) WORKTREE=1; shift ;;
+    --sign) SIGN=1; shift ;;
     --source) SOURCE="${2:?--source needs a value}"; shift 2 ;;
     --source=*) SOURCE="${1#*=}"; shift ;;
     --help|-h) usage; exit 0 ;;
@@ -102,6 +112,10 @@ else
   digest="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
 fi
 printf '%s  %s\n' "$digest" "$(basename "$ARCHIVE")" > "${ARCHIVE}.sha256"
+
+if [ "$SIGN" -eq 1 ]; then
+  "$SCRIPT_DIR/../release/sign.sh" --yes "${ARCHIVE}.sha256"
+fi
 
 printf 'archive  %s\n' "$ARCHIVE"
 printf 'sha256   %s\n' "$digest"

@@ -982,6 +982,53 @@
         "title": "BacktestOut",
         "type": "object"
       },
+      "BuildSourceOut": {
+        "description": "The signed-provenance verdict, with a reason when the build is not official.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "official": {
+            "title": "Official",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "verified",
+              "no_public_key",
+              "no_attestation",
+              "no_signature",
+              "malformed_attestation",
+              "repository_mismatch",
+              "invalid_signature",
+              "key_not_pinned",
+              "key_fingerprint_mismatch",
+              "verifier_unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          }
+        },
+        "required": [
+          "official",
+          "status",
+          "message"
+        ],
+        "title": "BuildSourceOut",
+        "type": "object"
+      },
       "CandleOut": {
         "description": "One closed OHLCV bar. Prices are decimal strings; unknown volume is null.",
         "properties": {
@@ -10042,6 +10089,28 @@
         "summary": "Strategy Runs",
         "tags": [
           "strategies"
+        ]
+      }
+    },
+    "/api/v1/system/build-source": {
+      "get": {
+        "description": "Signed-provenance verdict for this installation, with the reason for a refusal.",
+        "operationId": "build_source_api_v1_system_build_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Build Source",
+        "tags": [
+          "system"
         ]
       }
     },

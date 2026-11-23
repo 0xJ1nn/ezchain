@@ -351,6 +351,27 @@ server you own, use the one-command installer described in
 executor, ingest, a standalone engine) are recorded in `infra/compose.blueprint.yaml` and
 are not part of this stack.
 
+## Trademark and official channels
+
+The ezCHAIN name and logo are trademarks, separate from the AGPL and Apache code licences
+([TRADEMARKS.md](TRADEMARKS.md)). The canonical domain and repository are
+`github.com/0xJ1nn/ezchain`, and the tagged releases in that repository are the only official
+builds. No other domain, download site, social account, token or hosted service is an
+official ezCHAIN channel, and the project does not endorse third-party products.
+
+Official releases sign the archive checksum, the funding configuration and each build's
+attestation with the maintainer's release key. The public half of that key, its fingerprint and
+the signed assets are published by the maintainer with the first signed tag; a source checkout
+carries none of them. The steps for checking a download are in
+[docs/RELEASES.md](docs/RELEASES.md). Verify a release before running it. Settings → General
+shows a positive build badge only when the running build's attestation verifies against a key
+whose fingerprint matches the published one; when it does not, the page says why.
+
+Forking is welcome under the code licences, but a fork that is distributed or hosted must use
+its own name and logo, keep the [NOTICE](NOTICE) file and remove the ezCHAIN marks from its
+interface and listings. Describing a project as based on ezCHAIN is permitted; presenting it
+as ezCHAIN is not.
+
 ## Contributing
 
 **Contributors are most welcome.** The project is alpha and deliberately small; the most
