@@ -325,14 +325,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help=f"oldest acceptable backup in hours (default {DEFAULT_MAX_BACKUP_AGE_HOURS:g})",
     )
-    ready.set_defaults(func=_readiness)
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
         run_migrations()
         return 0
     if args.command == "readiness":
-        return args.func(args)
+        return _readiness(args)
     parser.error(f"unknown command: {args.command}")
     return 2  # pragma: no cover - argparse exits
 
