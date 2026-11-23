@@ -447,6 +447,7 @@ function createFirstRun() {
 		resizable: false,
 		webPreferences: {
 			preload: path.join(__dirname, "preload.cjs"),
+			additionalArguments: ["--ezchain-setup-window"],
 			contextIsolation: true,
 			nodeIntegration: false,
 			sandbox: true,
@@ -682,8 +683,20 @@ async function startRole(config) {
 	role = config.role;
 	hostUrl = config.url || null;
 	const plan = sender.rolePlan(role);
-	if (!plan.spawnSidecars && (previousRole === "local" || apiChild || webChild || watchdogTimer)) {
+	// Reconfiguration may re-apply a local role that is already running. Tear down the
+	// previous host first: new sidecars get new ephemeral ports, and an orphaned pair would
+	// keep the ledger open with nothing watching it. A clean boot owns nothing and skips it.
+	if (
+		sender.needsLocalTeardown(previousRole, {
+			apiChild,
+			webChild,
+			watchdog: watchdogTimer,
+		})
+	) {
 		await stopLocalHost();
+		// The replacement host listens on new ports, so the viewer must load again even if
+		// the operating system happened to hand back the same port number.
+		loadedViewerUrl = null;
 	}
 	if (plan.spawnSidecars) {
 		try {
@@ -765,10 +778,20 @@ ipcMain.handle("desktop:restart", () => restartServices());
 ipcMain.handle("desktop:open-logs", () => shell.openPath(logFile));
 ipcMain.handle("desktop:open-data", () => shell.openPath(paths ? paths.dataDir : configDir));
 
-// Setup can be opened on a clean install and again from Settings or the tray. Re-running
-// it keeps the ledger: no database file is deleted or recreated, and only the one host.json
-// is written. A URL is probed and a backup path validated before anything is saved.
-ipcMain.handle("desktop:setup-preview", (_event, draft) => {
+// Reconfiguration is a trusted operation. Only the setup window's own renderer may ask for
+// it; the dashboard loads the web app in a different WebContents and a script there must
+// not be able to stop the local host, re-point the view or move the data directory. The
+// preload withholds these calls from that window, and this check holds even if a renderer
+// manages to reach the channel directly. Setting up again is opened from the tray or the
+// application menu, keeps the ledger and writes only the one host.json.
+function assertSetupSender(event) {
+	if (!sender.isSetupSender(event.sender.id, firstRun ? firstRun.webContents.id : null)) {
+		throw new Error("setup changes are only accepted from the setup window");
+	}
+}
+
+ipcMain.handle("desktop:setup-preview", (event, draft) => {
+	assertSetupSender(event);
 	const candidate = sender.normalizeSetup(
 		{ ...(setup ? setupRecord() : {}), ...(draft || {}) },
 		configDir,
@@ -776,12 +799,14 @@ ipcMain.handle("desktop:setup-preview", (_event, draft) => {
 	return sender.setupSummary(candidate, sender.setupPaths(candidate, configDir));
 });
 
-ipcMain.handle("desktop:backup-now", () => {
+ipcMain.handle("desktop:backup-now", (event) => {
+	assertSetupSender(event);
 	if (!paths) throw new Error("finish setup before taking a backup");
 	return sender.backupDatabase({ dbFile: paths.dbFile, backupDir: paths.backupDir });
 });
 
-ipcMain.handle("desktop:finish-setup", async (_event, draft) => {
+ipcMain.handle("desktop:finish-setup", async (event, draft) => {
+	assertSetupSender(event);
 	let candidate;
 	try {
 		candidate = sender.normalizeSetup(
@@ -805,12 +830,10 @@ ipcMain.handle("desktop:finish-setup", async (_event, draft) => {
 		if (!check.ok) throw new Error(check.reason);
 	}
 	applySetup(candidate, true);
-	if (candidate.role === "local") loadToken();
 	await startRole(setup);
 	return sender.setupSummary(setup, paths);
 });
 
-ipcMain.handle("desktop:open-setup", () => createFirstRun());
 ipcMain.handle("desktop:remote-config", () => ({ role, url: hostUrl }));
 
 // The only channel from the read-only view to a host. The sender refuses every write

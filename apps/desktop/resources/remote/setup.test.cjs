@@ -144,6 +144,9 @@ test("the setup page never shows a secret or generates one in the renderer", () 
 	const html = sender.FIRST_RUN_HTML;
 	assert.match(html, /PAPER/);
 	assert.match(html, /stored at/);
+	assert.match(html, /never displayed/);
+	// The value is never rendered, so the copy must not imply a reveal that never happened.
+	assert.equal(/shown again|shown once|reveal/i.test(html), false);
 	assert.match(html, /Back up now/);
 	assert.match(html, /Data directory/i);
 	assert.match(html, /Backup path/i);
@@ -161,4 +164,68 @@ test("the supervisor never writes the token to the log", () => {
 		if (!/\blog\(/.test(line)) continue;
 		assert.equal(/apiToken|EZCHAIN_API_TOKEN|tokenFile|\btoken\b/i.test(line), false, line);
 	}
+});
+
+test("a local to local re-run tears down the previous host before starting the new one", () => {
+	// The decision is a pure function of the previous role and what this host owns, so the
+	// re-run case is pinned without launching Electron.
+	assert.equal(sender.needsLocalTeardown("local", {}), true);
+	assert.equal(sender.needsLocalTeardown("local", { apiChild: {}, webChild: {}, watchdog: true }), true);
+	// A clean boot owns nothing; switching from a remote shell owns no local host either.
+	assert.equal(sender.needsLocalTeardown(null, {}), false);
+	assert.equal(sender.needsLocalTeardown("remote", {}), false);
+	// A stale child or watchdog still forces a teardown even if the role record disagrees.
+	assert.equal(sender.needsLocalTeardown("remote", { webChild: {}, watchdog: true }), true);
+
+	// The supervisor applies that decision before it spawns replacements.
+	const main = fs.readFileSync(path.resolve(__dirname, "..", "..", "main.cjs"), "utf8");
+	const fn = main.slice(main.indexOf("async function startRole"), main.indexOf("async function boot"));
+	const teardown = fn.indexOf("stopLocalHost()");
+	const spawn = fn.indexOf("startServices()");
+	assert.ok(teardown >= 0, "startRole tears down the existing local host");
+	assert.ok(spawn >= 0, "startRole starts services");
+	assert.ok(teardown < spawn, "teardown happens before the new host starts");
+});
+
+test("only the setup window can change setup, and its bridge alone has the controls", () => {
+	// A dashboard script cannot forge its WebContents id, so identity is a stricter gate
+	// than an origin check: both windows load local data documents.
+	assert.equal(sender.isSetupSender(7, 7), true);
+	assert.equal(sender.isSetupSender(8, 7), false);
+	assert.equal(sender.isSetupSender(7, null), false);
+	assert.equal(sender.isSetupSender(7, undefined), false);
+
+	const preload = fs.readFileSync(path.resolve(__dirname, "..", "..", "preload.cjs"), "utf8");
+	const guarded = preload.indexOf("if (isSetupWindow)");
+	assert.ok(guarded >= 0, "the preload marks the setup window");
+	assert.match(preload.slice(0, guarded), /--ezchain-setup-window/);
+	assert.equal(/finishSetup|setupPreview|backupNow/.test(preload.slice(0, guarded)), false);
+	for (const method of ["setupPreview", "finishSetup", "backupNow"]) {
+		assert.match(preload.slice(guarded), new RegExp(method), method);
+	}
+	// No path from the dashboard reopens setup: reconfiguration is opened from the tray.
+	assert.equal(/openSetup|desktop:open-setup/.test(preload), false);
+
+	const main = fs.readFileSync(path.resolve(__dirname, "..", "..", "main.cjs"), "utf8");
+	const guard = main.slice(main.indexOf("function assertSetupSender"), main.indexOf('ipcMain.handle("desktop:setup-preview"'));
+	assert.match(guard, /firstRun\.webContents\.id/);
+	const region = main.slice(
+		main.indexOf('ipcMain.handle("desktop:setup-preview"'),
+		main.indexOf("// The only channel from the read-only view"),
+	);
+	for (const channel of ["desktop:setup-preview", "desktop:backup-now", "desktop:finish-setup"]) {
+		const start = region.indexOf(`ipcMain.handle("${channel}"`);
+		assert.ok(start >= 0, `handler for ${channel}`);
+		const next = region.indexOf("ipcMain.handle(", start + 1);
+		assert.match(region.slice(start, next < 0 ? undefined : next), /assertSetupSender\(event\)/, channel);
+	}
+	assert.equal(/desktop:open-setup/.test(main), false);
+});
+
+test("the production backup checks the snapshot it just wrote", () => {
+	const src = fs.readFileSync(path.resolve(__dirname, "..", "..", "sender.js"), "utf8");
+	const fn = src.slice(src.indexOf("function backupDatabase"), src.indexOf("// The setup screen."));
+	assert.match(fn, /VACUUM INTO/);
+	assert.match(fn, /PRAGMA integrity_check/);
+	assert.match(fn, /rmSync\(file/);
 });

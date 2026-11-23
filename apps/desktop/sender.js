@@ -144,6 +144,24 @@ function rolePlan(role) {
 	deny("UNKNOWN_ROLE", "the workstation role must be local or remote");
 }
 
+// Reconfiguration is a trusted operation. The dashboard loads the web app and the setup
+// window loads a local page, both from data- or loopback URLs, so an origin check cannot
+// tell them apart. A WebContents id can: only the window the supervisor created to hold
+// the setup page may change the role, stop the host or move its data.
+function isSetupSender(senderId, setupWindowId) {
+	return Number.isInteger(setupWindowId) && senderId === setupWindowId;
+}
+
+// Re-applying a setup that owned a local host must stop its sidecars and watchdog before
+// new ones start. The ports are ephemeral, so without a teardown the old pair is orphaned
+// with the ledger still open and no watchdog watching it. A clean boot owns nothing.
+function needsLocalTeardown(previousRole, running) {
+	return (
+		previousRole === "local" ||
+		Boolean(running && (running.apiChild || running.webChild || running.watchdog))
+	);
+}
+
 // First-run setup. host.json in Electron's user data directory is the single home for
 // every decision. The data directory, token location and backup directory are values in
 // that one file; the supervisor derives every runtime path from them and hands the same
@@ -295,8 +313,16 @@ function backupDatabase({ dbFile, backupDir, now = new Date() }) {
 	}
 	const { DatabaseSync } = require("node:sqlite");
 	const db = new DatabaseSync(dbFile, { readOnly: true });
+	let snapshot = null;
 	try {
 		db.prepare("VACUUM INTO ?").run(file);
+		// VACUUM INTO makes the copy consistent and folds WAL state into it. Check the
+		// result before reporting it, so a bad snapshot fails here rather than on restore.
+		snapshot = new DatabaseSync(file, { readOnly: true });
+		const check = snapshot.prepare("PRAGMA integrity_check").get();
+		if (!check || check.integrity_check !== "ok") {
+			throw new Error(`backup snapshot failed integrity_check: ${check && check.integrity_check}`);
+		}
 	} catch (error) {
 		try {
 			fs.rmSync(file, { force: true });
@@ -305,6 +331,7 @@ function backupDatabase({ dbFile, backupDir, now = new Date() }) {
 		}
 		throw error;
 	} finally {
+		if (snapshot) snapshot.close();
 		db.close();
 	}
 	return { file, bytes: fs.statSync(file).size };
@@ -350,7 +377,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
 <label class="row"><input type="radio" name="role" value="remote"><span>Connect to a host</span></label>
 <div class="row"><input id="url" type="url" placeholder="https://host.example" spellcheck="false" autocomplete="off"></div></div>
 <div class="card"><h2>Resolved configuration</h2><div id="resolved"></div>
-<p class="note">The deployment token is generated at setup, stored at the path above, and never shown again.</p></div>
+<p class="note">The deployment token is generated at setup, stored at the path above, and never displayed; its value stays in the supervisor and is never written to a log.</p></div>
 <div class="row"><button id="finish">Finish setup</button></div>
 <div id="status" role="status" aria-live="polite"></div>
 <script>
@@ -510,6 +537,8 @@ module.exports = {
 	buildRemoteRequest,
 	hostProbeRequest,
 	initialSetup,
+	isSetupSender,
+	needsLocalTeardown,
 	normalizeHostUrl,
 	normalizeSetup,
 	rolePlan,

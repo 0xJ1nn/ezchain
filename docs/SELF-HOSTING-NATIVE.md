@@ -21,8 +21,8 @@ them to the API as `EZCHAIN_DATABASE_URL`, `EZCHAIN_BACKUP_DIR` and
 
 A backup directory must exist and be writable when it is chosen. The setup screen refuses a
 bad path with the reason instead of failing at the first backup. A snapshot is a consistent
-SQLite copy that restores by replacing the configured database, and it holds no credential
-material.
+SQLite copy checked with `PRAGMA integrity_check` before it is reported; it restores by
+replacing the configured database and holds no credential material.
 
 ## First-run readiness check
 

@@ -32,20 +32,23 @@ operator finishes it. The screen decides and then displays:
   Linux, by default. The resolved absolute path is shown, not implied. The database and the
   deployment token live here.
 - **Deployment token** — generated at setup for a local host, written with mode `0600`, and
-  reported only as `stored at <path>`. Its value is never shown again, never part of a
-  window or a log line, and never stored in the repository.
+  reported only as `stored at <path>`. Its value is never rendered in a window, never
+  written to a log line and never stored in the repository; the screen says so rather than
+  promising a reveal that never happens.
 - **Backup path** — a `backups` directory inside the data directory by default. A custom
   path must already exist and be writable; a bad one is refused at setup with the reason.
-  **Back up now** takes a consistent SQLite snapshot and reports the file and its size. A
-  snapshot restores by replacing `ezchain.db`.
+  **Back up now** takes a consistent SQLite snapshot with `VACUUM INTO`, checks its integrity
+  before reporting the file and its size, and restores by replacing `ezchain.db`.
 - **Connection** — this machine (default) or a host URL. A remote URL is probed over HTTPS
   before it is saved.
 
 Every value has one home: `host.json` in the application data directory is what the screen
 writes and what the supervisor reads on every start. The database URL, backup directory and
 execution mode handed to the API are derived from that same file, so the paths on screen are
-the paths in use. Setup can be reopened from Settings or the tray; re-running it keeps the
-ledger, because no database file is deleted or recreated.
+the paths in use. Setup can be reopened from the tray or the application menu; re-running
+it keeps the ledger, because no database file is deleted or recreated. Re-applying a local
+setup first stops the sidecars and watchdog it already started, so a second host is never
+left running beside the first.
 
 ## Install (Linux)
 
@@ -161,6 +164,10 @@ are recorded.
 - No Node integration in the renderer; `contextIsolation` and sandbox are on when the OS
   permits Chromium's sandbox. Electron-builder's AppImage launcher may add `--no-sandbox`
   on hosts without unprivileged user namespaces.
+- Only the setup window receives setup controls. The dashboard and remote views get no
+  `finishSetup` or `backupNow` call, and the supervisor accepts a setup change only from
+  the setup window's own renderer, so a script on the loaded page cannot stop the host,
+  move its data or re-point the view.
 - External links open in the system browser; navigation outside the local origin is
   blocked. A remote view cannot navigate to the host's web app.
 - There are no keys, signing or live execution in this build. The setup screen offers
@@ -174,7 +181,8 @@ are recorded.
 The setup decisions are pinned by the desktop unit tests: they assert that the displayed
 paths are the paths handed to the API, that a backup is a consistent copy which restores,
 that a bad backup path is refused at setup with its reason, and that no secret reaches a
-summary, a page or a log line.
+summary, a page or a log line. They also cover the local to local re-run teardown, the
+setup-window-only bridge and the integrity check on the written snapshot.
 
 See [docs/evidence/desktop/linux-app.md](evidence/desktop/linux-app.md) for the launch,
 paper flow, persistence and crash-recovery record.
