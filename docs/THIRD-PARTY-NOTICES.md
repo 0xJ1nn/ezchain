@@ -4,6 +4,8 @@ This register names every font, icon, image and mark that ezCHAIN ships, with it
 
 A file without a recorded source does not ship. If artwork arrives with no origin that can be named, it is either given one here or replaced with artwork whose source is in the repository. The project's own name and logo are covered separately in [`TRADEMARKS.md`](../TRADEMARKS.md).
 
+This register covers shipped assets only. The licences of the packages the product depends on are inventoried by `tools/check-licences.py` and described in [`DEPENDENCIES.md` §7](DEPENDENCIES.md#7-licence-inventory); an asset is a file that travels with a build, while a dependency is code the build resolves from a lock.
+
 ## Fonts
 
 The web app bundles four font files and the two licence texts that must accompany them. No font is fetched at runtime.

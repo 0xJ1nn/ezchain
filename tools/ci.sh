@@ -37,7 +37,7 @@ node tools/check-links.mjs
 step "4/6 secret scan"
 node tools/check-secrets.mjs
 
-step "5/6 dependency pins and advisory audit"
+step "5/6 dependency pins, licences and advisory audit"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -58,6 +58,19 @@ else
 fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are checked by the audit below.
+
+# Licence inventory of the locked set. The checker reads the committed locks, installed
+# metadata and cached crate manifests; it fetches nothing. A declaration that is
+# disallowed, unrecognised or empty fails here with the path of the file that declared
+# it, and so does a locked dependency without a declaration unless its set is recorded
+# in docs/DEPENDENCIES.md as not installed in this checkout.
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python tools/check-licences.py
+elif command -v python3 >/dev/null 2>&1; then
+  python3 tools/check-licences.py
+else
+  echo "not present yet: dependency licences (no python)"
+fi
 
 # Advisory audit of the pinned sets. Unlike the static pin check this needs a network:
 # pip-audit consults OSV/PyPI and pnpm audit consults the npm registry. An air-gapped
