@@ -125,7 +125,7 @@ test("the safety object renders every unknown field as an em dash", async ({ pag
 	await expect(safety).not.toContainText("revoked");
 });
 
-// EZ-286: the Trade screen is one chart-and-ticket surface. The chart carries every
+// The Trade screen is one chart-and-ticket surface. The chart carries every
 // overlay the earlier token panel split apart, plus draggable exit lines.
 const TRADE_URL = `/trade?chain=solana&token=${BONK_MINT}`;
 
