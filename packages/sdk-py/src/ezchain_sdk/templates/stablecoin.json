@@ -1,0 +1,59 @@
+{
+  "schema": "ezchain.graph/1",
+  "name": "stablecoin",
+  "version": "1.0.0",
+  "description": "Peg-reversion paper strategy for a USD stablecoin: buy a dip below the lower band, sell on recovery above the upper band or on a stop loss.",
+  "arming": {
+    "requires": ["backtest", "paper_forward"]
+  },
+  "nodes": [
+    {"id": "tick", "type": "event.tick", "params": {}, "ui": {}},
+    {"id": "seq", "type": "flow.sequence", "params": {}, "ui": {}},
+    {"id": "price", "type": "data.price", "params": {}, "ui": {}},
+    {"id": "peg", "type": "math.const", "params": {"value": "1"}, "ui": {}},
+    {"id": "band", "type": "math.const", "params": {"value": "0.005"}, "ui": {}},
+    {"id": "lower", "type": "math.sub", "params": {}, "ui": {}},
+    {"id": "upper", "type": "math.add", "params": {}, "ui": {}},
+    {"id": "cheap", "type": "math.compare", "params": {"op": "<"}, "ui": {}},
+    {"id": "rich", "type": "math.compare", "params": {"op": ">"}, "ui": {}},
+    {"id": "pos", "type": "pos.state", "params": {}, "ui": {}},
+    {"id": "flat", "type": "logic.not", "params": {}, "ui": {}},
+    {"id": "stop", "type": "guard.stop_loss", "params": {"pct": "2"}, "ui": {}},
+    {"id": "exit", "type": "logic.or", "params": {}, "ui": {}},
+    {"id": "buy_ok", "type": "logic.and", "params": {}, "ui": {}},
+    {"id": "sell_ok", "type": "logic.and", "params": {}, "ui": {}},
+    {"id": "buy_branch", "type": "flow.branch", "params": {}, "ui": {}},
+    {"id": "sell_branch", "type": "flow.branch", "params": {}, "ui": {}},
+    {"id": "buy", "type": "act.buy", "params": {"amount_usd": "25", "max_position_usd": "100"}, "ui": {}},
+    {"id": "sell", "type": "act.sell", "params": {"pct_position": "100"}, "ui": {}},
+    {"id": "version_note", "type": "act.notify", "params": {"message": "template=stablecoin version=1.0.0", "level": "info"}, "ui": {}}
+  ],
+  "edges": [
+    {"from": {"node": "tick", "port": "out"}, "to": {"node": "seq", "port": "in"}},
+    {"from": {"node": "seq", "port": "then0"}, "to": {"node": "buy_branch", "port": "in"}},
+    {"from": {"node": "seq", "port": "then1"}, "to": {"node": "sell_branch", "port": "in"}},
+    {"from": {"node": "seq", "port": "then2"}, "to": {"node": "version_note", "port": "in"}},
+    {"from": {"node": "peg", "port": "value"}, "to": {"node": "lower", "port": "a"}},
+    {"from": {"node": "band", "port": "value"}, "to": {"node": "lower", "port": "b"}},
+    {"from": {"node": "lower", "port": "value"}, "to": {"node": "cheap", "port": "b"}},
+    {"from": {"node": "price", "port": "value"}, "to": {"node": "cheap", "port": "a"}},
+    {"from": {"node": "peg", "port": "value"}, "to": {"node": "upper", "port": "a"}},
+    {"from": {"node": "band", "port": "value"}, "to": {"node": "upper", "port": "b"}},
+    {"from": {"node": "upper", "port": "value"}, "to": {"node": "rich", "port": "b"}},
+    {"from": {"node": "price", "port": "value"}, "to": {"node": "rich", "port": "a"}},
+    {"from": {"node": "cheap", "port": "out"}, "to": {"node": "buy_ok", "port": "a"}},
+    {"from": {"node": "pos", "port": "open"}, "to": {"node": "flat", "port": "a"}},
+    {"from": {"node": "flat", "port": "out"}, "to": {"node": "buy_ok", "port": "b"}},
+    {"from": {"node": "rich", "port": "out"}, "to": {"node": "exit", "port": "a"}},
+    {"from": {"node": "stop", "port": "hit"}, "to": {"node": "exit", "port": "b"}},
+    {"from": {"node": "exit", "port": "out"}, "to": {"node": "sell_ok", "port": "a"}},
+    {"from": {"node": "pos", "port": "open"}, "to": {"node": "sell_ok", "port": "b"}},
+    {"from": {"node": "buy_ok", "port": "out"}, "to": {"node": "buy_branch", "port": "cond"}},
+    {"from": {"node": "sell_ok", "port": "out"}, "to": {"node": "sell_branch", "port": "cond"}},
+    {"from": {"node": "buy_branch", "port": "true"}, "to": {"node": "buy", "port": "in"}},
+    {"from": {"node": "sell_branch", "port": "true"}, "to": {"node": "sell", "port": "in"}}
+  ],
+  "comments": [
+    {"id": "about", "text": "Peg reversion: buy below the lower band, sell above the upper band or on a stop loss.", "ui": {}}
+  ]
+}
