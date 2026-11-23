@@ -19,35 +19,38 @@ const sender = require("./sender.js");
 const APP_NAME = "ezCHAIN";
 const isDev = !app.isPackaged;
 app.setName(APP_NAME);
-const dataDir = app.getPath("userData");
-const logsDir = path.join(dataDir, "logs");
+// Electron's user data directory is the single home for the configuration and the
+// supervisor's own logs. The data directory, token location and backup path are values
+// inside that configuration; every runtime path is derived from them after setup loads.
+const configDir = app.getPath("userData");
+const logsDir = path.join(configDir, "logs");
 const logFile = path.join(logsDir, "desktop.log");
-const dbFile = path.join(dataDir, "ezchain.db");
-const tokenFile = path.join(dataDir, "api-token");
-const configFile = path.join(dataDir, "host.json");
+const configFile = path.join(configDir, "host.json");
 const iconPath = isDev
 	? path.join(__dirname, "resources", "icon.png")
 	: path.join(process.resourcesPath, "icon.png");
 const resourcesRoot = isDev ? path.join(__dirname, "build") : process.resourcesPath;
 const backendBin = path.join(resourcesRoot, "backend", "ezchain-api", "ezchain-api");
 const webTar = path.join(resourcesRoot, "web.tar.gz");
-const webRoot = isDev
-	? path.join(resourcesRoot, "web")
-	: path.join(dataDir, "runtime", `web-${app.getVersion()}`);
-const webServer = path.join(webRoot, "apps", "web", "server.js");
+function webRoot() {
+	return isDev ? path.join(resourcesRoot, "web") : path.join(paths.dataDir, "runtime", `web-${app.getVersion()}`);
+}
+function webServer() {
+	return path.join(webRoot(), "apps", "web", "server.js");
+}
 
 // One-time migration from the early package-name data directory. The database and token
-// are the only durable state; logs can start fresh.
+// are the only durable state; logs can start fresh. It targets the configured data
+// directory, so it runs only once setup has been resolved.
 const legacyDataDir = path.join(app.getPath("appData"), "@ezchain", "desktop");
-if (
-	dataDir !== legacyDataDir &&
-	!fs.existsSync(path.join(dataDir, "ezchain.db")) &&
-	fs.existsSync(path.join(legacyDataDir, "ezchain.db"))
-) {
-	fs.mkdirSync(dataDir, { recursive: true });
+function migrateLegacyData() {
+	if (!paths || paths.dataDir === legacyDataDir) return;
+	if (fs.existsSync(path.join(paths.dataDir, "ezchain.db"))) return;
+	if (!fs.existsSync(path.join(legacyDataDir, "ezchain.db"))) return;
+	fs.mkdirSync(paths.dataDir, { recursive: true });
 	for (const name of ["ezchain.db", "ezchain.db-wal", "ezchain.db-shm", "api-token"]) {
 		const source = path.join(legacyDataDir, name);
-		if (fs.existsSync(source)) fs.copyFileSync(source, path.join(dataDir, name));
+		if (fs.existsSync(source)) fs.copyFileSync(source, path.join(paths.dataDir, name));
 	}
 }
 
@@ -81,6 +84,8 @@ let splash = null;
 let tray = null;
 let firstRun = null;
 let rebuildTray = () => {};
+let setup = null;
+let paths = null;
 let role = null;
 let hostUrl = null;
 let viewerUrl = null;
@@ -99,37 +104,69 @@ const restartTimers = { api: null, web: null };
 let apiBackoff = 1000;
 let webBackoff = 1000;
 
+// The deployment token is created at setup for a local host and read from the same path on
+// every start. Its value is returned to the supervisor only; no log line or window ever
+// receives it.
 function loadToken() {
+	const file = paths.tokenFile;
 	try {
-		const existing = fs.readFileSync(tokenFile, "utf8").trim();
+		const existing = fs.readFileSync(file, "utf8").trim();
 		if (existing.length >= 32 && existing.isWellFormed()) return existing;
 	} catch {
 		// Generate below.
 	}
 	const token = crypto.randomBytes(32).toString("hex");
-	fs.writeFileSync(tokenFile, token, { mode: 0o600 });
-	fs.chmodSync(tokenFile, 0o600);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, token, { mode: 0o600 });
+	fs.chmodSync(file, 0o600);
 	return token;
 }
 
-// The role and the host address live in the user data directory, never in the repository.
-// A malformed or missing file is a first run, not a reason to guess a host.
-function loadConfig() {
+// host.json is the one home for every setup value. A missing or malformed file is a first
+// run, not a reason to guess a host or a directory.
+function loadSetup() {
 	try {
-		const saved = JSON.parse(fs.readFileSync(configFile, "utf8"));
-		if (saved && saved.role === "remote" && typeof saved.url === "string") {
-			return { role: "remote", url: sender.normalizeHostUrl(saved.url) };
-		}
-		if (saved && saved.role === "local") return { role: "local" };
+		return sender.normalizeSetup(JSON.parse(fs.readFileSync(configFile, "utf8")), configDir);
 	} catch {
-		// No usable configuration yet; the first-run screen decides.
+		return null;
 	}
-	return null;
 }
 
-function saveConfig(config) {
-	fs.mkdirSync(dataDir, { recursive: true });
-	fs.writeFileSync(configFile, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+function setupRecord() {
+	return {
+		mode: setup.mode,
+		dataDir: setup.dataDir,
+		backupDir: setup.backupDir,
+		role: setup.role,
+		url: setup.url,
+	};
+}
+
+function saveSetup() {
+	fs.mkdirSync(configDir, { recursive: true });
+	fs.writeFileSync(configFile, `${JSON.stringify(setupRecord(), null, 2)}\n`, { mode: 0o600 });
+}
+
+// Resolve a validated setup, create its data directory and migrate any durable state from
+// the old package name. No database file is ever removed or recreated here.
+function applySetup(next, persist) {
+	setup = sender.normalizeSetup(next, configDir);
+	paths = sender.setupPaths(setup, configDir);
+	fs.mkdirSync(paths.dataDir, { recursive: true });
+	// A profile written before setup existed has no backup directory yet. Create the
+	// default so the first backup never fails on a path the operator never chose.
+	if (paths.backupDir === path.join(paths.dataDir, "backups")) {
+		fs.mkdirSync(paths.backupDir, { recursive: true });
+	}
+	migrateLegacyData();
+	if (persist) saveSetup();
+	return setup;
+}
+
+function setConnection(config) {
+	applySetup({ ...setupRecord(), ...config }, true);
+	role = setup.role;
+	hostUrl = setup.url;
 }
 
 // A URL is tested before it is saved. The probe is a read-only GET over TLS, so a failed
@@ -154,10 +191,6 @@ function freePort() {
 	});
 }
 
-function databaseUrl() {
-	return `sqlite+pysqlite:///${dbFile}`;
-}
-
 function childEnv(extra) {
 	return {
 		...process.env,
@@ -178,23 +211,8 @@ function spawnBackend() {
 		throw new Error(`backend sidecar missing at ${backendBin}`);
 	}
 	const child = spawn(backendBin, [], {
-		cwd: dataDir,
-		env: childEnv({
-			EZCHAIN_ENVIRONMENT: "desktop",
-			EZCHAIN_DATABASE_URL: databaseUrl(),
-			EZCHAIN_AUTO_CREATE_SCHEMA: "true",
-			EZCHAIN_AUTH_ENABLED: "true",
-			EZCHAIN_API_TOKEN: apiToken,
-			EZCHAIN_DATA_MODE: "live",
-			EZCHAIN_ENGINE_INLINE: "true",
-			EZCHAIN_ENGINE_INTERVAL_SECONDS: "30",
-			EZCHAIN_MARKET_SCAN_INLINE: "true",
-			EZCHAIN_MARKET_SCAN_INTERVAL_SECONDS: "90",
-			EZCHAIN_LOG_LEVEL: "INFO",
-			EZCHAIN_DESKTOP_API_PORT: String(apiPort),
-			EZCHAIN_PUBLIC_URL: `http://127.0.0.1:${webPort}`,
-			EZCHAIN_CORS_ORIGINS: JSON.stringify([`http://127.0.0.1:${webPort}`]),
-		}),
+		cwd: paths.dataDir,
+		env: childEnv(sender.backendEnv(setup, paths, { api: apiPort, web: webPort }, apiToken)),
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	apiChild = child;
@@ -212,15 +230,17 @@ function spawnBackend() {
 
 function ensureWebRuntime() {
 	if (isDev) return;
-	const marker = path.join(webRoot, ".complete");
-	if (fs.existsSync(webServer) && fs.existsSync(marker)) return;
+	const root = webRoot();
+	const server = webServer();
+	const marker = path.join(root, ".complete");
+	if (fs.existsSync(server) && fs.existsSync(marker)) return;
 	if (!fs.existsSync(webTar)) {
 		throw new Error(`web runtime archive missing at ${webTar}`);
 	}
-	const temp = `${webRoot}.tmp`;
+	const temp = `${root}.tmp`;
 	fs.rmSync(temp, { recursive: true, force: true });
 	fs.mkdirSync(temp, { recursive: true });
-	log(`extracting web runtime to ${webRoot}`);
+	log(`extracting web runtime to ${root}`);
 	const result = require("node:child_process").spawnSync("tar", ["-xzf", webTar, "-C", temp], {
 		stdio: "ignore",
 	});
@@ -229,17 +249,18 @@ function ensureWebRuntime() {
 		throw new Error(`web runtime extraction failed with status ${result.status}`);
 	}
 	fs.writeFileSync(path.join(temp, ".complete"), app.getVersion());
-	fs.rmSync(webRoot, { recursive: true, force: true });
-	fs.renameSync(temp, webRoot);
+	fs.rmSync(root, { recursive: true, force: true });
+	fs.renameSync(temp, root);
 }
 
 function spawnWeb() {
 	ensureWebRuntime();
-	if (!fs.existsSync(webServer)) {
-		throw new Error(`web sidecar missing at ${webServer}`);
+	const server = webServer();
+	if (!fs.existsSync(server)) {
+		throw new Error(`web sidecar missing at ${server}`);
 	}
-	const child = spawn(process.execPath, [webServer], {
-		cwd: path.dirname(webServer),
+	const child = spawn(process.execPath, [server], {
+		cwd: path.dirname(server),
 		env: childEnv({
 			ELECTRON_RUN_AS_NODE: "1",
 			NODE_ENV: "production",
@@ -326,7 +347,7 @@ async function startServices() {
 		apiToken = loadToken();
 		apiPort = await freePort();
 		webPort = await freePort();
-		log(`starting services: api=${apiPort} web=${webPort} data=${dataDir}`);
+		log(`starting services: api=${apiPort} web=${webPort} data=${paths.dataDir}`);
 		spawnBackend();
 		await waitFor(`http://127.0.0.1:${apiPort}/readyz`, 90000);
 		spawnWeb();
@@ -420,7 +441,7 @@ function createFirstRun() {
 	firstRun = new BrowserWindow({
 		width: 560,
 		height: 620,
-		title: `${APP_NAME} — choose a host`,
+		title: `${APP_NAME} — setup`,
 		backgroundColor: "#161615",
 		autoHideMenuBar: true,
 		resizable: false,
@@ -536,7 +557,8 @@ function createTray() {
 					},
 					{ type: "separator" },
 					{ label: "Open logs", click: () => shell.openPath(logFile) },
-					{ label: "Open data folder", click: () => shell.openPath(dataDir) },
+					{ label: "Open data folder", click: () => shell.openPath(paths ? paths.dataDir : configDir) },
+					{ label: "Setup…", click: () => createFirstRun() },
 					...(process.platform === "linux"
 						? []
 						: [
@@ -566,7 +588,8 @@ function createMenu() {
 				label: "File",
 				submenu: [
 					{ label: "Open logs", click: () => shell.openPath(logFile) },
-					{ label: "Open data folder", click: () => shell.openPath(dataDir) },
+					{ label: "Open data folder", click: () => shell.openPath(paths ? paths.dataDir : configDir) },
+					{ label: "Setup…", click: () => createFirstRun() },
 					{ type: "separator" },
 					{ role: "quit" },
 				],
@@ -621,8 +644,8 @@ function startWatchdog() {
 async function reconnectHost() {
 	if (role !== "remote") return restartServices();
 	try {
-		hostUrl = await testHost(hostUrl);
-		saveConfig({ role: "remote", url: hostUrl });
+		const url = await testHost(hostUrl);
+		setConnection({ role: "remote", url });
 		if (mainWindow) mainWindow.loadURL(viewerUrl);
 		return true;
 	} catch (error) {
@@ -690,15 +713,16 @@ async function startRole(config) {
 
 async function boot() {
 	setInterval(rotateLog, 60000);
-	const config = loadConfig();
 	createTray();
 	createMenu();
-	if (!config) {
+	const saved = loadSetup();
+	if (!saved) {
 		createFirstRun();
 		return;
 	}
+	applySetup(saved, false);
 	createSplash();
-	await startRole(config);
+	await startRole(setup);
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -739,30 +763,54 @@ if (!app.requestSingleInstanceLock()) {
 
 ipcMain.handle("desktop:restart", () => restartServices());
 ipcMain.handle("desktop:open-logs", () => shell.openPath(logFile));
-ipcMain.handle("desktop:open-data", () => shell.openPath(dataDir));
+ipcMain.handle("desktop:open-data", () => shell.openPath(paths ? paths.dataDir : configDir));
 
-// First-run choices. A URL is only stored after the probe succeeds, and choosing local
-// leaves the existing sidecar path exactly as it was. The role is decided once: a script in
-// the local web app cannot later re-point this window or make it stop owning its host.
-function assertFirstRun() {
-	if (!firstRun || role !== null) {
-		throw new Error("the workstation role can only be chosen on first run");
+// Setup can be opened on a clean install and again from Settings or the tray. Re-running
+// it keeps the ledger: no database file is deleted or recreated, and only the one host.json
+// is written. A URL is probed and a backup path validated before anything is saved.
+ipcMain.handle("desktop:setup-preview", (_event, draft) => {
+	const candidate = sender.normalizeSetup(
+		{ ...(setup ? setupRecord() : {}), ...(draft || {}) },
+		configDir,
+	);
+	return sender.setupSummary(candidate, sender.setupPaths(candidate, configDir));
+});
+
+ipcMain.handle("desktop:backup-now", () => {
+	if (!paths) throw new Error("finish setup before taking a backup");
+	return sender.backupDatabase({ dbFile: paths.dbFile, backupDir: paths.backupDir });
+});
+
+ipcMain.handle("desktop:finish-setup", async (_event, draft) => {
+	let candidate;
+	try {
+		candidate = sender.normalizeSetup(
+			{ ...(setup ? setupRecord() : {}), ...(draft || {}) },
+			configDir,
+		);
+	} catch (error) {
+		throw new Error(error.message);
 	}
-}
+	const candidatePaths = sender.setupPaths(candidate, configDir);
+	if (candidate.role === "remote") {
+		await testHost(candidate.url);
+	} else {
+		// The default backup directory is created for the operator; a custom one must
+		// already exist and be writable, and a bad path is refused before saving.
+		const defaultBackup = path.join(candidatePaths.dataDir, "backups");
+		if (candidatePaths.backupDir === defaultBackup) {
+			fs.mkdirSync(candidatePaths.backupDir, { recursive: true });
+		}
+		const check = sender.validateBackupDir(candidatePaths.backupDir);
+		if (!check.ok) throw new Error(check.reason);
+	}
+	applySetup(candidate, true);
+	if (candidate.role === "local") loadToken();
+	await startRole(setup);
+	return sender.setupSummary(setup, paths);
+});
 
-ipcMain.handle("desktop:remote-connect", async (_event, rawUrl) => {
-	assertFirstRun();
-	const url = await testHost(rawUrl);
-	saveConfig({ role: "remote", url });
-	await startRole({ role: "remote", url });
-	return { role: "remote", url };
-});
-ipcMain.handle("desktop:choose-local", async () => {
-	assertFirstRun();
-	saveConfig({ role: "local" });
-	await startRole({ role: "local" });
-	return { role: "local" };
-});
+ipcMain.handle("desktop:open-setup", () => createFirstRun());
 ipcMain.handle("desktop:remote-config", () => ({ role, url: hostUrl }));
 
 // The only channel from the read-only view to a host. The sender refuses every write

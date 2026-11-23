@@ -20,6 +20,33 @@ them. A watchdog restarts either sidecar if it exits. A shell that attaches remo
 neither sidecar, holds neither token nor key, and owns no process that a disconnect could
 stop.
 
+## First-run setup
+
+On first launch the app opens a setup screen; nothing is configured or started until the
+operator finishes it. The screen decides and then displays:
+
+- **Mode** — `PAPER`. This release offers no live mode and creates no key material. The API
+  is started with `EZCHAIN_EXECUTION_MODE=paper` from the same setup, so the mode shown on
+  screen and the mode the API enforces cannot disagree.
+- **Data directory** — the platform's application data directory, `~/.config/ezCHAIN` on
+  Linux, by default. The resolved absolute path is shown, not implied. The database and the
+  deployment token live here.
+- **Deployment token** — generated at setup for a local host, written with mode `0600`, and
+  reported only as `stored at <path>`. Its value is never shown again, never part of a
+  window or a log line, and never stored in the repository.
+- **Backup path** — a `backups` directory inside the data directory by default. A custom
+  path must already exist and be writable; a bad one is refused at setup with the reason.
+  **Back up now** takes a consistent SQLite snapshot and reports the file and its size. A
+  snapshot restores by replacing `ezchain.db`.
+- **Connection** — this machine (default) or a host URL. A remote URL is probed over HTTPS
+  before it is saved.
+
+Every value has one home: `host.json` in the application data directory is what the screen
+writes and what the supervisor reads on every start. The database URL, backup directory and
+execution mode handed to the API are derived from that same file, so the paths on screen are
+the paths in use. Setup can be reopened from Settings or the tray; re-running it keeps the
+ledger, because no database file is deleted or recreated.
+
 ## Install (Linux)
 
 ```bash
@@ -42,8 +69,8 @@ and uses real market data in `PAPER` mode. It does not require Docker, Postgres 
 
 ## Connect to a remote host
 
-On first launch the app asks which role it should play. **Use this machine** keeps the
-behaviour above and needs no configuration. **Connect to a remote host** asks for the host's
+On the first-run screen the app asks which role it should play. **Use this machine** keeps
+the behaviour above and needs no configuration. **Connect to a host** asks for the host's
 HTTPS address. The address is probed before it is saved: the app makes a read-only request
 to the host's health endpoint over TLS, and only a successful response stores the setting.
 If the host is unreachable the chooser stays open with the reason and a retry button; it
@@ -95,17 +122,22 @@ pnpm --filter @ezchain/desktop exec electron .
 
 ## Data, logs and recovery
 
+Paths below are the defaults. Setup can move the database, token and backups; `host.json`
+and the logs stay in the application data directory so a fresh profile always knows where
+to find its configuration.
+
 | Path | Contents |
 |---|---|
-| `~/.config/ezCHAIN/ezchain.db` | paper ledger, orders, strategies, snapshots (SQLite, WAL) |
-| `~/.config/ezCHAIN/api-token` | random 64-hex deployment token, mode 0600, local host only |
-| `~/.config/ezCHAIN/host.json` | chosen role and remote HTTPS address, mode 0600 |
+| `<data>/ezchain.db` | paper ledger, orders, strategies (SQLite, WAL) |
+| `<data>/api-token` | random 64-hex deployment token, mode 0600, local host only |
+| `<data>/backups/ezchain-<timestamp>.db` | consistent SQLite snapshots from Back up now |
+| `<data>/runtime/web-<version>/` | extracted Next runtime (versioned) |
+| `~/.config/ezCHAIN/host.json` | mode, data directory, backup path, role and remote address, mode 0600 |
 | `~/.config/ezCHAIN/logs/desktop.log` | supervisor and both sidecars, rotated at 5 MiB |
-| `~/.config/ezCHAIN/runtime/web-<version>/` | extracted Next runtime (versioned) |
 
 Tray menu: Open, Restart services (Reconnect to host when attached remotely), Open logs,
-Open data folder, Quit. On macOS/Windows it also offers Start at login; Linux XDG autostart
-is not implemented yet.
+Open data folder, Setup, Quit. On macOS/Windows it also offers Start at login; Linux XDG
+autostart is not implemented yet.
 The app requests a single instance; launching it again focuses the existing window.
 On a sidecar crash the supervisor restarts it on the same port; a renderer crash reloads
 the window. The database is the durable state; restarting the app preserves positions.
@@ -131,9 +163,18 @@ are recorded.
   on hosts without unprivileged user namespaces.
 - External links open in the system browser; navigation outside the local origin is
   blocked. A remote view cannot navigate to the host's web app.
-- There are no keys, signing or live execution in this build. `live_execute` is false.
+- There are no keys, signing or live execution in this build. The setup screen offers
+  `PAPER` only and the API is started with `EZCHAIN_EXECUTION_MODE=paper`; `live_execute` is
+  false.
+- The deployment token value is never logged. The screen reports where it is stored, and
+  the summary it renders contains no secret.
 
 ## Verification
+
+The setup decisions are pinned by the desktop unit tests: they assert that the displayed
+paths are the paths handed to the API, that a backup is a consistent copy which restores,
+that a bad backup path is refused at setup with its reason, and that no secret reaches a
+summary, a page or a log line.
 
 See [docs/evidence/desktop/linux-app.md](evidence/desktop/linux-app.md) for the launch,
 paper flow, persistence and crash-recovery record.

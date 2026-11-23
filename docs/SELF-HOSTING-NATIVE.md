@@ -8,6 +8,22 @@ read-only readiness check for that install. The container path is in
 The check is a command, not a dashboard: it answers the questions an operator would
 otherwise assemble from several documents, and it changes nothing.
 
+## Where the decisions live
+
+A host installed here keeps its deployment configuration in the environment file written by
+the installer. A desktop workstation keeps the same kind of decisions in `host.json` in its
+application data directory, shown and changed on its first-run setup screen. There is one
+file of defaults per install, not a second copy of them: the supervisor derives the database
+URL, backup directory and execution mode from the values the operator approved and hands
+them to the API as `EZCHAIN_DATABASE_URL`, `EZCHAIN_BACKUP_DIR` and
+`EZCHAIN_EXECUTION_MODE`. Both paths set paper mode. See
+[DESKTOP](DESKTOP.md#first-run-setup).
+
+A backup directory must exist and be writable when it is chosen. The setup screen refuses a
+bad path with the reason instead of failing at the first backup. A snapshot is a consistent
+SQLite copy that restores by replacing the configured database, and it holds no credential
+material.
+
 ## First-run readiness check
 
 Run it after the installer has written the environment file and migrated the database, and
