@@ -52,6 +52,11 @@ is the human step.
 Proven on this machine (2026-11-14, macOS arm64, CPython 3.11.18, Node 26.13.0,
 pnpm 9.15.9):
 
+- `tools/check-licences.py` — one inventory of 715 locked dependencies from the three
+  Python locks, `pnpm-lock.yaml` and `rust/Cargo.lock`, joined to the licences declared in
+  installed metadata; exit 0 on 2026-11-23, with and without `node_modules` installed. A
+  checkout without `node_modules` still lists every locked Node package, with an `UNKNOWN`
+  licence and a note instead of a declaration. This is step 5 of `tools/ci.sh`.
 - `tools/check_pins.py --fast` — every pin is an exact `==` version, every Python pin
   carries hashes, every Node resolution carries integrity, every declared range is still
   satisfied by its pin, every package pyproject's third-party requirement is pinned or
@@ -279,3 +284,59 @@ open.
   artifact the maintainer intended.
 - **No SBOM yet.** The issue asks for locks and an audit; an SBOM and an image scan are
   separate work and are not claimed here.
+
+## 7. Licence inventory
+
+The pin check proves that a dependency is exact and hashed; the advisory audit proves that
+no published advisory names it. Neither says what licence the dependency carries.
+`tools/check-licences.py` closes that gap with a read-only inventory of the locked set. It
+joins the names and versions in `requirements.lock`, `requirements-runtime.lock`,
+`requirements-keyring.lock`, `pnpm-lock.yaml` and `rust/Cargo.lock` to the licence fields in
+installed metadata: Python `*.dist-info/METADATA`, Node `package.json` manifests under
+`node_modules`, and `Cargo.toml` in the local registry cache. Nothing is downloaded,
+installed or reported anywhere.
+
+```bash
+python3 tools/check-licences.py              # check the checkout, human-readable table
+python3 tools/check-licences.py --json       # the same inventory as JSON
+python3 tools/check-licences.py --inventory licenses.json
+python3 tools/check-licences.py --root /path/to/checkout
+python3 tools/check-licences.py --fixture /path/to/package.json
+```
+
+Each inventory row names the ecosystem, the dependency, its locked version, the licence and
+the path of the file that declared it. JSON is the machine-readable form: the same fields
+are present under `ecosystem`, `name`, `version`, `licence`, `declared_in` and `locks`. The
+check is wired into step 5 of `tools/ci.sh`, beside the static pin check. It uses the pinned
+Python interpreter when the checkout has a venv and a plain `python3` otherwise, and prints
+the inventory to the gate log.
+
+**Policy.** Permissive and weak-copyleft licences already present in the pinned set pass:
+MIT, the BSD family, Apache-2.0, ISC, MPL-2.0, LGPL-2.1/LGPL-3.0, PSF-2.0, CC0-1.0,
+BlueOak-1.0.0 and the other identifiers in `ALLOWED_TOKENS` in the checker. Strong copyleft
+(GPL, AGPL), source-available and non-commercial terms, `UNLICENSED`, proprietary terms and
+unrecognised identifiers fail. A dual licence passes only when every listed alternative is
+allowed; `MIT OR Apache-2.0` passes, `MIT OR GPL-3.0-only` does not. Permission to use a
+disallowed package is a reviewed decision recorded here before the pin moves, not an entry
+in a mutable allowlist.
+
+**What fails.** A declaration that names a disallowed or unrecognised licence fails with the
+exact path of the declaring file, as does a declaration with no licence value. A locked
+dependency with no declaration at all fails with the path of the lock that pinned it. That
+last rule is what catches a new dependency before its licence has been looked at. Exit 1 is
+the failure verdict; exit 2 means a file the check needed could not be read.
+
+**What is recorded as a gap, not a pass.** Three sets are pinned but knowingly absent from a
+local checkout: the optional `keyring` lock, whose packages no deployment installs; Rust
+registry crates whose source has not been fetched into the cargo cache; and Node packages
+that are locked but not installed in `node_modules`. They appear in the inventory with an
+explicit `UNKNOWN (...)` licence and a note on stderr. The note is not evidence that the
+licence is safe: a machine that has the metadata must run the check over it before a release
+is claimed clean. Installed metadata changes the licence column, not the row count: a fresh
+worktree and a checkout with `node_modules` inventory the same locked rows.
+
+**A fixture is checked like any other declaration.** `--fixture` accepts a file or a
+directory with a `package.json`, a `METADATA` file or a `Cargo.toml`, and `--root` checks a
+different checkout. A disallowed licence in either is reported with the path that declared
+it. Inline `license:` notes on a lock entry are treated as declarations too, so a lock that
+records a licence cannot hide it from the check.
