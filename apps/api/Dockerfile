@@ -23,6 +23,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 
+# The product version file every surface reads. It is copied into the runtime image's
+# working directory so `ezchain_api.version` can find it without a fallback.
+COPY VERSION ./VERSION
+
 # Runtime and migration dependencies (fastapi, uvicorn, sqlalchemy, psycopg,
 # pydantic, alembic, ...). The test/lint toolchain is not installed here.
 # The lock is the install source: `pip install --require-hashes` refuses a wheel whose
@@ -95,6 +99,9 @@ COPY --from=bridge-builder /build/rust/target/release/libezchain_bridge.so \
 RUN python -c 'import ezchain_bridge; assert hasattr(ezchain_bridge, "quantize_money")'
 
 WORKDIR /app
+
+# The version file the API reads at import time; the runtime image has no source tree.
+COPY --from=builder /build/VERSION ./VERSION
 
 # Application source plus apps/api/alembic.ini and apps/api/alembic/ when the
 # migration bundle is present. The installed package in site-packages is what

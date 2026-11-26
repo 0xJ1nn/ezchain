@@ -7,6 +7,7 @@ import {
 } from "@/components/topbar-quick-trade";
 import { getMarkets, getQuote, type Reason } from "@/lib/api";
 import { getKillSwitch } from "@/lib/paper-api";
+import { PRODUCT_VERSION } from "@/lib/product-version";
 import { getExecutionMode } from "@/lib/system-api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
@@ -242,7 +243,7 @@ export function AppShell({ active, children }: { active: string; children: React
 				</span>
 			</div>
 			<Topbar />
-			<Sidebar active={active} />
+			<Sidebar active={active} version={PRODUCT_VERSION} />
 			<main id="main">{children}</main>
 			<MobileNav active={active} />
 		</>

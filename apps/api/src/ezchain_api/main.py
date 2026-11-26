@@ -70,6 +70,7 @@ from .services.plugin_runtime import PaperPluginRuntime
 from .services.provider_secrets import build_secret_cipher
 from .services.stream import StreamHub
 from .services.system_flags import read_kill_switch, seed_kill_switch
+from .version import PRODUCT_VERSION
 
 
 @asynccontextmanager
@@ -223,7 +224,7 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     app = FastAPI(
         title="ezCHAIN API",
-        version="0.1.0",
+        version=PRODUCT_VERSION,
         description="Live market browsing and paper execution. No keys, no live money.",
         lifespan=lifespan,
     )
