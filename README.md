@@ -2,12 +2,13 @@
 
 **One open-source, multi-chain crypto trading app. PAPER-first. Your strategies.**
 
-> **Language policy:** the core engine, P2P networking, consensus/validation, RPC server,
-> transaction execution and the shipped CLI are being migrated to **Rust** on the
-> `rust/migration` branch. **Python** remains the language for indexer/analytics, AI/ML and
-> strategy plugins; **TypeScript** owns the dashboard and all product UI. Every port is gated
-> on recorded behavioural parity — see ADR-0050. The app is still PAPER-only; live trading is
-> owner-blocked.
+> **Language policy:** Python owns the backend and the live execution path for 0.1.0. Rust
+> kernels already in the repository stay off that path. A new kernel is adopted only after a
+> recorded benchmark fails a declared target and a parity harness matches every recorded
+> case, one kernel at a time behind a reversible flag. New P2P and consensus components stay
+> governed by ADR-0051/0052; **TypeScript** owns the dashboard and all product UI. Money
+> arithmetic stays in Python until per-operation decimal parity is proven. See ADR-0053.
+> The app is still PAPER-only; live trading is owner-blocked.
 
 ezCHAIN is a self-hostable trading workstation: multi-chain market browsing, a real ledger,
 live-market positions on PAPER fills, automations, signals, backtests and a strategy plugin

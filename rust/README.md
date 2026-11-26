@@ -1,12 +1,12 @@
-# Rust migration
+# Rust kernels — gated, not a migration
 
-The accepted language policy (ADR-0050) assigns the core engine, P2P networking,
-consensus/validation, RPC server, transaction execution and the shipped CLI to Rust.
-Python keeps the indexer/analytics, AI/ML components and strategy plugins; TypeScript keeps
-the dashboard and all product UI.
+ADR-0053 keeps Python as the backend and the live execution path for 0.1.0. The Rust crates
+already landed stay as kernels off that path and are not deleted. New P2P and consensus
+components remain governed by ADR-0051 and ADR-0052; choosing Rust for a new component is not
+a rewrite. TypeScript keeps the dashboard and all product UI.
 
-This directory is the Rust half of the repository. It is being built on the `rust/migration`
-integration branch, one field at a time, while the Python platform keeps running.
+This directory holds the Rust half of the repository. No further kernel is adopted without the
+gate below.
 
 ## Gate for a port
 
@@ -15,10 +15,11 @@ A unit is not ported until:
 1. its current Python behaviour is recorded as cases, including failures;
 2. the Rust implementation matches every recorded case (`diff`);
 3. `cargo fmt --check`, `cargo clippy`, `cargo test` and the behaviour gate pass;
-4. a benchmark says whether the port is actually faster — a small function called one at a
-   time is usually slower across the FFI boundary, so port a loop or a whole boundary.
+4. a recorded benchmark fails a declared target for that kernel — parity alone is not a
+   reason to ship, and "compiles and matches" is not a speed result.
 
-The Python implementation stays the oracle until its cases pass against Rust. Money
+One kernel at a time enters behind a reversible flag. No existing money or execution code is
+ported. The Python implementation stays the oracle until its cases pass against Rust. Money
 arithmetic stays in Python until a Rust decimal can reproduce the per-operation precision of
 `money.py` and a parity harness proves it.
 

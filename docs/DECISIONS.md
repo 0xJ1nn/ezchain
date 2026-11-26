@@ -1758,6 +1758,10 @@ supersedes the *"no rewrite is authorised"* clause of ADR-0049 with respect to t
 listed below. ADR-0049's parity and benchmark gate is retained and made mandatory; its
 "Proposed" status no longer blocks this policy.
 
+> **Amendment (2026-11-26):** ADR-0053 supersedes this ADR's execution assignment for 0.1.0.
+> Python owns the backend and the live execution path in that release; the map below is kept
+> as history, and the benchmark-and-parity gate and the new-component rules still apply.
+
 **Context:** the maintainer has decided that ezCHAIN is to be an open-source, one-stop,
 multi-chain trading platform with an AI harness, built to be trusted for performance,
 footprint, stability and safety. Rust is the language for the components where those
@@ -1973,3 +1977,43 @@ performance-critical, security-critical, a network transport, or part of the tru
 boundary, it is Rust; if it is business logic, model inference, analytics, automation or an
 integration, it is Python. UI stays TypeScript. Money arithmetic stays
 in Python until decimal parity is proven (ADR-0050 rule 4), and live mode stays owner-blocked.
+
+---
+
+## ADR-0053 — Execution stays Python for 0.1.0; Rust only behind the measured gate
+
+**Date:** 2026-11-26 · **Status:** Accepted (owner instruction). This ADR supersedes the
+execution assignment in ADR-0050 for 0.1.0. ADR-0050's parity and benchmark gate, and the
+new-component rules in ADR-0051 and ADR-0052, remain in force.
+
+**Context:** the language comparison scored the Python backend 47, a Rust rewrite 23 and a
+Rust kernel behind a Python control plane 36 on this project's own dimensions. The one
+recorded parity proof ported a small pure scope normaliser to Rust: all 53 recorded cases
+matched, but the measured result was 0.61x, slower across the FFI boundary, so no speed gain
+was demonstrated. The money path derives precision per operation and the available fixed
+28-digit Rust decimal cannot reproduce it, blocking money parity. The 2,640 collected Python
+tests are the behavioural oracle today. None of this supports porting a working execution
+path on preference alone.
+
+**Decision:**
+
+- Python owns the backend and the live execution path for 0.1.0. Live mode remains
+  owner-blocked; this decision does not enable it.
+- No existing money or execution code is ported to Rust.
+- Rust is adopted only for a measured kernel after a recorded benchmark fails a declared
+  target and a parity harness matches every recorded case, including refusals and decimal
+  behaviour. One kernel at a time is introduced behind a flag and is reversible.
+- The Rust crates already landed stay as kernels off the live path and are not deleted; they
+  do not become the execution path without the gate above.
+- New components, including P2P networking and consensus, remain governed by ADR-0051 and
+  ADR-0052. Choosing Rust for a new component is not a rewrite of the Python backend.
+- Money arithmetic stays in Python until a Rust decimal matches the per-operation precision
+  of `money.py` and a parity harness proves it case by case.
+
+**Consequences:** the Python suite remains the oracle for execution behaviour; 0.1.0 adds no
+native build or ABI requirement to the live path. The work that can change this decision is a
+recorded benchmark corpus with a declared target per kernel and a Python/Rust parity harness;
+a kernel that misses either the target or parity stays out. This ADR makes no speed claim and
+no claim about live trading. The language map in ADR-0050 and the classification in ADR-0052
+continue to govern new components, not the port of existing execution code. Agents must read
+this ADR before changing the execution or money path.
