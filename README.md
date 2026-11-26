@@ -32,6 +32,13 @@ SDK. It ships with **no strategies** — the platform, not the alpha, is the pro
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
 
+## Releases and roadmap
+
+0.1.0 is the first public release; it is unreleased. The [changelog](CHANGELOG.md) records
+each change with its issue or pull request, the [release notes](docs/release-notes/) record
+each version, and the [public roadmap](ROADMAP.md) sets out what is planned. No dates
+are promised and no `0.x` release enables real-money trading.
+
 ## Six structural edges, each with its evidence
 
 **Self-custody and local keys.** Keys stay on the operator's machine. The

@@ -41,27 +41,46 @@ endpoints, JSON logs and a runnable PAPER Compose stack are shipped. The verifie
 deployment is recorded against an earlier migration head, so a fresh drill at the current
 head remains open. The stress harness and labelled web fixtures are in place.
 
-## What is next
+## Versions
 
-- Re-drill the Compose stack at the current migration head and record the result.
-- Add dashboard equity-snapshot history and the remaining position-tile states.
-- Add per-user authentication and role-based access; today one deployment token serves one
-  paper workspace.
-- Close out the UI follow-ups: a generic automation builder, signal scoring and routing,
-  alert delivery channels and gallery polish.
-- Build a real, replayable ingest path with provider health and a stable reason-code
-  taxonomy before any execution work.
+This roadmap sets out the scope of each version, not a schedule: no dates are promised, the
+order may change, nothing in a `0.x` release enables real-money trading, and the product
+ships with no strategies. The per-version change record is [CHANGELOG.md](CHANGELOG.md); the
+release workflow and how a download is verified are in [docs/RELEASES.md](docs/RELEASES.md).
 
-## Later
+### 0.1.0 — release blockers only
 
-- A single replayable execution pipeline against a simulated venue, with a venue adapter
-  that quotes a full-size sell and simulates before broadcasting.
-- An executor with an encrypted vault, a paper gate that cannot be forged from the client,
-  server-derived mode and a kill switch the executor honours.
-- Signed plugin and agent packages with reproducible provenance, plus a security review of
-  the MCP tool surface and the key lifecycle.
-- Multi-tenant ledger partitioning, or one workspace per hosted user.
-- Official agent listings only after real-mode readiness is measured, not planned.
+The first public release, in preparation. Scope is correctness and honest public
+documentation of the shipped paper surface: a clean-clone install, a real paper trade inside
+the default gate, a publication audit, version agreement and a licence scan. No new
+features.
+
+### 0.2.0 — paper-product completeness
+
+Finish the paper product: the remaining partial screens, sign-in and onboarding, data
+ingest, per-user authentication and role-based access, and documentation polish. Still
+paper-only.
+
+### 0.3.0 — paper-only execution groundwork
+
+Prepare the execution path without moving real money: a venue adapter that quotes a
+full-size sell and simulates before broadcasting, and persisted, idempotent order intents.
+Paper-only.
+
+### 0.4.0 — native and Rust completion
+
+Complete the Rust core migration, make the native host primary, and work on performance and
+peer-to-peer networking. Still paper-only.
+
+### 1.0.0 — live execution, gated
+
+Live execution only, and only with the maintainer's written approval: an executor with an
+encrypted vault, a paper gate that cannot be forged from the client, server-derived mode, a
+kill switch the executor honours, live venues and the live book. There is no date.
+
+Signed plugin and agent packages with reproducible provenance, a security review of the MCP
+tool surface and the key lifecycle, multi-tenant ledger partitioning, and official agent
+listings belong here or later, never in a `0.x` release.
 
 ## Experimental — pump.fun firehose
 
