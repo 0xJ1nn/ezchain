@@ -2,8 +2,8 @@
 
 `docs/LIVE-EXECUTION.md` is the normative document for live trading, and it described a
 system that does not exist: an executor HTTP service, an encrypted vault file, a simulate
-stage, live tables, a `live:` book, and codes (`SIMULATION_FAILED`, `RECONCILE_DRIFT`) that
-are in no taxonomy. A reader could not tell a plan from a property.
+stage, live tables, a `live:` book, and a code (`RECONCILE_DRIFT`) that is in no taxonomy.
+A reader could not tell a plan from a property.
 
 Two things are pinned here, both of them failures that already happened:
 
@@ -31,7 +31,7 @@ STATES = ROOT / "design" / "wireframe" / "27-states.html"
 
 # Codes the contract names that no taxonomy row exists for. Each must be described as
 # unbuilt where the document names it; the day one is implemented this list shrinks.
-PLAN_ONLY_CODES = ("SIMULATION_FAILED", "RECONCILE_DRIFT")
+PLAN_ONLY_CODES = ("RECONCILE_DRIFT",)
 
 
 def _contract() -> str:

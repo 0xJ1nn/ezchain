@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 276 codes across 17 categories, 6 layers.
+**Scale:** 285 codes across 17 categories, 6 layers.
 
 ---
 
@@ -181,7 +181,7 @@ or a process-local refusal).
 | `AUTOMATION_TIER_UNKNOWN` | api | 409 | no | warning | The requested automation tier is not manual or full_auto. |
 | `EXECUTION_REFUSED` | api | — | no | warning | An approved execution ended without a more specific reason code. |
 
-### Transaction binding and signing (16)
+### Transaction binding and signing (25)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -201,6 +201,15 @@ or a process-local refusal).
 | `TRANSACTION_UNSIGNED` | core | — | no | critical | No signature is present on a payload that must be signed. |
 | `TRANSACTION_BUILD_FAILED` | core | — | no | critical | The adapter failed to build the unsigned transaction. |
 | `TRANSACTION_SIGN_FAILED` | core | — | no | critical | The signer failed. |
+| `TRANSACTION_CHAIN_MISMATCH` | core | — | no | critical | The chain changed after approval. |
+| `TRANSACTION_BLOCKHASH_STALE` | core | — | no | critical | The blockhash is stale or invalid, so the transaction cannot land. |
+| `TRANSACTION_VERSION_UNSUPPORTED` | core | — | no | critical | The transaction version or size is outside policy. |
+| `TRANSACTION_ACCOUNT_LIST_INVALID` | core | — | no | critical | The resolved account list is missing or over the policy cap. |
+| `TRANSACTION_INSTRUCTION_LIMIT` | core | — | no | critical | The instruction count exceeds the approved policy cap. |
+| `TRANSACTION_COMPUTE_BUDGET_EXCEEDED` | core | — | no | critical | A compute-unit limit or price exceeds the approved cap. |
+| `TRANSACTION_ALLOWANCE_UNBOUNDED` | core | — | no | critical | An ERC-20 approval is unlimited or goes to an unexpected spender. |
+| `SIMULATION_FAILED` | core | — | no | critical | The pre-broadcast simulation did not succeed. |
+| `TRANSACTION_WALLET_IN_FLIGHT` | core | — | no | critical | Another transaction is already in flight for this wallet. |
 
 ### Kill switch and operational governance (4)
 
