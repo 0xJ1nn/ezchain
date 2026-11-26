@@ -1057,10 +1057,20 @@ def test_alerts_cover_stale_marks_kill_switch_and_rejections(
     [(59, False), (61, True), (91, True)],
 )
 def test_mark_alerts_fire_only_beyond_the_mark_budget(
-    client_for: Callable[..., TestClient], session: Session, age_seconds: int, stale: bool
+    client_for: Callable[..., TestClient],
+    session: Session,
+    age_seconds: int,
+    stale: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No false stale alert inside the 60s refresh budget, 61s and 91s both alert."""
+    """No false stale alert inside the 60s refresh budget, 61s and 91s both alert.
+
+    The service clock is frozen to the same instant the snapshot is built from. The 59s
+    case sits one second inside a 60s budget, so a real clock read after a slow test-suite
+    step could cross the boundary and make this a wall-clock flake on a loaded host.
+    """
     now = utcnow()
+    monkeypatch.setattr(paper, "utcnow", lambda: now)
     at = now - timedelta(days=1)
     _genesis(session, at=at)
     _trade(
