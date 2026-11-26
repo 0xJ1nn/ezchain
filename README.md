@@ -2,13 +2,12 @@
 
 **One open-source, multi-chain crypto trading app. PAPER-first. Your strategies.**
 
-> **Language policy:** Python owns the backend and the live execution path for 0.1.0. Rust
-> kernels already in the repository stay off that path. A new kernel is adopted only after a
-> recorded benchmark fails a declared target and a parity harness matches every recorded
-> case, one kernel at a time behind a reversible flag. New P2P and consensus components stay
-> governed by ADR-0051/0052; **TypeScript** owns the dashboard and all product UI. Money
-> arithmetic stays in Python until per-operation decimal parity is proven. See ADR-0053.
-> The app is still PAPER-only; live trading is owner-blocked.
+> **Language policy (ADR-0054):** Python owns the product process, the API and the live
+> execution path. Rust owns the signer boundary, the parity-proven money kernels, the
+> independently verifiable ledger seal and replay, and the shipped operator CLI. P2P and
+> consensus stay frozen until a second machine must agree on the same tape; unreachable and
+> duplicate crates are not migration progress. Custody is a separate decision (ADR-0055).
+> **TypeScript** owns the UI. The app is still PAPER-only; live trading is owner-blocked.
 
 ezCHAIN is a self-hostable trading workstation: multi-chain market browsing, a real ledger,
 live-market positions on PAPER fills, automations, signals, backtests and a strategy plugin

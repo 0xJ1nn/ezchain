@@ -1,12 +1,14 @@
-# Rust kernels — gated, not a migration
+# Rust kernels — the measured boundary
 
-ADR-0053 keeps Python as the backend and the live execution path for 0.1.0. The Rust crates
-already landed stay as kernels off that path and are not deleted. New P2P and consensus
-components remain governed by ADR-0051 and ADR-0052; choosing Rust for a new component is not
-a rewrite. TypeScript keeps the dashboard and all product UI.
+ADR-0054 sets the boundary: Python owns the product process, the API and the live path. Rust
+owns the signer boundary, the parity-proven money kernels, the independently verifiable seal
+and replay, and the shipped CLI; a capability-scoped WASM plugin host is a later, measured
+step. P2P and consensus stay frozen until a second machine must agree on the same tape;
+unreachable and duplicate crates are not migration progress. Custody is a separate decision
+(ADR-0055). TypeScript keeps all product UI.
 
-This directory holds the Rust half of the repository. No further kernel is adopted without the
-gate below.
+This directory holds the Rust half of the repository. The parity-proven money kernels are
+already called from production; any further kernel enters only through the gate below.
 
 ## Gate for a port
 

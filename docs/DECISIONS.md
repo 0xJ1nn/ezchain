@@ -1758,9 +1758,10 @@ supersedes the *"no rewrite is authorised"* clause of ADR-0049 with respect to t
 listed below. ADR-0049's parity and benchmark gate is retained and made mandatory; its
 "Proposed" status no longer blocks this policy.
 
-> **Amendment (2026-11-26):** ADR-0053 supersedes this ADR's execution assignment for 0.1.0.
-> Python owns the backend and the live execution path in that release; the map below is kept
-> as history, and the benchmark-and-parity gate and the new-component rules still apply.
+> **Amendment (2026-11-26):** ADR-0054 supersedes this ADR's execution assignment for 0.1.0.
+> Python owns the product process, the API and the live execution path in that release; the
+> map below is kept as history, and the benchmark-and-parity gate and the new-component rules
+> still apply.
 
 **Context:** the maintainer has decided that ezCHAIN is to be an open-source, one-stop,
 multi-chain trading platform with an AI harness, built to be trusted for performance,
@@ -1980,40 +1981,81 @@ in Python until decimal parity is proven (ADR-0050 rule 4), and live mode stays 
 
 ---
 
-## ADR-0053 — Execution stays Python for 0.1.0; Rust only behind the measured gate
+## ADR-0054 — Migration order and the Rust boundary
 
-**Date:** 2026-11-26 · **Status:** Accepted (owner instruction). This ADR supersedes the
-execution assignment in ADR-0050 for 0.1.0. ADR-0050's parity and benchmark gate, and the
-new-component rules in ADR-0051 and ADR-0052, remain in force.
+**Date:** 2026-11-26 · **Status:** Accepted (owner instruction). This decision corrects the
+language decision recorded for 0.1.0 and supersedes the execution assignment in ADR-0050 for
+that release. The parity and benchmark gate in ADR-0050 and the new-component rules in
+ADR-0051 and ADR-0052 remain in force.
 
-**Context:** the language comparison scored the Python backend 47, a Rust rewrite 23 and a
-Rust kernel behind a Python control plane 36 on this project's own dimensions. The one
-recorded parity proof ported a small pure scope normaliser to Rust: all 53 recorded cases
-matched, but the measured result was 0.61x, slower across the FFI boundary, so no speed gain
-was demonstrated. The money path derives precision per operation and the available fixed
-28-digit Rust decimal cannot reproduce it, blocking money parity. The 2,640 collected Python
-tests are the behavioural oracle today. None of this supports porting a working execution
-path on preference alone.
+**Numbering:** the language-map pull request (#437), which references ADR-0053, is still
+unmerged. This decision takes number 0054 so the two changes cannot claim the same number. If
+#437 never merges, 0053 stays unused.
+
+**Context:** the 2026-11-21 review measured the shipped tree, not the working copy. Four
+results correct the earlier note. First, 5,118 lines of the Rust workspace (P2P, transport,
+consensus, node and RPC server) have no consumer: no Python caller, compose service, systemd
+unit or installer entry. A further 5,617 lines of the RPC crate duplicate wire schemas,
+framing, order DTOs and dispatch that the Python API already publishes as OpenAPI; only 239 of
+that crate's 5,856 lines are reachable. About 45% of the Rust workspace cannot execute in the
+shipped product. Second, the API image installed Python wheels only and never built or
+installed the bridge, while the observability middleware called the bridge on every request:
+`GET /healthz` raised `NativeBridgeUnavailable`, the container's own health check failed, and
+the installer's `compose up --build` reproduced it. Third, the 0.61× result in the 2026-11-18
+note was an artifact of a generated prototype binding on macOS, not a law about PyO3. Rebuilt
+against the hand-written bridge, the money kernels are 2.25×–7.85× faster than Python and carry
+417 recorded parity cases, while `normalize_method` is 2.4× slower across FFI (161 ns in
+Python vs 391 ns in Rust) and runs on every request. Fourth, the absolute stakes are
+microseconds against quote paths bound by 5–8 s network deadlines; Rust is justified here by
+who may touch the bytes, not by nanoseconds. The earlier policy was right in its headings and
+wrong in its implementation order: it ported the cheap, safe functions and left the signer
+boundary, the seal and the replay unwired.
 
 **Decision:**
 
-- Python owns the backend and the live execution path for 0.1.0. Live mode remains
-  owner-blocked; this decision does not enable it.
-- No existing money or execution code is ported to Rust.
-- Rust is adopted only for a measured kernel after a recorded benchmark fails a declared
-  target and a parity harness matches every recorded case, including refusals and decimal
-  behaviour. One kernel at a time is introduced behind a flag and is reversible.
-- The Rust crates already landed stay as kernels off the live path and are not deleted; they
-  do not become the execution path without the gate above.
-- New components, including P2P networking and consensus, remain governed by ADR-0051 and
-  ADR-0052. Choosing Rust for a new component is not a rewrite of the Python backend.
-- Money arithmetic stays in Python until a Rust decimal matches the per-operation precision
-  of `money.py` and a parity harness proves it case by case.
+- Python owns the product process, the API and the live execution path. The backend, money
+  authority and execution orchestration stay in Python; live mode remains owner-blocked.
+- Rust owns the boundaries where memory safety, process isolation and determinism change what
+  a user can rely on: the signer boundary, with no key material in the Python heap; the
+  parity-proven pure money kernels; an independently verifiable ledger seal and replay
+  projection; the shipped operator CLI; and a future capability-scoped WASM plugin host. The
+  first four are in this migration, the plugin host is a later, measured step.
+- P2P, consensus and the duplicate RPC server stay frozen, not deleted. They unfreeze only
+  when a second machine must agree on the same tape — not because a rehearsal exists.
+- Unreachable and duplicate crates are not migration progress. Reachability, not line count
+  or board state, is the measure of what shipped.
+- A further kernel enters only through the recorded gate: Python behaviour captured as cases
+  including refusals and decimals, exact parity, a benchmark that fails a declared target,
+  one reversible flag at a time, Python kept as the oracle. `normalize_method` stays in
+  Python: FFI makes it slower and it sits on every request.
+- Migration order — the order is the decision:
+  - **Phase 0 — deployability:** build and install the bridge in the API image, freeze a
+    working sidecar, and gate image, freeze and bridge import in CI.
+  - **Phase 1 — trust boundary:** intent, attest and preflight kernels with golden vectors;
+    a Rust signer over a loopback socket with no local vault; a latching kill state machine
+    with capability revocation at the signer.
+  - **Phase 2 — wire seal and replay:** call the Rust seal from the ledger write path and
+    add an offline `verify --bundle`; batch kernels per event set; shadow every paper event
+    through both implementations before flipping one kernel.
+  - **Phase 3 — UI foundations:** a replaceable desktop host interface, CSP and IPC sender
+    validation, one reference route on TanStack Query, one ticker store, container queries,
+    and freshness and risk tokens; assert the same values across phone-to-workstation widths
+    in one Playwright suite.
+  - **Phase 4 — only if measured:** Granian under the same ASGI app, a Tauri spike, DuckDB
+    analytics and the WASM plugin host.
+- Custody is not decided here. External-signer-first versus a local encrypted vault is a
+  separate owner decision to be recorded as ADR-0055; no vault code follows from this ADR.
 
-**Consequences:** the Python suite remains the oracle for execution behaviour; 0.1.0 adds no
-native build or ABI requirement to the live path. The work that can change this decision is a
-recorded benchmark corpus with a declared target per kernel and a Python/Rust parity harness;
-a kernel that misses either the target or parity stays out. This ADR makes no speed claim and
-no claim about live trading. The language map in ADR-0050 and the classification in ADR-0052
-continue to govern new components, not the port of existing execution code. Agents must read
-this ADR before changing the execution or money path.
+**Phase 0 is a release blocker:** the image defect above is not a stylistic port gone wrong.
+The API image shipped without the compiled bridge while `ObservabilityMiddleware` called
+`normalize_method` on every request, so every route — `/healthz` included — answered
+`NativeBridgeUnavailable`; the container's health check could not pass and the installer
+shipped that image. A 0.1.0 release decision is not honest while the deployable artifact is
+dead. The fix is being prepared separately and is not part of this decision.
+
+**Consequences:** the Python suite and the 417 parity cases remain the oracles, and this ADR
+makes no speed claim and no claim about live trading. Reaching for the frozen crates is not a
+shortcut: their digest is explicitly non-cryptographic and node identity unauthenticated, so
+they become a trust boundary only with a second machine. Custody stays undecided until
+ADR-0055. Agents must read this ADR before changing the language map, a bridge caller or the
+migration order.
