@@ -1,8 +1,11 @@
 # ROADMAP — ezCHAIN
 
-> **ALPHA — PAPER ONLY.** Not ready for real-money trading. Official agent listings and
-> any live-mode claim wait for real-mode readiness to be measured; today's Hermes and
-> OpenClaw packs are local integrations, not official marketplace listings.
+> **ALPHA — PAPER IN THIS BUILD.** `0.1.0` targets real-money trading, but no build
+> enables live mode until the readiness gate in
+> [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) is satisfied and the maintainer enables
+> it. Official agent listings and any live-mode claim wait for that readiness measurement;
+> today's Hermes and OpenClaw packs are local integrations, not official marketplace
+> listings.
 
 ## What exists today
 
@@ -11,7 +14,8 @@ multi-chain market observation, per-chain quote ladders, an append-only paper le
 declarative and visual graph strategies, external Python strategy plugins in a supervised
 worker, an MCP server for agents, a backtester, migrations, authentication, observability,
 a complete operator surface and a full-code stress harness. Live execution, keys, wallet
-custody and a live UI are not built, and the unmerged executor foundation is not a claim.
+custody and a live UI are not built today; they are in scope for `0.1.0`, behind the
+readiness gate, and the unmerged executor foundation is not a claim.
 
 ## Done — live paper slice
 
@@ -44,49 +48,50 @@ head remains open. The stress harness and labelled web fixtures are in place.
 ## Versions
 
 This roadmap sets out the scope of each version, not a schedule: no dates are promised, the
-order may change, nothing in a `0.x` release enables real-money trading, and the product
-ships with no strategies. The per-version change record is [CHANGELOG.md](CHANGELOG.md); the
-release workflow and how a download is verified are in [docs/RELEASES.md](docs/RELEASES.md).
+order may change, the product ships with no strategies, and no build enables real-money
+trading until the readiness gate in [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) passes
+and the maintainer enables live mode. `0.1.0` is the only launch lane and carries the
+complete product; `0.2.0` and later are post-launch version names kept as empty placeholders.
+The per-version change record is [CHANGELOG.md](CHANGELOG.md); the release workflow and how
+a download is verified are in [docs/RELEASES.md](docs/RELEASES.md).
 
-### 0.1.0 — release blockers only
+### 0.1.0 — the complete product, including live
 
-The first public release, in preparation. Scope is correctness and honest public
-documentation of the shipped paper surface: a clean-clone install, a real paper trade inside
-the default gate, a publication audit, version agreement and a licence scan. No new
-features.
+The first public release and the only launch lane. It carries the whole product: the paper
+surface and the remaining screens and onboarding, data ingest, authentication and roles,
+execution groundwork, the Rust and native work, and live execution with real money. The
+version identifier stays `0.1.0`. Live mode is targeted, not enabled: no build turns it on
+until the readiness gate in [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) passes and the
+maintainer enables it. The release-defining gates are a clean-clone install, a real paper
+trade in the default gate, version agreement and a publication audit, with the live
+readiness rollup, custody and key runbooks and a venue rehearsal recorded before live mode
+is enabled. No dates are promised.
 
-### 0.2.0 — paper-product completeness
+### 0.2.0 — post-launch placeholder
 
-Finish the paper product: the remaining partial screens, sign-in and onboarding, data
-ingest, per-user authentication and role-based access, and documentation polish. Still
-paper-only.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-### 0.3.0 — paper-only execution groundwork
+### 0.3.0 — post-launch placeholder
 
-Prepare the execution path without moving real money: a venue adapter that quotes a
-full-size sell and simulates before broadcasting, and persisted, idempotent order intents.
-Paper-only.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-### 0.4.0 — native and Rust completion
+### 0.4.0 — post-launch placeholder
 
-Complete the Rust core migration, make the native host primary, and work on performance and
-peer-to-peer networking. Still paper-only.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-### 1.0.0 — live execution, gated
+### 1.0.0 — post-launch placeholder
 
-Live execution only, and only with the maintainer's written approval: an executor with an
-encrypted vault, a paper gate that cannot be forged from the client, server-derived mode, a
-kill switch the executor honours, live venues and the live book. There is no date.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
 Signed plugin and agent packages with reproducible provenance, a security review of the MCP
 tool surface and the key lifecycle, multi-tenant ledger partitioning, and official agent
-listings belong here or later, never in a `0.x` release.
+listings are not part of `0.1.0`; they belong to post-launch versions if added.
 
 ## Experimental — pump.fun firehose
 
 Near-native pump.fun market data is under investigation. Discovery events are hints only.
-Live pump.fun trading is not planned until a venue adapter, safety evidence and a recorded
-architecture decision are in place.
+A pump.fun live route needs a venue adapter, safety evidence and a recorded architecture
+decision before any live mode is enabled.
 
 ## Explicitly out of scope for v1
 

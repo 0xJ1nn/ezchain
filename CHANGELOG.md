@@ -19,7 +19,7 @@ No unreleased changes.
 
 ### Carry-forward
 
-Nothing is carried forward yet. Unfinished 0.1.0 items move to 0.2.0 with a reason.
+Nothing is carried forward yet. Unfinished 0.1.0 items move to a post-launch version with a reason.
 
 ### Added
 

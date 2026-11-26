@@ -98,25 +98,24 @@ A test that pins a deliberately invalid fingerprint proves a fork's own key is r
 
 ## 6. Version workflow
 
-ezCHAIN follows Semantic Versioning. Every `0.x` release is alpha and paper-only:
-it reads market data and simulates orders without keys, signing, custody or a live
-venue. Version `0.1.0` is the first public release. Live execution is reserved for
-`1.0.0` and requires the maintainer's written approval; nothing in a `0.x` release
-enables it. The product ships with no strategies. No dates are promised and the order
-of versions may change. See [CHANGELOG.md](../CHANGELOG.md) for the per-version change
-record and [../ROADMAP.md](../ROADMAP.md) for the public roadmap.
+ezCHAIN follows Semantic Versioning. Version `0.1.0` is the first public release and the
+only launch lane: it carries the complete product, including live trading with real money.
+The version identifier stays `0.1.0`. Live execution is targeted by this release, not
+claimed as working today: no build enables live mode until the readiness gate in
+[LIVE-EXECUTION.md](LIVE-EXECUTION.md) is satisfied and the maintainer enables it.
+Versions `0.2.0` and later are post-launch names kept as empty placeholders. The product
+ships with no strategies. No dates are promised and the order of post-launch names may
+change. See [CHANGELOG.md](../CHANGELOG.md) for the per-version change record and
+[../ROADMAP.md](../ROADMAP.md) for the public roadmap.
 
 ### Versions
 
-- `0.1.0` — the first public paper release: release blockers only — correctness and
-  honest public documentation of the shipped paper surface. No new features.
-- `0.2.0` — paper-product completeness: the remaining partial screens, sign-in and
-  onboarding, data ingest and documentation polish.
-- `0.3.0` — paper-only execution groundwork: a venue adapter with a mandatory full-size
-  sell quote, and persisted idempotent intents.
-- `0.4.0` — native and Rust completion: finish the Rust core migration, make the native
-  host primary, and performance work.
-- `1.0.0` — live execution only, and only with the maintainer's written approval.
+- `0.1.0` — the launch release: the complete product, including live execution behind the
+  readiness gate. Release-defining gates: a clean-clone install, a real paper trade in the
+  default gate, version agreement, a publication audit, the live readiness rollup, custody
+  and key runbooks, and a venue rehearsal before live mode is enabled.
+- `0.2.0`, `0.3.0`, `0.4.0`, `1.0.0` — post-launch version names, empty until work is added
+  after the launch.
 
 ### Version source
 
@@ -131,7 +130,7 @@ Each version has exactly one milestone titled with the version number, one label
 `release/<version>`, one umbrella issue titled `Release <version>`, and one release
 notes file in `docs/release-notes/`. The changelog lists every change in that version
 with its issue or pull request and the evidence that it was checked on the release
-build; an unfinished item moves to the next version with a reason rather than being
+build; an unfinished item moves to a post-launch version with a reason rather than being
 dropped. The baseline for a version's diff is the previous release tag.
 
 Decisions that belong to the maintainer rather than to a release are labelled
@@ -148,18 +147,20 @@ reserved for the maintainer. No change is merged without a reviewed pull request
 An integrated release candidate is prepared only after its changes are complete.
 The full check suite runs once on the exact candidate commit; individual changes run
 their targeted checks beforehand. The candidate gates are a clean-clone install, a real
-paper trade inside the default gate, the publication audit, version agreement and a
-licence scan. Results are recorded as evidence on the release issue and in the release
+paper trade inside the default gate, the publication audit, version agreement, a licence
+scan, the live readiness rollup, custody and key runbooks, and a venue rehearsal before live
+mode is enabled. Results are recorded as evidence on the release issue and in the release
 notes. A check that has not run is reported as not run, never as passed.
 
 ### Carry-forward
 
-Unfinished work is not discarded at a version boundary. It moves into the next
+Unfinished work is not discarded at a version boundary. It moves into a post-launch
 version's record with its owner, issue and the reason it remains open, and the
 release notes say what is still unverified.
 
 ### Publication
 
 Only the maintainer creates tags and publishes releases. Distribution, legal and
-payment steps are likewise maintainer-only. Until a live-mode release is explicitly
-approved and documented, every mode in a shipped build is paper mode.
+payment steps are likewise maintainer-only. Live mode is not enabled by a published build
+alone: it stays off until the readiness rollup in
+[LIVE-EXECUTION.md](LIVE-EXECUTION.md) is recorded and the maintainer enables it.
