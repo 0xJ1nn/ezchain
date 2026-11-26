@@ -14,7 +14,19 @@ import uvicorn
 from ezchain_api.main import app
 
 
+def smoke_native() -> None:
+    """Post-freeze proof that the sidecar's own Python can load the bridge."""
+    import importlib
+
+    bridge = importlib.import_module("ezchain_bridge")
+    assert hasattr(bridge, "quantize_money")
+    print("ezchain_bridge: importable in the frozen sidecar")
+
+
 def main() -> None:
+    if os.environ.get("EZCHAIN_DESKTOP_SMOKE_NATIVE") == "1":
+        smoke_native()
+        return
     port = int(os.environ["EZCHAIN_DESKTOP_API_PORT"])
     uvicorn.run(
         app,
