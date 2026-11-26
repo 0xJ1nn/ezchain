@@ -41,7 +41,7 @@ The target is a self-hostable, open-source crypto trading workstation. One place
    per-wallet, per-strategy limits one click away.
 5. **No lock-in.** CSV/Parquet export, open API, plugin SDK, standard Postgres.
 
-## 5. Scope for v1 (M0–M3) — target, not shipped
+## 5. Scope for v1 — target, not shipped
 
 This is the v1 target, not a shipped-feature list. The PAPER slice implements parts of
 chains, positions, automations, strategies, research and operations; wallets, CEX
