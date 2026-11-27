@@ -33,6 +33,19 @@ from .conftest import (
 )
 
 STARTING_CASH = Decimal("10000")
+NOW = utcnow()
+
+
+@pytest.fixture(autouse=True)
+def _frozen_paper_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read freshness at the instant the fixtures were written.
+
+    The view compares the observed timestamp with the request time. A two-second-old mark
+    with a two-second age tolerance flips as a loaded suite spends seconds between the write
+    and the read; pin both sides to ``NOW`` so the assertion stays about the rule, not the
+    wall clock.
+    """
+    monkeypatch.setattr(paper, "utcnow", lambda: NOW)
 
 
 def _seed_position(session: Session) -> None:
@@ -55,7 +68,7 @@ def _seed_position(session: Session) -> None:
 def _observed(session: Session, seconds_ago: int) -> dict[str, object]:
     record_snapshot(
         session,
-        make_snapshot(observed_at=utcnow() - timedelta(seconds=seconds_ago)),
+        make_snapshot(observed_at=NOW - timedelta(seconds=seconds_ago)),
     )
     return paper.positions(session)[0]
 
@@ -89,7 +102,7 @@ def test_an_observation_ahead_within_the_skew_is_future_not_fresh(session: Sessi
     _seed_position(session)
     record_snapshot(session, make_snapshot())
     # Rewrite the stored timestamp into the shape a row written before the guard can have.
-    session.execute(update(MarketSnapshotRow).values(observed_at=utcnow() + timedelta(seconds=2)))
+    session.execute(update(MarketSnapshotRow).values(observed_at=NOW + timedelta(seconds=2)))
     session.commit()
     row = paper.positions(session)[0]
 
@@ -102,7 +115,7 @@ def test_an_observation_far_in_the_future_reports_unknown(session: Session) -> N
     _seed_position(session)
     record_snapshot(session, make_snapshot())
     # Rewrite the stored timestamp into the shape a row written before the guard can have.
-    session.execute(update(MarketSnapshotRow).values(observed_at=utcnow() + timedelta(seconds=30)))
+    session.execute(update(MarketSnapshotRow).values(observed_at=NOW + timedelta(seconds=30)))
     session.commit()
     row = paper.positions(session)[0]
 
@@ -122,7 +135,7 @@ def test_an_unknown_mark_never_prices_the_position_or_the_account(session: Sessi
     # A legacy row frozen in the future, priced far above the real mark.
     session.execute(
         update(MarketSnapshotRow).values(
-            observed_at=utcnow() + timedelta(days=365), price_usd=Decimal("9999")
+            observed_at=NOW + timedelta(days=365), price_usd=Decimal("9999")
         )
     )
     session.commit()
@@ -163,13 +176,13 @@ def test_a_corrected_observation_replaces_a_frozen_far_future_mark(session: Sess
     record_snapshot(session, make_snapshot(price=Decimal("2")))
     session.execute(
         update(MarketSnapshotRow).values(
-            observed_at=utcnow() + timedelta(days=365), price_usd=Decimal("9999")
+            observed_at=NOW + timedelta(days=365), price_usd=Decimal("9999")
         )
     )
     session.commit()
     assert paper.positions(session)[0]["mark_status"] == "unknown"
 
-    stored = record_snapshot(session, make_snapshot(price=Decimal("2"), observed_at=utcnow()))
+    stored = record_snapshot(session, make_snapshot(price=Decimal("2"), observed_at=NOW))
     session.commit()
 
     assert stored is not None
