@@ -47,6 +47,31 @@ RUN python -m pip install --prefix=/install --no-deps \
         ./apps/api \
         ./services/engine
 
+# --- bridge builder -------------------------------------------------------------------
+# Same base family and digest as the two stages around it. There is no wheel build for
+# this crate (no maturin in the lock), so the extension is compiled from the committed
+# Cargo.lock here and copied into the runtime as a plain .so below. The toolchain is
+# pinned to an exact rustc version; the runtime stage installs no Rust at all.
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS bridge-builder
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH \
+    RUSTUP_TOOLCHAIN=1.100.0 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CARGO_INCREMENTAL=0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+       | sh -s -- -y --profile minimal --default-toolchain 1.100.0 \
+    && rustc --version
+
+WORKDIR /build/rust
+COPY rust/ ./
+RUN cargo build --locked --release -p ezchain-bridge
+
 # Same base, same digest as the builder above; keep the two in step.
 FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS runtime
 
@@ -61,6 +86,13 @@ RUN groupadd --gid 10001 ezchain \
 
 # Site-packages and console scripts (uvicorn, alembic) from the builder.
 COPY --from=builder /install /usr/local
+
+# The compiled bridge is a site-packages file, not a runtime toolchain. PyO3 builds it
+# with abi3, so the single .so serves every supported Python 3.x in this base image.
+# Prove the copy is importable before the image can be tagged.
+COPY --from=bridge-builder /build/rust/target/release/libezchain_bridge.so \
+     /usr/local/lib/python3.11/site-packages/ezchain_bridge.so
+RUN python -c 'import ezchain_bridge; assert hasattr(ezchain_bridge, "quantize_money")'
 
 WORKDIR /app
 
