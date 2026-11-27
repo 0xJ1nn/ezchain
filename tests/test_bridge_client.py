@@ -284,9 +284,11 @@ def test_method_wrapper_fails_closed_when_extension_absent(
     print(f"\nABSENT method cases (typed failure): {len(METHOD_CASES)}")
 
 
-def test_method_callers_route_through_the_client() -> None:
-    """The switched observability call sites must use the typed wrapper."""
-    assert observability.native.normalize_method is native.normalize_method
+def test_method_callers_no_longer_route_through_the_client() -> None:
+    """The request path uses the pure function; the bridge wrapper stays a parity oracle."""
+    source = Path(observability.__file__).read_text(encoding="utf-8")
+    assert "native.normalize_method" not in source
+    assert native.normalize_method is not python_normalize_method
 
 
 # The money conversions use the bridge crate's recorded money corpus. A string case is
