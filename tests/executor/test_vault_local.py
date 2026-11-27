@@ -100,6 +100,7 @@ def record(
         label="test-only",
         family=FAMILY_SVM,
         address="Wallet11111111111111111111111111111111111111",
+        fingerprint=hashlib.sha256(b"public-only-test-material").hexdigest(),
         kdf=KdfParams(
             algorithm=KDF_ALGORITHM,
             salt=b"\x11" * 16,

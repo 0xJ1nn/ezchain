@@ -109,17 +109,22 @@ a prepared transaction to an `ApprovedIntent`, and one typed refusal per failure
 `vault_local.py` holds import validation, the versioned record and
 `EncryptedLocalVaultStore`. The store seals an imported secret with Argon2id
 (`argon2-cffi`) and AES-256-GCM (`cryptography`) into a mode-0600 file written atomically,
-and binds the version, id, family, address, KDF parameters and nonce as AEAD associated
-data. BIP39 sentences are checked with `mnemonic`, including the optional passphrase.
-Derivation paths are bound as public metadata; no child key is derived here. Unlock
-authenticates a record and returns a `KeyHandle`, never the bytes it opened.
+and binds the version, id, family, address, fingerprint, KDF parameters and nonce as AEAD
+associated data. The vault passphrase must be non-empty, and version 1 reads only the
+reviewed Argon2id parameters this build writes; a header that asks for more work is
+refused before the KDF runs. Files over 8 MiB are refused before parsing. BIP39
+sentences are checked with `mnemonic`, including the optional passphrase. Derivation
+paths are bound as public metadata; no child key is derived here. Unlock compares the
+handle's owner, custody, address, chain and fingerprint before authenticating, and
+returns a `KeyHandle`, never the bytes it opened.
 
 What the rest of this section describes is still a design, not running code:
 
 - File `${EZCHAIN_DATA_DIR}/vault.json`, mode 0600. One record per key: `{id, label,
-  family (svm|evm), address, kdf: {alg: argon2id, salt, t: 3, m: 65536, p: 1}, cipher:
-  {alg: aes-256-gcm, nonce, ct}, created_at}`. The KEK comes from Argon2id over the owner's
-  vault passphrase with that record's salt; the imported secret is sealed under the KEK.
+  family (svm|evm), address, fingerprint, kdf: {alg: argon2id, salt, t: 3, m: 65536, p: 1},
+  cipher: {alg: aes-256-gcm, nonce, ct}, created_at}`. The KEK comes from Argon2id over the
+  owner's vault passphrase with that record's salt; the imported secret is sealed under
+  the KEK.
 - Unlock is explicit (passphrase, plus TOTP when 2FA is enabled) and auto-locks after
   `EZCHAIN_VAULT_IDLE_MINUTES` (default 30). Every unlock/lock/sign is an audit row. Only
   the passphrase part is implemented; TOTP, idle timeout and audit rows are not built.

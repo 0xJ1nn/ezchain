@@ -78,6 +78,10 @@ SOLANA_SECRET_SIZES: tuple[int, ...] = (32, 64)
 EVM_SECRET_SIZE = 32
 MAX_BASE58_CHARS = 88
 MAX_CIPHERTEXT_BYTES = 1024 * 1024
+# A whole file, not one record: a few megabytes leaves room for several maximum-sized
+# records and many ordinary ones, while bounding what an unauthenticated file can make
+# the process read and parse.
+MAX_VAULT_FILE_BYTES = 8 * 1024 * 1024
 
 # Exact pins the encrypted tier needs. They are a refusal detail, not a declaration:
 # the range files and locks are the install source, and these names match those pins.
@@ -93,6 +97,10 @@ REQUIRED_CRYPTO_PINS: tuple[str, ...] = (
 # Fixed sentences: a refusal never echoes a passphrase, a key or any ciphertext bytes.
 WRONG_PASSWORD_MESSAGE = "the passphrase did not unlock the vault"
 CORRUPTED_VAULT_MESSAGE = "the vault file has invalid encryption parameters"
+EMPTY_PASSPHRASE_MESSAGE = "a local vault key needs a non-empty passphrase"
+HANDLE_BINDING_MESSAGE = "the handle does not match the vault record"
+VAULT_FILE_TOO_LARGE_MESSAGE = "the vault file is too large"
+UNSUPPORTED_KDF_PARAMETERS_MESSAGE = "the vault file uses unsupported Argon2id parameters"
 
 KEY_IMPORT_NOTICE = (
     "ezCHAIN does not create, back up or recover your key. Import an existing key and "
@@ -325,12 +333,15 @@ class KdfParams:
             raise CorruptVaultFile("the vault file uses an unsupported KDF")
         if len(self.salt) != SALT_BYTES:
             raise CorruptVaultFile("the vault file has an invalid Argon2id salt")
-        if not 1 <= self.time_cost <= 10:
-            raise CorruptVaultFile("the vault file has invalid Argon2id parameters")
-        if not 1024 <= self.memory_cost <= 1 << 20:
-            raise CorruptVaultFile("the vault file has invalid Argon2id parameters")
-        if not 1 <= self.parallelism <= 255:
-            raise CorruptVaultFile("the vault file has invalid Argon2id parameters")
+        # Version 1 accepts only the reviewed parameters this build writes. An
+        # unauthenticated header must never choose a cost the KDF would spend before
+        # AES-GCM gets a chance to reject the file.
+        if (self.time_cost, self.memory_cost, self.parallelism) != (
+            KDF_TIME_COST,
+            KDF_MEMORY_COST,
+            KDF_PARALLELISM,
+        ):
+            raise CorruptVaultFile(UNSUPPORTED_KDF_PARAMETERS_MESSAGE)
 
 
 @dataclass(frozen=True)
@@ -359,6 +370,7 @@ class VaultRecord:
     label: str
     family: str
     address: str
+    fingerprint: str
     kdf: KdfParams
     cipher: CipherParams
     created_at: str
@@ -370,6 +382,8 @@ class VaultRecord:
             raise CorruptVaultFile("the vault file names an unsupported key family")
         if not self.id or not self.address or not self.created_at:
             raise CorruptVaultFile("the vault file is missing a required public field")
+        if not is_fingerprint(self.fingerprint):
+            raise CorruptVaultFile("the vault file has an invalid public fingerprint")
 
 
 def _b64e(value: bytes) -> str:
@@ -396,6 +410,7 @@ def _header(
     record_id: str,
     family: str,
     address: str,
+    fingerprint: str,
     kdf: KdfParams,
     nonce: bytes,
 ) -> bytes:
@@ -406,6 +421,7 @@ def _header(
             "id": record_id,
             "family": family,
             "address": address,
+            "fingerprint": fingerprint,
             "kdf": {
                 "alg": kdf.algorithm,
                 "salt": _b64e(kdf.salt),
@@ -425,6 +441,7 @@ def authenticated_header(record: VaultRecord) -> bytes:
         record.id,
         record.family,
         record.address,
+        record.fingerprint,
         record.kdf,
         record.cipher.nonce,
     )
@@ -441,6 +458,7 @@ def encode_vault_file(records: tuple[VaultRecord, ...] | list[VaultRecord]) -> b
                 "label": record.label,
                 "family": record.family,
                 "address": record.address,
+                "fingerprint": record.fingerprint,
                 "kdf": {
                     "alg": record.kdf.algorithm,
                     "salt": _b64e(record.kdf.salt),
@@ -486,6 +504,7 @@ def _decode_record(item: object) -> VaultRecord:
         "label",
         "family",
         "address",
+        "fingerprint",
         "kdf",
         "cipher",
         "created_at",
@@ -504,7 +523,7 @@ def _decode_record(item: object) -> VaultRecord:
         raise CorruptVaultFile("the vault file has an invalid KDF header")
     if not isinstance(cipher, dict) or set(cipher) != {"alg", "nonce", "ct"}:
         raise CorruptVaultFile("the vault file has an invalid cipher header")
-    for name in ("id", "label", "family", "address", "created_at"):
+    for name in ("id", "label", "family", "address", "fingerprint", "created_at"):
         if not isinstance(item[name], str):
             raise CorruptVaultFile("the vault file record has a non-string public field")
     for name in ("t", "m", "p"):
@@ -517,6 +536,7 @@ def _decode_record(item: object) -> VaultRecord:
         label=item["label"],
         family=item["family"],
         address=item["address"],
+        fingerprint=item["fingerprint"],
         kdf=KdfParams(
             algorithm=kdf["alg"],
             salt=_b64d(kdf["salt"]),
@@ -713,13 +733,19 @@ class EncryptedLocalVaultStore:
     )
 
     def _read_records(self) -> tuple[VaultRecord, ...]:
-        if not self.path.exists():
+        try:
+            size = self.path.stat().st_size
+        except FileNotFoundError:
             return ()
+        if size > MAX_VAULT_FILE_BYTES:
+            raise CorruptVaultFile(VAULT_FILE_TOO_LARGE_MESSAGE)
         return decode_vault_file(self.path.read_bytes())
 
     def _write_records(self, records: tuple[VaultRecord, ...]) -> None:
         """Replace the file in one step so a crash cannot leave a half-written record."""
         payload = encode_vault_file(records)
+        if len(payload) > MAX_VAULT_FILE_BYTES:
+            raise CorruptVaultFile(VAULT_FILE_TOO_LARGE_MESSAGE)
         temporary = ""
         try:
             with tempfile.NamedTemporaryFile(
@@ -758,6 +784,8 @@ class EncryptedLocalVaultStore:
             raise VaultImportError("a local vault key needs its public address")
         if not is_fingerprint(fingerprint):
             raise VaultImportError("a local vault key needs a public-key fingerprint")
+        if not passphrase:
+            raise VaultImportError(EMPTY_PASSPHRASE_MESSAGE)
         _load_crypto()
 
         secret = _secret_from_import(material, source_format, mnemonic_passphrase)
@@ -776,7 +804,7 @@ class EncryptedLocalVaultStore:
             passphrase=passphrase,
             kdf=kdf,
             nonce=nonce,
-            header=_header(VAULT_FILE_VERSION, record_id, family, address, kdf, nonce),
+            header=_header(VAULT_FILE_VERSION, record_id, family, address, fingerprint, kdf, nonce),
         )
         record = VaultRecord(
             version=VAULT_FILE_VERSION,
@@ -784,6 +812,7 @@ class EncryptedLocalVaultStore:
             label=f"{family} imported key",
             family=family,
             address=address,
+            fingerprint=fingerprint,
             kdf=kdf,
             cipher=CipherParams(algorithm=CIPHER_ALGORITHM, nonce=nonce, ciphertext=ciphertext),
             created_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -802,12 +831,18 @@ class EncryptedLocalVaultStore:
     def unlock(self, handle: KeyHandle, *, owner: str, passphrase: str) -> KeyHandle:
         """Authenticate the record behind an owned handle; the verified bytes are dropped."""
         assert_handle_owner(handle, owner=owner)
+        if handle.custody != CUSTODY_LOCAL_VAULT:
+            raise CorruptVaultFile(HANDLE_BINDING_MESSAGE)
         matches = [item for item in self._read_records() if item.id == handle.handle_id]
         if len(matches) != 1:
             raise CorruptVaultFile("the vault file has no record for this handle")
         record = matches[0]
-        if record.address != handle.address or CHAIN_BY_FAMILY.get(record.family) != handle.chain:
-            raise CorruptVaultFile("the vault file does not match this handle")
+        if (
+            record.address != handle.address
+            or record.fingerprint != handle.fingerprint
+            or CHAIN_BY_FAMILY.get(record.family) != handle.chain
+        ):
+            raise CorruptVaultFile(HANDLE_BINDING_MESSAGE)
         _open_secret(record, passphrase)
         self._unlocked.setdefault(owner, set()).add(handle.handle_id)
         return handle
@@ -825,6 +860,7 @@ __all__ = [
     "CIPHER_ALGORITHM",
     "CORRUPTED_VAULT_MESSAGE",
     "DERIVATION_PATHS",
+    "EMPTY_PASSPHRASE_MESSAGE",
     "EVM_DERIVATION_PATH",
     "FAMILY_EVM",
     "FAMILY_SVM",
@@ -835,9 +871,13 @@ __all__ = [
     "KDF_ALGORITHM",
     "KEY_FAMILIES",
     "KEY_IMPORT_NOTICE",
+    "HANDLE_BINDING_MESSAGE",
+    "MAX_VAULT_FILE_BYTES",
     "MNEMONIC_WORD_COUNTS",
     "REQUIRED_CRYPTO_PINS",
     "SOLANA_DERIVATION_PATH",
+    "UNSUPPORTED_KDF_PARAMETERS_MESSAGE",
+    "VAULT_FILE_TOO_LARGE_MESSAGE",
     "VAULT_FILE_VERSION",
     "WRONG_PASSWORD_MESSAGE",
     "CHAIN_BY_FAMILY",

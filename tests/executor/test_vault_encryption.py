@@ -10,13 +10,14 @@ fixed messages that carry no secret material.
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from ezchain_core import CUSTODY_LOCAL_VAULT, KeyHandle, is_fingerprint
+from ezchain_core import CUSTODY_LOCAL_VAULT, CUSTODY_WATCH, KeyHandle, is_fingerprint
 from ezchain_executor import (
     CORRUPTED_VAULT_MESSAGE,
     DERIVATION_PATHS,
@@ -419,3 +420,92 @@ def test_the_fixed_error_messages_name_no_secret() -> None:
     assert PASSPHRASE not in CORRUPTED_VAULT_MESSAGE
     assert issubclass(WrongVaultPassword, local.VaultStoreError)
     assert issubclass(CorruptVaultFile, local.VaultStoreError)
+
+
+# --- Security corrections: credential, handle binding and resource bounds --------
+
+
+def test_an_empty_vault_passphrase_refuses_and_writes_no_file(tmp_path: Path) -> None:
+    path = tmp_path / "vault.json"
+    with pytest.raises(VaultImportError) as exc:
+        import_key(
+            store(path),
+            EVM_KEY,
+            source_format=IMPORT_EVM_HEX,
+            family=FAMILY_EVM,
+            passphrase="",
+        )
+    assert str(exc.value) == "a local vault key needs a non-empty passphrase"
+    assert not path.exists()
+
+
+def _plain_handle() -> KeyHandle:
+    return KeyHandle(
+        handle_id="h-test",
+        owner=OWNER,
+        custody=CUSTODY_LOCAL_VAULT,  # type: ignore[arg-type]
+        chain="evm",
+        address=ADDRESS,
+        fingerprint=FINGERPRINT,
+    )
+
+
+def test_a_changed_fingerprint_refuses_before_the_kdf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "vault.json"
+    vault = store(path)
+    handle = import_key(vault, EVM_KEY, source_format=IMPORT_EVM_HEX, family=FAMILY_EVM)
+    forged = replace(
+        handle, fingerprint=hashlib.sha256(b"another-public-only-material").hexdigest()
+    )
+    monkeypatch.setattr(local, "_derive_kek", lambda *_a, **_k: pytest.fail("the KDF ran"))
+
+    with pytest.raises(CorruptVaultFile):
+        vault.unlock(forged, owner=OWNER, passphrase=PASSPHRASE)
+
+
+def test_a_changed_custody_marker_refuses_before_the_kdf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "vault.json"
+    vault = store(path)
+    handle = import_key(vault, EVM_KEY, source_format=IMPORT_EVM_HEX, family=FAMILY_EVM)
+    forged = replace(handle, custody=CUSTODY_WATCH)  # type: ignore[arg-type]
+    monkeypatch.setattr(local, "_derive_kek", lambda *_a, **_k: pytest.fail("the KDF ran"))
+
+    with pytest.raises(CorruptVaultFile):
+        vault.unlock(forged, owner=OWNER, passphrase=PASSPHRASE)
+
+
+def test_a_high_cost_kdf_header_refuses_before_the_kdf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "vault.json"
+    vault = store(path)
+    handle = import_key(vault, EVM_KEY, source_format=IMPORT_EVM_HEX, family=FAMILY_EVM)
+    # Tamper with the serialised header: constructing KdfParams with these numbers would
+    # be refused by the corrected decoder, which is exactly what this test must prove.
+    data = (
+        encode_vault_file((sole_record(path),))
+        .replace(b'"t":3', b'"t":10')
+        .replace(b'"m":65536', b'"m":1048576')
+        .replace(b'"p":1', b'"p":255')
+    )
+    path.write_bytes(data)
+    monkeypatch.setattr(local, "_derive_kek", lambda *_a, **_k: pytest.fail("the KDF ran"))
+
+    with pytest.raises(CorruptVaultFile):
+        vault.unlock(handle, owner=OWNER, passphrase=PASSPHRASE)
+
+
+def test_an_oversized_file_refuses_before_json_parsing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "vault.json"
+    path.write_bytes(b"x" * (8 * 1024 * 1024 + 1))
+    monkeypatch.setattr(json, "loads", lambda *_a, **_k: pytest.fail("JSON was parsed"))
+
+    with pytest.raises(CorruptVaultFile) as exc:
+        store(path).unlock(_plain_handle(), owner=OWNER, passphrase=PASSPHRASE)
+    assert str(exc.value) == "the vault file is too large"
