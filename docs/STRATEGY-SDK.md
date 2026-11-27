@@ -130,19 +130,61 @@ python -m ezchain_sdk.plugin.cli validate --path /srv/ezchain/plugins --json
 
 Exit codes: `0` no issues, `1` an invalid plugin was found, `2` bad invocation.
 
-**Not enforced yet.** This is the manifest and loader foundation only. There is no
-execution engine and no sandbox at this layer: the loader never imports, starts or
-supervises plugin code. The source hash is checked for shape, not compared against
-installed files; the curated index is not consulted; no install record is written;
-and capabilities are not yet enforced at a call boundary. The strategy worker
-described in §6 is containment, not a security sandbox. Discovery is not proof that
-a plugin is safe. Isolation, brokers, install records and hash verification are
-later work.
+**Not enforced by the loader.** This is the manifest and loader foundation only:
+the loader never imports, starts or supervises plugin code. The opt-in invocation
+host in §2.2 is a separate module. The source hash is checked for shape, not
+compared against installed files; the curated index is not consulted; no install
+record is written; and capabilities are not yet enforced at a call boundary. The
+strategy worker described in §6 is containment, not a security sandbox. Discovery
+is not proof that a plugin is safe. Brokers, install records and hash verification
+are later work.
 
 **Distribution rule.** Only reviewed plugins from the curated index install by
 default. Untrusted plugins are not allowed. A development escape hatch, if added,
 stays off by default and carries a persistent warning. No marketplace, payments,
 ratings or open upload path are implied.
+
+### 2.2 Restricted invocation host
+
+`ezchain_sdk.plugin.host.run_plugin(plugin_dir, request, ...)` validates the
+manifest with the loader, then runs **one** JSON request in a fresh
+`sys.executable -I -S` child. The request names an entrypoint (`module:callable`)
+and carries JSON `args`/`kwargs`; the child returns one JSON response on stdout
+and diagnostics on stderr. It is a **restricted worker**, not a security sandbox.
+Typed `PluginHostError` reasons cover a refused manifest, timeout, crash,
+oversized output and a malformed response.
+
+What this isolation **does** enforce:
+
+- a separate process in a new session, with a private temporary working
+  directory (never the repository) and the plugin directory as the only
+  non-stdlib path on `sys.path`: `-I` ignores `PYTHONPATH`, and `-S` stops
+  site-packages and `.pth` files from adding host packages;
+- an environment rebuilt from scratch — only `PATH` (the stdlib default),
+  `PYTHONHASHSEED=0`, `LC_ALL=C.UTF-8` and `PYTHONIOENCODING=utf-8`. No inherited
+  token, `HOME`, `PYTHONPATH` or other variable reaches the child;
+- a wall-clock timeout and a byte cap on each of stdout and stderr; on timeout
+  or overflow the whole process group is killed;
+- best-effort POSIX `RLIMIT_CPU`, `RLIMIT_AS`, `RLIMIT_NOFILE` and
+  `RLIMIT_FSIZE`. A missing constant (`ImportError`/`AttributeError`, as on some
+  macOS builds) or a limit the OS refuses is skipped, never fatal;
+- plugin `print` output is redirected to stderr, so only the one protocol
+  response is read from stdout.
+
+What it does **not** enforce:
+
+- **network egress** — the child can open sockets if the OS allows it;
+- **filesystem outside the temporary cwd** — no home or database path is
+  supplied, but plugin code can still read files the OS permits;
+- **syscall filtering** — no seccomp, Landlock, AppContainer or namespace;
+- **memory sharing or a capability broker** — the only channel is one JSON
+  request/response. No key, signer, ledger handle, admin token or broker object
+  is passed; capabilities are not yet enforced at this boundary;
+- **strategy quality** — a plugin with a trade capability can propose a bad
+  order. That is not a sandbox failure.
+
+A WASM/WASI or OS-sandbox host is future work. Do not describe this worker as a
+sandbox.
 
 ## 3. The interface
 
