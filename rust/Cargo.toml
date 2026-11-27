@@ -1,0 +1,11 @@
+[workspace]
+# Every crate in this directory is a workspace member. Field workers add a crate by
+# creating its directory; they never edit this file, so their branches cannot conflict here.
+members = ["ezchain-*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false

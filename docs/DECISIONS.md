@@ -3,17 +3,6 @@
 Format: context → options → decision → consequences. Superseded ADRs keep their entry and
 gain a `Superseded by` line.
 
-**Status review (2026-11-16, #39).** ADR-0014, 0015, 0016, 0018 and 0019 were written in a
-background documentation pass and marked Accepted without explicit maintainer review. They
-are now **Proposed** and are not decisions of record; ADR-0017 was already Proposed on spike
-#35. What unblocks each: the maintainer must confirm the "Verified today" matrix convention
-(0014), the Jupiter-first execution plan (0015), the no-browser-key custody boundary (0016),
-watchlists as owned entities (0018), and the one reason-code taxonomy (0019). A review can
-also revise or reject any of them. The M1–M5 roadmap in `ROADMAP.md` carries the same status;
-no code is blocked on #39. Note that ADR-0019's taxonomy is implemented in code (ADR-0043)
-and ADR-0015's executor pipeline exists (ADR-0026) — working code does not turn an unreviewed
-decision into an accepted one.
-
 ---
 
 ## ADR-0001 — Modular monolith plus an isolated executor
@@ -630,11 +619,12 @@ only.
   until the executor ships. Paper-to-live readiness is a computed, read-only report.
 
 **Consequences:** plugins can use any package in their own environment (numpy,
-scikit-learn, torch), while the host owns risk and accounting. Spawning a worker costs
-tens of milliseconds per strategy start and the worker is restarted on a config change;
-that is acceptable for minute-scale strategies and deliberately not a high-frequency
-path. In-memory plugin state is not durable by design — only `ctx.state` is. Plugin
-backtesting, signed packages, a bwrap/seccomp profile and per-user scoped tokens remain
+scikit-learn, torch), while the host owns risk and accounting. Spawning a worker is
+estimated to cost tens of milliseconds per strategy start — an unrecorded figure, not a
+committed measurement — and the worker is restarted on a config change; that is acceptable
+for minute-scale strategies and deliberately not a high-frequency path. In-memory plugin
+state is not durable by design — only `ctx.state` is. Plugin backtesting, signed packages,
+a bwrap/seccomp profile and per-user scoped tokens remain
 open and are not claimed by this ADR. A future real sandbox or a separate plugin service
 would need its own ADR and must keep the intent-only contract.
 
@@ -1719,7 +1709,9 @@ this repository. The only recorded timing is end-to-end HTTP latency in the stre
 (`tools/stress/http.py:494`) and the release-drill report
 (`docs/evidence/p0-production/stress-all-2026-10-23.md`); neither profiles a single function,
 and CONTRACT I12 requires a claim to name what was measured. Every bottleneck below is
-therefore **unmeasured**, with the measurement that would settle it named in its place.
+therefore **unmeasured**, with the measurement that would settle it named in its place; the
+required run fields and the current "no run recorded" state are kept in the kernel benchmark
+evidence ([benchmarks README](evidence/benchmarks/README.md)).
 
 | Hot path | Where it lives | Bottleneck today | What would measure it |
 |---|---|---|---|
@@ -1757,4 +1749,313 @@ that cost is paid before any speedup. A phase that does not move the measured nu
 work rather than reaching for the next hot path. This ADR changes no code, grants no rewrite,
 and stays Proposed until the maintainer reviews the boundary and the entry gate.
 
+---
 
+## ADR-0050 — Language policy: Rust core, Python support, TypeScript UI
+
+**Date:** 2026-11-18 · **Status:** Accepted (explicit maintainer decision). This ADR
+supersedes the *"no rewrite is authorised"* clause of ADR-0049 with respect to the components
+listed below. ADR-0049's parity and benchmark gate is retained and made mandatory; its
+"Proposed" status no longer blocks this policy.
+
+> **Amendment (2026-11-26):** ADR-0054 supersedes this ADR's execution assignment for 0.1.0.
+> Python owns the product process, the API and the live execution path in that release; the
+> map below is kept as history, and the benchmark-and-parity gate and the new-component rules
+> still apply.
+
+**Context:** the maintainer has decided that ezCHAIN is to be an open-source, one-stop,
+multi-chain trading platform with an AI harness, built to be trusted for performance,
+footprint, stability and safety. Rust is the language for the components where those
+properties matter most. The Python-only state of the repository is a starting point, not the
+target design. A scratch parity proof in an uncommitted note reported that a small scope
+normaliser ported to Rust through pyo3 matched all 53 recorded cases but ran slower, because
+the FFI crossing cost more than the function's work. The parity half is reproducible: the
+committed harness and corpus are listed in the kernel benchmark evidence
+([benchmarks README](evidence/benchmarks/README.md)). No timing harness, corpus or raw output
+was committed with the note, so its speed figure is **unrecorded** — it cannot be reproduced
+or dated, and no multiplier is claimed here. The lesson stands on its own: port loops and
+whole boundaries, not individual small functions, and prove parity before replacing anything.
+
+**Decision — the language map is normative:**
+
+| Layer | Language | Reason |
+|---|---|---|
+| Core engine, deterministic decision/scheduling kernels | **Rust** | Determinism, stable latency, no GC pauses |
+| P2P networking | **Rust** | Protocol correctness, backpressure, memory safety |
+| Consensus / validation | **Rust** | Deterministic state transitions across nodes |
+| RPC server | **Rust** | Typed wire contract, throughput, one boundary for clients |
+| Transaction execution | **Rust** | Deterministic, replayable, bounded resource use |
+| CLI and operator tooling shipped to users | **Rust** | One small static binary, low footprint |
+| Indexer / analytics | **Python** | Data tooling and rapid queries |
+| AI / ML components, agent harness integration | **Python** | Ecosystem and model clients |
+| Strategy plugins | **Python** | Third-party authors, SDK stays approachable |
+| Dashboard and all product UI | **TypeScript** | Web UI; the TypeScript lane owns all product UI |
+
+**Migration rules:**
+
+1. The integration branch is `rust/migration`, based on `origin/main`. One field per worker
+   (`rust/core-py`, `rust/engine`, `rust/executor`, `rust/api-rpc`, `rust/p2p-consensus`,
+   `rust/cli`, …), one worktree per field, PRs into `rust/migration`, then one reviewed PR into
+   `main`. Conventional commits, signed off, one logical change per commit.
+2. **No reduction in quality.** Every ported unit keeps or improves test coverage: the
+   recorded cases from the Python original must all match before the Python implementation is
+   removed. `record → diff → gate → bench` is the definition of done for a ported unit.
+3. `docs/CONTRACT.md` invariants are unchanged. The ledger remains the only accountant until
+   a separate accepted ADR defines chain state; live execution stays owner-blocked; keys stay
+   in the executor boundary. A language change is not a permission to change a money rule.
+4. Money arithmetic (`money.py`, ledger entries, seal hashing) stays in Python until a Rust
+   decimal with equivalent per-operation precision exists and a parity harness proves it.
+   `rust_decimal`'s fixed 28-digit precision cannot do this today.
+5. P2P, consensus and validation do not exist in the repository yet. They are built in Rust
+   from the start, but each needs its own design ADR (validator set, fork choice, message
+   contract) before code is written. "Rust" is the language decision, not a protocol design.
+6. The local gate (`bash tools/ci.sh`) and the Rust gate (`cargo fmt`, `cargo clippy`,
+   `cargo test`, rust-anything `gate`) both stay green. A red gate is never merged.
+
+**Consequences:** the build gains a Rust toolchain and a pyo3 ABI matrix during the migration;
+the Python suite remains the behavioural oracle until each field's parity gate passes. Agents
+must read this ADR and the language map in `AGENTS.md` before choosing a language for new code.
+A new component in a Rust-owned layer written in Python is a review failure, not a preference.
+
+---
+
+## ADR-0051 — P2P and consensus boundary: a permissioned replicated log with pure validation kernels
+
+**Date:** 2026-11-18 · **Status:** Proposed (pending maintainer acceptance of the validator model,
+the concrete set-size and quorum parameters, the message contract and the fork-choice rule)
+
+**Context:** ezCHAIN has no peer-to-peer networking, consensus, validators or chain state today.
+The platform consumes public RPC and market data through adapters; it does not gossip messages,
+validate blocks, elect a leader or maintain a replicated state. ADR-0050 assigns P2P networking and
+consensus/validation to Rust from the start, but clause 5 of that decision requires each of them to
+have its own design ADR — validator set, fork choice and message contract — before code is written.
+This ADR supplies that design.
+
+The need is narrower than a blockchain. A small set of operator-controlled nodes must be able to
+exchange validated messages and agree on one ordered tape of deterministic state transitions, so a
+decision that gates money can be replayed from persisted inputs (CONTRACT I9) and every node can
+hold the same state. This is reproducibility and audit infrastructure, not a new asset. The ledger
+remains the only accountant (I1), live execution stays owner-blocked (ADR-0026, ADR-0035, ADR-0050
+clause 3), and keys remain inside the executor boundary (I4).
+
+**Options:** (a) stand up a public, permissionless chain with a token, staking and slashing —
+rejected, because no such product decision exists and it would introduce money paths the owner has
+not authorised; (b) adopt a full gossip and BFT stack now — deferred, because the ecosystem survey
+names those projects as precedents rather than dependencies to import, no validator set or fork
+choice has been accepted, and the first slice needs pure kernels rather than a transport; (c) define
+a permissioned replicated log with a static, operator-provisioned validator set, specify gossip and
+agreement as design only, and implement the pure validation and replay kernels first.
+
+**Decision:** (c), with the following contract.
+
+**Validator and deployment model.** The validator set is an ordered, operator-provisioned list of
+opaque node identifiers. Two deployment shapes are in scope: a single operator running all nodes,
+and a consortium of a small, fixed number of known operators. There is no public membership, no
+token, no staking, no bond, no slashing and no dynamic join or leave. A membership change is an
+explicit operator action that publishes a new set version; automating it requires a further ADR.
+The set version travels on every message and every tape event, and a node accepts only material
+naming a set version it holds. Set size and quorum thresholds are parameters passed into the
+kernels, never literals inside them (I7); no concrete number is decided here. The recommendation
+for the first deployment is one operator and one node, with three nodes as the fault-tolerant
+consortium shape, but the maintainer must accept those numbers. Authentication of a node
+identifier is a separate ADR: this slice carries no keys and produces no signatures.
+
+**Message contract.** An envelope is a deterministically encoded record with six fields plus a
+digest: `schema` (version string, `ezchain.p2p/1` in this slice), `kind` (a declared set whose only
+member today is `tape_event`), `sender` (opaque node id), `set_version`, `seq` (a per-sender
+monotonic integer starting at one), `payload` (opaque bounded bytes) and `timestamp` (a declared
+clock value, never trusted for ordering). The digest is taken over a canonical, length-prefixed
+encoding of those fields in a fixed order, so different field boundaries cannot produce the same
+bytes. Validation is a pure function of the envelope and an explicit limits value; it returns the
+envelope's deterministic id on success and one typed rejection reason on failure. The reasons are
+`UnsupportedSchema`, `UnknownKind`, `SenderEmpty`, `SetVersionEmpty`, `SequenceZero`,
+`PayloadEmpty`, `PayloadTooLarge`, `EnvelopeTooLarge` and `DigestMismatch`, checked in that order so
+the reported reason is reproducible. The digest is a dependency-free, non-cryptographic content id
+(FNV-1a over the canonical bytes). Its job is deterministic identity and in-process tamper
+evidence within a trusted operator group; it is not a signature and not a security boundary.
+Reordering and dropping are detected by the consensus kernel through sequence and replay, not by a
+content id.
+
+**State contract and replay.** The replicated state is the deterministic projection of an ordered
+tape of accepted events. Each event carries an opaque content id supplied by a validated envelope,
+a per-sender sequence, its sender, its set version and a non-monetary command over a string
+register (`Set` or `Delete` of a key and value). State consists of the applied ids in tape order,
+the register map and the last sequence per sender, using ordered maps so two nodes serialise and
+compare their state identically. Applying one event is the only writer of state: it refuses a
+duplicate id, a sequence that does not advance for that sender, an event from another set version,
+an empty sender or an empty command key, and leaves state unchanged on every refusal (fail closed,
+I3). Replay folds a whole tape from the empty state with that same transition, so an identical tape
+always yields an identical state and state digest; a changed, dropped or reordered tape yields a
+different state or a typed refusal. The register carries no monetary meaning and no arithmetic.
+
+**Lifecycle.** Admission has one declared state set with one writer, the validation and replay
+kernels: `Received` is resolved by validating the envelope, `Validated` by handing it to the
+transition in sequence order, `Applied` is terminal for the message, `Rejected` is terminal with a
+typed reason and no state change, and `Quarantined` is terminal for a tape version until an
+operator resolves a divergence and publishes a new set version. Readers project the resulting
+state; no parallel boolean flag records the same fact.
+
+**Fork and failure handling (designed, not implemented).** A fork is two nodes holding different
+accepted tapes at the same position. Detection compares tape length and last applied id. The
+deterministic resolution rule, to be implemented later, selects the candidate with the lowest
+lexicographic head digest, breaking ties by lowest set version and then lowest node id. A node that
+cannot resolve a divergence enters `Quarantined`, stops advancing state, refuses further events and
+never writes to the platform ledger; an operator records the resolution in a new set version. An
+invalid envelope is refused with its typed reason and applies nothing; it is never read as an empty
+command. Propagation, peer discovery, transport, leader election, quorum certificates, view changes
+and any claim about liveness or availability are out of scope; this ADR designs those boundaries but
+makes no promise about them and implements no BFT algorithm or gossip protocol.
+
+**Live money and keys remain owner-blocked.** These kernels carry no private keys, no signatures, no
+wallet addresses, no money arithmetic, no ledger writes and no execution path. A P2P or consensus
+node cannot arm live mode, reach the executor, move funds or alter the ledger. The replicated
+register is not a chain state of record for accounting; the Python ledger keeps that role. Any
+future decision that lets consensus state gate real money requires a separate accepted ADR.
+
+**Consequences:** the design gives the maintainer a concrete permissioned model to accept or
+change before any network code is written, and the two Rust crates in this change implement only
+the pure kernels that the design requires — envelope validation and deterministic tape replay.
+Because this is new capability with no Python original, the written contract in this ADR is the
+oracle for their tests, and the parity requirement of ADR-0050 is satisfied by recording the
+contract's cases as unit tests instead of diffing against a removed implementation. Status is
+Proposed: the validator model, set-size and quorum parameters, digest choice and fork-choice rule
+are recommendations awaiting maintainer acceptance, and no gossip, BFT, transport or persistence
+work is claimed as delivered.
+
+---
+
+## ADR-0052 — Hybrid architecture: what each language owns
+
+**Date:** 2026-11-18 · **Status:** Accepted (maintainer instruction). Refines ADR-0050; where
+this ADR is more specific, it wins.
+
+**Decision — Rust owns the execution and trust boundary:**
+
+- High-performance execution and processing.
+- Networking, P2P and WebSockets.
+- Transaction processing and validation.
+- Concurrency and parallel execution.
+- Memory management and storage.
+- Cryptographic operations.
+- Performance-critical algorithms.
+- Security-critical components.
+
+**Decision — Python owns the application and intelligence layer:**
+
+- Business logic and orchestration.
+- AI/ML models and inference.
+- Analytics and data processing.
+- Strategy development and experimentation.
+- Automation and scripting.
+- Monitoring and reporting.
+- APIs and integrations.
+- Prototyping and developer tools.
+
+**Interpretation of the one overlap:** ADR-0050 assigns the RPC server to Rust and this ADR
+assigns APIs and integrations to Python. They describe two different surfaces. Rust owns the
+node-facing RPC and WebSocket transport — the wire protocol clients speak to the node. Python
+owns the application-level HTTP API, the product-facing WebSocket gateway in `apps/api`, and
+third-party integrations that compose those calls for the product. Only the **node-facing**
+P2P/WebSocket transport is Rust; the product-facing gateway stays with the Python API that
+serves the same clients. If the maintainer intends the public HTTP API itself to be Rust, this
+paragraph is the single place to change.
+
+**Integration contract:**
+
+1. Use PyO3 where Python calls into a Rust kernel in-process; use gRPC or IPC for separately
+   deployed services. Keep the boundary typed and versioned so either side can be replaced.
+2. Keep performance-critical and security-sensitive logic in Rust. Keep rapidly evolving
+   intelligence, automation and application logic in Python.
+3. Avoid unnecessary rewrites. Preserve working code and migrate bottlenecks incrementally,
+   with recorded behavioural parity as the gate. A working Python implementation is not
+   replaced by an unproven Rust one.
+4. Design clear interfaces between both languages, with independent testing, benchmarking and
+   deployment. A Rust crate has its own gate; a Python package has its own suite; neither is
+   validated only by the other's tests.
+
+**Consequences:** agents must classify a new component before writing it: if it is
+performance-critical, security-critical, a network transport, or part of the trust/money
+boundary, it is Rust; if it is business logic, model inference, analytics, automation or an
+integration, it is Python. UI stays TypeScript. Money arithmetic stays
+in Python until decimal parity is proven (ADR-0050 rule 4), and live mode stays owner-blocked.
+
+---
+
+## ADR-0054 — Migration order and the Rust boundary
+
+**Date:** 2026-11-26 · **Status:** Accepted (owner instruction). This decision corrects the
+language decision recorded for 0.1.0 and supersedes the execution assignment in ADR-0050 for
+that release. The parity and benchmark gate in ADR-0050 and the new-component rules in
+ADR-0051 and ADR-0052 remain in force.
+
+**Numbering:** the language-map pull request (#437), which references ADR-0053, is still
+unmerged. This decision takes number 0054 so the two changes cannot claim the same number. If
+#437 never merges, 0053 stays unused.
+
+**Context:** the 2026-11-21 review measured the shipped tree, not the working copy. Four
+results correct the earlier note. First, 5,118 lines of the Rust workspace (P2P, transport,
+consensus, node and RPC server) have no consumer: no Python caller, compose service, systemd
+unit or installer entry. A further 5,617 lines of the RPC crate duplicate wire schemas,
+framing, order DTOs and dispatch that the Python API already publishes as OpenAPI; only 239 of
+that crate's 5,856 lines are reachable. About 45% of the Rust workspace cannot execute in the
+shipped product. Second, the API image installed Python wheels only and never built or
+installed the bridge, while the observability middleware called the bridge on every request:
+`GET /healthz` raised `NativeBridgeUnavailable`, the container's own health check failed, and
+the installer's `compose up --build` reproduced it. Third, the 0.61× result in the 2026-11-18
+note was an artifact of a generated prototype binding on macOS, not a law about PyO3. Rebuilt
+against the hand-written bridge, the money kernels are 2.25×–7.85× faster than Python and carry
+417 recorded parity cases, while `normalize_method` is 2.4× slower across FFI (161 ns in
+Python vs 391 ns in Rust) and runs on every request. Fourth, the absolute stakes are
+microseconds against quote paths bound by 5–8 s network deadlines; Rust is justified here by
+who may touch the bytes, not by nanoseconds. The earlier policy was right in its headings and
+wrong in its implementation order: it ported the cheap, safe functions and left the signer
+boundary, the seal and the replay unwired.
+
+**Decision:**
+
+- Python owns the product process, the API and the live execution path. The backend, money
+  authority and execution orchestration stay in Python; live mode remains owner-blocked.
+- Rust owns the boundaries where memory safety, process isolation and determinism change what
+  a user can rely on: the signer boundary, with no key material in the Python heap; the
+  parity-proven pure money kernels; an independently verifiable ledger seal and replay
+  projection; the shipped operator CLI; and a future capability-scoped WASM plugin host. The
+  first four are in this migration, the plugin host is a later, measured step.
+- P2P, consensus and the duplicate RPC server stay frozen, not deleted. They unfreeze only
+  when a second machine must agree on the same tape — not because a rehearsal exists.
+- Unreachable and duplicate crates are not migration progress. Reachability, not line count
+  or board state, is the measure of what shipped.
+- A further kernel enters only through the recorded gate: Python behaviour captured as cases
+  including refusals and decimals, exact parity, a benchmark that fails a declared target,
+  one reversible flag at a time, Python kept as the oracle. `normalize_method` stays in
+  Python: FFI makes it slower and it sits on every request.
+- Migration order — the order is the decision:
+  - **Phase 0 — deployability:** build and install the bridge in the API image, freeze a
+    working sidecar, and gate image, freeze and bridge import in CI.
+  - **Phase 1 — trust boundary:** intent, attest and preflight kernels with golden vectors;
+    a Rust signer over a loopback socket with no local vault; a latching kill state machine
+    with capability revocation at the signer.
+  - **Phase 2 — wire seal and replay:** call the Rust seal from the ledger write path and
+    add an offline `verify --bundle`; batch kernels per event set; shadow every paper event
+    through both implementations before flipping one kernel.
+  - **Phase 3 — UI foundations:** a replaceable desktop host interface, CSP and IPC sender
+    validation, one reference route on TanStack Query, one ticker store, container queries,
+    and freshness and risk tokens; assert the same values across phone-to-workstation widths
+    in one Playwright suite.
+  - **Phase 4 — only if measured:** Granian under the same ASGI app, a Tauri spike, DuckDB
+    analytics and the WASM plugin host.
+- Custody is not decided here. External-signer-first versus a local encrypted vault is a
+  separate owner decision to be recorded as ADR-0055; no vault code follows from this ADR.
+
+**Phase 0 is a release blocker:** the image defect above is not a stylistic port gone wrong.
+The API image shipped without the compiled bridge while `ObservabilityMiddleware` called
+`normalize_method` on every request, so every route — `/healthz` included — answered
+`NativeBridgeUnavailable`; the container's health check could not pass and the installer
+shipped that image. A 0.1.0 release decision is not honest while the deployable artifact is
+dead. The fix is being prepared separately and is not part of this decision.
+
+**Consequences:** the Python suite and the 417 parity cases remain the oracles, and this ADR
+makes no speed claim and no claim about live trading. Reaching for the frozen crates is not a
+shortcut: their digest is explicitly non-cryptographic and node identity unauthenticated, so
+they become a trust boundary only with a second machine. Custody stays undecided until
+ADR-0055. Agents must read this ADR before changing the language map, a bridge caller or the
+migration order.

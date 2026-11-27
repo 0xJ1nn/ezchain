@@ -511,3 +511,15 @@ def test_installer_does_not_create_a_keys_directory(tmp_path: Path) -> None:
     names = {path.name.lower() for path in target.rglob("*")}
     assert "keys" not in names
     assert "vault" not in names
+
+
+def test_the_bridge_install_replaces_the_module_atomically():
+    """Copying over a loaded extension crashes every interpreter that imported it.
+
+    The install must write a new file and rename it over the old one, so a running API or test
+    process keeps the module it mapped while the next process loads the new build.
+    """
+    script = (Path(__file__).resolve().parents[2] / "tools" / "build-native.sh").read_text()
+    assert 'cp "$src" "$dst"' not in script
+    assert 'cp "$src" "$tmp"' in script
+    assert 'mv -f "$tmp" "$dst"' in script

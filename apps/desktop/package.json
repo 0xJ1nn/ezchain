@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dist:dir": "electron-builder --linux dir",
-    "dist:linux": "electron-builder --linux AppImage deb"
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "test": "node --test resources/remote/*.test.cjs && node installer/check-legal-files.mjs"
   },
   "devDependencies": {
     "electron": "45.0.0",
@@ -24,6 +25,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "sender.js",
       "package.json"
     ],
     "extraResources": [
@@ -42,6 +44,14 @@
       {
         "from": "../../LICENSE",
         "to": "LICENSE"
+      },
+      {
+        "from": "../../NOTICE",
+        "to": "NOTICE"
+      },
+      {
+        "from": "../../TRADEMARKS.md",
+        "to": "TRADEMARKS.md"
       }
     ],
     "linux": {

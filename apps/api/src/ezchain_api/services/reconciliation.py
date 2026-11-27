@@ -37,9 +37,6 @@ from ezchain_core.money import (
     MoneyError,
     exact_precision,
     exact_sum,
-    from_minor_units,
-    quantize_money,
-    to_minor_units,
 )
 
 from ..models import (
@@ -50,6 +47,10 @@ from ..models import (
     StrategyRow,
     StrategyRunRow,
 )
+
+# Pure conversions go through the typed bridge client (compiled extension required:
+# bash tools/build-native.sh); every other money rule still reads the Python oracle.
+from ..native import from_minor_units, quantize_money, to_minor_units
 
 # Quantities are token amounts, not money: they are stored at 18 decimals and a dust
 # difference below one storage step is arithmetic noise, not a missing leg. Money is

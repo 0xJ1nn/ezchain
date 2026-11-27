@@ -244,9 +244,9 @@ export default async function LaunchesPage({
 											<td>
 												<CurveCell pct={row.curve_progress_pct} />
 											</td>
-											<td>{unknown("Dev history is not implemented in P0")}</td>
-											<td>{unknown("Safety is not implemented in P0")}</td>
-											<td>{unknown("LP custody is not implemented in P0")}</td>
+											<td>{unknown("Developer history is not implemented")}</td>
+											<td>{unknown("Safety checks are not implemented")}</td>
+											<td>{unknown("LP custody is not implemented")}</td>
 											<td>
 												<ButtonLink href={`/tokens/${row.chain}/${row.base_token}`} size="sm">
 													Trade
@@ -276,7 +276,7 @@ export default async function LaunchesPage({
 							</div>
 							<div>
 								• <span className="ink">Dev history</span> and{" "}
-								<span className="ink">Safety</span> are unknown in P0. A miss is
+								<span className="ink">Safety</span> are unknown. A miss is
 								not a pass; execution gates stay fail-closed.
 							</div>
 							<div>

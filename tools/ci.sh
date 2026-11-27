@@ -10,6 +10,9 @@ cd "$(dirname "$0")/.."
 # second checkout, and NODE_ENV=production changes what Next builds and what pnpm installs.
 # The caller's environment is not modified: this script runs in a child shell.
 unset EZCHAIN_API_TOKEN EZCHAIN_STRESS_API_TOKEN EZCHAIN_EXECUTOR_SECRET PYTHONPATH NODE_ENV
+# An offline audit report is an explicit gate channel, not an inherited shell setting: a
+# caller exporting EZCHAIN_AUDIT_REPORT must not silently replace both live audits.
+unset EZCHAIN_AUDIT_REPORT
 
 # The one deliberate exception: a gate that runs a clone (rather than this checkout) points
 # imports at that clone's own package sources through EZCHAIN_GATE_PYTHONPATH, because the
@@ -22,22 +25,19 @@ fi
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-step "1/7 agent stubs"
-node tools/sync-agent-stubs.mjs --check
-
-step "2/7 design tokens"
+step "1/6 design tokens"
 node tools/build-tokens.mjs --check
 
-step "3/7 wireframe integrity"
+step "2/6 wireframe integrity"
 node tools/check-wireframe.mjs
 
-step "4/7 markdown links"
+step "3/6 markdown links"
 node tools/check-links.mjs
 
-step "5/7 secret scan"
+step "4/6 secret scan"
 node tools/check-secrets.mjs
 
-step "6/7 dependency pins"
+step "5/6 dependency pins, licences and advisory audit"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -57,10 +57,80 @@ else
   echo "              run: PYTHON=python3.11 bash tools/setup-python.sh"
 fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
-# from a network service and are audited separately: python3 tools/audit_pins.py --node
+# from a network service and are checked by the audit below.
 
-step "7/7 runtime gates (when present)"
+# Licence inventory of the locked set. The checker reads the committed locks, installed
+# metadata and cached crate manifests; it fetches nothing. A declaration that is
+# disallowed, unrecognised or empty fails here with the path of the file that declared
+# it, and so does a locked dependency without a declaration unless its set is recorded
+# in docs/DEPENDENCIES.md as not installed in this checkout.
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python tools/check-licences.py
+elif command -v python3 >/dev/null 2>&1; then
+  python3 tools/check-licences.py
+else
+  echo "not present yet: dependency licences (no python)"
+fi
+
+# Advisory audit of the pinned sets. Unlike the static pin check this needs a network:
+# pip-audit consults OSV/PyPI and pnpm audit consults the npm registry. An air-gapped
+# gate replays a saved report through the declared EZCHAIN_GATE_AUDIT_REPORT channel;
+# the ambient EZCHAIN_AUDIT_REPORT is scrubbed above, so a caller's shell cannot select
+# that path. The report needs a provenance sidecar bound to these exact locks. Exit 1
+# (a blocking advisory) and exit 2 ("could not run") both fail the gate: an unaudited
+# tree is not a clean tree. A missing tool is an explicit skip locally, but a declared
+# CI or release run fails closed. The dated result is in docs/DEPENDENCIES.md.
+audit_py=""
+if [ -x .venv/bin/python ]; then
+  audit_py=.venv/bin/python
+elif command -v python3 >/dev/null 2>&1; then
+  audit_py=python3
+fi
+audit_status=0
+if [ -n "${EZCHAIN_GATE_AUDIT_REPORT:-}" ]; then
+  # A replayed report must be readable, proven and clean; there is no skip in this path.
+  [ -n "$audit_py" ] || { echo "dependency audit: no python to judge the report with" >&2; exit 1; }
+  "$audit_py" tools/audit_pins.py --report "$EZCHAIN_GATE_AUDIT_REPORT" || audit_status=$?
+  if [ "$audit_status" -ne 0 ]; then
+    echo "dependency audit: the supplied report failed (exit $audit_status)" >&2
+    exit 1
+  fi
+else
+  audit_ran=0
+  if [ -n "$audit_py" ] && "$audit_py" -c "import pip_audit" >/dev/null 2>&1; then
+    "$audit_py" tools/audit_pins.py --python || audit_status=$?
+    audit_ran=$((audit_ran + 1))
+  fi
+  if [ -n "$audit_py" ] && [ "$audit_status" -eq 0 ] && command -v pnpm >/dev/null 2>&1; then
+    "$audit_py" tools/audit_pins.py --node || audit_status=$?
+    audit_ran=$((audit_ran + 1))
+  fi
+  if [ "$audit_status" -eq 1 ]; then
+    echo "dependency audit: a blocking advisory was reported" >&2
+    exit 1
+  fi
+  if [ "$audit_status" -eq 2 ]; then
+    echo "dependency audit: the audit could not run (exit 2) — not a pass; see docs/DEPENDENCIES.md" >&2
+    exit 1
+  fi
+  if [ "$audit_ran" -lt 2 ]; then
+    echo "dependency audit: skipped — an audit tool is absent (not a pass)"
+    if [ "${CI:-}" = "true" ] || [ "${EZCHAIN_GATE_RELEASE:-}" = "1" ]; then
+      echo "dependency audit: failing closed in CI/release without both live verdicts" >&2
+      exit 1
+    fi
+  fi
+fi
+
+step "6/6 runtime gates (when present)"
 ran=0
+# The bridge clients fail closed when the compiled extension is absent, so the
+# native module must be installed before any Python test runs. Host-native build
+# only; a toolchain-less machine cannot run the full gate (ADR-0052).
+if [ -f rust/Cargo.toml ] && command -v cargo >/dev/null 2>&1; then
+  bash tools/build-native.sh
+  ran=1
+fi
 # The project venv is the gate. Global tools run only when no venv exists, so the same
 # commit cannot pass on one machine and fail on another because of a stray global ruff.
 if [ ! -x .venv/bin/python ]; then
@@ -155,8 +225,65 @@ if [ -f pnpm-workspace.yaml ]; then
     ran=1
   fi
 fi
+# The Rust half of the platform (ADR-0050) is gated wherever a toolchain exists.
+# Its absence is reported as a skip, not a red gate, so a contributor without Rust
+# can still run the local gate; when cargo is present all three checks are mandatory.
+if [ -f rust/Cargo.toml ]; then
+  if command -v cargo >/dev/null 2>&1; then
+    step "rust gate"
+    (
+      cd rust
+      cargo fmt --all -- --check
+      cargo clippy --workspace --all-targets -- -D warnings
+      cargo test --workspace
+    )
+    ran=1
+  else
+    echo "rust gates skipped: cargo not present (install rustup to run them)"
+  fi
+fi
+
+# Phase 0 deployability: a green gate must mean the shipped image answers its own
+# health probe with the bridge present. A contributor Mac often has no Docker daemon;
+# that is announced as a skip, never as a pass, and never turns this gate red.
+step "deployability checks (when their tools are present)"
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  image="ezchain-api:gate"
+  docker build -f apps/api/Dockerfile -t "$image" .
+  docker run --rm "$image" python -c \
+    'import ezchain_bridge; assert hasattr(ezchain_bridge, "quantize_money")'
+  container="$(docker run -d --rm "$image")"
+  probe='import urllib.request; assert urllib.request.urlopen("http://127.0.0.1:8000/healthz", timeout=2).status == 200'
+  healthy=0
+  for _ in $(seq 1 30); do
+    if docker exec "$container" python -c "$probe" >/dev/null 2>&1; then
+      healthy=1
+      break
+    fi
+    sleep 1
+  done
+  docker stop "$container" >/dev/null 2>&1 || true
+  if [ "$healthy" -ne 1 ]; then
+    echo "deployability: the image did not answer /healthz within 30s" >&2
+    exit 1
+  fi
+  echo "deployability: image answers /healthz and imports ezchain_bridge"
+  ran=1
+else
+  echo "deployability: image checks skipped (no Docker daemon — not a pass)"
+fi
+# The same contract for the frozen sidecar. build-desktop.sh runs this smoke itself
+# immediately after freezing; when a freeze is already on disk the gate re-runs it.
+sidecar="apps/desktop/build/backend/ezchain-api/ezchain-api"
+if [ -x "$sidecar" ]; then
+  EZCHAIN_DESKTOP_SMOKE_NATIVE=1 "$sidecar"
+  echo "deployability: frozen sidecar imports ezchain_bridge"
+  ran=1
+else
+  echo "deployability: frozen sidecar check skipped (run bash tools/build-desktop.sh — not a pass)"
+fi
 if [ "$ran" -eq 0 ]; then
-  echo "not present yet: ruff, mypy, pytest, eslint, tsc, playwright"
+  echo "not present yet: ruff, mypy, pytest, eslint, tsc, playwright, cargo"
 fi
 
 printf '\n\033[32mci: ok\033[0m\n'

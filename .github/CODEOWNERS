@@ -4,9 +4,9 @@
 # Money paths need the owner explicitly.
 /docs/CONTRACT.md                             @0xJ1nn
 /docs/DOMAIN-MODEL.md                         @0xJ1nn
-/packages/core-py/ledger/                     @0xJ1nn
+/packages/core-py/src/ezchain_core/ledger.py  @0xJ1nn
 /services/executor/                           @0xJ1nn
-/packages/adapters/venue_*/                   @0xJ1nn
+/packages/adapters/src/ezchain_adapters/       @0xJ1nn
 
 # Design source of truth.
 /design/                                      @0xJ1nn

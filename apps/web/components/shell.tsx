@@ -7,6 +7,7 @@ import {
 } from "@/components/topbar-quick-trade";
 import { getMarkets, getQuote, type Reason } from "@/lib/api";
 import { getKillSwitch } from "@/lib/paper-api";
+import { PRODUCT_VERSION } from "@/lib/product-version";
 import { getExecutionMode } from "@/lib/system-api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
@@ -238,11 +239,11 @@ export function AppShell({ active, children }: { active: string; children: React
 				</span>
 				<span className="spacer" />
 				<span className="meta">
-					{fixture ? "P0 · fixture mode" : "P0 · DexScreener + multi-chain quotes"}
+					{fixture ? "Fixture mode" : "DexScreener + multi-chain quotes"}
 				</span>
 			</div>
 			<Topbar />
-			<Sidebar active={active} />
+			<Sidebar active={active} version={PRODUCT_VERSION} />
 			<main id="main">{children}</main>
 			<MobileNav active={active} />
 		</>

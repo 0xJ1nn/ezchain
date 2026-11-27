@@ -4,7 +4,8 @@ ezCHAIN exposes one agent surface: the **MCP 2025-11-25** server in `apps/mcp`, 
 normal REST/OpenAPI edge. Both read the same paper state; neither can create a live order.
 The same seam is designed to back ezCHAIN's own agent runtime — decided, not built — and an
 external agent brought over the Agent Client Protocol, also a planned path: each would run as
-a separate process whose only egress is that MCP server, holding a scoped key (§9).
+a separate process whose only egress is that MCP server, holding a scoped key (§9). The seven
+stages below are brought together in [One end-to-end paper workflow](#11-one-end-to-end-paper-workflow).
 
 ```mermaid
 flowchart LR
@@ -302,8 +303,7 @@ agent must hold it in its own secret store, never in a prompt or a model context
 - **Tool poisoning is real.** MCP tool descriptions, resource text and plugin metadata
   are untrusted data. Keep MCP servers allowlisted, review plugin manifests before
   install, and do not let an agent follow instructions embedded in market text. See
-  OWASP MCP03 (tool poisoning) and Microsoft's MCP control-plane guidance in
-  [`RESEARCH-2026.md`](RESEARCH-2026.md).
+  OWASP MCP03 (tool poisoning) and Microsoft's MCP control-plane guidance.
 - **No autonomous promotion.** `ezchain_get_live_readiness` reports evidence; it cannot
   promote. Live promotion is an owner action, gated by the paper gate and the executor.
 - **The runtime is outside the money path.** The built-in runtime is designed to speak only
@@ -379,6 +379,9 @@ the engine.
   other.
 
 ## 9.1 The headless command
+
+> §9 states the build status twice; its later duplicate, which calls the headless command
+> unbuilt, is stale and superseded by this section.
 
 `services/harness` is the loop's terminal entry point. `ezchain-harness` runs **one**
 session on the real `AgentLoop` — the same class, budgets, kill switch and approval path the
@@ -486,3 +489,85 @@ unsupported by a measured verdict. The OpenAI client calls the same answer parse
 `tests/test_agent_compat.py` parses the table above and fails if a row claims a capability
 without a test name, names a test that does not exist, or changes the client or capability
 columns without updating the test.
+
+## 11. One end-to-end paper workflow
+
+The capabilities above are one workflow, not seven products. An agent works in a single paper
+workspace through one scoped key across the MCP surface and the REST edge (§1, §7): the MCP
+tools expose data and propose writes, while the mutations — setting a cap, changing the
+automation tier, approving an order — live on REST under a person's authority. The headless
+command in §9.1 drives the same MCP tools where no interactive client is present. None of it
+holds money authority of its own. It can find a token, author and test a strategy, propose an
+order and gather release evidence. It cannot request a live mode, approve its own proposal,
+raise its own cap or arm the kill switch. Those boundaries are enforced by the API, not by the
+client, and each stage leaves an artifact a person can inspect before the next one runs.
+
+| Stage | Surface capability (MCP tool unless noted) | Artifact left behind | Who holds the authority |
+|---|---|---|---|
+| Discovery | `ezchain_list_markets`, `ezchain_get_token`, `ezchain_get_candles` | market rows, a token snapshot, closed bars | reads only |
+| Authoring | `ezchain_get_graph_catalogue`, `ezchain_validate_graph`, `ezchain_dry_run_graph`, `ezchain_create_strategy` | one validated strategy record | the agent proposes; a person may review before a run |
+| Testing | `ezchain_run_backtest`, `ezchain_get_backtest`, `ezchain_run_strategy`, `ezchain_get_strategy_runs` | immutable backtest rows and an append-only decision log | evidence, never a promotion |
+| Arming | `ezchain_get_automation`, `GET /api/v1/agent/buckets` (REST read); person-only `PUT /api/v1/agent/buckets/{agent_id}` and `PUT /api/v1/paper/automation` (REST) | the automation tier and the agent's own cap, where one is set | only a person sets a cap, changes the tier or arms the kill switch |
+| Coordination | `ezchain_list_approvals`, `ezchain_get_automation`; person-only `POST /api/v1/paper/approvals/{id}/approve` or `/reject` (REST) | one approval queue for every agent in the workspace | only a person approves or rejects |
+| Launch | `ezchain-mcp`, `ezchain-harness` (shell commands), `ezchain_run_strategy` | a running interface and one strategy tick | no client-supplied mode; the kill switch still applies |
+| Release tracking | `ezchain_get_live_readiness`, `ezchain_list_backtests` | paper-gate evidence keyed by strategy id | read-only: the tool never promotes to live |
+
+**Discovery.** `ezchain_list_markets` reads multi-chain market rows; `ezchain_get_token` reads
+the current price, liquidity, volume and safety evidence for one token; `ezchain_get_candles`
+returns closed OHLCV bars, oldest first. All three are reads against the public REST edge.
+Market text is untrusted data, not instructions (§8).
+
+**Authoring.** `ezchain_get_graph_catalogue` returns the node catalogue,
+`ezchain_validate_graph` compiles a graph and reports every error, and `ezchain_dry_run_graph`
+evaluates one tick against current data without placing an order or persisting a result.
+`ezchain_create_strategy` then stores the record; a plugin row pins the installed manifest,
+and `ezchain_validate_plugin_config` validates a config as a pre-flight that creates nothing.
+Authoring produces a strategy record, not a plugin package: external plugins are installed by
+an operator (§5).
+
+**Testing.** `ezchain_run_backtest` runs an immutable graph backtest with explicit fees,
+slippage, bar count and starting cash; results are read with `ezchain_get_backtest` and listed
+with `ezchain_list_backtests`. `ezchain_run_strategy` evaluates one paper cycle and
+`ezchain_get_strategy_runs` reads its decision log. A backtest is evidence about past bars and
+does not move the account; a strategy run can place a paper order, which passes through the
+same kill-switch and approval gates as any other automated order.
+
+**Arming.** Where an owner sets a bucket cap, it is set with
+`PUT /api/v1/agent/buckets/{agent_id}` before the order; an agent with no cap is unbounded by
+the bucket and governed by the account's other gates (§3). The automation tier stays at
+`manual` unless there is a deliberate opt-in and a recorded acknowledgement
+(`GET`/`PUT /api/v1/paper/automation`). The agent can read its own bucket and the tier but
+cannot set either; an agent key attempting a person-only route gets a typed `403`. A cap that
+is set, and the risk policy, bind an order before the quote, and the operator arms the kill
+switch over REST (§3, §8). An approval that is not decided inside its window expires.
+
+**Coordination.** Mint one scoped key per agent (§4); each key's orders draw from its own
+bucket, keyed on the key id, so one agent cannot spend another's room, and the tier belongs to
+the key's owner. One instance is one workspace: a key names an actor, not a partition of the
+ledger. Under `manual`, `ezchain_place_paper_order` returns order status `pending_approval`
+with an approval id and `next_action: "wait_for_a_person"`; that is a stored proposal, not a
+fill. `ezchain_list_approvals` gives the desk one queue, and a person approves or rejects at
+`POST /api/v1/paper/approvals/{id}/approve` or `/reject`. An agent key cannot decide its own
+proposal, and an order from a strategy the agent authored is automation subject to the same
+gate; an order from a strategy a person authored is that person's own order.
+
+**Launch.** Start the API (`ezchain-api`) and the MCP server (`ezchain-mcp` over stdio, §1).
+The web interface (`pnpm --filter @ezchain/web dev`) and the headless command
+(`ezchain-harness`, §9.1) are alternative entry points to the same state. `ezchain_run_strategy`
+evaluates one tick on demand, and a client cannot pass a `mode` argument: the API derives paper
+and refuses a live boot until the executor exists.
+
+**Release tracking.** `ezchain_get_live_readiness` returns the paper-gate checks and their
+evidence for one strategy and never promotes it. Record release work by gathering the immutable
+backtest id, the approval id and the decision log; measured results belong in
+[`evidence/`](evidence/), the readiness status in
+[`PRODUCTION-READINESS.md`](PRODUCTION-READINESS.md), the recovery steps in
+[`RUNBOOK.md`](RUNBOOK.md) and the human-facing change line in
+[`CHANGELOG.md`](../CHANGELOG.md). No tool writes those files, and live promotion remains an
+owner action gated by the paper gate and the executor (§8).
+
+No stage grants money authority. Write tools are absent unless the operator enabled them for a
+verified scoped `read`/`trade` key (§1, §5), and the approval queue, the kill switch and — where
+an owner has set one — the bucket cap are enforced at the API even for a caller that reached the
+surface with a valid key; an agent with no cap is unbounded by the bucket (§3). That is what
+makes the workflow safe to hand to an unattended session under the budgets in §9.

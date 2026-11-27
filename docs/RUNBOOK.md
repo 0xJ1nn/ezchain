@@ -7,6 +7,12 @@ Sections 1–11 describe the target live system. They use the `ezchain-admin` in
 which does not exist yet; they are the contract, not a working binary. Every action there
 is audited once the executor and audit log exist.
 
+The implemented surface is the PAPER stack: the FastAPI API with its inline strategy
+runtime and market observer, the ingest and agent services, and the native Linux desktop
+app. A source checkout needs the compiled PyO3 `ezchain-bridge` extension before the API
+or the gate will start. This is the shipped scope; sections 1-11 below remain the target
+live contract, not a description of running code.
+
 ## 0. First five minutes
 
 1. Open **Operations** (`25-operations.html` in the wireframe) and note which service is red.

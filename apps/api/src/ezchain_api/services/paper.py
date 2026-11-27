@@ -65,7 +65,7 @@ from ezchain_core.ledger import (
     position_account,
     sell_entries,
 )
-from ezchain_core.money import MONEY_QUANTUM, exact_product, quantize_money
+from ezchain_core.money import MONEY_QUANTUM, exact_product
 from ezchain_core.reason_codes import message_for
 
 from ..actor import (
@@ -87,6 +87,7 @@ from ..models import (
     StrategyRow,
     new_id,
 )
+from ..native import quantize_money
 from . import approvals, buckets, market_snapshots, pnl, trade_policy
 from .system_flags import read_kill_switch
 
@@ -2067,263 +2068,269 @@ async def place_order(
         # ledger boundary, half-even (docs/LEDGER.md).
         notional = quantize_money(notional, field="notional_usd")
 
-        order, created = _claim_or_existing(session, payload, placed_by)
-        if not created:
-            return order
-        order.policy_json = evidence
-        record_snapshot(session, snapshot)
-
-        if fill_quantity <= 0 or notional <= 0:
-            order.quote_kind = quote.kind
-            # ``_record`` needs a positive notional for the cost sheet; a malformed
-            # zero-size quote has no cost, only the route evidence.
-            order.quote_json = {
-                "quote": quote.to_dict(),
-                "reduce_only": exit_only,
-                "held_quantity": str(held_qty),
-            }
-            return _mark_rejected(session, order, "EXIT_NO_ROUTE" if exit_only else "NO_ROUTE")
-
-        position_mark = snapshot.price_usd if snapshot.price_usd is not None else quote.price
-        request = OrderRequest(
-            chain=payload.chain,
-            token_address=payload.token_address,
-            side=payload.side,
-            amount_usd=notional,
-            idempotency_key=payload.idempotency_key,
-            strategy_id=payload.strategy_id,
-            reduce_only=exit_only,
-        )
-        # The equity the risk gate sizes against is priced under the account read's own
-        # freshness policy (``_risk_equity``): a stale or unknown mark on another held
-        # token withholds it, so no entry is sized from an old number. ``evaluate_order``
-        # only consults equity for a buy, so an exit is never blocked by this.
-        equity_for_risk = _risk_equity(
-            replay,
-            _snapshot_index(session),
-            max_age_seconds=float(settings.max_mark_age_seconds),
-        )
-
-        allowed, reasons = evaluate_order(
-            request=request,
-            snapshot=snapshot,
-            quote=quote,
-            current_position_value_usd=held_qty * position_mark,
-            open_positions=_open_positions(replay),
-            daily_realized_pnl_usd=replay.daily_realized,
-            limits=limits_from_settings(settings, requested_profile),
-            equity_usd=equity_for_risk,
-        )
-        fee = quantize_money(_fill_fee(notional, quote, settings), field="fee_usd")
-        funded_shortfall = Decimal(0)
-        funding_audit: dict[str, Any] | None = None
-        if allowed and payload.side == "buy" and replay.cash < notional + fee:
-            shortfall = (notional + fee) - replay.cash
-            cap = settings.paper_no_risk_topup_cap_usd
-            if not settings.paper_no_risk:
-                allowed = False
-                reasons = (RiskReason("INSUFFICIENT_CASH"),)
-            elif shortfall > cap:
-                # A shortfall past the cap is a refusal, not a smaller funded amount: the
-                # ticket stays whole or it does not trade. Record the decision and alert.
-                allowed = False
-                reasons = (RiskReason("TOPUP_CAP_REACHED"),)
-                funding_audit = _funding_audit(
-                    order.id, replay.cash, replay.cash, shortfall, settings, TOPUP_TRIGGER
-                )
-                _alert_topup_cap(order.id, shortfall, cap)
-            else:
-                funded_shortfall = shortfall
-
-        if not allowed:
-            order.quote_kind = quote.kind
-            order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-            if funding_audit is not None:
-                order.funding_json = funding_audit
-            return _mark_rejected(
-                session, order, ",".join(str(r) for r in reasons), reasons=reasons
-            )
-
-        # The bucket gate ran before the quote; this is the same gate on the authoritative
-        # replay inside the fill window, now priced at the worst case (the quoted notional
-        # plus the fill fee). It is entry-only for the same reason, and a person approving
-        # a stored agent order re-enters here, so an approval cannot outrun the cap.
-        if payload.side == "buy" and bucket_key is not None:
-            refusal = buckets.check(
-                session,
-                bucket_key,
-                replay.bucket_cash.get(bucket_key, Decimal(0)),
-                notional,
-                fee_usd=fee,
-            )
-            if refusal is not None:
-                order.quote_kind = quote.kind
-                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-                return _mark_rejected(session, order, refusal.code, reasons=(refusal,))
-
-        # An automated order stops here unless its user has a consented full-auto tier:
-        # risk has run, the quote and its cost sheet are on the order, and the server's
-        # verdict is recorded as evidence for the person. Nothing is journaled. This is a
-        # gate *on* the path — an approved order re-enters this same window with its
-        # stored intent — never a second path. An unreadable queue refuses the order
-        # here rather than letting it fill, and a full_auto setting whose consent record
-        # cannot be proven refuses with AUTOMATION_CONSENT_REQUIRED instead of being read
-        # as manual.
-        if not approved and requires_automation_gate(placed_by):
-            probe = approvals.health(
-                session, settings, approvals.ordering_user(placed_by, settings)
-            )
-            if not probe.readable:
-                order.quote_kind = quote.kind
-                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-                return _mark_rejected(session, order, "APPROVAL_STATE_UNREADABLE")
-            if probe.consent_required:
-                order.quote_kind = quote.kind
-                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-                return _mark_rejected(session, order, "AUTOMATION_CONSENT_REQUIRED")
-            if probe.tier == approvals.MANUAL:
-                order.quote_kind = quote.kind
-                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-                decision = {
-                    "stage": "post_quote",
-                    "allowed": bool(allowed),
-                    "reasons": [reason.to_dict() for reason in reasons],
-                    "quote": quote.to_dict(),
-                    "cost_preview": _preview_cost(notional, quote, settings).to_dict(),
-                    "rerun_at_execution": True,
-                }
-                try:
-                    approvals.expire_due(session, settings)
-                    approvals.record_proposal(session, order, payload, decision, settings)
-                except Exception:  # noqa: BLE001 - a queue write failure must fail closed
-                    session.rollback()
-                    stored = _find_order(session, payload.idempotency_key)
-                    if stored is not None:
-                        return _mark_rejected(session, stored, "APPROVAL_STATE_UNREADABLE")
-                    return _reject_new(
-                        session, payload, "APPROVAL_STATE_UNREADABLE", actor=placed_by
-                    )
-                session.refresh(order)
+        try:
+            order, created = _claim_or_existing(session, payload, placed_by)
+            if not created:
                 return order
+            order.policy_json = evidence
+            record_snapshot(session, snapshot)
 
-        stamp = utcnow()
-        if funded_shortfall > 0:
-            funding_group = f"funding:{order.id}"
-            funding_legs = funding_entries(funded_shortfall)
-            for entry in funding_legs:
-                # The no-risk top-up is settlement capital, not a venue settlement: its
-                # cash leg names the settlement wallet so the journal says where the money
-                # went. The ``funding:USD`` contra leg is not a cash account and carries
-                # no wallet id. The attribution is part of the entry itself, so the seal
-                # taken over the persisted tape covers it. The top-up is settlement
-                # capital from outside the account, not the agent's own cash coming back,
-                # so it carries no bucket: the trade's own cash legs already charge the
-                # bucket the full ticket, and crediting the top-up here would cancel part
-                # of that charge — room the bucket never had. Only an exit returns cash
-                # to a bucket.
-                stamped = replace(
-                    entry,
-                    group_id=funding_group,
-                    created_at=stamp,
-                    wallet_id=SETTLEMENT_WALLET_ID if entry.account == cash_account() else None,
-                    actor_kind=placed_by.kind,
-                    actor_id=placed_by.id,
-                )
-                session.add(LedgerEntryRow(**stamped.to_row(funding_group)))
-        # Who owns the position this fill touches decides who its cash belongs to. A buy
-        # opens shares for the bucket that will own them (the caller's, or none for a
-        # person). An exit credits the bucket that owns the shares — never the caller, so a
-        # person closing an agent's position returns the agent's cash, a protection arm
-        # with no actor returns it too, and an agent selling a person's position gets no
-        # credit it never earned.
-        cash_bucket = (
-            bucket_key
-            if payload.side == "buy"
-            else _sell_attribution(replay.position_claims.get(account, {}), fill_quantity)
-        )
-        if payload.side == "buy":
-            entries = buy_entries(
-                chain=payload.chain,
-                token_address=payload.token_address,
-                quantity=fill_quantity,
-                price_usd=quote.price,
-                fee_bps=settings.paper_fee_bps,
-                notional_usd=notional,
-                fee_usd=fee,
-            )
-        else:
-            avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
-            if fill_quantity == held_qty:
-                basis = held_cost
-            else:
-                basis = min(
-                    quantize_money(exact_product(fill_quantity, avg_cost), field="cost_basis_usd"),
-                    held_cost,
-                )
-            entries = sell_entries(
-                chain=payload.chain,
-                token_address=payload.token_address,
-                quantity=fill_quantity,
-                price_usd=quote.price,
-                avg_cost_usd=avg_cost,
-                fee_bps=settings.paper_fee_bps,
-                proceeds_usd=notional,
-                cost_basis_usd=basis,
-                fee_usd=fee,
-            )
+            if fill_quantity <= 0 or notional <= 0:
+                order.quote_kind = quote.kind
+                # ``_record`` needs a positive notional for the cost sheet; a malformed
+                # zero-size quote has no cost, only the route evidence.
+                order.quote_json = {
+                    "quote": quote.to_dict(),
+                    "reduce_only": exit_only,
+                    "held_quantity": str(held_qty),
+                }
+                return _mark_rejected(session, order, "EXIT_NO_ROUTE" if exit_only else "NO_ROUTE")
 
-        session.add(
-            PaperFillRow(
-                id=new_id(),
-                order_id=order.id,
+            position_mark = snapshot.price_usd if snapshot.price_usd is not None else quote.price
+            request = OrderRequest(
                 chain=payload.chain,
                 token_address=payload.token_address,
                 side=payload.side,
-                quantity=fill_quantity,
-                price_usd=quote.price,
-                notional_usd=notional,
-                fee_usd=fee,
-                quote_kind=quote.kind,
-                created_at=stamp,
+                amount_usd=notional,
+                idempotency_key=payload.idempotency_key,
+                strategy_id=payload.strategy_id,
+                reduce_only=exit_only,
             )
-        )
-        for entry in entries:
-            # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
-            # learns who placed the order, without joining back to ``paper_orders``. It is
-            # carried on the entry, so the seal over the persisted tape covers it too.
-            cash = entry.account == cash_account()
-            # A cash leg is attributed to the bucket that owns the position it settles,
-            # not to whoever placed the order. Only cash moves the deployment; a
-            # position or fee leg names none, so the replay charges the bucket for what
-            # left the account and credits it for what an exit returned.
-            stamped = replace(
-                entry,
-                group_id=order.id,
-                created_at=stamp,
-                wallet_id=settlement_wallet_id if cash else None,
-                bucket_id=cash_bucket if cash else None,
-                actor_kind=placed_by.kind,
-                actor_id=placed_by.id,
+            # The equity the risk gate sizes against is priced under the account read's own
+            # freshness policy (``_risk_equity``): a stale or unknown mark on another held
+            # token withholds it, so no entry is sized from an old number. ``evaluate_order``
+            # only consults equity for a buy, so an exit is never blocked by this.
+            equity_for_risk = _risk_equity(
+                replay,
+                _snapshot_index(session),
+                max_age_seconds=float(settings.max_mark_age_seconds),
             )
-            session.add(LedgerEntryRow(**stamped.to_row(order.id)))
 
-        order.status = "filled"
-        order.filled_at = stamp
-        order.quote_kind = quote.kind
-        order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
-        if funded_shortfall > 0:
-            order.reason = "SHORTFALL_FUNDED"
-            order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
-            order.funding_json = _funding_audit(
-                order.id,
-                replay.cash,
-                replay.cash + funded_shortfall,
-                funded_shortfall,
-                settings,
-                TOPUP_TRIGGER,
+            allowed, reasons = evaluate_order(
+                request=request,
+                snapshot=snapshot,
+                quote=quote,
+                current_position_value_usd=held_qty * position_mark,
+                open_positions=_open_positions(replay),
+                daily_realized_pnl_usd=replay.daily_realized,
+                limits=limits_from_settings(settings, requested_profile),
+                equity_usd=equity_for_risk,
             )
-        session.commit()
-        return order
+            fee = quantize_money(_fill_fee(notional, quote, settings), field="fee_usd")
+            funded_shortfall = Decimal(0)
+            funding_audit: dict[str, Any] | None = None
+            if allowed and payload.side == "buy" and replay.cash < notional + fee:
+                shortfall = (notional + fee) - replay.cash
+                cap = settings.paper_no_risk_topup_cap_usd
+                if not settings.paper_no_risk:
+                    allowed = False
+                    reasons = (RiskReason("INSUFFICIENT_CASH"),)
+                elif shortfall > cap:
+                    # A shortfall past the cap is a refusal, not a smaller funded amount: the
+                    # ticket stays whole or it does not trade. Record the decision and alert.
+                    allowed = False
+                    reasons = (RiskReason("TOPUP_CAP_REACHED"),)
+                    funding_audit = _funding_audit(
+                        order.id, replay.cash, replay.cash, shortfall, settings, TOPUP_TRIGGER
+                    )
+                    _alert_topup_cap(order.id, shortfall, cap)
+                else:
+                    funded_shortfall = shortfall
+
+            if not allowed:
+                order.quote_kind = quote.kind
+                order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                if funding_audit is not None:
+                    order.funding_json = funding_audit
+                return _mark_rejected(
+                    session, order, ",".join(str(r) for r in reasons), reasons=reasons
+                )
+
+            # The bucket gate ran before the quote; this is the same gate on the authoritative
+            # replay inside the fill window, now priced at the worst case (the quoted notional
+            # plus the fill fee). It is entry-only for the same reason, and a person approving
+            # a stored agent order re-enters here, so an approval cannot outrun the cap.
+            if payload.side == "buy" and bucket_key is not None:
+                refusal = buckets.check(
+                    session,
+                    bucket_key,
+                    replay.bucket_cash.get(bucket_key, Decimal(0)),
+                    notional,
+                    fee_usd=fee,
+                )
+                if refusal is not None:
+                    order.quote_kind = quote.kind
+                    order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                    return _mark_rejected(session, order, refusal.code, reasons=(refusal,))
+
+            # An automated order stops here unless its user has a consented full-auto tier:
+            # risk has run, the quote and its cost sheet are on the order, and the server's
+            # verdict is recorded as evidence for the person. Nothing is journaled. This is a
+            # gate *on* the path — an approved order re-enters this same window with its
+            # stored intent — never a second path. An unreadable queue refuses the order
+            # here rather than letting it fill, and a full_auto setting whose consent record
+            # cannot be proven refuses with AUTOMATION_CONSENT_REQUIRED instead of being read
+            # as manual.
+            if not approved and requires_automation_gate(placed_by):
+                probe = approvals.health(
+                    session, settings, approvals.ordering_user(placed_by, settings)
+                )
+                if not probe.readable:
+                    order.quote_kind = quote.kind
+                    order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                    return _mark_rejected(session, order, "APPROVAL_STATE_UNREADABLE")
+                if probe.consent_required:
+                    order.quote_kind = quote.kind
+                    order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                    return _mark_rejected(session, order, "AUTOMATION_CONSENT_REQUIRED")
+                if probe.tier == approvals.MANUAL:
+                    order.quote_kind = quote.kind
+                    order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+                    decision = {
+                        "stage": "post_quote",
+                        "allowed": bool(allowed),
+                        "reasons": [reason.to_dict() for reason in reasons],
+                        "quote": quote.to_dict(),
+                        "cost_preview": _preview_cost(notional, quote, settings).to_dict(),
+                        "rerun_at_execution": True,
+                    }
+                    try:
+                        approvals.expire_due(session, settings)
+                        approvals.record_proposal(session, order, payload, decision, settings)
+                    except Exception:  # noqa: BLE001 - a queue write failure must fail closed
+                        session.rollback()
+                        stored = _find_order(session, payload.idempotency_key)
+                        if stored is not None:
+                            return _mark_rejected(session, stored, "APPROVAL_STATE_UNREADABLE")
+                        return _reject_new(
+                            session, payload, "APPROVAL_STATE_UNREADABLE", actor=placed_by
+                        )
+                    session.refresh(order)
+                    return order
+
+            stamp = utcnow()
+            if funded_shortfall > 0:
+                funding_group = f"funding:{order.id}"
+                funding_legs = funding_entries(funded_shortfall)
+                for entry in funding_legs:
+                    # The no-risk top-up is settlement capital, not a venue settlement: its
+                    # cash leg names the settlement wallet so the journal says where the money
+                    # went. The ``funding:USD`` contra leg is not a cash account and carries
+                    # no wallet id. The attribution is part of the entry itself, so the seal
+                    # taken over the persisted tape covers it. The top-up is settlement
+                    # capital from outside the account, not the agent's own cash coming back,
+                    # so it carries no bucket: the trade's own cash legs already charge the
+                    # bucket the full ticket, and crediting the top-up here would cancel part
+                    # of that charge — room the bucket never had. Only an exit returns cash
+                    # to a bucket.
+                    stamped = replace(
+                        entry,
+                        group_id=funding_group,
+                        created_at=stamp,
+                        wallet_id=SETTLEMENT_WALLET_ID if entry.account == cash_account() else None,
+                        actor_kind=placed_by.kind,
+                        actor_id=placed_by.id,
+                    )
+                    session.add(LedgerEntryRow(**stamped.to_row(funding_group)))
+            # Who owns the position this fill touches decides who its cash belongs to. A buy
+            # opens shares for the bucket that will own them (the caller's, or none for a
+            # person). An exit credits the bucket that owns the shares — never the caller, so a
+            # person closing an agent's position returns the agent's cash, a protection arm
+            # with no actor returns it too, and an agent selling a person's position gets no
+            # credit it never earned.
+            cash_bucket = (
+                bucket_key
+                if payload.side == "buy"
+                else _sell_attribution(replay.position_claims.get(account, {}), fill_quantity)
+            )
+            if payload.side == "buy":
+                entries = buy_entries(
+                    chain=payload.chain,
+                    token_address=payload.token_address,
+                    quantity=fill_quantity,
+                    price_usd=quote.price,
+                    fee_bps=settings.paper_fee_bps,
+                    notional_usd=notional,
+                    fee_usd=fee,
+                )
+            else:
+                avg_cost = held_cost / held_qty if held_qty > 0 else Decimal(0)
+                if fill_quantity == held_qty:
+                    basis = held_cost
+                else:
+                    basis = min(
+                        quantize_money(
+                            exact_product(fill_quantity, avg_cost), field="cost_basis_usd"
+                        ),
+                        held_cost,
+                    )
+                entries = sell_entries(
+                    chain=payload.chain,
+                    token_address=payload.token_address,
+                    quantity=fill_quantity,
+                    price_usd=quote.price,
+                    avg_cost_usd=avg_cost,
+                    fee_bps=settings.paper_fee_bps,
+                    proceeds_usd=notional,
+                    cost_basis_usd=basis,
+                    fee_usd=fee,
+                )
+
+            session.add(
+                PaperFillRow(
+                    id=new_id(),
+                    order_id=order.id,
+                    chain=payload.chain,
+                    token_address=payload.token_address,
+                    side=payload.side,
+                    quantity=fill_quantity,
+                    price_usd=quote.price,
+                    notional_usd=notional,
+                    fee_usd=fee,
+                    quote_kind=quote.kind,
+                    created_at=stamp,
+                )
+            )
+            for entry in entries:
+                # The journal keeps its own attribution: a reader of ``ledger_entries`` alone
+                # learns who placed the order, without joining back to ``paper_orders``. It is
+                # carried on the entry, so the seal over the persisted tape covers it too.
+                cash = entry.account == cash_account()
+                # A cash leg is attributed to the bucket that owns the position it settles,
+                # not to whoever placed the order. Only cash moves the deployment; a
+                # position or fee leg names none, so the replay charges the bucket for what
+                # left the account and credits it for what an exit returned.
+                stamped = replace(
+                    entry,
+                    group_id=order.id,
+                    created_at=stamp,
+                    wallet_id=settlement_wallet_id if cash else None,
+                    bucket_id=cash_bucket if cash else None,
+                    actor_kind=placed_by.kind,
+                    actor_id=placed_by.id,
+                )
+                session.add(LedgerEntryRow(**stamped.to_row(order.id)))
+
+            order.status = "filled"
+            order.filled_at = stamp
+            order.quote_kind = quote.kind
+            order.quote_json = _record(quote, notional, settings, reduce_only=exit_only)
+            if funded_shortfall > 0:
+                order.reason = "SHORTFALL_FUNDED"
+                order.reasons = _structured_reasons(RiskReason("SHORTFALL_FUNDED"))
+                order.funding_json = _funding_audit(
+                    order.id,
+                    replay.cash,
+                    replay.cash + funded_shortfall,
+                    funded_shortfall,
+                    settings,
+                    TOPUP_TRIGGER,
+                )
+            session.commit()
+            return order
+        except Exception:  # noqa: BLE001 - never leave a half-written fill group staged
+            session.rollback()
+            raise
 
 
 async def approve_order(

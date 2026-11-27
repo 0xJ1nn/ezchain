@@ -3,6 +3,22 @@ import { expect, test, type Page } from "./test";
 const BONK_MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const SCAM_MINT = "Scam1111111111111111111111111111111111111111";
 const AERO_MINT = "0x940181a94A35A4569E4529A3CDfB74e38FD98631";
+const TRADE_URL = `/trade?chain=solana&token=${BONK_MINT}`;
+
+function filledOrder(side: "buy" | "sell", id: string) {
+	return {
+		id,
+		chain: "solana",
+		token_address: BONK_MINT,
+		side,
+		amount_usd: "100",
+		status: "filled",
+		reason: null,
+		quote_kind: "jupiter",
+		created_at: "2026-11-09T10:00:00Z",
+		filled_at: "2026-11-09T10:00:01Z",
+	};
+}
 
 const noExternal = (page: Page) => {
 	const external: string[] = [];
@@ -165,7 +181,7 @@ test("a non-solana token is labelled PAPER · MARK, not an executable route", as
 	await expect(page.getByText("PAPER · MARK").first()).toBeVisible();
 	await expect(page.locator("#quote")).toContainText("paper mark · no executable route");
 	await expect(page.locator("#quote")).toContainText(
-		"This chain has no executable venue in P0",
+		"This chain has no executable venue",
 	);
 	await expect(page.locator("#ticket").getByRole("button", { name: "Confirm paper order" })).toBeEnabled();
 });
@@ -196,6 +212,111 @@ test("token page has no external requests", async ({ page }) => {
 	await page.goto(`/tokens/solana/${BONK_MINT}`);
 	await expect(page.locator("#safety tbody tr")).toHaveCount(4);
 	expect(external, `unexpected external requests: ${external.join(", ")}`).toEqual([]);
+});
+
+test("trade ticket sends only after a full hold and lands a paper fill stamp", async ({
+	page,
+}) => {
+	const posted: Record<string, unknown>[] = [];
+	await page.route("**/api/v1/paper/orders", async (route) => {
+		const body = route.request().postDataJSON() as Record<string, unknown>;
+		posted.push(body);
+		const side = body.side === "sell" ? "sell" : "buy";
+		await route.fulfill({
+			status: 201,
+			contentType: "application/json",
+			body: JSON.stringify(filledOrder(side, side === "sell" ? "ord_hold_sell" : "ord_hold_buy")),
+		});
+	});
+
+	await page.goto(TRADE_URL);
+	const hold = page.getByTestId("hold-submit");
+	await expect(hold).toContainText("Hold to buy");
+
+	// A tap sends nothing.
+	const box = (await hold.boundingBox())!;
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.mouse.up();
+	expect(posted).toHaveLength(0);
+	await expect(page.getByTestId("fill-stamp")).toHaveCount(0);
+
+	// A full hold posts exactly one paper order and stamps the fill.
+	await page.mouse.down();
+	await page.waitForTimeout(750);
+	await page.mouse.up();
+
+	await expect(page.getByTestId("fill-stamp")).toBeVisible();
+	await expect(page.getByTestId("fill-stamp")).toContainText("PAPER FILL");
+	await expect(page.getByTestId("fill-stamp")).toContainText("ord_hold_buy");
+	await expect(page.getByTestId("trade-screen")).not.toContainText("executed");
+	expect(posted).toHaveLength(1);
+	expect(posted[0]).toMatchObject({ side: "buy", amount_usd: "100" });
+	expect(String(posted[0]!.idempotency_key)).toMatch(/^[0-9a-f-]{16,}$/i);
+
+	// Sell is a separate held gesture against its own quote.
+	await page.getByTestId("trade-side-sell").click();
+	await expect(page).toHaveURL(/side=sell/);
+	await expect(page.getByTestId("hold-submit")).toContainText("Hold to sell");
+	await expect(page.getByTestId("fill-stamp")).toHaveCount(0);
+	const sellBox = (await page.getByTestId("hold-submit").boundingBox())!;
+	await page.mouse.move(sellBox.x + sellBox.width / 2, sellBox.y + sellBox.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(750);
+	await page.mouse.up();
+	await expect(page.getByTestId("fill-stamp")).toContainText("SELL");
+	expect(posted).toHaveLength(2);
+	expect(posted[1]).toMatchObject({ side: "sell" });
+});
+
+test("a rejected paper order shows the API reason and no fill stamp", async ({ page }) => {
+	await page.route("**/api/v1/paper/orders", async (route) => {
+		await route.fulfill({
+			status: 502,
+			contentType: "application/json",
+			body: JSON.stringify({
+				detail: {
+					code: "NO_SELL_ROUTE",
+					message: "buy has no full-size sell route",
+					retryable: false,
+				},
+			}),
+		});
+	});
+
+	await page.goto(TRADE_URL);
+	const hold = page.getByTestId("hold-submit");
+	const box = (await hold.boundingBox())!;
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(750);
+	await page.mouse.up();
+
+	await expect(page.getByTestId("trade-ticket-error")).toContainText("NO_SELL_ROUTE");
+	await expect(page.getByTestId("trade-ticket-error")).toContainText("Nothing was filled");
+	await expect(page.getByTestId("fill-stamp")).toHaveCount(0);
+});
+
+test("trade moments play once per event and drop movement under reduced motion", async ({
+	page,
+}) => {
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	await page.goto(TRADE_URL);
+
+	await page.getByTestId("replay-rocket").click();
+	const rocket = page.getByTestId("rocket-moment");
+	await expect(rocket).toBeVisible();
+	await expect(rocket).toHaveAttribute("data-animated", "false");
+	await expect(rocket).toContainText("ROCKET");
+
+	// A repeat of the same event is quiet: no replay, just the badge.
+	await page.getByTestId("replay-rocket").click();
+	await expect(page.getByTestId("moment-quiet")).toBeVisible();
+
+	await page.getByTestId("replay-ath").click();
+	const ath = page.getByTestId("ath-moment");
+	await expect(ath).toContainText("NEW ALL-TIME HIGH");
+	await expect(ath).toHaveAttribute("data-animated", "false");
 });
 
 test("token page screenshot at mobile width", async ({ page }) => {

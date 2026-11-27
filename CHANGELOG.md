@@ -1,9 +1,25 @@
 # Changelog
 
-All notable changes to this project are documented here.
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
+Every release lists each change with its issue/PR and the evidence that it was checked on the release build. Baseline for each release diff: the previous release tag.
 
 ## [Unreleased]
+
+No unreleased changes.
+
+## [0.1.0] — unreleased
+
+| Change | Issue/PR | Verified on (evidence) |
+|---|---|---|
+| Intent-to-journal pipeline and transaction-to-intent binding (paper) | #269, #274 | To be recorded on the release candidate |
+| Server-derived execution mode and gate record | #265 | To be recorded on the release candidate |
+| Paper trade screen and desktop first-run setup | #553, #552 | To be recorded on the release candidate |
+| Dependency licence gate and gateway supervisor | #551, #550 | To be recorded on the release candidate |
+| Strategy graph template and versioned stream contract | #549, #548 | To be recorded on the release candidate |
+| Rust migration waves through native-host routing | #380, #393, #397, #405, #408, #411, #415, #417, #419–#422, #426, #429, #432, #435, #436 | To be recorded on the release candidate |
+
+### Carry-forward
+
+Nothing is carried forward yet. Unfinished 0.1.0 items move to a post-launch version with a reason.
 
 ### Added
 
@@ -368,7 +384,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   non-zero exit, so an outage cannot read as consent. The gate itself now calls the
   checker for every PR instead of grepping comment bodies for "approved". `0xJ1nn` is
   currently the only reviewing account, so a money-path PR is refused until a second
-  account with write access approves it; [WORKFLOW §3](docs/WORKFLOW.md) says exactly that.
+  account with write access approves it; the review rule says exactly that.
 
 - **The dependency set is pinned, hashed, audited and reproducible (security).** The three
   Python range files now have generated locks — `requirements.lock` (43 pins),
@@ -830,8 +846,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   2025-11-25 over stdio with read tools/resources and paper-only mutation tools; writes
   are hidden unless `EZCHAIN_MCP_ALLOW_WRITES=1` and still require the API bearer token.
 - `docs/STRATEGY-SDK.md` is now the implemented contract; `docs/AGENT-INTEGRATION.md`
-  documents Hermes/OpenClaw setup and `docs/RESEARCH-2026.md` records the competitor,
-  trader and agent evidence behind ADR-0028.
+  documents Hermes/OpenClaw setup and the evidence behind ADR-0028.
 - **First-class Hermes and OpenClaw packs**: `integrations/hermes` installs the
   `ezchain-trading` skill and prints the MCP registration; `integrations/openclaw` is an
   Agent Plugins 1.0.0 bundle that OpenClaw detects as `format: bundle` with skills and an
@@ -1006,8 +1021,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
   separates runnable local pieces from the unverified Docker blueprint, and
   `docs/RUNBOOK.md` documents migrate-on-deploy, legacy `stamp 0001_baseline` then upgrade, probe semantics and
   401 triage.
-- `README.md`, `ROADMAP.md`, `docs/ARCHITECTURE.md` and `docs/PLAN-LIVE-PAPER.md` now
-  describe the P0 live paper slice; the web defaults to live and tests set `fixture`.
+- `README.md`, `ROADMAP.md` and `docs/ARCHITECTURE.md` now describe the P0 live paper
+  slice; the web defaults to live and tests set `fixture`.
 - `docs/CHAINS.md` now presents a **target** support matrix with a `Verified today`
   column; Solana is marked paper-verified, not live-verified.
 - `docs/PRODUCT.md` labels the v1 scope table as a target, not shipped.
@@ -1124,3 +1139,5 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 ## [0.0.0] — 2026-10-20
 
 Initial design drop. No runtime code.
+
+Release notes: [0.1.0](docs/release-notes/0.1.0.md). Public roadmap: [ROADMAP.md](ROADMAP.md).

@@ -19,7 +19,7 @@ code is right and this table is the index.
 | Broadcast outbox and reconciliation of claims without a journal | **Built** — `FileAttemptLog` + `Reconciler`; the durable log must be injected, the in-memory default is not durable |
 | Executor HTTP service, `executor_client`, HMAC loopback (§1) | **Not built** — no FastAPI app, no client module, no port |
 | Encrypted `vault.json` with argon2id + AES-GCM (§2) | **Not built** — the custody seam exists, the file format does not |
-| Simulate stage and `SIMULATION_FAILED` (§3.4) | **Not built**, and the code is not in the taxonomy |
+| Simulate stage and `SIMULATION_FAILED` (§3.4) | **Not built**. The code is registered for the pure preflight kernel; no pipeline stage emits it yet. |
 | Live tables `live_intents` / `live_orders` / `live_fills` (§3.1) | **Not built** — no live tables exist |
 | `live:` ledger account prefix (§3.8) | **Not built** — no live book. Paper accounts are `cash:USD`, `fees:USD`, `pnl:realized:USD`, `position:<chain>:<token>` |
 | On-chain balance reconciliation and `RECONCILE_DRIFT` (§6) | **Not built**, and the code is not in the taxonomy |

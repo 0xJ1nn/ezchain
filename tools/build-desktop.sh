@@ -64,6 +64,7 @@ rm -rf apps/desktop/build/backend apps/desktop/build/pyi
   --paths packages/adapters/src \
   --paths apps/api/src \
   --paths services/engine/src \
+  --hidden-import ezchain_bridge \
   --collect-submodules uvicorn \
   --collect-submodules sqlalchemy \
   --collect-submodules pydantic \
@@ -72,6 +73,16 @@ rm -rf apps/desktop/build/backend apps/desktop/build/pyi
   --exclude-module psycopg_binary \
   --exclude-module tkinter \
   apps/desktop/backend_entry.py
+
+# Prove the frozen sidecar, not the build venv, can load the extension. A missing
+# --hidden-import leaves the import dynamic in native.py and fails here, not at a
+# customer's first launch.
+sidecar="apps/desktop/build/backend/ezchain-api/ezchain-api"
+if [ ! -x "$sidecar" ]; then
+  echo "build-desktop: frozen sidecar not found at $sidecar" >&2
+  exit 1
+fi
+EZCHAIN_DESKTOP_SMOKE_NATIVE=1 "$sidecar"
 
 step "4/4 electron package"
 pnpm --filter @ezchain/desktop exec electron-builder --linux dir

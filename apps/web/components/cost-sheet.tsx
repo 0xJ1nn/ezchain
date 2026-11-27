@@ -82,7 +82,7 @@ export function CostSheet({
 									: `±${(preview.slippage_bps / 100).toFixed(2)}%`}
 							</span>
 							<span className="sub">
-								{preview.slippage_bps === null ? " no venue in P0" : " requested at quote"}
+								{preview.slippage_bps === null ? " no venue available" : " requested at quote"}
 							</span>
 						</td>
 					</tr>

@@ -1,16 +1,24 @@
-"""Health, readiness, metrics and chain registry.
+"""Health, readiness, metrics, chain registry and build-source provenance.
 
 ``/healthz`` and ``/readyz`` are public orchestration probes. ``/health`` and ``/metrics``
 describe the process, the scheduler and paper order counts, so the auth middleware serves
-them only to a loopback client or to a request carrying the deployment token.
+them only to a loopback client or to a request carrying the deployment token. The
+build-source route verifies a signed attestation and reports why a build is not official.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -25,11 +33,179 @@ from ..observability import HTTP_METRICS, reject_series, render_prometheus
 from ..schemas import ChainOut, KillSwitchIn, KillSwitchOut
 from ..services.ops_signals import build_ops_snapshot
 from ..services.system_flags import read_kill_switch, set_kill_switch
+from ..version import PRODUCT_VERSION
 
 router = APIRouter(tags=["system"])
 
 PAPER_ORDER_STATUSES = ("pending", "pending_approval", "filled", "rejected")
 METRICS_MEDIA_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+
+OFFICIAL_REPOSITORY = "https://github.com/0xJ1nn/ezchain"
+DEFAULT_PUBLIC_KEY_PATH = "tools/release/official-public.pem"
+DEFAULT_ATTESTATION_PATH = "release/attestation.json"
+VERIFY_TIMEOUT_SECONDS = 10
+# Copied from the release notes at deployment time, never committed. A build cannot
+# authenticate its own key; the operator pins the fingerprint the maintainer published.
+RELEASE_KEY_FINGERPRINT_ENV = "EZCHAIN_RELEASE_KEY_FINGERPRINT"
+
+BuildSourceStatus = Literal[
+    "verified",
+    "no_public_key",
+    "no_attestation",
+    "no_signature",
+    "malformed_attestation",
+    "repository_mismatch",
+    "invalid_signature",
+    "key_not_pinned",
+    "key_fingerprint_mismatch",
+    "verifier_unavailable",
+]
+
+BUILD_SOURCE_MESSAGES: dict[BuildSourceStatus, str] = {
+    "verified": "This build's attestation is signed by the pinned official release key.",
+    "no_public_key": (
+        "No release public key is configured for this installation, so the build source "
+        "cannot be checked."
+    ),
+    "no_attestation": "This installation carries no build attestation.",
+    "no_signature": "This installation's build attestation has no signature.",
+    "malformed_attestation": "This installation's build attestation is not a valid record.",
+    "repository_mismatch": "The signed attestation names a repository other than the official one.",
+    "invalid_signature": "The build attestation does not verify against the release public key.",
+    "key_not_pinned": (
+        "No official release-key fingerprint is configured for this installation, so the "
+        "installed key cannot be authenticated."
+    ),
+    "key_fingerprint_mismatch": (
+        "The installed release key does not match the fingerprint published for official builds."
+    ),
+    "verifier_unavailable": (
+        "Signature verification needs OpenSSL, which this host does not provide."
+    ),
+}
+
+
+class BuildSourceOut(BaseModel):
+    """The signed-provenance verdict, with a reason when the build is not official."""
+
+    official: bool
+    status: BuildSourceStatus
+    message: str
+    tag: str | None = None
+
+
+def _build_source_paths() -> tuple[Path, Path]:
+    """Locate the published public key and the running build's attestation.
+
+    Operators set absolute paths in production. Relative defaults keep a source checkout
+    honest: with no published key and no signed attestation it reports an unverified build.
+    """
+    key = Path(os.environ.get("EZCHAIN_RELEASE_PUBLIC_KEY", DEFAULT_PUBLIC_KEY_PATH))
+    attestation = Path(os.environ.get("EZCHAIN_BUILD_ATTESTATION", DEFAULT_ATTESTATION_PATH))
+    return key, attestation
+
+
+def _build_source_verdict(status: BuildSourceStatus, tag: str | None = None) -> BuildSourceOut:
+    return BuildSourceOut(
+        official=status == "verified",
+        status=status,
+        message=BUILD_SOURCE_MESSAGES[status],
+        tag=tag,
+    )
+
+
+def _normalize_fingerprint(value: str) -> str:
+    """Drop separators and casing so a colon-separated fingerprint still matches."""
+    return "".join(char for char in value.lower() if char in "0123456789abcdef")
+
+
+def _expected_fingerprint() -> str | None:
+    """The maintainer-supplied fingerprint, normalised; unset means fail closed."""
+    return _normalize_fingerprint(os.environ.get(RELEASE_KEY_FINGERPRINT_ENV, "").strip()) or None
+
+
+def _key_fingerprint(public_key: Path) -> str | None:
+    """SHA-256 of the DER-encoded public key, matching the fingerprint in release notes."""
+    try:
+        result = subprocess.run(
+            ["openssl", "pkey", "-pubin", "-in", str(public_key), "-outform", "DER"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=VERIFY_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return hashlib.sha256(result.stdout).hexdigest()
+
+
+def build_source_status() -> BuildSourceOut:
+    """Verify the on-disk attestation against the pinned key; fail closed on any gap.
+
+    The attestation is untrusted until its signature checks out, and the installed key is
+    untrusted until its fingerprint matches the value the maintainer published with the
+    release. Only then does its repository claim count, so a fork shipping its own key
+    cannot name itself official. This response never exposes key material or a signature.
+    """
+    public_key, attestation = _build_source_paths()
+    if not public_key.is_file():
+        return _build_source_verdict("no_public_key")
+    if not attestation.is_file():
+        return _build_source_verdict("no_attestation")
+    signature = Path(f"{attestation}.sig")
+    if not signature.is_file():
+        return _build_source_verdict("no_signature")
+
+    try:
+        document = json.loads(attestation.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return _build_source_verdict("malformed_attestation")
+    if (
+        not isinstance(document, dict)
+        or not isinstance(document.get("repository"), str)
+        or not isinstance(document.get("tag"), str)
+    ):
+        return _build_source_verdict("malformed_attestation")
+
+    if shutil.which("openssl") is None:
+        return _build_source_verdict("verifier_unavailable")
+    expected = _expected_fingerprint()
+    if expected is None:
+        return _build_source_verdict("key_not_pinned")
+    fingerprint = _key_fingerprint(public_key)
+    if fingerprint is None:
+        return _build_source_verdict("verifier_unavailable")
+    if fingerprint != expected:
+        return _build_source_verdict("key_fingerprint_mismatch")
+    try:
+        verified = (
+            subprocess.run(
+                [
+                    "openssl",
+                    "dgst",
+                    "-sha256",
+                    "-verify",
+                    str(public_key),
+                    "-signature",
+                    str(signature),
+                    str(attestation),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=VERIFY_TIMEOUT_SECONDS,
+                check=False,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return _build_source_verdict("verifier_unavailable")
+    if not verified:
+        return _build_source_verdict("invalid_signature")
+    if document["repository"] != OFFICIAL_REPOSITORY:
+        return _build_source_verdict("repository_mismatch")
+    return _build_source_verdict("verified", tag=document["tag"])
 
 
 def _rollback_quietly(session: Session) -> None:
@@ -47,7 +223,7 @@ def healthz(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     The mode is the same derived value the capabilities document reports, so a probe and
     an agent cannot disagree about whether this deployment can trade.
     """
-    return {"status": "ok", "mode": mode_status(settings)}
+    return {"status": "ok", "mode": mode_status(settings), "version": PRODUCT_VERSION}
 
 
 @router.get("/readyz")
@@ -197,7 +373,7 @@ def health(
         "engine_inline": settings.engine_inline,
         "market_scan_inline": settings.market_scan_inline,
         "market_monitor": getattr(request.app.state, "market_monitor", None) is not None,
-        "version": "0.1.0",
+        "version": PRODUCT_VERSION,
     }
     return JSONResponse(status_code=200 if ok else 503, content=body)
 
@@ -205,6 +381,12 @@ def health(
 @router.get("/api/v1/chains", response_model=list[ChainOut])
 def chains() -> list[ChainOut]:
     return [ChainOut.model_validate(chain.to_dict()) for chain in CHAINS]
+
+
+@router.get("/api/v1/system/build-source", response_model=BuildSourceOut)
+def build_source() -> BuildSourceOut:
+    """Signed-provenance verdict for this installation, with the reason for a refusal."""
+    return build_source_status()
 
 
 @router.get("/api/v1/system/kill-switch", response_model=KillSwitchOut)

@@ -1,206 +1,97 @@
 # ROADMAP — ezCHAIN
 
-Status: living document, updated when a milestone opens or closes. The roadmap is not
-permission for uncontrolled development: each item becomes a focused issue before work
-starts (`project.md` §30).
+> **ALPHA — PAPER IN THIS BUILD.** `0.1.0` targets real-money trading, but no build
+> enables live mode until the readiness gate in
+> [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) is satisfied and the maintainer enables
+> it. Official agent listings and any live-mode claim wait for that readiness measurement;
+> today's Hermes and OpenClaw packs are local integrations, not official marketplace
+> listings.
 
-> **ALPHA — PAPER ONLY.** Not ready for real-money trading. Official agent listings and
-> any live-mode claim are gated on the real-mode readiness section below; today's Hermes
-> and OpenClaw packs are local integrations, not official marketplace listings.
+## What exists today
 
-The current code is the **PAPER stack with production operations and strategy SDK v1**:
-22/25 chain market observation, per-chain quote ladders, a paper ledger, declarative and
-visual graph strategies, external Python strategy plugins in a supervised worker, an MCP
-server for agents, a backtester, migrations, auth, observability, a complete operator
-surface and a full-code stress harness. Live execution, keys, wallet custody and a live
-UI are not built; the unmerged live-executor foundation has a blocked review and is not a
-claim.
+The current code is the PAPER stack with production operations and strategy SDK v1:
+multi-chain market observation, per-chain quote ladders, an append-only paper ledger,
+declarative and visual graph strategies, external Python strategy plugins in a supervised
+worker, an MCP server for agents, a backtester, migrations, authentication, observability,
+a complete operator surface and a full-code stress harness. Live execution, keys, wallet
+custody and a live UI are not built today; they are in scope for `0.1.0`, behind the
+readiness gate, and the unmerged executor foundation is not a claim.
 
-## Done — Live paper slice
+## Done — live paper slice
 
-Goal: live multi-chain browsing, a real paper ledger, and user-defined strategies that
-run in paper mode. No keys, no live money. Full contract:
-[`docs/PLAN-LIVE-PAPER.md`](docs/PLAN-LIVE-PAPER.md).
-
-- [x] Foundation: FastAPI, Postgres, adapter/core/engine packages, proxy, CI.
-- [x] Live data: DexScreener multi-chain + Jupiter quotes.
-- [x] Paper ledger: idempotent orders, fills, positions, PnL, risk.
-- [x] Strategy engine: declarative momentum/dip/DCA/threshold rules.
-- [x] Web live markets and token pages.
-- [x] Web paper ticket and strategy builder.
-- [x] Integration: full gate, live smoke, restart/API-down drills, docs.
-- [ ] Paper follow-ups: dashboard equity history and live position tiles (#57), an EVM
-  venue adapter (#58) and a standalone engine process (no tracked issue). The paper
-  evidence pack is recorded and closed (#59).
-
-Exit: a user can browse live markets, place a paper buy/sell, see the ledger and position,
-create a strategy and watch it place paper orders. Every number carries source, age and
-`PAPER`; no key material exists.
+Multi-chain browsing, a real paper ledger and user-defined paper strategies work. The
+foundation covers the API, Postgres, adapters, core packages, engine and the local gate.
+Live market data comes from DexScreener with Jupiter quotes. Orders are idempotent, fills
+and positions are journaled together, and risk refuses positions it cannot price. The web
+app covers live markets, token pages, the paper ticket and the strategy builder. The
+integration gate, live smoke test and restart drills are recorded as evidence.
 
 ## Done — strategy SDK v1 and agent surface
 
-- [x] `packages/sdk-py` (Apache-2.0): manifest, JSON-Schema subset, context, intents,
-  strategy lifecycle; standalone from platform internals.
-- [x] Supervised plugin worker: scrubbed env, rlimits, per-callback timeout, crash
-  quarantine, replayable `ctx.state`, one intent per tick.
-- [x] Discovery through `ezchain.strategies` entry points and `EZCHAIN_PLUGIN_PATHS`;
-  catalogue, validation and reload API.
-- [x] `kind=plugin` strategies with pinned `plugin_id`/`plugin_version` (migration 0007).
-- [x] `apps/mcp` MCP 2025-11-25 stdio server: read tools/resources, paper-only mutations,
-  read-only default, bearer auth preserved.
-- [x] Server-derived execution mode; `EZCHAIN_EXECUTION_MODE=live` refused until the
-  executor ships; computed live-readiness endpoint.
-- [x] 2026 research note, SDK contract, Hermes/OpenClaw integration docs, ADR-0028.
-- [x] First-class packs: Hermes skill + installer, OpenClaw Agent Plugins bundle.
-- [x] Scoped agent keys (`read`/`trade`/`admin`), read-auth toggle, audit timestamps
-  (migration 0008, ADR-0029).
+The plugin SDK is a standalone Apache-2.0 package with a manifest, context and intent
+contract. Plugins run in a supervised worker with a scrubbed environment, resource limits,
+a per-callback timeout and crash quarantine. Discovery works through entry points and a
+configured plugin path, with a catalogue, validation and reload API. The MCP server offers
+read tools and resources, hides paper-only mutations by default and preserves bearer
+authentication. The API derives execution mode on the server and refuses live mode until an
+executor exists. Agent packs, scoped keys and a live-readiness endpoint are in place.
 
 ## Done — production operations (paper)
 
-- [x] Market eyes: `services/ingest`-equivalent inline scan, 22/25 chains, overview/stored.
-- [x] All-chain browse fan-out/round-robin with coverage and 30-pair-cap regression tests.
-- [x] Paper/strategy hardening: delete cascade, reconciliation, kill switch, honest
-  `ORDER_REJECTED`, UTC timestamps, sell-side risk exemptions, pair-age gate.
-- [x] Production ops: Alembic 0001–0014, genesis/fill uniqueness, bearer auth + CSRF
-  proxy, `/healthz`/`/readyz`/`/metrics`, JSON logs, runtime-only image deps.
-- [x] Runnable PAPER Compose stack and Caddy edge; verified once at head `0003_paper_fill_order` on 2026-10-22, **not re-drilled at 0014_pair_identity**.
-- [x] Stress harness (smoke/soak/idempotency/chaos) with deduplicated issue filing;
-  #71 detected and closed by #72.
-- [x] Web truth: fixture badges, DCA/dip vocabulary, Playwright build guard.
-- [ ] Re-drill Docker build/`compose up` at the current migration head `0014_pair_identity` (historical 0003 drill recorded).
-- [ ] Per-user auth/RBAC; one deployment token today.
-- [ ] Dashboard equity-snapshot history remains absent (#57); wallets have no backend yet (#10).
-- [ ] EVM/venue execution and executor/vault (out of paper scope).
-- [ ] Plugin backtest harness (graph backtests remain the only harness).
-- [ ] Signed plugin packages, registry and a bwrap/seccomp profile.
-- [ ] Multi-tenant ledger partitioning for one instance serving many users.
+Market observation covers 22 of 25 chains, with source and age on every row. The engine,
+reconciliation, kill switch, honest order rejections and UTC timestamps are in place.
+Forward-only migrations, bearer authentication and a CSRF-aware proxy, health and metrics
+endpoints, JSON logs and a runnable PAPER Compose stack are shipped. The verified
+deployment is recorded against an earlier migration head, so a fresh drill at the current
+head remains open. The stress harness and labelled web fixtures are in place.
 
-> **Proposed, not a decision of record (#39).** The M1–M5 milestones below and the pump.fun
-> spike were drafted in a documentation pass and have not been reviewed by the maintainer.
-> They are planning proposals: no item here grants scope or settles an architecture choice.
-> The maintainer's review of each milestone sequence unblocks promotion to a decision;
-> ADR-0014–0019 carry the same status in [`docs/DECISIONS.md`](docs/DECISIONS.md). No code is
-> blocked on #39.
+## Versions
 
-## Current — M1: UI close-out
+This roadmap sets out the scope of each version, not a schedule: no dates are promised, the
+order may change, the product ships with no strategies, and no build enables real-money
+trading until the readiness gate in [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) passes
+and the maintainer enables live mode. `0.1.0` is the only launch lane and carries the
+complete product; `0.2.0` and later are post-launch version names kept as empty placeholders.
+The per-version change record is [CHANGELOG.md](CHANGELOG.md); the release workflow and how
+a download is verified are in [docs/RELEASES.md](docs/RELEASES.md).
 
-Close out the M1 surfaces and keep the gate trustworthy.
+### 0.1.0 — the complete product, including live
 
-**Done:** shell/dashboard (#16), positions + four tile states (#18), markets (#21),
-token + fail-closed SCAM (#22), render harness (#15), Playwright gate determinism (#36), mobile
-overflow (#23), cross-page constants (#38), evidence (#24), the Instrument dark pass
-(#147), performance, activity/ledger, reports, chains, operations and the gallery
-routes. The placeholder catch-all is gone. The strategy surfaces (#12), risk/alerts
-(#13), automations scheduler (#11) and every system page (#14) are live; those tracker
-issues remain open for the follow-ups below.
+The first public release and the only launch lane. It carries the whole product: the paper
+surface and the remaining screens and onboarding, data ingest, authentication and roles,
+execution groundwork, the Rust and native work, and live execution with real money. The
+version identifier stays `0.1.0`. Live mode is targeted, not enabled: no build turns it on
+until the readiness gate in [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) passes and the
+maintainer enables it. The release-defining gates are a clean-clone install, a real paper
+trade in the default gate, version agreement and a publication audit, with the live
+readiness rollup, custody and key runbooks and a venue rehearsal recorded before live mode
+is enabled. No dates are promised.
 
-**Next:**
+### 0.2.0 — post-launch placeholder
 
-- Remaining position-tile states: trail-armed, banked, laddered, dust, stale, closed,
-  quarantined (#8) — the live table and server `PositionView` are already real.
-- Wallet metadata/custody and the live-executor hardening slice (#10; review blocked).
-- Watchlists as owned entities (#33).
-- Follow-ups tracked by the open M1 issues: a generic automation builder (#11), signal
-  scoring and routing (#12), alert delivery channels (#13) and gallery polish (#14).
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-**Known M1 gaps:** responsive tables still scroll instead of becoming cards; markets
-watchlists are absent (#33); ADR-0014–0019 and the M1–M5 milestones are Proposed pending
-maintainer review (#39), not decisions of record.
+### 0.3.0 — post-launch placeholder
 
-Exit: `main` renders the full M1 surface at 1440 and 390 px with no external requests,
-`bash tools/ci.sh` is green on five consecutive runs, and no screen implies live data.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-## Next — M2: Data & ingest
+### 0.4.0 — post-launch placeholder
 
-One real, replayable data path before any execution.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-- `services/ingest` with the `MarketEvent` contract, replay and backpressure (#25).
-- Postgres/Timescale persistence and forward-only migrations (#26).
-- Source freshness, provider health and circuit breakers that the existing alerts can
-  observe (#27).
-- One stable error/reason-code taxonomy across API, executor and UI (#28).
-- Start with one chain and one source. Do not build the 20-chain matrix.
+### 1.0.0 — post-launch placeholder
 
-Exit: a fixture source and one live read-only source produce normalized, replayable
-events with visible source and age; stale sources fail closed and alert.
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
 
-## Later — M3: Execution & Jupiter
-
-- Executor skeleton and the single `Intent → RiskDecision → Quote → Order → Fill →
-  Journal` pipeline against a fake venue (#29).
-- Jupiter adapter with a mandatory full-size sell quote, simulation and paper broadcaster
-  (#30).
-- Capped live pilot only after the paper gate.
-
-Exit: one paper trade and one capped live trade reconcile to the receipt, with duplicate
-intents producing one order and no key material outside the executor.
-
-## Later — M4: Keys & paper/live
-
-- Executor vault and the no-browser-key custody flow (#31).
-- Paper gate enforcement, server-derived PAPER/LIVE, 2FA and kill switch (#32).
-
-Exit: a live intent without a paper-gate record is denied; the mode badge cannot be
-hardcoded; the kill switch is honored by the executor.
-
-## Later — Official agent distribution (post real-mode readiness)
-
-The local Hermes/OpenClaw packs ship today. "Official" means upstream listings with
-support and security review, and it waits for real mode.
-
-**Gate — all required before submitting or announcing an official listing:**
-
-- [ ] Live executor shipped, reviewed and reconciled to receipts (ADR-0026).
-- [ ] Paper gate enforced for strategy promotion; server-derived LIVE mode cannot be
-      forged; kill switch honored by the executor.
-- [ ] Per-user RBAC / scoped keys reviewed for the hosting model; multi-tenant ledger
-      partitioning decision recorded (ADR) or one-workspace-per-user documented.
-- [ ] Signed plugin/agent packages, provenance and a reproducible release artifact.
-- [ ] Security review of the MCP tool surface, key lifecycle and agent packs.
-- [ ] Alpha label removed only when the above are measured, not planned.
-
-**Hermes Agent:**
-
-- [ ] Official skill in the Hermes Skills Hub (`agentskills.io` format, versioned).
-- [ ] Official MCP catalog entry via a PR to `NousResearch/hermes-agent`
-      (`optional-mcps/ezchain/manifest.yaml`); Nous review is required.
-- [ ] Portable Agent Plugins bundle (`plugin.json` + `mcp.json` + skill) published from a
-      dedicated, signed repository.
-- [ ] Clean-profile install + `hermes mcp test` on the current stable release.
-
-**OpenClaw:**
-
-- [ ] Official skill/plugin package on ClawHub with pinned version, `openclaw` package
-      metadata, trust/provenance fields and install hints.
-- [ ] `openclaw plugins install` + `plugins inspect --runtime` + Gateway probe on the
-      current stable release.
-- [ ] Tool policy defaults that keep `place_paper_order`, strategy deletion and the kill
-      switch behind an approval.
-
-**Cross-cutting:**
-
-- [ ] One release checklist covering Hermes and OpenClaw versions, API migrations and
-      scope changes; no listing is updated without a measured probe.
-- [ ] Public compatibility matrix: harness version, bundle version, SDK version, API
-      version, paper-only/live status.
-
-Status: **not started.** The current `integrations/` packs are local and explicitly
-labelled alpha.
-
-## Later — M5: Discovery & watchlists
-
-- Watchlists as owned entities, with alerts and an optional automation scope (#33).
-- Discovery/new-pairs feed with positive safety evidence (#34).
-
-Exit: watchlist state survives restart; a token with unknown safety evidence is not shown
-as tradeable; no copy-trading surface exists.
+Signed plugin and agent packages with reproducible provenance, a security review of the MCP
+tool surface and the key lifecycle, multi-tenant ledger partitioning, and official agent
+listings are not part of `0.1.0`; they belong to post-launch versions if added.
 
 ## Experimental — pump.fun firehose
 
-A two-day spike decides whether near-native pump.fun data is viable (#35). Working
-hypothesis: Yellowstone/Geyser gRPC decoding the pump.fun and PumpSwap programs; PumpPortal
-new-token/migration events as discovery hints only. Live pump.fun trading is not on the
-roadmap until the spike, a venue adapter, safety evidence and ADR-0009 are all in place.
+Near-native pump.fun market data is under investigation. Discovery events are hints only.
+A pump.fun live route needs a venue adapter, safety evidence and a recorded architecture
+decision before any live mode is enabled.
 
 ## Explicitly out of scope for v1
 

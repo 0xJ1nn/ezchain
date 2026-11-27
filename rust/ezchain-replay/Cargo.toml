@@ -1,0 +1,12 @@
+[package]
+name = "ezchain-replay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Read-only balance replay projection from ledger entries, ported from ledger.py under recorded parity"
+
+[dependencies]
+# The proven per-operation decimal prototype supplies parsing, exact sums and
+# exact minor-unit conversion. This crate does not reimplement any Decimal logic.
+ezchain-decimal = { path = "../ezchain-decimal" }

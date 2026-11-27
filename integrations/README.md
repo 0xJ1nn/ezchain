@@ -61,4 +61,4 @@ curl -sS -X POST https://ezchain.example.com/api/v1/agent/keys \
    read `ezchain://state` and confirm the mode says `paper`.
 
 See [docs/AGENT-INTEGRATION.md](../docs/AGENT-INTEGRATION.md) for the full tool/resource
-surface and [docs/RESEARCH-2026.md](../docs/RESEARCH-2026.md) for the evidence.
+surface.

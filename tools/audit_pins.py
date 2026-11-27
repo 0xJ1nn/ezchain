@@ -9,7 +9,9 @@ replayed offline and tested without a network:
 * ``--node`` audits the pnpm workspace with ``pnpm audit``.
 * ``--report FILE`` reads a saved ``pip-audit --format json`` report and applies
   the same verdict, which is how an air-gapped machine evaluates a report
-  produced elsewhere.
+  produced elsewhere. The report must have a ``.provenance`` sidecar binding its
+  digest and the digest of every lock to this checkout, or the replay is refused;
+  an ambient report file alone is not evidence.
 
 A vulnerability whose id is not in ``tools/pins/audit-allowlist.txt`` exits 1,
 including a pin that is vulnerable and matches no entry. An allowlisted id must
@@ -23,11 +25,13 @@ Usage:
     python3.11 tools/audit_pins.py --python
     python3.11 tools/audit_pins.py --node
     python3.11 tools/audit_pins.py --report /tmp/pip-audit.json
+    # requires /tmp/pip-audit.json.provenance with the report and lock digests
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -42,6 +46,8 @@ PYTHON_LOCKS = (
     "requirements.lock",
     "requirements-keyring.lock",
 )
+NODE_LOCK = "pnpm-lock.yaml"
+PROVENANCE_FIELDS = ("report_sha256", "locks", "generated_at", "source")
 
 
 class AuditUnavailable(RuntimeError):
@@ -162,6 +168,45 @@ def _parse_report(text: str, source: str) -> dict[str, object]:
     return report
 
 
+def _sha256(path: Path) -> str:
+    """Digest of a file, so a saved report can be bound to the bytes it judged."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_provenance(report: Path, provenance: Path) -> str:
+    """Bind a saved report to this checkout before its verdict can be replayed.
+
+    A report that was produced against different locks says nothing about the pins
+    now in the tree. Requiring a dated sidecar with the report digest and every
+    lock digest makes an air-gapped replay an explicit, checkable act rather than
+    an ambient file someone exported into the shell.
+    """
+    if not provenance.is_file():
+        raise AuditUnavailable(
+            f"audit: offline replay needs provenance at {provenance.name}; "
+            "refusing to judge an unbound report"
+        )
+    data = _parse_report(provenance.read_text(encoding="utf-8"), "report provenance")
+    for field in PROVENANCE_FIELDS:
+        if field not in data or not data[field]:
+            raise AuditUnavailable(f"audit: report provenance has no {field}")
+    expected = data["report_sha256"]
+    if not isinstance(expected, str) or expected.lower() != _sha256(report):
+        raise AuditUnavailable("audit: report provenance does not match the report digest")
+    locks = data["locks"]
+    if not isinstance(locks, dict):
+        raise AuditUnavailable("audit: report provenance locks entry is not an object")
+    for name in (*PYTHON_LOCKS, NODE_LOCK):
+        lock = ROOT / name
+        recorded = locks.get(name)
+        if not isinstance(recorded, str) or recorded.lower() != _sha256(lock):
+            raise AuditUnavailable(
+                f"audit: report provenance does not bind to the current {name}; "
+                "the report must be regenerated against these pins"
+            )
+    return f"generated {data['generated_at']} from {data['source']}"
+
+
 def run_python(python: str) -> dict[str, object]:
     """Audit the Python locks with pip-audit, or say why that was impossible."""
     if shutil.which(python) is None:
@@ -234,6 +279,11 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--python", action="store_true", help="audit the Python locks")
     mode.add_argument("--node", action="store_true", help="audit the pnpm workspace")
     mode.add_argument("--report", type=Path, help="judge a saved pip-audit JSON report")
+    parser.add_argument(
+        "--report-provenance",
+        type=Path,
+        help="sidecar binding the report to this checkout (default: REPORT.provenance)",
+    )
     parser.add_argument("--allowlist", type=Path, default=DEFAULT_ALLOWLIST)
     parser.add_argument(
         "--python-executable", default=sys.executable, help="interpreter that has pip-audit"
@@ -242,9 +292,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         allowed = load_allowlist(args.allowlist)
         if args.report is not None:
+            provenance = args.report_provenance or Path(f"{args.report}.provenance")
+            origin = verify_provenance(args.report, provenance)
+            print(f"audit: offline report replay — {origin}")
             text = args.report.read_text(encoding="utf-8")
             return report(
-                python_verdict(_parse_report(text, "report"), allowed), "the report", allowed
+                python_verdict(_parse_report(text, "report"), allowed),
+                f"the offline report ({origin})",
+                allowed,
             )
         if args.node:
             return report(node_verdict(run_node(), allowed), "pnpm-lock.yaml", allowed)

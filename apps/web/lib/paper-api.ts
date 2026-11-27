@@ -1,4 +1,4 @@
-// Typed client for the P0 paper account, positions and strategy endpoints.
+// Typed client for the paper account, positions and strategy endpoints.
 //
 // EZCHAIN_WEB_MODE=fixture swaps the HTTP calls for the fixture view models so Playwright
 // and offline UI work never depend on a running API. Fixture mode is visibly labelled by

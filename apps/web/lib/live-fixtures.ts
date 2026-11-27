@@ -62,7 +62,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 	{
 		id: "base",
@@ -80,7 +80,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 	{
 		id: "bsc",
@@ -98,7 +98,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 	{
 		id: "arbitrum",
@@ -116,7 +116,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 	{
 		id: "polygon",
@@ -134,7 +134,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 	{
 		id: "optimism",
@@ -152,7 +152,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 	{
 		id: "avalanche",
@@ -170,7 +170,7 @@ const CHAIN_REGISTRY: Chain[] = [
 			candles: true,
 		},
 		venues: [],
-		notes: "Paper marks only in P0.",
+		notes: "Paper marks only.",
 	},
 ];
 

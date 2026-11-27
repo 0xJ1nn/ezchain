@@ -1,0 +1,17 @@
+[package]
+name = "ezchain-rpc-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Node-facing RPC transport (async TCP/HTTP + framed messages) for ezCHAIN (ADR-0050/0052)"
+
+[dependencies]
+# In-repo pure kernels: framing codec, wire records and method dispatch. Not an external crate.
+ezchain-rpc = { path = "../ezchain-rpc" }
+
+# The ONLY external crates. Both are pinned exactly (no caret range may silently change a
+# network-facing dependency). See README.md for why each is needed; their own transitive
+# dependencies (hyper, tower, etc.) are not direct dependencies of this crate.
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+axum = "=0.8.9"

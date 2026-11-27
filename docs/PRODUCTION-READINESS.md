@@ -13,8 +13,8 @@ no copy-trading. `live_execute` is `false` for every chain.
 
 | Area | Evidence | Result |
 |---|---|---|
-| Packaging / tests | `bash tools/ci.sh`, `.venv/bin/pytest -q` | 1124 Python + 94 Playwright, green |
-| Market eyes | `/api/v1/markets/overview` after a scan | 22/25 chains `ok`, 3 `no_data`, 0 `error`, 90 snapshots |
+| Packaging / tests | `bash tools/ci.sh`, `.venv/bin/pytest -q` | 1045 Python + 94 Playwright, green |
+| Market eyes | `/api/v1/markets/overview` after a scan | 22/25 chains `ok`, 3 `no_data`, 0 `error`, 93 snapshots |
 | All-chain browse | `/api/v1/markets?chain=all&limit=100` | 100 rows across 22 chains, round-robin, source+age on every row |
 | Paper buy/sell | `POST /api/v1/paper/orders` on Base WETH and Solana BONK | filled; ledger groups balanced |
 | Idempotency | duplicate `idempotency_key` | same order id, exactly one fill |
@@ -33,10 +33,10 @@ no copy-trading. `live_execute` is `false` for every chain.
 | OpenClaw | OpenClaw 2026.10.6, isolated profile, bundle install | `format: bundle`, `bundleFormat: agent`, capabilities `skills` + `mcpServers`, `ezchain-trading` skill ready. Evidence: [openclaw.md](evidence/agent-integration/openclaw.md) |
 | Observability | `/healthz`, `/readyz`, `/metrics`, JSON logs | 200/200/200 with DB at head; request id/path/status/duration logged |
 | Stress | `--mode all` against real Postgres + live data | PASS, 0 findings: smoke, idempotency, 27 fuzz cases, 4-way sell race, kill switch, chain matrix. Evidence: [stress-all-2026-10-23.md](evidence/p0-production/stress-all-2026-10-23.md) |
-| Stress → issue loop | `--strategy-order-usd 1500` | filed #71; PR #72 fixed it; same run now passes and files nothing |
+| Stress → issue loop | `--strategy-order-usd 1500` | filed and fixed; the same run now passes and files nothing |
 | Web truth | dashboard, strategy builder | live reads carry `PAPER`/source/age; fixture mode is labelled; DCA/dip vocabularies match the validator |
 | Graph strategies | `/api/v1/graph/catalogue`, `/validate`, `/dry-run`, `/backtests` | validated live against Base WETH; dry run placed no order; backtest returned `BACKTEST` with GeckoTerminal closed bars. Evidence: [graph-api-paper.md](evidence/p0-production/graph-api-paper.md) |
-| Paper read models | `/paper/ledger`, `/performance`, `/attribution`, `/limits`, `/alerts`, CSV exports | server-computed from the ledger; unknown marks stay `null`; covered by the 1124-test gate |
+| Paper read models | `/paper/ledger`, `/performance`, `/attribution`, `/limits`, `/alerts`, CSV exports | server-computed from the ledger; unknown marks stay `null`; covered by the 1045-test gate |
 | Live UI paper flow | Playwright live spec + 8001 API + disposable Postgres | buy $1 → position → full sell → reconciliation `ok: true`; evidence: [live-ui-paper-flow.md](evidence/p0-production/live-ui-paper-flow.md) |
 | Gate determinism | Playwright with a dev server on :3000 | fails fast with instructions instead of corrupting `.next`; green without it |
 | Native desktop app | AppImage + `.deb`, Electron 45, PyInstaller sidecar, SQLite | AppImage and unpacked build launched; live markets → paper buy → position; data persisted across relaunch; API/web crashes recovered; restart-services clean. Evidence: [desktop/linux-app.md](evidence/desktop/linux-app.md). AppImage 179 MB, `.deb` 152 MB (install not exercised) |
@@ -47,9 +47,12 @@ These are explicit gaps, not silent assumptions:
 
 1. **Docker at the current migration head.** The 2026-10-22 drill on Docker 29.9.2 /
    Compose v5.6.1 passed at head `0003_paper_fill_order` (five services healthy, paper BUY
-   through the edge, restart and backup drills). The stack has **not** been re-drilled at
-   head `0014_pair_identity` or after the plugin/agent changes. Evidence for the historical
-   drill: [docker-up.md](evidence/p0-production/docker-up.md). Re-run
+   through the edge, restart and backup drills). The daemon-free static phase has since been
+   re-run at head `0026_market_stored_order`
+   ([compose-drill.md](evidence/compose-drill/README.md)), but it starts no container, so
+   the edge/restart/backup criteria remain unexercised. No container drill has been run at
+   the current head `0031_pair_address_width` or after the plugin/agent changes. Evidence
+   for the historical drill: [docker-up.md](evidence/p0-production/docker-up.md). Re-run
    `docker compose -p ezchain-verify -f infra/compose.yaml up --build -d` at the release
    commit before claiming Docker parity.
 2. **Per-user auth / RBAC.** Scoped agent keys are shipped, but one ezCHAIN instance is
@@ -61,7 +64,7 @@ These are explicit gaps, not silent assumptions:
    requires `EZCHAIN_API_TOKEN` from every other client. The API boundary is covered by
    tests, but the Docker edge has not been re-drilled with a remote scrape.
 4. **Live execution, keys, executor, vault.** Not built in `main`. The unmerged
-   `feat/live-executor` foundation was reviewed and **BLOCKED** (venue transactions not
+   live-executor foundation was reviewed and **BLOCKED** (venue transactions not
    bound to the intent, sell cap bypass, confirmed-sell bookkeeping gap). `services/ingest`
    and the Redis/NATS/OTel topology remain blueprint-only. `live_execute` is false.
 5. **EVM execution.** Non-Solana paper fills are `paper_mark` (capped buys, reduce-only
@@ -71,8 +74,9 @@ These are explicit gaps, not silent assumptions:
 7. **The dashboard is live** against `/paper/account`, `/paper/positions`, `/paper/limits`,
    `/paper/alerts` and the strategy/market reads. It does not draw an equity curve because
    no equity-snapshot history is stored. Wallets have no backend yet; the page says so.
-8. **Timescale retention / market-event ingest / replay harness** are M2, not part of this
-   stack. Snapshot storage is current-state `market_snapshots`, not a tick history.
+8. **Timescale retention / market-event ingest / replay harness** are planned for a later
+   stage, not part of this stack. Snapshot storage is current-state `market_snapshots`, not a
+   tick history.
 9. **Attribution scope.** `/paper/attribution` is per token, and
    `/strategies/{id}/performance` is per strategy from the ledger groups attributed to its
    own fills. There is no position-level attribution when a paper position is shared by

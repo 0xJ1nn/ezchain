@@ -102,6 +102,12 @@ def redact(text: str, secrets: Iterable[str] = ()) -> str:
 
 
 def normalize_method(method: str) -> str:
+    """Uppercase a known HTTP method; fold anything else to the bounded ``OTHER`` label.
+
+    Pure Python on purpose: this runs on every request, including the liveness probe,
+    and must not depend on a compiled artifact. The Rust port stays in ``native`` as a
+    parity-checked oracle only.
+    """
     upper = method.upper()
     return upper if upper in SAFE_METHODS else "OTHER"
 

@@ -2,6 +2,13 @@
 
 **One open-source, multi-chain crypto trading app. PAPER-first. Your strategies.**
 
+> **Language policy (ADR-0054):** Python owns the product process, the API and the live
+> execution path. Rust owns the signer boundary, the parity-proven money kernels, the
+> independently verifiable ledger seal and replay, and the shipped operator CLI. P2P and
+> consensus stay frozen until a second machine must agree on the same tape; unreachable and
+> duplicate crates are not migration progress. Custody is a separate decision (ADR-0055).
+> **TypeScript** owns the UI. The app is still PAPER-only; live trading is owner-blocked.
+
 ezCHAIN is a self-hostable trading workstation: multi-chain market browsing, a real ledger,
 live-market positions on PAPER fills, automations, signals, backtests and a strategy plugin
 SDK. It ships with **no strategies** — the platform, not the alpha, is the product.
@@ -25,32 +32,12 @@ SDK. It ships with **no strategies** — the platform, not the alpha, is the pro
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
 
-## The fee math — read this first (PAPER)
+## Releases and roadmap
 
-Terminals charge a platform fee on every trade. Every figure in the table below
-was read from the terminal's own documentation on 2026-11-07. The round-trip
-figure is twice the published per-trade rate; protocol, network, priority and
-bribe payments are additional, and each source page describes them separately.
-ezCHAIN is PAPER only: it charges no platform fee, and no money reaches a
-venue or network. Each paper fill still journals a simulated fee — 30 bps by
-default on a paper mark, or the quote's own venue cost when that is larger — so
-paper PnL is not overstated. Live venue and network fees would be the only
-per-trade costs once live execution exists.
-
-| Terminal | Published platform fee, per trade | Platform cost of one buy plus one sell | Source, read 2026-11-07 |
-|---|---|---|---|
-| Axiom | Net 0.95% at the entry tier (Wood, 1X) down to 0.75% at the top tier (Champion, 5X), with stated cashback of 0.05% to 0.25% | 1.90% at the entry tier down to 1.50% at the top tier | [Axiom fees](https://docs.axiom.trade/getting-started/fees/axiom-fees.md) |
-| BullX | 1% for every buy and sell, plus protocol fees of 0.15% to 5% (1% on PumpFun; typically 0.25% for PumpFun tokens migrated to Raydium) | 2.00% before protocol fees; (1% + 0.25%) × 2 = 2.50% for a Raydium-migrated round trip before network, priority and bribe payments | [BullX fees and gas](https://bullx.gitbook.io/bullx-neo-docs/fees-and-gas.md) |
-| GMGN | 1% handling fee per transaction; each token issuance platform adds its own fee (1% on Pump.Fun, per the GMGN page) | 2.00% before issuance-platform fees | [GMGN fees and settings](https://docs.gmgn.ai/index/gmgn-fees-settings.md) |
-| Photon | 1% of the initial token amount for every buy and sell transaction | 2.00% before network and priority fees | [Photon fees](https://pies-organization.gitbook.io/photon-trading/photon-on-sol/photon-fees-sol.md) |
-| Self-hosted ezCHAIN (PAPER) | No platform fee and no subscription or billing surface; paper fills journal a simulated fee but nothing is paid to a venue | 0% platform cost | [docs/API.md](docs/API.md), [docs/PLAN-LIVE-PAPER.md](docs/PLAN-LIVE-PAPER.md) |
-
-The published rate depends on the tier, the pool and the route, so no single
-blended number is quoted. Adding the protocol fees the terminals publish
-alongside the platform fee — for example the 0.25% BullX states for migrated
-Raydium pools — pushes a single round trip past 2% before any network,
-priority or bribe payment. A self-hosted PAPER workstation adds no platform
-fee on top of that math.
+0.1.0 is the first public release; it is unreleased. The [changelog](CHANGELOG.md) records
+each change with its issue or pull request, the [release notes](docs/release-notes/) record
+each version, and the [public roadmap](ROADMAP.md) sets out what is planned. No dates
+are promised and no `0.x` release enables real-money trading.
 
 ## Six structural edges, each with its evidence
 
@@ -142,26 +129,23 @@ into the engine, and one chain only.
 ezCHAIN inverts that: a small, boring, modular platform with hard invariants, where a
 strategy is a removable rule set and a chain is an adapter.
 
-Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
-[ADR log](docs/DECISIONS.md) for the decisions that follow from it,
-[ROADMAP.md](ROADMAP.md) for what is current, and
-[docs/PLAN-LIVE-PAPER.md](docs/PLAN-LIVE-PAPER.md) for the P0 contract.
+Read the [ADR log](docs/DECISIONS.md) for the decisions behind the platform and
+[ROADMAP.md](ROADMAP.md) for what is current and what is next.
 
 ## What is in this repo
 
 | Path | What |
 |---|---|
-| `project.md` | Canonical engineering rules (governance, scope, tests, releases) |
 | `apps/web/` | Next.js UI: dashboard, positions, markets, token page, strategies, visual graph builder, performance, activity/ledger, reports, risk, alerts, chains, operations |
 | `apps/api/` | FastAPI edge: live markets, quotes, paper orders, strategy CRUD/run |
-| `services/engine/` | Declarative strategy evaluator and scheduler (inline in P0) |
+| `services/engine/` | Declarative strategy evaluator and scheduler |
 | `packages/core-py/` | Domain, append-only ledger, paper accounting, risk, strategy rules |
 | `packages/sdk-py/` | Apache-2.0 strategy plugin SDK (manifest, context, intents) |
 | `packages/adapters/` | DexScreener market data, Jupiter quotes, 25-chain registry |
 | `apps/mcp/` | MCP 2025-11-25 server for Hermes, OpenClaw and other agents |
 | `integrations/` | Hermes skill/installer and OpenClaw Agent Plugins bundle |
 | `packages/ui/` | Generated design tokens shared by the web app |
-| `docs/` | API contract, product, architecture, domain, chains, plan, infra, security, workflow, production readiness |
+| `docs/` | API contract, product, architecture, domain, chains, infra, security and production readiness |
 | `design/wireframe/` | 32-page clickable low-fi wireframe (open `index.html`) |
 | `infra/` | Docker Compose PAPER stack, Caddy edge, Prometheus, future-service blueprint |
 | `tools/` | Local gates, setup and the combined dev runner |
@@ -171,7 +155,7 @@ Read [docs/LEARNINGS.md](docs/LEARNINGS.md) for the evidence, the
 1. **The ledger is the only accountant.** Cash is `SUM(ledger_entries.usd_value)`; every
    fill writes its journal entries in the same transaction as the position update.
 2. **One execution path.** Paper, testnet and live share the same pipeline; only the venue
-   adapter and custodian differ. P0 implements paper only.
+   adapter and custodian differ. This release implements paper only.
 3. **Strategies are user-defined packages, never platform code.** The platform
    ships declarative momentum/dip/DCA/threshold rules and loads external Python
    plugins in a supervised worker; no strategy lives in this repository.
@@ -200,13 +184,15 @@ and Windows are not built or verified.
 
 ## Quick start — live paper slice
 
-Requires Node 22 + pnpm 9, Python 3.11 and Postgres 16.
+Requires Node 22 + pnpm 9, Python 3.11, Postgres 16 and the **Rust toolchain** (install
+it with [rustup](https://rustup.rs); the native build needs no Docker).
 
 ```bash
 createdb ezchain                 # once
 cp .env.example .env             # DB URL, API URL, paper limits
 bash tools/setup-web.sh
 PYTHON=python3.11 bash tools/setup-python.sh
+bash tools/build-native.sh       # build/install the abi3 ezchain-bridge extension into .venv
 .venv/bin/alembic -c apps/api/alembic.ini upgrade head   # once, forward-only
 bash tools/dev.sh                # API on :8000, web on :3000
 open http://localhost:3000
@@ -227,6 +213,15 @@ Both setup scripts install from the committed locks, not from the ranges: Python
 `requirements.lock` with `--require-hashes`, Node via `pnpm-lock.yaml --frozen-lockfile`.
 `python3 tools/check_pins.py --fast` verifies the pins without a network; the pin, audit
 and update ritual is [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
+The API and executor call a compiled PyO3 bridge for money conversion and scope
+normalisation (ADR-0052). There is **no Python fallback**: without the extension every
+wrapper raises `NativeBridgeUnavailable`, so the app and the gate fail closed. Build it
+once per venv with `bash tools/build-native.sh` — idempotent, host-native on macOS and
+Linux, using the committed Cargo lock and the linker flags in `rust/.cargo/config.toml`.
+Windows is not supported or verified. The gate (`bash tools/ci.sh`) has the same
+prerequisite; see [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md#3-server-sizing-and-prerequisites)
+and [rust/ezchain-bridge/README.md](rust/ezchain-bridge/README.md).
 
 - API docs: <http://127.0.0.1:8000/docs> · contract: [docs/API.md](docs/API.md)
 - Reason codes (every refusal and its meaning): [docs/REASON-CODES.md](docs/REASON-CODES.md)
@@ -304,9 +299,8 @@ curl -sS -X POST http://127.0.0.1:8000/api/v1/agent/keys \
 ```
 
 Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md),
-[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md),
-[integrations/README.md](integrations/README.md) and the 2026 evidence note
-[docs/RESEARCH-2026.md](docs/RESEARCH-2026.md). There is no live order tool; the API
+[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md) and
+[integrations/README.md](integrations/README.md). There is no live order tool; the API
 refuses `EZCHAIN_EXECUTION_MODE=live` until the executor ships.
 
 ## Wireframe
@@ -364,6 +358,27 @@ server you own, use the one-command installer described in
 executor, ingest, a standalone engine) are recorded in `infra/compose.blueprint.yaml` and
 are not part of this stack.
 
+## Trademark and official channels
+
+The ezCHAIN name and logo are trademarks, separate from the AGPL and Apache code licences
+([TRADEMARKS.md](TRADEMARKS.md)). The canonical domain and repository are
+`github.com/0xJ1nn/ezchain`, and the tagged releases in that repository are the only official
+builds. No other domain, download site, social account, token or hosted service is an
+official ezCHAIN channel, and the project does not endorse third-party products.
+
+Official releases sign the archive checksum, the funding configuration and each build's
+attestation with the maintainer's release key. The public half of that key, its fingerprint and
+the signed assets are published by the maintainer with the first signed tag; a source checkout
+carries none of them. The steps for checking a download are in
+[docs/RELEASES.md](docs/RELEASES.md). Verify a release before running it. Settings → General
+shows a positive build badge only when the running build's attestation verifies against a key
+whose fingerprint matches the published one; when it does not, the page says why.
+
+Forking is welcome under the code licences, but a fork that is distributed or hosted must use
+its own name and logo, keep the [NOTICE](NOTICE) file and remove the ezCHAIN marks from its
+interface and listings. Describing a project as based on ezCHAIN is permitted; presenting it
+as ezCHAIN is not.
+
 ## Contributing
 
 **Contributors are most welcome.** The project is alpha and deliberately small; the most
@@ -378,13 +393,20 @@ useful contributions are:
 - **Docs and reproducibility** — a measured README, a failing-then-passing test, or a
   clearer runbook is a real contribution.
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
-the [issue templates](.github/ISSUE_TEMPLATE/), and `project.md` (canonical engineering
-rules). Good first issues are labelled `good first issue`; design and architecture
-changes need an ADR before code. Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md) for
-plugins and [integrations/README.md](integrations/README.md) for the agent packs.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+and the [issue templates](.github/ISSUE_TEMPLATE/). Good first issues are labelled
+`good first issue`; design and architecture changes need a recorded decision before code.
+Read [docs/STRATEGY-SDK.md](docs/STRATEGY-SDK.md) for plugins and
+[integrations/README.md](integrations/README.md) for the agent packs.
 
 ## License
 
-AGPL-3.0-or-later. Strategies authored by users are their own; the plugin SDK is
-Apache-2.0 so strategies can be distributed under any license.
+ezCHAIN is free and open source under AGPL-3.0-or-later, for personal and commercial use.
+Strategies authored by users are their own; the plugin SDK is Apache-2.0 so strategies can be
+distributed under any license.
+
+You may run, change, sell or host ezCHAIN under the AGPL. The ezCHAIN name and logo are
+trademarks and do not come with the code: a fork, build or hosted service must use its own name
+unless it has written permission ([TRADEMARKS.md](TRADEMARKS.md)). The project holds no user
+keys or funds; how it is funded, and what it will never charge for, is in
+[docs/FUNDING.md](docs/FUNDING.md).

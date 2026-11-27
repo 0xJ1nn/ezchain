@@ -55,8 +55,9 @@ Core code reads capabilities, never `chain.id`. A test lints chain-name literals
 | `Quote` | buy quote, **full-size sell quote**, route identity, expected/min out, price impact, fees, account rent, source, observed_at, ttl |
 
 The **sell-side quote is mandatory** even when buying: an entry with no executable exit
-is not an entry. This is the v3 lesson (`_ENTRY_MIN_SELL_BUY_RATIO`,
-`_validate_executable_entry_quotes`), generalized to every venue.
+is not an entry. The router enforces this with its full-size exit check
+(`QuoteRouter._has_exit` in `packages/adapters/src/ezchain_adapters/quotes.py`), applied
+to every executable rung before a buy is accepted.
 
 Paper mode uses the same venue adapter with a simulated broadcaster that fills at the
 quoted effective price. If a venue cannot quote, paper rejects too. No synthetic price.
@@ -133,11 +134,11 @@ The reason a chain gets a real venue adapter first is depth that a quote can act
 not the presence of a registry row. The registry has 25 entries; that number is browsing
 coverage. Seven concrete keyless quote clients are built — `JupiterClient`, `KyberSwapClient`,
 `VeloraClient`, `LifiClient`, `CetusClient`, `StonfiClient` and `OsmosisSqsClient`, all wired
-in `apps/api/src/ezchain_api/main.py:113-125`. Eighteen registered chains have an executable
+in `apps/api/src/ezchain_api/main.py:116-127`. Eighteen registered chains have an executable
 ladder; seven have only the capped `paper_mark` (§3.2). No concrete adapter implements the
 build/sign/submit `VenueAdapter` surface of §2 or the executor's `Venue` protocol: the only
 `Venue` implementation is `FakeVenue` in
-`services/executor/src/ezchain_executor/venue.py:40`, an in-memory test double. Real venue
+`services/executor/src/ezchain_executor/venue.py:43`, an in-memory test double. Real venue
 depth is therefore a plan, not a shipped capability.
 
 The first real adapters go to the six registry T1 rows, in this order of justification:
@@ -170,9 +171,9 @@ This table is derived from `packages/adapters/src/ezchain_adapters/registry.py`;
 column is the registry's own `ChainMeta.tier`, not the aspirational target in §3. It must be
 updated in the same change as the registry. `Quote head` is `chain.quote_kind`: a head of
 `paper_mark` means no keyless executable quote exists for that chain. `Paper fill` is `yes`
-for every registered chain because `apps/api/src/ezchain_api/services/paper.py:1821,1846`
-prices through the one `QuoteRouter` built in `apps/api/src/ezchain_api/main.py:117-145` and
-handed to `PaperOrderExecutor` at line 153 — the capped mark is the router's own last rung,
+for every registered chain because `apps/api/src/ezchain_api/services/paper.py:1936,1961`
+prices through the one `QuoteRouter` built in `apps/api/src/ezchain_api/main.py:135-148` and
+handed to `PaperOrderExecutor` at line 156 — the capped mark is the router's own last rung,
 not a second paper pricing path. That is the same *quote* adapter surface as live quotes; the
 `build_swap`/`submit` surface in §2 is not used by paper fills and has no concrete
 implementation. `Live execute` is `no` for every row because `ChainMeta.live_execute` defaults

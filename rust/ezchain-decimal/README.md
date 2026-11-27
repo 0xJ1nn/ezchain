@@ -1,0 +1,208 @@
+# ezchain-decimal — decimal parity prototype
+
+**Status: research prototype. Money arithmetic is NOT enabled in Rust by this crate.**
+
+ADR-0050 rule 4 forbids porting `money.py`, ledger entries or seal hashing until a
+Rust decimal can reproduce the per-operation precision of `money.py` and a parity
+harness proves it (`rust_decimal`'s fixed 28 digits cannot). This crate is that
+proof-of-concept: a dependency-free decimal value whose operations are recorded
+against the real Python oracle. It changes no money-path caller, adds no PyO3
+binding, and enables no Rust money arithmetic anywhere.
+
+## The value
+
+`Decimal` is `sign + coefficient + exponent`:
+
+- `sign: bool` — the sign of a zero is preserved (`Decimal('-0')` stays negative).
+- `coef: BigUint` — an arbitrary-precision unsigned integer stored as decimal
+  digits, **not** a fixed 28- or 38-digit word. There is no precision cap in the
+  value itself; every operation derives the exact context it needs from the
+  operands, the way `money.py` sizes its `localcontext()`.
+- `exp: i64` — base-10 exponent. It spans CPython's whole constructible range
+  (`MAX_EMAX = MAX_PREC = 999999999999999999`), so exponents outside the former
+  `i32` representation are handled and proven below. Larger exponents are
+  refused at parse time the way `Decimal(str)` raises `InvalidOperation`.
+
+Formatting reproduces `str(Decimal)` (including `0E-8` for a zero at exponent -8),
+because `money.py` serialises values with `str()`.
+
+## Proven operations (parity recorded against the Python oracle)
+
+Each operation below is implemented to match `packages/core-py/src/ezchain_core/money.py`
+under the local context precision that module derives, or the pure conversion
+helpers in `packages/adapters/src/ezchain_adapters/quotes.py` under the ambient
+28-digit context those helpers actually run in. The oracle harness
+(`tests/parity_oracle.py`) runs the real Python functions under the project venv
+and records their results in `tests/parity_fixture.txt`; `tests/parity.rs` asserts
+the Rust output matches every recorded token, including exact triples
+(`sign|coefficient|exponent`) and `str(Decimal)` forms, and refusal codes.
+
+| Operation | `money.py` / Decimal counterpart | Proven |
+|---|---|---|
+| Construction from string | `Decimal(str)` | yes — finite literals, sign/zero/leading-zero/exponent handling |
+| Alternative spellings | `Decimal(str)` | yes — underscores, four Unicode Nd blocks, signs, exponents, whitespace, non-finite words (focused gate below) |
+| Comparison | `==`, `<`, `>` on `Decimal` | yes — representation-insensitive (`0.1 == 0.10`, `-0 == 0`) |
+| Addition (under derived context) | `a + b` used by `exact_sum` | yes |
+| Multiplication (under derived context) | `a * b` used by `exact_product` | yes |
+| `exact_precision` | `exact_precision(*values, extra=…)` | yes |
+| `exact_sum` | `exact_sum(values)` | yes |
+| `exact_product` | `exact_product(*values)` | yes |
+| Quantize, half-even | `quantize_money` / `ROUND_HALF_EVEN` to 1e-8 | yes — ties, both signs |
+| Quantize, floor | `floor_money` / `ROUND_FLOOR` to 1e-8 | yes — including negatives |
+| Division (context-rounded) | `a / b` under a derived precision, half-even | yes — preferred exponent, terminating and non-terminating quotients, half-even ties |
+| `bps_fee` | `bps_fee(notional, fee_bps)` | yes — exact fee at 1e-8, negative-fee refusal |
+| `preview_cost` (numeric sheet) | `preview_cost(...)` fee legs and slippage window | yes — paper-mark flat fee, `max(bps leg, quantized venue leg)`, quantized `worst_case_out`; wire form stays blocked |
+| `require_money` | `require_money(value)` | yes — representation preserved, sub-quantum refusal (`SubQuantumError`), non-finite refusal |
+| `require_quantity` | `require_quantity(value)` | yes — finite exact values pass without a scale limit |
+| `to_minor_units` | `to_minor_units(value)` | yes — exact 1e-8 scaling, signed integer magnitude, sub-quantum and non-finite refusal, round-trip checked |
+| `from_minor_units` | `from_minor_units(minor)` | yes — inverse conversion for arbitrary-precision signed integers |
+| `exact_neg` | `exact_neg(value)` | yes — sign flip on the digits with no context rounding, including the sign of zero |
+| Non-finite rejection | `_as_decimal` → `MoneyError` | yes — `NaN`, `sNaN`, `±Infinity` at every money boundary |
+| Input-type guards | `_as_decimal` / `from_minor_units` | yes — `bool` → `MoneyError`, `float` → `FloatMoneyError`, `int` accepted as `Decimal(int)`, any other type → `MoneyError`; `from_minor_units(1.0)` → plain `MoneyError`, not `FloatMoneyError` |
+| Ambient-context boundaries | decimal `Emax` / `MAX_PREC` under `money.py`'s `localcontext()` | yes — quantize/floor past `Emax` → `MoneyError` (caught `InvalidOperation`), product past `Emax` → `Overflow`, derived precision past `MAX_PREC` → `ValueError`, `scaleb` past `Emax` in `to_minor_units` → `MoneyError` |
+| Exponents outside `i32` | `Decimal(str)` and money ops at ±1e10 and near `MAX_EMAX` | yes — parse, `str`, quantize refusal, `exact_precision`, product overflow and end-of-range construction refusal all match |
+| `to_raw` | `quotes.to_raw(amount, decimals)` | yes — token→raw integer, truncate toward zero, 28-digit rounding, signed zero, `NotFound` outside `0..=36` |
+| `from_raw` | `quotes.from_raw(raw, decimals)` | yes — raw→token inverse scaling, long-int rounding, `NotFound` outside `0..=36` |
+| `quote_price` | `quotes.quote_price(side, …)` | yes — buy/sell quote inversion, published USD legs when present, preferred exponents, `DivisionByZero` and `0/0 → InvalidOperation` |
+| `value_impact` | `quotes.value_impact(…)` | yes — `(out_usd / in_usd) - 1` under the ambient context, fail-closed `None` for missing or non-positive input legs |
+| `SourceRef.to_dict` | `types.SourceRef.to_dict` | yes — `name`, `url`/null and the UTC `datetime.isoformat()` spelling (`YYYY-MM-DDTHH:MM:SS[.ffffff]+00:00`) |
+| `CostPreview.to_dict` | `money.CostPreview.to_dict` | yes — the full field map including the echoed `network_fee_usd` / `price_impact_pct`, nullable `worst_case_out`, integer `slippage_bps` and nested `source` |
+| `Quote.to_dict` | `types.Quote.to_dict` | yes — money spellings plus nullable `route` / `price_impact_pct` and nested `source` |
+| to_dict → canonical JSON bytes | `json.dumps(obj.to_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)` | yes — every recorded field map re-emitted byte-for-byte through `ezchain-jsoncanon` |
+
+Corpus: **1356 deterministic cases** (fixed hand-picked tricky cases plus a seeded
+random corpus, up to 40 digits). A **held-out corpus of 1356 cases generated with a
+different seed (90210)** also matched 1356/1356, as a check against overfitting. Tricky
+cases include `0.1 + 0.2`, 38-digit `NUMERIC(38, 8)` values, negative exponents,
+half-even ties (`5e-9 → 0E-8`, `15e-9 → 2E-8`), floor on negatives
+(`-1.234567895 → -1.23456790`), non-finite refusal, division preferred-exponent and
+rounding cases (`1.00 / 2 → 0.50`, `100000 / 3` at precision 4 `→ 3.333E+4`,
+`101 / 1000` at precision 2 `→ 0.10`, `1 / 3` at 28 digits), long-tail bps fees,
+both preview cost-sheet branches, whole-versus-sub-quantum minor-unit conversions
+(`0.1 → 10000000`, `0.000000009 → SubQuantumError`), signed minor-unit round trips,
+`exact_neg` on long coefficients and signed zeros, every Python input type at both
+money boundaries, the `Emax`/`MAX_PREC` refusal boundaries and exponents up to
+`MAX_EMAX`, and the conversion cases (`1.2345678901 @ 8 → 123456789`,
+`-0.9 @ 0 → 0`, a 29-digit value rounded before truncation,
+raw `123456789012345678901234567890 @ 18 → 123456789012.3456789012345679`,
+`100 / 0.5 → 2.0E+2`, `0 / 0 → InvalidOperation`, `100 → 99` impact `→ -0.01`,
+missing/non-positive legs → `None`).
+
+The `to_dict` spellings have their own corpus: **592 deterministic cases** (171
+`SourceRef`, 218 `CostPreview`, 203 `Quote`, recorded from the real Python
+objects) with a **held-out corpus of 592 cases from a different seed (99173)**
+also matching 592/592.
+
+### Spelling parity (focused gate)
+
+The main corpus above uses canonical spellings only, so it cannot detect a parser
+that rejects another spelling of the same value. A separate oracle,
+`tests/spelling_oracle.py`, records the real `decimal.Decimal` outcome for
+**127 spelling cases** in `tests/spelling_fixture.txt`; `tests/spelling.rs`
+asserts the exact `str(Decimal)` output for accepted values and the exact
+refusal class for rejected ones (`ConversionSyntax`, `InvalidOperation`,
+`NonFinite`). Measured behaviour of the Python oracle:
+
+- **Underscores are ignored anywhere**, not only between digits. Python accepts
+  `1_0`, `1__0`, `_1_`, `1_.0`, `1._0`, `1_e2`, `1e+_2`, `1e+__2`, `+_1` and
+  even `Na_N` / `Inf_inity` / `s_NaN`. Leading, trailing, doubled or
+  point/exponent-adjacent underscores are **not** refused by `Decimal(str)` —
+  the familiar "between digits" rule belongs to Python numeric literals, not
+  to `Decimal`. `Decimal::parse` therefore drops underscores before any check.
+  Strings made only of underscores (`_`, `__`, `._`, `_e3`) are still refused.
+- **Unicode Nd digits** are accepted in both the coefficient and the exponent,
+  and may be mixed with ASCII digits and underscores. The explicit range table
+  in `decimal.rs` maps exactly these four blocks: **Arabic-Indic
+  U+0660–0669, Extended Arabic-Indic U+06F0–06F9, Devanagari U+0966–096F and
+  Fullwidth U+FF10–FF19**. Other Nd blocks — Bengali U+09E6–09EF, Thai
+  U+0E50–U+0E59, Myanmar U+1040–U+1049 among them — are **not** mapped and
+  remain refused by this crate. **This is not full Unicode parity.** Non-Nd
+  numerals such as superscript `²` (No) and Roman `Ⅳ` (Nl) are refused by both.
+- **Signs** are only ASCII `+` / `-`; fullwidth minus `－` and mathematical
+  minus `−` are refused. Unicode Nd digits after a sign are accepted.
+- **Exponents** accept a single optional `+`/`-`, with ASCII or covered-Nd
+  digits and underscores. A missing or malformed exponent (`1e`, `1e+`,
+  `1e++2`, `1ex`, `1e2x`) is a `ConversionSyntax` refusal; a well-formed
+  exponent beyond `MAX_EMAX` is `InvalidOperation` at construction.
+- **Whitespace** is stripped only at the ends, using Python's `isspace()` set
+  (which includes U+001C–U+001F in addition to Rust's `char::is_whitespace()`).
+  Interior whitespace, zero-width space U+200B and a trailing NUL are refused.
+- **Non-finite words** are case-insensitive and ignore underscores; this crate
+  reports `NonFinite` so the money layer raises its original `MoneyError`.
+
+This proves **per-operation decimal parity and the named `to_dict` spellings
+only**. It does not establish a speed advantage, an FFI boundary, or that a
+whole money path is ready to move.
+
+## Remaining blockers — NOT proven, NOT in scope
+
+These are explicitly out of this prototype. None may be treated as ready to port:
+
+- **Network-dependent quote paths** — `QuoteRouter._quantity_from_usd`,
+  `QuoteRouter._paper_mark` and `QuoteRouter._has_exit` in `quotes.py` ask a
+  provider or a DexScreener mark (and a mutable freshness/breaker state) for
+  their inputs. They are not pure functions of their arguments, so they stay in
+  Python; only their pure arithmetic core is ported above.
+- **Provider wire parsing** — `parse_decimal` and `parse_int` in `quotes.py` parse
+  provider payloads and are not currency conversion; they stay in Python too.
+- **A general canonical wire form for every record** — the named `to_dict` records are
+  proven and the byte form is emitted by `ezchain-jsoncanon`; other records are not claimed.
+- **Transaction and ledger fingerprinting** — handled by `ezchain-fingerprint` and
+  `ezchain-seal`, not by this crate.
+
+Also not ported: **Nd blocks outside the four listed above** (so Unicode
+decimal input from those scripts still fails at the bridge, where Python would
+succeed), custom `NaN` payload spellings, and exponents in non-ASCII digit
+scripts outside the same table. Also not ported: the `parse_decimal` non-finite /
+blank / bool → `None` guard — a non-finite spelling passed straight to a
+conversion helper is not claimed as proven. Context behaviour is proven only for
+the **default ambient context** `money.py` actually runs under: `clamp = 0`,
+`Emin = -999999`, `Emax = 999999`, with `prec` derived per operation. A
+non-default `clamp`, custom `Emin`/`Emax`, and subnormal / underflow (`Emin`-edge)
+behaviour are **not** proven: `money.py` never sets those fields, so this oracle
+cannot record answers for them. Exponents beyond `MAX_EMAX` are refused at parse
+time; they are not representable in CPython either. The context-precision
+derivation is sized so that no rounding is needed for the proven operations;
+`round_to_precision` and the division guard digit mirror context rounding.
+
+## Gates (observed results)
+
+From the `rust/` workspace, with the scratch Rust toolchain and the project venv:
+
+```
+cargo fmt --all -- --check                          # clean
+cargo clippy --workspace --all-targets -- -D warnings  # clean
+cargo test --workspace                              # 473 passed, 0 failed
+   └─ ezchain-decimal: 31 unit tests + parity 1356/1356 + spelling 127/127 + to_dict 2
+.venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py --check
+                                                    # OK: fixture matches oracle (1356 cases)
+.venv/bin/python rust/ezchain-decimal/tests/spelling_oracle.py --check
+                                                    # OK: spelling fixture matches oracle (127 cases)
+EZ_DECIMAL_SEED=90210 EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
+  .venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
+                                                     # wrote 1356 held-out cases
+EZ_DECIMAL_FIXTURE=/tmp/heldout.txt \
+  cargo test -p ezchain-decimal --test parity        # parity: 1356/1356 held-out cases match
+```
+
+Regenerate the recorded oracle fixtures with:
+
+```
+.venv/bin/python rust/ezchain-decimal/tests/parity_oracle.py
+.venv/bin/python rust/ezchain-decimal/tests/spelling_oracle.py
+.venv/bin/python rust/ezchain-decimal/tests/todict_oracle.py
+```
+
+Set `EZ_DECIMAL_SEED` / `EZ_DECIMAL_FIXTURE` or `EZ_TODICT_SEED` /
+`EZ_TODICT_FIXTURE` to generate a held-out corpus without overwriting the
+committed fixture; the Rust parity tests read the path in the matching
+`*_FIXTURE` variable when it is set, otherwise they use the committed fixture.
+
+## Safety
+
+`#![forbid(unsafe_code)]`, zero runtime dependencies, no I/O, no keys, no ledger
+writes. The only Cargo dependency is a **dev-only** path dependency on the
+sibling `ezchain-jsoncanon` crate, used in the parity gate to emit the canonical
+byte string; the library itself stays dependency-free. No money-path caller is
+modified. Money arithmetic stays in Python (CONTRACT I1, ADR-0049/0050/0052)
+until a separate ADR and full-path parity gate say otherwise.

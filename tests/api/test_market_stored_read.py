@@ -37,6 +37,25 @@ PAGE_FILTERS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _frozen_market_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every stored-markets read at the same instant the fixtures were built at.
+
+    The page compares pair ages against the request time; rows seeded exactly on the
+    30-minute boundary would flip as the suite advanced by milliseconds, changing the
+    expected total by one on a loaded host. The router reads ``datetime.now(UTC)``, so the
+    module's ``datetime`` is replaced with a subclass pinned to ``NOW``.
+    """
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return NOW
+
+    monkeypatch.setattr(markets, "datetime", _FrozenDatetime)
+
+
+
 def _settings() -> Settings:
     return Settings(
         environment="test",

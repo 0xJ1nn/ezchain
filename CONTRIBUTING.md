@@ -1,7 +1,7 @@
 # Contributing to ezCHAIN
 
-Read [`project.md`](project.md) (canonical rules), [`AGENTS.md`](AGENTS.md) (quick
-reference) and [`docs/CONTRACT.md`](docs/CONTRACT.md) (invariants) before your first PR.
+Read the invariant contract ([docs/CONTRACT.md](docs/CONTRACT.md)) and the contributor guide
+([AGENTS.md](AGENTS.md)) before your first PR.
 
 ## Ways to contribute
 
@@ -21,7 +21,6 @@ and Chrome for the Playwright smoke test.
 ```bash
 git clone https://github.com/0xJ1nn/ezchain.git
 cd ezchain
-node tools/sync-agent-stubs.mjs
 bash tools/setup-web.sh
 PYTHON=python3.11 bash tools/setup-python.sh
 createdb ezchain
@@ -32,17 +31,32 @@ bash tools/ci.sh
 ```
 
 The API, engine, web UI and Postgres schema are built; the executor and live execution are
-not. Docker Compose remains a blueprint and is not verified. Migrations are forward-only:
-add a revision with `alembic -c apps/api/alembic.ini revision --autogenerate`, review it,
-and never put destructive operations in `upgrade()`. Mutations need
-`EZCHAIN_API_TOKEN`; the web server injects it, so never send the token to the browser.
-Playwright uses the installed Chrome channel; install Chrome if the UI test cannot find
-it.
+not. A runnable PAPER Compose stack and its recorded verification are described in the
+README. Migrations are forward-only: add a revision with
+`alembic -c apps/api/alembic.ini revision --autogenerate`, review it, and never put
+destructive operations in `upgrade()`. Mutations need `EZCHAIN_API_TOKEN`; the web server
+injects it, so never send the token to the browser. Playwright uses the installed Chrome
+channel; install Chrome if the UI test cannot find it.
+
+## Scope, tests and claims
+
+- One topic per pull request. Define what is in and out of scope before starting; unrelated
+  cleanups belong in their own PR. Do not refactor code the task did not ask you to touch.
+- New behaviour ships with a failing-first test. A reproduced bug gets a regression test;
+  money math and ledger rules get property tests. Explain why a test changed.
+- Report only what you ran. Quote the command and its observed result; if you did not run a
+  check, write "not verified". Paper results are labelled `PAPER`.
+
+## Local gate
+
+Run `bash tools/ci.sh` before opening a PR. The gate checks links, secrets, wireframe
+integrity and the runtime suites. Quote its result in the PR description. A red gate is not
+merged, and no step may be skipped.
 
 ## PRs
 
 1. Branch from fresh `origin/main` (`feat/…`, `fix/…`, `docs/…`, `design/…`).
-2. Conventional Commits, `git commit -s`.
+2. Conventional Commits, `git commit -s`, one topic per PR.
 3. Fill the PR template, including the exact verification commands you ran.
 4. Keep the diff scoped. Unrelated cleanups belong in their own PR.
 5. Update docs in the same PR. A stale doc is a bug.

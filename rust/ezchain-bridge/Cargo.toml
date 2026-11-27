@@ -1,0 +1,17 @@
+[package]
+name = "ezchain-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "In-process PyO3 bridge exposing parity-tested Rust kernels to Python"
+
+[lib]
+name = "ezchain_bridge"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ezchain-core = { path = "../ezchain-core" }
+ezchain-decimal = { path = "../ezchain-decimal" }
+ezchain-rpc = { path = "../ezchain-rpc" }
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py39"] }

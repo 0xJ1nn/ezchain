@@ -1,0 +1,9 @@
+# PyO3 extension modules on macOS leave Python C-API symbols to the interpreter at
+# load time. Without these flags, `cargo test --workspace` fails to link the bridge
+# crate even though the extension itself is correct. The flags are target-scoped, so
+# Linux builds are unaffected.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

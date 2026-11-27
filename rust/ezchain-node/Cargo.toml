@@ -1,0 +1,28 @@
+[package]
+name = "ezchain-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Composition binary for the ezCHAIN Rust node transports: typed config, check, serve (ADR-0050/0052)"
+
+[[bin]]
+name = "ezchain-node"
+path = "src/main.rs"
+
+[dependencies]
+# The two node transports this crate composes. They are the only layers that touch sockets.
+ezchain-rpc-server = { path = "../ezchain-rpc-server" }
+ezchain-p2p-transport = { path = "../ezchain-p2p-transport" }
+# In-repo kernels: their public config types are needed to build the transport configs.
+ezchain-rpc = { path = "../ezchain-rpc" }
+ezchain-p2p = { path = "../ezchain-p2p" }
+
+# The ONLY external crates, all pinned exactly. serde + serde_json parse a small JSON config;
+# the Deserialize impls are hand-written (no serde_derive proc-macro) so validation stays typed
+# and the dependency surface stays small. tokio is required to run two async transports with
+# one shutdown signal; it is the same pinned version both transports already use, not a new
+# runtime. See README.md for the full rationale.
+serde = "=1.0.229"
+serde_json = "=1.0.154"
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync"] }
