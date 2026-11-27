@@ -32,6 +32,7 @@ from .vault import (
 )
 from .vault_local import (
     CIPHER_ALGORITHM,
+    CORRUPTED_VAULT_MESSAGE,
     DERIVATION_PATHS,
     EVM_DERIVATION_PATH,
     FAMILY_EVM,
@@ -47,9 +48,11 @@ from .vault_local import (
     REQUIRED_CRYPTO_PINS,
     SOLANA_DERIVATION_PATH,
     VAULT_FILE_VERSION,
+    WRONG_PASSWORD_MESSAGE,
     CipherParams,
     CorruptVaultFile,
     DerivationPathMismatch,
+    EncryptedLocalVaultStore,
     ImportReceipt,
     InvalidEvmKey,
     InvalidMnemonicShape,
@@ -80,6 +83,7 @@ from .venue import FakeVenue, VenueError
 
 __all__ = [
     "CIPHER_ALGORITHM",
+    "CORRUPTED_VAULT_MESSAGE",
     "DERIVATION_PATHS",
     "EVM_DERIVATION_PATH",
     "FAMILY_EVM",
@@ -95,12 +99,14 @@ __all__ = [
     "REQUIRED_CRYPTO_PINS",
     "SOLANA_DERIVATION_PATH",
     "VAULT_FILE_VERSION",
+    "WRONG_PASSWORD_MESSAGE",
     "AttemptLog",
     "BroadcastAttempt",
     "CipherParams",
     "CorruptVaultFile",
     "DedupeStore",
     "DerivationPathMismatch",
+    "EncryptedLocalVaultStore",
     "ExecutionPipeline",
     "FakeVenue",
     "FileAttemptLog",

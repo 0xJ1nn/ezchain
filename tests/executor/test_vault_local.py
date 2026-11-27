@@ -1,9 +1,8 @@
 """The local-vault tier: first-class import validation and fail-closed refusals.
 
-The runtime lock has no crypto packages, so this suite exercises only what needs no
-crypto: import formats, derivation-path binding, the versioned file schema and typed
-errors. Encryption, authentication of a tampered ciphertext and the round trip are
-reported as blocked, not faked. All keys here are published vectors or obvious byte
+This suite covers what needs no crypto: import formats, derivation-path binding, the
+versioned file schema and typed errors. Sealed-file round trips and authentication live
+in ``test_vault_encryption.py``. All keys here are published vectors or obvious byte
 patterns; none can spend anything.
 """
 
