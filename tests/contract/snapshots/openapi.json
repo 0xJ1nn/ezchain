@@ -1284,6 +1284,69 @@
         "title": "ChatIn",
         "type": "object"
       },
+      "CheckOut": {
+        "description": "A safety verdict. ``unknown`` is a first-class status, never a false pass.",
+        "properties": {
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "default": "unknown",
+            "enum": [
+              "pass",
+              "fail",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "CheckOut",
+        "type": "object"
+      },
       "CostPreviewOut": {
         "description": "The pre-trade cost sheet. Nulls are unknowns (\"\u2014\"), never zeros.",
         "properties": {
@@ -1855,6 +1918,30 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HoldersOut": {
+        "properties": {
+          "change_h1_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "count": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "dev_holdings_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "top_10_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          }
+        },
+        "required": [
+          "count",
+          "change_h1_pct",
+          "top_10_pct",
+          "dev_holdings_pct"
+        ],
+        "title": "HoldersOut",
+        "type": "object"
+      },
       "KillSwitchIn": {
         "additionalProperties": false,
         "description": "One switch, one step, in either direction.\n\nArming and releasing are symmetric: both accept an optional reason and both store it\nwhen supplied. The reason is operator bookkeeping, not a protection for a key or an\noutsider, so requiring it on release alone gated the owner's own trading.",
@@ -2025,6 +2112,30 @@
           "created_at"
         ],
         "title": "LedgerEntryOut",
+        "type": "object"
+      },
+      "LiquidityOut": {
+        "properties": {
+          "lp_burned_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "lp_lock_duration_seconds": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "lp_locked_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MetricOut"
+          }
+        },
+        "required": [
+          "state",
+          "lp_burned_pct",
+          "lp_locked_pct",
+          "lp_lock_duration_seconds"
+        ],
+        "title": "LiquidityOut",
         "type": "object"
       },
       "MarketChainOut": {
@@ -2412,6 +2523,34 @@
         "title": "MarketListOut",
         "type": "object"
       },
+      "MarketOut": {
+        "properties": {
+          "fdv_usd": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "liquidity_change_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "liquidity_usd": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "market_cap_usd": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "price_usd": {
+            "$ref": "#/components/schemas/MetricOut"
+          }
+        },
+        "required": [
+          "price_usd",
+          "market_cap_usd",
+          "fdv_usd",
+          "liquidity_usd",
+          "liquidity_change_pct"
+        ],
+        "title": "MarketOut",
+        "type": "object"
+      },
       "MarketOverviewOut": {
         "properties": {
           "as_of": {
@@ -2709,6 +2848,60 @@
           "snapshots"
         ],
         "title": "MarketTotalsOut",
+        "type": "object"
+      },
+      "MetricOut": {
+        "description": "One displayed value with the source and observation time behind it.",
+        "properties": {
+          "known": {
+            "default": false,
+            "title": "Known",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "unit"
+        ],
+        "title": "MetricOut",
         "type": "object"
       },
       "NewPairsOut": {
@@ -4948,6 +5141,30 @@
         "title": "RiskReasonOut",
         "type": "object"
       },
+      "SafetyOut": {
+        "properties": {
+          "buy_tax_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CheckOut"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "sell_tax_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          }
+        },
+        "required": [
+          "checks",
+          "buy_tax_pct",
+          "sell_tax_pct"
+        ],
+        "title": "SafetyOut",
+        "type": "object"
+      },
       "SignalAppliedOut": {
         "description": "The filters and the bounds this response was produced under.",
         "properties": {
@@ -6123,6 +6340,67 @@
         "title": "StrategyRunOut",
         "type": "object"
       },
+      "TokenMetadataOut": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "chain": {
+            "title": "Chain",
+            "type": "string"
+          },
+          "degraded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Degraded",
+            "type": "array"
+          },
+          "holders": {
+            "$ref": "#/components/schemas/HoldersOut"
+          },
+          "liquidity": {
+            "$ref": "#/components/schemas/LiquidityOut"
+          },
+          "market": {
+            "$ref": "#/components/schemas/MarketOut"
+          },
+          "name": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "pair_age_seconds": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "safety": {
+            "$ref": "#/components/schemas/SafetyOut"
+          },
+          "symbol": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "windows": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WindowOut"
+            },
+            "title": "Windows",
+            "type": "object"
+          }
+        },
+        "required": [
+          "chain",
+          "address",
+          "symbol",
+          "name",
+          "market",
+          "liquidity",
+          "holders",
+          "pair_age_seconds",
+          "windows",
+          "safety"
+        ],
+        "title": "TokenMetadataOut",
+        "type": "object"
+      },
       "TokenOut": {
         "description": "Token header whose source and age come from the contract, not the adapter.\n\n``age_seconds`` is measured at read time from ``source``. ``stale`` is the contract's\nverdict at the same clock; when there is no source the age is null and ``stale`` is\n``False`` because the token page treats a missing observation as unknown, not stale.",
         "properties": {
@@ -6724,6 +7002,46 @@
         ],
         "title": "WatchlistOut",
         "type": "object"
+      },
+      "WindowOut": {
+        "properties": {
+          "bsr": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "buy_volume_usd": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "buying_makers": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "buys": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "price_change_pct": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "sell_volume_usd": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "selling_makers": {
+            "$ref": "#/components/schemas/MetricOut"
+          },
+          "sells": {
+            "$ref": "#/components/schemas/MetricOut"
+          }
+        },
+        "required": [
+          "price_change_pct",
+          "buys",
+          "sells",
+          "buy_volume_usd",
+          "sell_volume_usd",
+          "buying_makers",
+          "selling_makers",
+          "bsr"
+        ],
+        "title": "WindowOut",
+        "type": "object"
       }
     }
   },
@@ -6734,6 +7052,58 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/tokens/{chain}/{address}/metadata": {
+      "get": {
+        "description": "Market, liquidity, holders, per-window activity and safety checks for one token.\n\nThe response never claims more than the sources answered. A missing field is null\nwith ``known: false``; a window older than the pair is null with a reason under\n``degraded``; and a failed source contributes a reason instead of invented values.",
+        "operationId": "token_metadata_api_tokens__chain___address__metadata_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chain",
+            "required": true,
+            "schema": {
+              "title": "Chain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "schema": {
+              "title": "Address",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenMetadataOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Token Metadata",
+        "tags": [
+          "metadata"
+        ]
+      }
+    },
     "/api/v1/agent/buckets": {
       "get": {
         "description": "Every agent whose owner set a cap, with the deployment replayed from the ledger.\n\nAn agent key sees its own bucket only. A failure to read the journal is a typed ``409``\nrather than an empty list: an empty list would read as \"nothing is capped\", which is the\none answer this surface must not invent. The refusal carries its own message and never\nthe driver's, which can name a DSN.",

@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 288 codes across 17 categories, 6 layers.
+**Scale:** 298 codes across 17 categories, 6 layers.
 
 ---
 
@@ -395,6 +395,21 @@ or a process-local refusal).
 | `NEGATIVE_CASH` | api | — | no | critical | A cash account sums below zero. |
 | `NEGATIVE_POSITION` | api | — | no | critical | A position account holds a negative quantity. |
 | `UNKNOWN` | api | — | no | warning | A rejected order carries no reason code. |
+
+### Token metadata safety and provenance (10)
+
+| Code | Layer | HTTP | Retry | Severity | Meaning |
+|---|---|---|---|---|---|
+| `DEV_ABOVE_LIMIT` | api | — | no | warning | The dev wallet holds at or above the configured concentration limit. |
+| `FREEZE_AUTHORITY_PRESENT` | api | — | no | warning | The token's freeze authority is still active. |
+| `LP_BURNED_OR_LOCKED` | api | — | no | warning | Liquidity is neither fully burned nor locked for a known positive duration. |
+| `MINT_AUTHORITY_PRESENT` | api | — | no | warning | The token's mint authority is still active. |
+| `NO_EVIDENCE` | api | — | no | warning | A safety check was asked for without the evidence needed to decide it. |
+| `SELLS_BLOCKED` | api | — | no | warning | A simulated sell cannot execute for this token. |
+| `TAXES_ABOVE_LIMIT` | api | — | no | warning | The buy or sell tax is above the configured limit. |
+| `TOP_10_ABOVE_LIMIT` | api | — | no | warning | The top ten holders own at or above the configured concentration limit. |
+| `UNAVAILABLE` | api | — | no | warning | A metadata fetch failed, so the response carries nulls and a reason instead of a verdict. |
+| `WINDOW_EXCEEDS_PAIR_AGE` | api | — | no | info | The requested activity window is longer than the pair has existed. |
 
 ### Session streaming (7)
 

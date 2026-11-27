@@ -29,6 +29,7 @@ from ezchain_adapters import (
     StonfiClient,
     VeloraClient,
 )
+from ezchain_adapters.metadata import TokenMetadataClient
 from ezchain_engine import KillSwitchExecutor, PluginHost, PluginRegistry, StrategyScheduler
 
 from .auth import BearerAuthMiddleware
@@ -50,6 +51,7 @@ from .routers import (
     discovery,
     graph,
     markets,
+    metadata,
     paper,
     plugins,
     protection,
@@ -131,6 +133,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for client in clients:
         await client.__aenter__()
     app.state.dexscreener = dexscreener
+    # Reuse the opened DexScreener client so metadata reads leave the process through the
+    # shared, paced HTTP client. Without a key there is no Birdeye enrichment: this is the
+    # free-source path only. The fetcher owns no client, so shutdown closes nothing twice.
+    app.state.metadata_fetcher = TokenMetadataClient(dexscreener=dexscreener)
     # Candle history uses the same GeckoTerminal client as decimals resolution.
     app.state.geckoterminal = gecko
     app.state.quote_router = QuoteRouter(
@@ -253,6 +259,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system.router)
     app.include_router(markets.router)
+    app.include_router(metadata.router)
     app.include_router(signals.router)
     app.include_router(stream.router)
     app.include_router(discovery.router)
