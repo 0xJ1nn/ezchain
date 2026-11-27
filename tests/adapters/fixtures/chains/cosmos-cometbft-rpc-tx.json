@@ -1,0 +1,10 @@
+{
+  "family": "cosmos",
+  "source_url": "https://docs.cosmos.network/cometbft/latest/spec/rpc/Rpc-Spe",
+  "retrieved_at": "2026-11-27",
+  "sha256": "d70952032620cc4e2737eb8ac379806359d8e0b17b0488f627997a0b043abded",
+  "why_no_secret": "Official CometBFT RPC specification's committed transaction example (the `tx` field, memo 'Made by Circle with love'). Public signed transaction bytes; no private key or seed. Its SHA-256 equals the documented tx hash.",
+  "wire_layer": "Signed Cosmos TxRaw protobuf: field 1 body_bytes with a bank MsgSend Any, field 2 auth_info_bytes, field 3 signatures.",
+  "encoding": "base64",
+  "bytes": "5wHwYl3uCkaoo2GaChQmSIu8hxpJxLcCuIi8fiHN4TMwrRIU/Af1cEG7Rcs/6LjTl7YjRSymJfYaFAoFdWF0b20SCzE0OTk5OTk1MDAwEhMKDQoFdWF0b20SBDUwMDAQwJoMGmoKJuta6YchAwswBShaB1wkZBctLIhYqBC3JrAI28XGzxP+rVEticGEEkAc+khTkKL9CDE47aDvjEHvUNt+izJfT4KVF2v2JkC+bmlH9K08q3PqHeMI9Z5up+XMusnTqlP985KF+SI5J3ZOIhhNYWRlIGJ5IENpcmNsZSB3aXRoIGxvdmU="
+}

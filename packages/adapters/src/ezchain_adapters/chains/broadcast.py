@@ -16,8 +16,9 @@ until every chain has a reviewed confirmation/status path and reconciliation. In
 confirmation here would put an unconfirmed claim into the ledger path, which violates the
 fail-closed rule. Durable reconciliation of an ambiguous claim remains the executor's
 outbox, exactly as it is today. Chains with no reviewed request shape are refused by
-:func:`unsupported_broadcast`; Sui is one of them, because a signed Sui execution needs a
-public key the signer contract does not carry.
+:func:`unsupported_broadcast`. Sui's reviewed shape is built from the signer's *public*
+key now carried by the signed transport; without it a Sui submission is refused before
+any request is sent.
 """
 
 from __future__ import annotations
@@ -30,7 +31,8 @@ from typing import Any
 
 import httpx
 
-from ezchain_core.reason_codes import BROADCAST_UNSUPPORTED
+from ezchain_core import SignedTransaction
+from ezchain_core.reason_codes import BROADCAST_PUBLIC_KEY_REQUIRED, BROADCAST_UNSUPPORTED
 
 from ..errors import AdapterError
 
@@ -56,10 +58,11 @@ class BroadcastError(AdapterError):
 def unsupported_broadcast(chain: str) -> None:
     """Fail closed for a chain with no reviewed broadcast request shape.
 
-    Sui is the concrete case: `sui_executeTransactionBlock` needs signed transaction bytes,
-    a signature and the signer's public key. `SignedTransaction` and `VaultSignature` carry
-    no public key, and adapters must not handle key material, so no executable request can
-    be built here. Refusing is safer than shipping a mock-only shape that claims support.
+    This is the fail-closed path for a chain with no reviewed request shape. Sui used to
+    be the concrete case: its signed request needs the signer's public key, which the old
+    signed transport did not carry. The transport now carries that public field and Sui has
+    a reviewed shape (``sui_spec``), so an unsigned or keyless Sui submission is refused by
+    :meth:`ChainBroadcaster.submit` instead of claiming support it cannot execute.
     """
     raise BroadcastError(
         f"broadcast is not supported for {chain}",
@@ -84,14 +87,36 @@ class BroadcastReceipt:
 
 @dataclass(frozen=True)
 class BroadcastSpec:
-    """Chain-specific request/response shape. Data, not a branch in shared code."""
+    """An unsigned chain-specific request/response shape. Data, not a shared-code branch.
+
+    Most chains use JSON-RPC at the configured endpoint. TON's reviewed v2 API is a REST
+    POST with a JSON body and a path suffix, so ``envelope`` and ``path_suffix`` keep that
+    difference in data instead of a chain branch in shared code.
+    """
 
     method: str
-    params: Callable[[bytes, str], list[Any]]
+    params: Callable[[bytes, str], Any]
+    hash_from_result: Callable[[Any], str]
+    envelope: Callable[[str, Any], dict[str, Any]] | None = None
+    path_suffix: str = ""
+
+
+@dataclass(frozen=True)
+class SignedBroadcastSpec:
+    """A request shape built from signed bytes plus the signer's public key.
+
+    Sui is the concrete case: ``sui_executeTransactionBlock`` takes a serialized signature
+    of ``flag || sig || pk``, so the adapter reads the *public* key carried by
+    :class:`SignedTransaction` to assemble it. It never signs, derives or stores a key, and
+    it never puts signature or public-key bytes in a receipt or error.
+    """
+
+    method: str
+    params: Callable[[SignedTransaction], list[Any]]
     hash_from_result: Callable[[Any], str]
 
 
-def _json_rpc(method: str, params: list[Any]) -> dict[str, Any]:
+def _json_rpc(method: str, params: Any) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 
 
@@ -106,7 +131,7 @@ def solana_spec() -> BroadcastSpec:
         method="sendTransaction",
         params=lambda raw, key: [
             base64.b64encode(raw).decode("ascii"),
-            {"encoding": "base64", "preflightCommitment": "confirmed"},
+            {"encoding": "base64", "preflightCommitment": "finalized"},
         ],
         hash_from_result=_string_result,
     )
@@ -120,11 +145,25 @@ def evm_spec() -> BroadcastSpec:
     )
 
 
+def _ton_hash(result: Any) -> str:
+    """TON v2 ``sendBocReturnHash`` result: ``{@type, hash, hash_norm}``."""
+    if not isinstance(result, dict):
+        raise ValueError("the venue returned no message info")
+    digest = result.get("hash")
+    if not isinstance(digest, str) or not digest:
+        raise ValueError("the venue returned no message hash")
+    return digest
+
+
 def ton_spec() -> BroadcastSpec:
+    """TON's reviewed v2 REST shape; plain ``sendBoc`` has no hash to receipt."""
     return BroadcastSpec(
-        method="sendBoc",
+        method="sendBocReturnHash",
         params=lambda raw, key: [base64.b64encode(raw).decode("ascii")],
-        hash_from_result=_string_result,
+        hash_from_result=_ton_hash,
+        # The documented v2 body is {"boc": "<base64>"} at /api/v2/sendBocReturnHash.
+        envelope=lambda method, params: {"boc": params[0]},
+        path_suffix="sendBocReturnHash",
     )
 
 
@@ -132,15 +171,82 @@ def cosmos_spec() -> BroadcastSpec:
     def tx_hash(result: Any) -> str:
         if not isinstance(result, dict):
             raise ValueError("the venue returned no transaction response")
-        digest = result.get("txhash")
+        # CometBFT's CheckTx response carries a string `code` and `hash`; a non-zero code
+        # is a definitive rejection, not an ambiguous submission. `txhash` is a different
+        # field of the Cosmos SDK REST GetTxResponse and is not returned here.
+        code = result.get("code")
+        if code not in (None, "0", 0):
+            raise BroadcastError("the venue rejected the transaction", ambiguous=False)
+        digest = result.get("hash")
         if not isinstance(digest, str) or not digest:
             raise ValueError("the venue returned no transaction hash")
         return digest
 
     return BroadcastSpec(
         method="broadcast_tx_sync",
-        params=lambda raw, key: [base64.b64encode(raw).decode("ascii")],
+        # CometBFT accepts byte args as quoted strings or 0x-prefixed hex, not base64.
+        params=lambda raw, key: ["0x" + raw.hex()],
         hash_from_result=tx_hash,
+    )
+
+
+# Sui's Ed25519 scheme flag. It prefixes both the serialized signature and the public key
+# on the wire; it is public metadata, not key material.
+_SUI_ED25519_FLAG = b"\x00"
+
+
+def _sui_params(signed: SignedTransaction) -> list[Any]:
+    """The four documented ``sui_executeTransactionBlock`` params, in order.
+
+    Sui's serialized signature is ``flag || sig || pk`` (Sui docs, "Signatures"). The signer
+    returns a bare Ed25519 signature and its public key travels in the signed transport;
+    concatenating those two *public* values here is serialization, not key handling. There
+    is no separate public-key array on this method — older ``sui_executeTransaction`` had
+    one, but the modern method assembles the serialized signature client-side.
+    """
+    public_key = signed.public_key
+    if public_key is None or len(public_key) != 32:
+        raise BroadcastError(
+            "sui needs the signer's Ed25519 public key",
+            code=BROADCAST_PUBLIC_KEY_REQUIRED,
+            ambiguous=False,
+        )
+    signature = signed.signature
+    if (
+        len(signature) == 97
+        and signature[0] == _SUI_ED25519_FLAG[0]
+        and signature[-32:] == public_key
+    ):
+        # A signer that already returns Sui's serialized signature needs no assembly.
+        serialized = signature
+    elif len(signature) == 64:
+        serialized = _SUI_ED25519_FLAG + signature + public_key
+    else:
+        # Ambiguous encoding: never guess, never send a signature in the wrong form.
+        raise BroadcastError("unsupported Sui signature encoding", ambiguous=False)
+    return [
+        base64.b64encode(signed.raw).decode("ascii"),
+        [base64.b64encode(serialized).decode("ascii")],
+        {"showEffects": True},
+        "WaitForLocalExecution",
+    ]
+
+
+def _sui_digest(result: Any) -> str:
+    if not isinstance(result, dict):
+        raise ValueError("the venue returned no transaction response")
+    digest = result.get("digest")
+    if not isinstance(digest, str) or not digest:
+        raise ValueError("the venue returned no transaction digest")
+    return digest
+
+
+def sui_spec() -> SignedBroadcastSpec:
+    """Sui's reviewed signed request shape (never a mock-only unsigned shape)."""
+    return SignedBroadcastSpec(
+        method="sui_executeTransactionBlock",
+        params=_sui_params,
+        hash_from_result=_sui_digest,
     )
 
 
@@ -151,7 +257,7 @@ class ChainBroadcaster:
         self,
         *,
         chain: str,
-        spec: BroadcastSpec,
+        spec: BroadcastSpec | SignedBroadcastSpec,
         rpc_url: str,
         client: httpx.AsyncClient,
         timeout_seconds: float = DEFAULT_BROADCAST_TIMEOUT_SECONDS,
@@ -166,9 +272,33 @@ class ChainBroadcaster:
         self._sent: dict[str, tuple[bytes, BroadcastReceipt]] = {}
 
     async def submit(self, raw: bytes, idempotency_key: str) -> BroadcastReceipt:
-        """Broadcast once; a replay of the same key and bytes returns the first receipt."""
+        """Broadcast unsigned bytes once; a replay of the same key and bytes is idempotent."""
+        if not isinstance(self._spec, BroadcastSpec):
+            raise BroadcastError(
+                f"{self.chain} needs a signed request", code=BROADCAST_UNSUPPORTED, ambiguous=False
+            )
         if not raw or not idempotency_key:
             raise BroadcastError("nothing to broadcast", ambiguous=False)
+        return await self._dispatch(raw, idempotency_key, self._spec.params(raw, idempotency_key))
+
+    async def submit_signed(
+        self, signed: SignedTransaction, idempotency_key: str
+    ) -> BroadcastReceipt:
+        """Broadcast a signed request once; only public signed-transport fields are read."""
+        if not isinstance(self._spec, SignedBroadcastSpec):
+            raise BroadcastError(
+                f"{self.chain} takes unsigned bytes", code=BROADCAST_UNSUPPORTED, ambiguous=False
+            )
+        if not idempotency_key:
+            raise BroadcastError("nothing to broadcast", ambiguous=False)
+        # ``params`` raises a typed refusal (never a raw secret) when the public key is
+        # missing, before any request reaches the venue.
+        params = self._spec.params(signed)
+        return await self._dispatch(signed.raw, idempotency_key, params)
+
+    async def _dispatch(
+        self, raw: bytes, idempotency_key: str, params: list[Any]
+    ) -> BroadcastReceipt:
         prior = self._sent.get(idempotency_key)
         if prior is not None:
             sent, receipt = prior
@@ -179,11 +309,14 @@ class ChainBroadcaster:
                     ambiguous=False,
                 )
             return receipt
-        body = _json_rpc(self._spec.method, self._spec.params(raw, idempotency_key))
+        build_body = getattr(self._spec, "envelope", None) or _json_rpc
+        body = build_body(self._spec.method, params)
+        suffix = getattr(self._spec, "path_suffix", "")
+        url = self._rpc_url.rstrip("/") + "/" + suffix if suffix else self._rpc_url
         try:
             response = await asyncio.wait_for(
                 self._client.post(
-                    self._rpc_url,
+                    url,
                     json=body,
                     headers={"Idempotency-Key": idempotency_key},
                 ),
@@ -218,9 +351,11 @@ __all__ = [
     "BroadcastReceipt",
     "BroadcastSpec",
     "ChainBroadcaster",
+    "SignedBroadcastSpec",
     "cosmos_spec",
     "evm_spec",
     "solana_spec",
+    "sui_spec",
     "ton_spec",
     "unsupported_broadcast",
 ]

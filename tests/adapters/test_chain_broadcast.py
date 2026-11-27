@@ -9,6 +9,7 @@ executor ``Venue.submit`` wiring in this field.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -149,42 +150,66 @@ async def test_definite_rejection_is_not_ambiguous() -> None:
 
 
 @pytest.mark.parametrize(
-    ("spec", "method"),
+    ("spec", "method", "result"),
     [
-        (solana_spec(), "sendTransaction"),
-        (evm_spec(), "eth_sendRawTransaction"),
-        (ton_spec(), "sendBoc"),
-        (cosmos_spec(), "broadcast_tx_sync"),
+        (solana_spec(), "sendTransaction", "tx-hash"),
+        (evm_spec(), "eth_sendRawTransaction", "0x" + "ab" * 32),
+        (ton_spec(), "sendBocReturnHash", {"@type": "raw.extMessageInfo", "hash": "ton-hash"}),
+        (cosmos_spec(), "broadcast_tx_sync", {"code": "0", "hash": "cosmos-hash"}),
     ],
 )
 @pytest.mark.asyncio
-async def test_every_family_has_a_broadcast_request_shape(spec: Any, method: str) -> None:
+async def test_every_family_has_a_broadcast_request_shape(
+    spec: Any, method: str, result: Any
+) -> None:
     assert spec.method == method
     params = spec.params(RAW, KEY)
-    assert isinstance(params, list) and params
-    result = {"txhash": "cosmos-hash"} if method == "broadcast_tx_sync" else "tx-hash"
+    assert isinstance(params, (list, dict)) and params
     assert spec.hash_from_result(result)
 
 
+def test_request_shapes_match_the_documented_schemas() -> None:
+    """Prove each implemented request body against its documented wire shape."""
+    solana = solana_spec().params(RAW, KEY)
+    assert solana[0] == base64.b64encode(RAW).decode("ascii")
+    assert solana[1] == {"encoding": "base64", "preflightCommitment": "finalized"}
+    assert evm_spec().params(RAW, KEY) == ["0x" + RAW.hex()]
+    # TON v2 is a REST POST body, not a JSON-RPC array; sendBoc has no hash to receipt.
+    assert ton_spec().envelope("sendBocReturnHash", ton_spec().params(RAW, KEY)) == {
+        "boc": base64.b64encode(RAW).decode("ascii")
+    }
+    assert ton_spec().path_suffix == "sendBocReturnHash"
+    # CometBFT accepts 0x-prefixed hex byte args, not base64 in a quoted string.
+    assert cosmos_spec().params(RAW, KEY) == ["0x" + RAW.hex()]
+
+
 @pytest.mark.asyncio
-async def test_sui_execution_shape_is_refused_not_simulated() -> None:
+async def test_unsupported_broadcast_fails_closed_without_inventing_a_shape() -> None:
+    """A chain with no reviewed shape is still refused, never simulated into success."""
     with pytest.raises(BroadcastError) as caught:
-        unsupported_broadcast("sui")
+        unsupported_broadcast("unmapped-chain")
     assert caught.value.code == "BROADCAST_UNSUPPORTED"
     assert caught.value.ambiguous is False
 
 
 @pytest.mark.asyncio
-async def test_cosmos_ambiguous_result_is_not_a_success() -> None:
-    adapter = ChainBroadcaster(
-        chain="osmosis",
-        spec=cosmos_spec(),
-        rpc_url="https://rpc.invalid",
-        client=client_for(lambda request: httpx.Response(200, json={"result": {"txhash": ""}})),
-    )
-    with pytest.raises(BroadcastError) as caught:
-        await adapter.submit(RAW, KEY)
-    assert caught.value.ambiguous is True
+async def test_cosmos_checktx_rejection_and_missing_hash_are_not_submissions() -> None:
+    for result in ({"code": "5", "hash": "unused"}, {"code": "0", "hash": ""}):
+        adapter = ChainBroadcaster(
+            chain="osmosis",
+            spec=cosmos_spec(),
+            rpc_url="https://rpc.invalid",
+            client=client_for(
+                lambda request, result=result: httpx.Response(200, json={"result": result})
+            ),
+        )
+        with pytest.raises(BroadcastError) as caught:
+            await adapter.submit(RAW, KEY)
+        if result["code"] != "0":
+            assert caught.value.ambiguous is False
+        else:
+            assert caught.value.ambiguous is True
+        assert not adapter._sent
 
 
 def test_receipt_digest_is_not_used_as_a_fill_digest() -> None:

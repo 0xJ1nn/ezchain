@@ -15,7 +15,9 @@ code is right and this table is the index.
 |---|---|
 | The one pipeline (`services/executor`, `Intent → … → Journal`) | **Built**, behind the `Venue` protocol, with a fake venue and 18 transaction-binding tests |
 | Signing boundary: decode and bind before any signer runs | **Built** |
-| Chain-native decoders/builders and submission-only broadcast (§5) | **Built** for five families: real Solana/EVM/TON/Sui/Cosmos unsigned-byte decoders feed the trust `decode_and_bind` boundary, builders speak `TransactionAdapter.prepare`, and broadcast is idempotent/time-bounded. **Not built:** signing, confirmation status, `Fill`, `Venue.submit` wiring. An RPC hash is a `submitted` receipt, never a fill. |
+| Chain-native decoders/builders and submission-only broadcast (§5) | **Built** for five families: real Solana/EVM/TON/Sui/Cosmos unsigned-byte decoders feed the trust `decode_and_bind` boundary, builders speak `TransactionAdapter.prepare`, and broadcast is idempotent/time-bounded. **Not built:** signing, `Fill`, `Venue.submit` wiring. An RPC hash is a `submitted` receipt, never a fill. |
+| Read-only chain confirmation/status and executor reconciliation seam (§6) | **Built**: typed `confirmed`/`failed`/`pending`/`unknown` readers over documented RPC shapes, plus `ChainConfirmationVenue` for the existing outbox. A confirmed hash maps to `unknown` for the outbox because no executed amount is proven, so no claim journals from status alone. |
+| Sui signed transport (§5) | **Built as a request shape only**: `SignedTransaction` carries an optional *public* key so the adapter can serialize `flag‖sig‖pk`. Sui Foundation disabled legacy JSON-RPC on mainnet in July 2026, so this shape is not live-ready; no node was contacted. |
 | Custody seam: `KeyHandle`, `SignerTransport`, typed refusals | **Built** — a *seam*, with a fake transport in tests; no shipped device or local-vault transport |
 | Broadcast outbox and reconciliation of claims without a journal | **Built** — `FileAttemptLog` + `Reconciler`; the durable log must be injected, the in-memory default is not durable |
 | Executor HTTP service, `executor_client`, HMAC loopback (§1) | **Not built** — no FastAPI app, no client module, no port |
@@ -218,27 +220,35 @@ change does not duplicate quote parsing. What is now built, per `docs/CHAINS.md`
 real chain-native decoder and builder for Solana, EVM, TON, Sui and Cosmos, plus an
 idempotent, time-bounded broadcast adapter. Each builder implements
 `TransactionAdapter.prepare(approved)` and is handed only the immutable approval; each
-decoder reads chain-native bytes into the field map `decode_and_bind` compares. Binding,
-decode and broadcast tests use constructed public-format byte vectors and mocked HTTP
-transports. There is no funded address, no real transaction and no live venue contact.
+decoder reads chain-native bytes into the field map `decode_and_bind` compares. Wire-layer
+evidence comes from real public fixtures recorded with source URL, retrieval date, hash and
+a no-secret rationale (§2.2 of `CHAINS.md`); negative cases are constructed and labelled as
+such. Every request shape is answered by a mocked HTTP transport. There is no funded
+address, no real transaction and no live venue contact.
 
-Sui is deliberately excluded from broadcast. A signed Sui execution needs the signed transaction bytes, a signature and the signer's public key; `SignedTransaction` and `VaultSignature` carry no public key, and adapters must not handle key material. It therefore fails closed with `BROADCAST_UNSUPPORTED` rather than claiming a request shape that cannot execute.
+Sui's reviewed request shape is implemented but is **not live-ready**. Official Sui docs
+define the serialized signature as `flag || sig || pk`; `SignedTransaction` now carries one
+optional public field for that assembly, and unsigned or keyless submissions refuse with a
+typed error. Sui Foundation disabled legacy JSON-RPC on mainnet in July 2026 with full
+decommission in October 2026, so a future live path must be reviewed against its gRPC or
+GraphQL replacement. No Sui mainnet node was contacted.
 
 **A submission receipt is not a fill.** A successful RPC call returns a `submitted`
 receipt with the hash the RPC returned. It is not an executed trade, not a balance delta
 and not a journal entry. There is no conversion from that receipt to a `Fill`, and no
-executor `Venue.submit` wiring. That wiring stays undone until each chain has a reviewed
-confirmation/status path and reconciliation; treating a hash as filled would put an
-unconfirmed claim into the ledger path. Signing also still stays behind
-`SignerTransport` in the executor; these adapters hold no key.
+executor `Venue.submit` wiring. That wiring stays undone until execution amounts can be
+proven from chain evidence and bound to the order; treating a hash as filled would put an
+unconfirmed claim into the ledger path. Read-only status readers exist (§6) but never
+produce a `Fill`. Signing also still stays behind `SignerTransport` in the executor; these
+adapters hold no key.
 
 | Family | Chains | Live in v1 | Test harness |
 |---|---|---|---|
 | svm (Solana) | `solana` | no (`live_execute: false`) | constructed legacy-message bytes; `MockTransport` for `sendTransaction` |
 | evm | Ethereum, Base, Arbitrum, Polygon, BSC, Optimism, Avalanche, Linea and the other registered EVM chains | no (`live_execute: false`) | constructed RLP legacy bytes with each chain's real EIP-155 `v`; `MockTransport` for `eth_sendRawTransaction` |
-| tvm (TON) | `ton` | no (`live_execute: false`) | constructed single-cell BoC bytes; `MockTransport` for `sendBoc` |
-| move (Sui) | `sui` | no (`live_execute: false`) | constructed BCS bytes for decode/bind; broadcast refused with `BROADCAST_UNSUPPORTED` |
-| cosmos | `osmosis`, `cosmos` | no (`live_execute: false`) | constructed protobuf `TxBody` bytes; `MockTransport` for `broadcast_tx_sync` |
+| tvm (TON) | `ton` | no (`live_execute: false`) | real TL-B corpus BoC for framing; `MockTransport` for v2 `sendBocReturnHash` |
+| move (Sui) | `sui` | no (`live_execute: false`) | real SDK BCS bytes for wire evidence; signed-shape `MockTransport`; keyless input refused |
+| cosmos | `osmosis`, `cosmos` | no (`live_execute: false`) | real CometBFT `TxRaw` for hash identity; `MockTransport` for `broadcast_tx_sync` |
 
 The old plan's forked-anvil and Solana-simulation harnesses do not exist in this
 repository, and there is no funded address to run one against. A mocked submission test
@@ -259,6 +269,11 @@ cannot be booked all leave the claim **pending** — never resolved into money n
 confirmed. The reconcile is safe beside a live fill (age window) and safe to run twice (the
 group check). `FileAttemptLog` is the durable log; the in-memory default is not, and
 production must inject the file one. There is no boot hook.
+
+Added in this field: `ChainConfirmationVenue`, a read-only seam the outbox can call. A
+failed chain transaction resolves an old claim as never filled; `confirmed`, `pending`,
+`unknown` and an unreadable status all leave the claim pending, because no executed amount
+is proven. No `Fill` is constructed from chain status and no journal entry follows from it.
 
 Not built: comparing on-chain balances (RPC) with ledger positions, pausing a wallet or
 strategy on drift, and the `RECONCILE_DRIFT` code it would raise — that code is absent from

@@ -65,25 +65,91 @@ a Cosmos protobuf `TxBody` — and produces the field map consumed by
 decoder. Every builder implements the shared `TransactionAdapter.prepare(approved)` protocol
 and takes only the immutable approval; quote adapters are not duplicated.
 
-| Family | Chains with a decoder + builder | Broadcast | Signing / executor `Venue.submit` | Confirmation → `Fill` |
+| Family | Chains with a decoder + builder | Broadcast request shape | Signing / executor `Venue.submit` | Confirmation → `Fill` |
 |---|---|---|---|---|
-| svm (Solana) | `solana` | `sendTransaction`, idempotent, time-bounded | **not wired** | **not built** |
-| evm | `ethereum`, `base`, `arbitrum`, `polygon`, `bsc`, `optimism`, `avalanche`, `blast`, `mantle`, `linea`, `scroll`, `zksync`, `fantom`, `cronos`, `celo`, `moonbeam`, `metis` | `eth_sendRawTransaction`, idempotent, time-bounded; EIP-155 `v` uses each chain's registered id | **not wired** | **not built** |
-| tvm (TON) | `ton` | `sendBoc`, idempotent, time-bounded | **not wired** | **not built** |
-| move (Sui) | `sui` | **refused** with `BROADCAST_UNSUPPORTED` | **not wired** | **not built** |
-| cosmos | `osmosis`, `cosmos` | `broadcast_tx_sync`, idempotent, time-bounded | **not wired** | **not built** |
+| svm (Solana) | `solana` | JSON-RPC `sendTransaction`, idempotent, time-bounded | **not wired** | **not built** |
+| evm | `ethereum`, `base`, `arbitrum`, `polygon`, `bsc`, `optimism`, `avalanche`, `blast`, `mantle`, `linea`, `scroll`, `zksync`, `fantom`, `cronos`, `celo`, `moonbeam`, `metis` | JSON-RPC `eth_sendRawTransaction`, idempotent, time-bounded; EIP-155 `v` uses each chain's registered id | **not wired** | **not built** |
+| tvm (TON) | `ton` | TON v2 REST POST `sendBocReturnHash` (`{"boc": …}`); plain `sendBoc` has no hash and is not used | **not wired** | **not built** |
+| move (Sui) | `sui` | JSON-RPC `sui_executeTransactionBlock`, **signed only**: 4 params `[txBytes, [flag‖sig‖pk], options, requestType]`; unsigned or keyless input refused | **not wired** | **not built** |
+| cosmos | `osmosis`, `cosmos` | JSON-RPC `broadcast_tx_sync` with `0x`-hex bytes; CheckTx `code != 0` refuses | **not wired** | **not built** |
 
-The EVM builder takes each chain's real EIP-155 id from the registry and writes it to `v`; the decoder refuses a transaction whose `v` names another chain than the approved one. Sui keeps its decoder and builder but has **no broadcast support**: `sui_executeTransactionBlock` needs signed transaction bytes, a signature and the signer's public key, and the signer contract carries no public key. It fails closed with `BROADCAST_UNSUPPORTED` instead of shipping a mock-only request shape.
+The EVM builder takes each chain's real EIP-155 id from the registry and writes it to `v`; the decoder refuses a transaction whose `v` names another chain than the approved one. Sui's decoder and builder are unchanged, but its broadcast now uses the reviewed signed request shape. Official Sui docs define the serialized signature as `flag || sig || pk` (Ed25519 flag `0x00`, 64-byte signature, 32-byte public key). Because the executor's signer output carried only the bare signature, `SignedTransaction` gained one optional, non-secret `public_key` field; the adapter concatenates the two public values and never derives, stores or logs key material. The older `sui_executeTransaction` had a separate public-key array; the modern method does not, so no `publicKey` param is invented. An absent public key, an unknown signature encoding, or an unsigned submission fails closed with a typed error (`BROADCAST_PUBLIC_KEY_REQUIRED` or `BROADCAST_UNSUPPORTED`) before any request is sent.
+
+**Sui live readiness remains gated.** Sui Foundation disabled legacy JSON-RPC on mainnet in
+July 2026 and announced full decommission for October 2026. The implemented shape is proved
+against the documented schema and the SDK's serialized-signature format with mocked
+transports only; no claim is made that a Sui mainnet node accepts it. A live Sui path needs
+the mapped `TransactionExecutionService.ExecuteTransaction` (gRPC) or `Mutation.executeTransaction`
+(GraphQL) surface, reviewed separately.
 
 A successful RPC call returns a **`submitted` receipt only**: it carries the transaction
 hash returned by the RPC, not a fill, not a balance delta and not a journal entry. There is
 no conversion from a submission receipt to a `Fill`, and no `Venue.submit` implementation in
-this change. That wiring stays undone until each chain has a reviewed confirmation/status
-path and reconciliation; an RPC accepting bytes is not evidence of execution. Ambiguous
-submissions (timeout, 5xx, transport failure, missing hash) raise a typed broadcast error
-and leave no receipt a caller could book. Tests use constructed public-format byte vectors
-and mocked HTTP transports — no funded address, real key, live venue or real transaction.
-`live_execute` remains `false` for every chain; none of this is live trading.
+this change. That wiring stays undone until each chain's execution amounts can be proven from
+chain evidence; an RPC accepting bytes is not evidence of execution. Ambiguous submissions
+(timeout, 5xx, transport failure, missing hash) raise a typed broadcast error and leave no
+receipt a caller could book. Tests use real public byte fixtures for wire-layer evidence and
+constructed byte vectors for negative cases, all answered by mocked HTTP transports — no
+funded address, real key, live venue or real transaction. `live_execute` remains `false` for
+every chain; none of this is live trading.
+
+### 2.2 Real public byte fixtures (provenance)
+
+`tests/adapters/fixtures/chains/*.json` holds one real public byte fixture per family. Each
+record carries the source URL, retrieval date, SHA-256 of the exact bytes, a no-secret
+rationale and the wire layer it proves; the hash is rechecked on every test run.
+
+| Family | Source (retrieved 2026-11-27) | SHA-256 of bytes | What it proves |
+|---|---|---|---|
+| Solana | [Solana Foundation `sendTransaction` docs](https://solana.com/developers/docs/rpc/http/sendtransaction) | `47fe51f4b4f3b4a3a8ae097acde3b85950711c1c80915d2681998744b55db784` | A real signed legacy message: signature count, 64-byte signature, message header/keys/blockhash |
+| EVM | [Ethereum Execution APIs `eth_sendRawTransaction`](https://ethereum.github.io/execution-apis/api/methods/eth_sendRawTransaction/) | `f3d563ea8d82ce1873a3a5a631ad3e3688f35d7dac5ac70a56b7a7cf8093a172` | A real EIP-155 legacy RLP transaction with `v = 27` and 32-byte `r`/`s` |
+| TON | [TON community TL-B test corpus](https://github.com/ton-community/tlb-test-corpus/blob/main/tlb-corpus.ts) | `cf80466e3313a26edb8d9ef0f635e3bc69b73a9a5326f5e360d32c8ac074817d` | A real single-cell BoC (`b5ee9c72`, one cell, uint32 42, CRC32) — framing only, not a signed external message |
+| Sui | [Mysten Labs SDK raw-signer test `TX_BYTES`](https://github.com/MystenLabs/sui/blob/f3b5fdd73da64a0df65fb4323471512b0f57ec4d/sdk/typescript/test/e2e/raw-signer.test.ts) | `1456d85424a3f627b992986083958d0e23f7e0bc73e01518d7d5ed91d0bf30a0` | Real BCS `TransactionData`; its published digest is reproduced as blake2b(`intent ‖ txBytes`). The test file's illustrative seed phrases and keys are deliberately not copied |
+| Cosmos | [CometBFT RPC spec `tx`](https://docs.cosmos.network/cometbft/latest/spec/rpc/Rpc-Spe) | `d70952032620cc4e2737eb8ac379806359d8e0b17b0488f627997a0b043abded` | A real committed `TxRaw`; `sha256(bytes)` equals the documented `txhash` |
+
+These fixtures are public transaction/test data, not captures of user funds, and none
+contains a private key, seed, passphrase or credential. They are deliberately narrow: the
+decoders parse documented subsets, and a real signed transaction is not a binding payload.
+The constructed negative vectors in `tests/adapters/test_chain_decoders.py` remain labelled
+as constructed and are not presented as captured chain evidence.
+
+### 2.3 Reviewed parsing libraries
+
+Candidate libraries were reviewed against the licence inventory
+(`tools/check-licences.py`) and the signing/custody tripwire
+([DEPENDENCIES §4](DEPENDENCIES.md#4-packages-that-sign-or-custody-funds)):
+
+| Library | Licence | Verdict |
+|---|---|---|
+| `rlp` (pyrlp 5.0.0), `eth-utils` 6.0.0 | MIT | Pure serialization/hashing; safe under the rule, but adding them changes both hashed Python locks, needs an installed metadata declaration for the licence gate and a new advisory verdict. Not added in this field; the hand-rolled strict RLP reader is pinned by the real Execution-APIs fixture above |
+| `solders` 0.29.0, `eth-account` 0.14.0, `web3` 8.0.0, `pytoniq` 0.1.43, `pysui` 1.5.1, `cosmpy` 0.12.2 | Apache-2.0 / MIT | Each exposes keypairs, wallets or transaction signing; refused by the custody tripwire regardless of permissive licence |
+| `py-solana-xray` | unverifiable | No stable PyPI artefact or licence declaration; cannot be reviewed |
+
+A library will be added only when it removes wire-format risk without touching custody and
+its pin, licence and advisory evidence can be updated in one scoped change. No signing or
+custody library was added, and no gate was bypassed.
+
+### 2.4 Read-only confirmation/status and the reconciliation seam
+
+`chains/status.py` declares one state set — `pending`, `confirmed`, `failed`, `unknown` —
+with one validator (`normalize_confirmation`), one writer (`Confirmation`) and an explicit
+next action per state in `CONFIRMATION_ACTIONS`. Legacy spellings (`success`, `finalized`,
+`reverted`, `processed`, blank) are read through `normalize()`; new writes use the canonical
+token only. This is a read-only observation vocabulary, not a second lifecycle: the outbox
+owns transitions of a claim. Readers are read-only: a null receipt or an unindexed hash is
+`pending`, a definite on-chain error is `failed`, an RPC error or an unreadable schema is
+`unknown`, and no outcome carries a quantity, price, fee or `Fill`. Request shapes follow
+the documented Solana `getSignatureStatuses`, EVM `eth_getTransactionReceipt`, TON v2
+`getTransactions`, Sui `sui_getTransactionBlock` and CometBFT `tx` schemas; TON needs the
+account address as public context and only proves inclusion by a hash match (its JSON
+schema has no failure flag, so a non-match is never reported as `failed`). All tests use
+recorded public response shapes through `httpx.MockTransport`.
+
+`services/executor` exposes `ChainConfirmationVenue`, the seam the existing outbox can call.
+It maps a failed chain transaction to `not_found` (never filled), and maps `confirmed` to
+`unknown`: a chain hash proves settlement, not the executed amount the ledger needs. The
+claim therefore stays pending until a receipt's transfers are bound to the order.
+`Venue.submit` and any `Fill` conversion remain undone, so live readiness is still gated.
 
 The **sell-side quote is mandatory** even when buying: an entry with no executable exit
 is not an entry. The router enforces this with its full-size exit check
@@ -210,7 +276,7 @@ not a second paper pricing path. That is the same *quote* adapter surface as liv
 implementation. `Live execute` is `no` for every row because `ChainMeta.live_execute` defaults
 to `False` (`registry.py:71`) and nothing overrides it.
 
-| Chain (registry id) | Tier | Quote head | Paper fill | Live execute | Native decode/build; broadcast | Venue tests (no confirmation) |
+| Chain (registry id) | Tier | Quote head | Paper fill | Live execute | Native decode/build; broadcast | Venue tests (read-only confirmation) |
 |---|---|---|---|---|---|---|
 | Solana (`solana`) | T1 | jupiter | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | Ethereum (`ethereum`) | T1 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
@@ -225,9 +291,9 @@ to `False` (`registry.py:71`) and nothing overrides it.
 | Linea (`linea`) | T2 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | Scroll (`scroll`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | zkSync Era (`zksync`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
-| Sui (`sui`) | T2 | cetus | yes | no | decode+build; broadcast refused | binding/decode tests; broadcast refusal test |
+| Sui (`sui`) | T2 | cetus | yes | no | decode+build; signed-shape broadcast, gated on mainnet | binding/decode; keyless-broadcast refusal; legacy status read |
 | Aptos (`aptos`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| TON (`ton`) | T2 | stonfi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| TON (`ton`) | T2 | stonfi | yes | no | decode+build; `sendBocReturnHash` submit receipt | binding/decode/broadcast; inclusion-only status test |
 | Tron (`tron`) | T2 | paper_mark | yes | no | none | per-provider tests only |
 | NEAR (`near`) | T2 | paper_mark | yes | no | none | per-provider tests only |
 | Osmosis (`osmosis`) | T2 | osmosis_sqs | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
@@ -242,10 +308,10 @@ The last column names what exists today, not a passing gate: per-provider tests 
 `tests/adapters/test_jupiter.py`, `test_kyberswap.py`, `test_lifi.py`, `test_velora.py` and
 `test_svm_move_cosmos_quotes.py`, with one recorded response per quote path in
 `tests/adapters/fixtures/`. The binding/decode/broadcast tests added for §2.1 cover every
-one of the five families, but they are not an execution contract suite: they stop at a
-`submitted` receipt and do not prove confirmation, a fill or a journal. There is still no
-shared suite that every venue adapter must pass; adding one, with a confirmation/status path
-per chain, is a gap. Note also that
+one of the five families, and §2.4 adds typed read-only status readers, but they are not an
+execution contract suite: a status observation and a `submitted` receipt prove neither an
+executed amount, a `Fill`, nor a journal entry. There is still no shared suite that every
+venue adapter must pass; adding one that binds a real receipt to an order is a gap. Note also that
 the §3 target tiers and the registry tiers differ for Osmosis, NEAR, Cosmos Hub and Moonbeam
 (T3 as a target, T2 in `ChainMeta`'s default); the target column is aspirational and a change
 to either column is a product decision, not a docs edit.

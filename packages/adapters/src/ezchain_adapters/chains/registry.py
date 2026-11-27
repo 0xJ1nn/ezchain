@@ -14,7 +14,15 @@ from ezchain_core import TransactionAdapter
 from ezchain_core.trust import DecodedFields
 
 from ..registry import BY_ID
-from .broadcast import BroadcastSpec, cosmos_spec, evm_spec, solana_spec, ton_spec
+from .broadcast import (
+    BroadcastSpec,
+    SignedBroadcastSpec,
+    cosmos_spec,
+    evm_spec,
+    solana_spec,
+    sui_spec,
+    ton_spec,
+)
 from .cosmos import CosmosBuilder, decode_cosmos_transaction
 from .evm import EvmBuilder, decode_evm_transaction
 from .solana import SolanaBuilder, decode_solana_transaction
@@ -32,7 +40,7 @@ class ChainTxSupport:
     family: str
     builder: Callable[[], TransactionAdapter]
     decoder: Decode
-    broadcast: Callable[[], BroadcastSpec] | None
+    broadcast: Callable[[], BroadcastSpec | SignedBroadcastSpec] | None
 
 
 _EVM_CHAINS = (
@@ -61,7 +69,7 @@ def _support(
     family: str,
     builder: Callable[[], TransactionAdapter],
     decoder: Decode,
-    broadcast: Callable[[], BroadcastSpec] | None,
+    broadcast: Callable[[], BroadcastSpec | SignedBroadcastSpec] | None,
 ) -> ChainTxSupport:
     return ChainTxSupport(chain, family, builder, decoder, broadcast)
 
@@ -86,8 +94,9 @@ SUPPORTED: dict[str, ChainTxSupport] = {
         for chain in _EVM_CHAINS
     },
     "ton": _support("ton", "tvm", TonBuilder, decode_ton_transaction, ton_spec),
-    # Sui keeps its decoder and builder, but has no reviewed signed-broadcast request shape.
-    "sui": _support("sui", "move", SuiBuilder, decode_sui_transaction, None),
+    # Sui's reviewed request shape needs signed bytes plus the signer's public key; the
+    # signed transport supplies that public key, never the adapter.
+    "sui": _support("sui", "move", SuiBuilder, decode_sui_transaction, sui_spec),
     "osmosis": _support("osmosis", "cosmos", CosmosBuilder, decode_cosmos_transaction, cosmos_spec),
     "cosmos": _support("cosmos", "cosmos", CosmosBuilder, decode_cosmos_transaction, cosmos_spec),
 }

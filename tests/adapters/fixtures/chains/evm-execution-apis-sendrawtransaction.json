@@ -1,0 +1,10 @@
+{
+  "family": "evm",
+  "source_url": "https://ethereum.github.io/execution-apis/api/methods/eth_sendRawTransaction/",
+  "retrieved_at": "2026-11-27",
+  "sha256": "f3d563ea8d82ce1873a3a5a631ad3e3688f35d7dac5ac70a56b7a7cf8093a172",
+  "why_no_secret": "Official Ethereum Execution APIs specification example of an eth_sendRawTransaction parameter. Signatures r/s/v and addresses are public transaction data; no key or seed is included.",
+  "wire_layer": "EIP-155 legacy RLP transaction: nonce, gas price, gas limit, 20-byte to, value, empty data, v=0x1b, 32-byte r and s.",
+  "encoding": "base64",
+  "bytes": "+GkBggPoglIIlPF/UhUevvbHM0+tCAxXBNdyFrcyiBvBbWdOyAAAgBugLaHEi2cJltyx9EfvnvALMwM8SKT+k49CC+w+Vr/SQHGgYuCqeKgb8CkK+8Op2OmgaObXTKpmxeD6ikbequlrCDM="
+}

@@ -96,16 +96,39 @@ def test_evm_chain_id_is_part_of_the_binding() -> None:
         decode_evm_transaction(build_evm_transaction(ethereum_fields, chain_id=8453))
 
 
-def test_sui_broadcast_is_removed_and_fails_closed() -> None:
-    """Sui keeps its decoder and builder, but its broadcast shape is refused."""
+@pytest.mark.asyncio
+async def test_sui_broadcast_is_signed_only_and_fails_closed_without_a_public_key() -> None:
+    """The Sui fix survives: no unsigned or keyless request can claim support.
+
+    The reviewed shape now uses the public key carried by the signed transport, so the
+    refusal moved from "no broadcast at all" to "no executable request without that
+    public field". It is still typed, ambiguous=False, and sends nothing.
+    """
+    import httpx
+
+    from ezchain_adapters.chains.broadcast import ChainBroadcaster, SignedBroadcastSpec, sui_spec
+
     support = support_for("sui")
     assert support is not None
-    assert support.broadcast is None
-    assert {chain for chain, item in SUPPORTED.items() if item.broadcast is not None} == {
-        chain for chain in SUPPORTED if chain != "sui"
-    }
+    assert isinstance(support.broadcast(), SignedBroadcastSpec)
+    assert support.broadcast().method == "sui_executeTransactionBlock"
+    assert {chain for chain, item in SUPPORTED.items() if item.broadcast is None} == set()
+
+    adapter = ChainBroadcaster(
+        chain="sui",
+        spec=sui_spec(),
+        rpc_url="https://rpc.invalid",
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200))
+        ),
+    )
     with pytest.raises(BroadcastError) as caught:
-        unsupported_broadcast("sui")
+        await adapter.submit(b"unsigned-bytes", "idem-sui-fix")
+    assert caught.value.code == BROADCAST_UNSUPPORTED
+    assert caught.value.ambiguous is False
+
+    with pytest.raises(BroadcastError) as caught:
+        unsupported_broadcast("unmapped-chain")
     assert caught.value.code == BROADCAST_UNSUPPORTED
     assert caught.value.ambiguous is False
     assert BROADCAST_UNSUPPORTED in REASON_CODES

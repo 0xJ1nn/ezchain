@@ -1816,6 +1816,15 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         severity="critical",
     ),
     _S(
+        "BROADCAST_PUBLIC_KEY_REQUIRED",
+        "adapter",
+        "adapters",
+        "ezchain_adapters/chains/broadcast.py",
+        "A signed venue request needs the signer's public key, which the transport did not carry.",
+        "This venue needs the signer's public key; no signature was sent.",
+        severity="critical",
+    ),
+    _S(
         "CANDLES_NOT_FOUND",
         "adapter",
         "adapters",
@@ -2787,6 +2796,7 @@ TRANSACTION_ALLOWANCE_UNBOUNDED = "TRANSACTION_ALLOWANCE_UNBOUNDED"
 SIMULATION_FAILED = "SIMULATION_FAILED"
 TRANSACTION_WALLET_IN_FLIGHT = "TRANSACTION_WALLET_IN_FLIGHT"
 BROADCAST_UNSUPPORTED = "BROADCAST_UNSUPPORTED"
+BROADCAST_PUBLIC_KEY_REQUIRED = "BROADCAST_PUBLIC_KEY_REQUIRED"
 
 # ---------------------------------------------------------------------------------
 # Derived registries. These keep one home for the vocabulary while preserving the
