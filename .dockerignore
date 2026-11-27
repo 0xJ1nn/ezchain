@@ -44,6 +44,9 @@ infra
 **/*.md
 LICENSE
 
+# Rust build output is regenerated inside the image; never ship a host artifact.
+rust/target
+
 # Secrets and local configuration — never bake these into an image
 .env
 .env.*

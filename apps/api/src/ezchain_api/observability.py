@@ -29,8 +29,6 @@ from starlette.types import ASGIApp
 from ezchain_adapters import PROVIDERS
 from ezchain_core.reason_codes import REASON_CODES
 
-from . import native
-
 ACCESS_LOGGER = "ezchain_api.access"
 UNMATCHED_ROUTE = "<unmatched>"
 MAX_SERIES = 500
@@ -104,6 +102,12 @@ def redact(text: str, secrets: Iterable[str] = ()) -> str:
 
 
 def normalize_method(method: str) -> str:
+    """Uppercase a known HTTP method; fold anything else to the bounded ``OTHER`` label.
+
+    Pure Python on purpose: this runs on every request, including the liveness probe,
+    and must not depend on a compiled artifact. The Rust port stays in ``native`` as a
+    parity-checked oracle only.
+    """
     upper = method.upper()
     return upper if upper in SAFE_METHODS else "OTHER"
 
@@ -157,7 +161,7 @@ class HttpMetrics:
         self._lock = threading.Lock()
 
     def observe(self, method: str, route: str, status: int, duration_ms: float) -> None:
-        method_key = native.normalize_method(method)
+        method_key = normalize_method(method)
         request_key = (method_key, route, str(status))
         duration_key = (method_key, route)
         with self._lock:
@@ -611,7 +615,7 @@ def access_log(
         "logger": ACCESS_LOGGER,
         "msg": "http_request",
         "request_id": request_id,
-        "method": native.normalize_method(method),
+        "method": normalize_method(method),
         "route": redact(route, secrets),
         "status": status,
         "duration_ms": round(max(0.0, duration_ms), 3),

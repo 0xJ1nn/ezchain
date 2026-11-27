@@ -72,7 +72,7 @@ interface Tip {
 	left: number;
 }
 
-export function Sidebar({ active }: { active: string }) {
+export function Sidebar({ active, version }: { active: string; version: string }) {
 	const [collapsed, setCollapsed] = useState(false);
 	const [tip, setTip] = useState<Tip | null>(null);
 
@@ -180,6 +180,9 @@ export function Sidebar({ active }: { active: string }) {
 						PAPER
 					</span>
 				</div>
+				<span className="sidebar-version" data-testid="product-version" title="Product version">
+					v{version}
+				</span>
 			</div>
 		</nav>
 	);
