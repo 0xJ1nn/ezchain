@@ -11,6 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
+const repo = path.resolve(root, "..", "..");
 const metaPath = path.join(root, "cli", "package.json");
 const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
 const { platformKey, platformPackage, SUPPORTED } = require(path.join(root, "cli", "platform-map.cjs"));
@@ -55,6 +56,17 @@ test("each platform package declares exactly one os/cpu pair", () => {
 			fs.readFileSync(path.join(dir, ".gitignore"), "utf8").includes("ezchain-native"),
 			`${name}: the staged binary must be gitignored`,
 		);
+	}
+});
+
+test("the Rust workspace and lock agree with the packaged release version", () => {
+	const cargo = fs.readFileSync(path.join(repo, "rust", "Cargo.toml"), "utf8");
+	assert.equal(cargo.match(/^version = "([^"]+)"/m)?.[1], meta.version, "workspace version matches the npm package");
+	const lock = fs.readFileSync(path.join(repo, "rust", "Cargo.lock"), "utf8");
+	const local = lock.split("[[package]]").slice(1).filter((block) => /name = "ezchain-/.test(block));
+	assert.ok(local.length > 0, "the lock lists the workspace crates");
+	for (const block of local) {
+		assert.match(block, new RegExp(`version = "${meta.version}"`), "every local crate version matches");
 	}
 });
 

@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "ezchain-bridge"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-core",
  "ezchain-decimal",
@@ -122,37 +122,37 @@ dependencies = [
 
 [[package]]
 name = "ezchain-cli"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-consensus"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-core"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-decimal"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-jsoncanon",
 ]
 
 [[package]]
 name = "ezchain-executor"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-fingerprint"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "ezchain-flow"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-executor",
  "ezchain-protection",
@@ -161,11 +161,11 @@ dependencies = [
 
 [[package]]
 name = "ezchain-jsoncanon"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-node"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-p2p",
  "ezchain-p2p-transport",
@@ -178,11 +178,11 @@ dependencies = [
 
 [[package]]
 name = "ezchain-p2p"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-p2p-transport"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-p2p",
  "tokio",
@@ -190,25 +190,25 @@ dependencies = [
 
 [[package]]
 name = "ezchain-protection"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-decimal",
 ]
 
 [[package]]
 name = "ezchain-replay"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-decimal",
 ]
 
 [[package]]
 name = "ezchain-rpc"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "ezchain-rpc-server"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "axum",
  "ezchain-rpc",
@@ -217,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "ezchain-scheduler"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-core",
  "ezchain-protection",
@@ -225,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "ezchain-seal"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ezchain-fingerprint",
  "ezchain-jsoncanon",

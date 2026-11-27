@@ -141,12 +141,15 @@ These are four different claims and this guide keeps them apart:
 | Claim | What it means | State in this checkout |
 |---|---|---|
 | Configured | Build and package settings exist and are checked | npm packages, Homebrew/winget/Scoop manifests, Linux/macOS/Windows targets, Dockerfiles |
-| Built | An artifact was produced by a command recorded in the evidence | npm tarballs from a packed-artifact smoke test, including a real macOS arm64 CLI built from the committed Cargo lock; the earlier Linux desktop build in [the evidence](evidence/desktop/linux-app.md) |
-| Launched | A built artifact was started and answered its health checks | Linux desktop on the previous candidate; the packed macOS CLI answered `version`, `mode`, `help` and `gate` after a clean install |
-
-The read-only CLI reports its own crate version, which is separate from the
-workstation release version in the `VERSION` file. Neither value is a trading
-capability claim.
+| Built | An artifact was produced by a command recorded in the evidence | npm tarballs from a packed-artifact smoke test, including a real macOS arm64 CLI built from the committed Cargo lock; unsigned macOS arm64 dmg and zip; the earlier Linux desktop build in [the evidence](evidence/desktop/linux-app.md) |
+| Launched | A built artifact was started and answered its health checks | The packed macOS CLI answered `version`, `mode`, `help` and `gate` after a clean install; the app code opened its setup window under a development Electron with an isolated profile and a DevTools target list |
 | Published | A tag, registry release, tap or package manager publication exists | None — tag, release and publication are maintainer-only and were not performed |
+
+The read-only CLI reports the same `0.1.0` as the npm packages and the
+workstation `VERSION` file; the packed-install check asserts that exact value.
+The packaged macOS app could not be launched unattended on the build host:
+macOS presented an interactive policy dialog before the main script loaded. Its
+DevTools port opened but no renderer target appeared until that dialog is
+approved by the operator. No GUI launch is claimed for the package.
 
 No item here is claimed as signed, notarized, store-approved or published.

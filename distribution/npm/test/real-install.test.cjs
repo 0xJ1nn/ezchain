@@ -56,7 +56,8 @@ test("a real packed CLI answers version, paper mode and help", { skip: missing }
 		);
 
 		const version = cli(appDir, ["version"]).trim();
-		assert.match(version, /^ezchain-cli \d+\.\d+\.\d+$/, `real version output: ${version}`);
+		const packageVersion = JSON.parse(fs.readFileSync(path.join(root, "cli", "package.json"), "utf8")).version;
+		assert.equal(version, `ezchain-cli ${packageVersion}`, "the real CLI reports the packaged npm version");
 		assert.match(cli(appDir, ["mode"]), /^mode: PAPER$/m);
 		assert.match(cli(appDir, ["help"]), /ezchain-cli — read-only operator CLI/);
 		assert.match(cli(appDir, ["gate"]), /port gates/);
