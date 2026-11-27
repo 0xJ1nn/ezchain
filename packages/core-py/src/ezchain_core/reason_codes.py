@@ -1185,6 +1185,15 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         http_status=422,
     ),
     _S(
+        "PROFILE_PRICE_INVALID",
+        "protection",
+        "core",
+        "ezchain_core/protection.py",
+        "A supplied entry, peak or current price is not a positive exact decimal.",
+        "A protection price is invalid.",
+        http_status=422,
+    ),
+    _S(
         "PROFILE_KIND_UNSUPPORTED",
         "protection",
         "core",
