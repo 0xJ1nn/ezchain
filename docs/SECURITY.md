@@ -184,7 +184,7 @@ stored, and the ledger would record the fingerprint, never a key.
 
 | Tier | Where the key would live | Signing | Use |
 |---|---|---|---|
-| `local_vault` | encrypted file; the cipher and KDF are **not yet decided** — XChaCha20-Poly1305 with an Argon2id-derived KEK and a per-key DEK is the planned target (ADR-0039 leaves both open) | executor process, in memory per request | default hot wallet |
+| `local_vault` | encrypted file (0600); Argon2id KEK and AES-256-GCM are implemented and tested in the executor's import-only tier, with the record header bound as associated data. No signing transport is wired | executor process, in memory per request | default hot wallet |
 | `hardware` | Ledger/Trezor or another device | device; executor builds unsigned tx, the owning user approves | one option, not the only one |
 | `watch` | none | — | portfolio, signals; never signs |
 | `cex_key` | vault, encrypted | exchange API | read-only by default; trade scope opt-in |
