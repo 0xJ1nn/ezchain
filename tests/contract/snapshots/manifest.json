@@ -4,6 +4,6 @@
     "mcp_tools",
     "sdk_interfaces"
   ],
-  "version": "0.7.0",
+  "version": "0.9.0",
   "version_source": "ezchain_api.__version__"
 }

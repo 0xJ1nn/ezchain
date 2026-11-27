@@ -19,10 +19,10 @@ from ezchain_core import utcnow
 from ezchain_engine import PluginRegistry
 
 from ..config import Settings, get_settings
-from ..deps import get_plugin_registry, get_session
+from ..deps import get_plugin_registry, get_secret_cipher, get_session
 from ..mode import mode_status
 from ..models import StrategyRow
-from ..services import account_read, api_keys, paper, reconciliation
+from ..services import account_read, agent_models, api_keys, paper, provider_keys, reconciliation
 from ..services.system_flags import read_kill_switch
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
@@ -82,6 +82,12 @@ class ApiKeyIn(BaseModel):
     scopes: list[Literal["read", "trade", "admin"]] = Field(min_length=1)
     label: str | None = Field(default=None, max_length=120)
     expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ChatIn(BaseModel):
+    model_id: str = Field(min_length=1, max_length=200)
+    provider: str | None = Field(default=None, max_length=80)
+    prompt: str = Field(min_length=1, max_length=20_000)
 
 
 @router.get("/capabilities")
@@ -160,6 +166,51 @@ def state(
             "failed_checks": [check["id"] for check in report["checks"] if not check["ok"]],
         },
     }
+
+
+@router.get("/models")
+def list_models(
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """The selectable models, each marked free, your key or paid. Never holds a key."""
+    return agent_models.catalog(session, settings)
+
+
+@router.post("/chat")
+def chat(
+    payload: ChatIn,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    cipher: Any = Depends(get_secret_cipher),
+    transport: Any = Depends(agent_models.transport_for_tests),
+) -> dict[str, Any]:
+    """One model turn with its token use and cost, when the provider reports them."""
+    try:
+        return agent_models.chat(
+            session,
+            settings,
+            cipher,
+            provider=payload.provider,
+            model_id=payload.model_id,
+            prompt=payload.prompt,
+            transport=transport,
+        )
+    except agent_models.ChatError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.message, "retryable": False},
+        ) from exc
+    except provider_keys.ProviderKeyError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "code": exc.code,
+                "message": exc.message,
+                "retryable": exc.retryable,
+                "detail": exc.detail,
+            },
+        ) from exc
 
 
 @router.get("/keys")
