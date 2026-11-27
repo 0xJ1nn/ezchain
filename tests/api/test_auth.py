@@ -46,6 +46,7 @@ EXPECTED_PROTECTED_ROUTES = (
     ("DELETE", "/api/v1/watchlist"),
     ("PATCH", "/api/v1/protection/arms/{arm_id}"),
     ("PATCH", "/api/v1/strategies/{strategy_id}"),
+    ("POST", "/api/v1/agent/chat"),
     ("POST", "/api/v1/agent/keys"),
     ("POST", "/api/v1/backtests"),
     ("POST", "/api/v1/graph/dry-run"),
@@ -288,6 +289,24 @@ def test_the_agent_key_route_requires_admin_even_to_read() -> None:
     for path in ("/api/v1/agent/keys", "/api/v1/agent/keys/key-1"):
         assert required_scope("GET", path) == "admin"
         assert required_scope("POST", path) == "admin"
+
+
+def test_agent_chat_is_not_an_anonymous_route(
+    protected_settings: Settings, session: Session
+) -> None:
+    """A chat turn reaches a provider, so it needs a trade-scoped principal."""
+    assert requires_auth("POST", "/api/v1/agent/chat", protected_settings) is True
+    assert required_scope("POST", "/api/v1/agent/chat") == "trade"
+
+    client = make_client(protected_settings, session)
+    response = client.post(
+        "/api/v1/agent/chat",
+        json={"model_id": "fixture-model", "prompt": "hello"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "UNAUTHORIZED"
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_every_root_route_is_classified() -> None:

@@ -81,10 +81,10 @@ class OpenAICompatibleClient(ProviderClient):
         return f"{self._base_url}/chat/completions"
 
     def _headers(self, secret: str) -> dict[str, str]:
-        return {
-            "content-type": "application/json",
-            "authorization": f"Bearer {secret}",
-        }
+        headers = {"content-type": "application/json"}
+        if secret:
+            headers["authorization"] = f"Bearer {secret}"
+        return headers
 
     def _payload(self, request: ModelRequest) -> dict[str, Any]:
         messages = to_chat_messages(request.messages)

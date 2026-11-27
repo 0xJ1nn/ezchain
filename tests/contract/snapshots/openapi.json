@@ -1250,6 +1250,40 @@
         "title": "ChainOut",
         "type": "object"
       },
+      "ChatIn": {
+        "properties": {
+          "model_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model Id",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "model_id",
+          "prompt"
+        ],
+        "title": "ChatIn",
+        "type": "object"
+      },
       "CostPreviewOut": {
         "description": "The pre-trade cost sheet. Nulls are unknowns (\"\u2014\"), never zeros.",
         "properties": {
@@ -6840,6 +6874,50 @@
         ]
       }
     },
+    "/api/v1/agent/chat": {
+      "post": {
+        "description": "One model turn with its token use and cost, when the provider reports them.",
+        "operationId": "chat_api_v1_agent_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Chat Api V1 Agent Chat Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/v1/agent/keys": {
       "get": {
         "description": "Operator view. Hashes and plaintext are never returned.",
@@ -6939,6 +7017,30 @@
           }
         },
         "summary": "Revoke Agent Key",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/v1/agent/models": {
+      "get": {
+        "description": "The selectable models, each marked free, your key or paid. Never holds a key.",
+        "operationId": "list_models_api_v1_agent_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Models Api V1 Agent Models Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
         "tags": [
           "agent"
         ]
