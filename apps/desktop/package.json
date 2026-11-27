@@ -8,7 +8,9 @@
     "start": "electron .",
     "dist:dir": "electron-builder --linux dir",
     "dist:linux": "electron-builder --linux AppImage deb",
-    "test": "node --test resources/remote/*.test.cjs && node installer/check-legal-files.mjs"
+    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:win": "electron-builder --win nsis zip",
+    "test": "node --test resources/remote/*.test.cjs installer/*.test.cjs && node installer/check-legal-files.mjs"
   },
   "devDependencies": {
     "electron": "45.0.0",
@@ -77,6 +79,24 @@
         "libatspi2.0-0",
         "libayatana-appindicator3-1"
       ]
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "ezCHAIN-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "ezCHAIN-${version}-x64-setup.${ext}"
     },
     "executableName": "ezchain"
   },

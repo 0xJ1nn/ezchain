@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const sender = require("./sender.js");
+const { backendBinPath } = require("./installer/runtime-paths.cjs");
 
 const APP_NAME = "ezCHAIN";
 const isDev = !app.isPackaged;
@@ -30,7 +31,7 @@ const iconPath = isDev
 	? path.join(__dirname, "resources", "icon.png")
 	: path.join(process.resourcesPath, "icon.png");
 const resourcesRoot = isDev ? path.join(__dirname, "build") : process.resourcesPath;
-const backendBin = path.join(resourcesRoot, "backend", "ezchain-api", "ezchain-api");
+const backendBin = backendBinPath(resourcesRoot, process.platform);
 const webTar = path.join(resourcesRoot, "web.tar.gz");
 function webRoot() {
 	return isDev ? path.join(resourcesRoot, "web") : path.join(paths.dataDir, "runtime", `web-${app.getVersion()}`);

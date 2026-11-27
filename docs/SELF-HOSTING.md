@@ -22,7 +22,9 @@ Redis, NATS, a standalone engine and the OTel collector are not part of this sta
 are recorded in [`infra/compose.blueprint.yaml`](../infra/compose.blueprint.yaml).
 
 This is an alpha paper workstation, not a real-money deployment. Do not point it at
-funds.
+funds. For the workstation's first-open steps on macOS and Windows, the data and log
+locations, and the difference between configured, built, launched and published, see
+[FIRST-OPEN.md](FIRST-OPEN.md).
 
 ## 2. Trust model: keys, access, and the shared origin
 

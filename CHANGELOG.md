@@ -4,7 +4,9 @@ Every release lists each change with its issue/PR and the evidence that it was c
 
 ## [Unreleased]
 
-No unreleased changes.
+| Change | Issue/PR | Verified on (evidence) |
+|---|---|---|
+| Unsigned, self-hosted distribution: npm meta-package with optional platform binaries and no install scripts, generated Homebrew/winget/Scoop manifests from one SHA-256 source, release-candidate image build script, and a first-open guide | — | Local packed-artifact install smoke, packaging manifest tests and static image checks in `WAVE3-DISTRIBUTION.report.md`; no tag, release or publication |
 
 ## [0.1.0] — unreleased
 

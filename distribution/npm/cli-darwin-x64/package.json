@@ -1,0 +1,13 @@
+{
+  "name": "@ezchain/cli-darwin-x64",
+  "version": "0.1.0",
+  "description": "Native ezCHAIN workstation binary for macOS x64 (unsigned; staged from a release artifact)",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin"],
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xJ1nn/ezchain.git"
+  }
+}
