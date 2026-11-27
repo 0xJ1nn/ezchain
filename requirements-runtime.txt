@@ -13,6 +13,14 @@ pydantic-settings>=2.4,<3
 httpx>=0.27,<1
 alembic>=1.15,<2
 packaging>=23
+# Local vault encryption runs in the executor image, so the same reviewed pins apply.
+# See requirements.txt for why cryptography 50.0.2 is excluded and cffi is held.
+cryptography==50.0.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.2.0
+mnemonic==0.21
+cffi==2.0.0
+pycparser==3.12
 # The pump.fun market source is NOT installed here: the API never imports pumpfire, and the
 # ingest adapter duck-types its events. The live source is the ingest service's optional
 # extra (`pip install "ezchain-ingest[firehose]"`), so the API image stays free of it.

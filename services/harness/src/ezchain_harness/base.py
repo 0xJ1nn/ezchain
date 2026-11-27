@@ -33,7 +33,7 @@ from typing import Any, ClassVar
 from ezchain_agent_runtime import ModelRequest, ModelTurn, ModelUsage
 
 from .credentials import Credential
-from .errors import ProviderHTTPError, ProviderProtocolError
+from .errors import MissingCredential, ProviderHTTPError, ProviderProtocolError
 from .pricing import ModelPricing
 from .record import SessionRecord
 from .redact import redact
@@ -42,6 +42,9 @@ from .transport import HttpRequest, HttpResponse, HttpxTransport, Transport
 DEFAULT_TIMEOUT_SECONDS = 60.0
 
 LOGGER_NAME = "ezchain_harness.providers"
+
+# Distinguishes "no override given" from "this provider is keyless" at construction.
+_INHERIT = object()
 
 
 def utcnow() -> datetime:
@@ -89,6 +92,8 @@ class ProviderClient(ABC):
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         logger: logging.Logger | None = None,
         clock: Callable[[], datetime] = utcnow,
+        env_name: str | None | object = _INHERIT,
+        auth_optional: bool = False,
     ) -> None:
         if not model_id.strip():
             raise ValueError("a provider client needs the model id it is pinned to")
@@ -103,6 +108,10 @@ class ProviderClient(ABC):
         self._timeout = timeout
         self._logger = logger or logging.getLogger(LOGGER_NAME)
         self._clock = clock
+        self._env_name: str | None = (
+            self.credential_env if env_name is _INHERIT else env_name  # type: ignore[assignment]
+        )
+        self._auth_optional = auth_optional
 
     @property
     def model_id(self) -> str:
@@ -126,7 +135,13 @@ class ProviderClient(ABC):
     def _decode(self, body: Mapping[str, Any]) -> ModelTurn: ...
 
     def complete(self, request: ModelRequest) -> ModelTurn:
-        secret = Credential.from_env(self.credential_env).secret()
+        secret = ""
+        if self._env_name:
+            try:
+                secret = Credential.from_env(self._env_name).secret()
+            except MissingCredential:
+                if not self._auth_optional:
+                    raise
         payload = dict(self._payload(request))
         payload["model"] = self._model_id
         http_request = HttpRequest(

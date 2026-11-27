@@ -1185,6 +1185,15 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         http_status=422,
     ),
     _S(
+        "PROFILE_PRICE_INVALID",
+        "protection",
+        "core",
+        "ezchain_core/protection.py",
+        "A supplied entry, peak or current price is not a positive exact decimal.",
+        "A protection price is invalid.",
+        http_status=422,
+    ),
+    _S(
         "PROFILE_KIND_UNSUPPORTED",
         "protection",
         "core",
@@ -1824,6 +1833,18 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "No pool was found.",
         severity="info",
     ),
+    # ------------------------------------------------------------ api: request budget
+    _S(
+        "WRITE_RATE_LIMITED",
+        "protection",
+        "api",
+        "ezchain_api/rate_limit.py",
+        "A principal exceeded its per-minute state-changing request budget; the request "
+        "was refused before a handler ran.",
+        "Too many state-changing requests.",
+        http_status=429,
+        retryable=True,
+    ),
     # ------------------------------------------------------------ api: auth and keys
     _S(
         "UNAUTHORIZED",
@@ -1959,6 +1980,17 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "Provider keys cannot be stored without a pepper.",
         "A provider key pepper is required.",
         http_status=503,
+    ),
+    # ------------------------------------------------------------ api: model chats
+    _S(
+        "MODEL_CHAT_ERROR",
+        "validation",
+        "api",
+        "ezchain_api/services/agent_models.py",
+        "A model chat cannot start: the prompt is empty, the model is unknown, the named "
+        "provider disagrees, the gateway is unconfigured, or the provider key is missing.",
+        "The chat could not be started.",
+        http_status=422,
     ),
     # ------------------------------------------------------------ api: market routes
     _S(

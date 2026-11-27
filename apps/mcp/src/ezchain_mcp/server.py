@@ -17,7 +17,7 @@ from .resources import (
     list_resources,
     read_resource,
 )
-from .tools import WRITE_TOOLS, tool_by_name
+from .tools import WRITE_TOOLS, ToolInputError, tool_by_name
 
 PROTOCOL_VERSION = "2025-11-25"
 SERVER_NAME = "ezchain"
@@ -202,6 +202,8 @@ class McpServer:
             raise JsonRpcError(-32602, "arguments must be an object")
         try:
             return _tool_result(tool.handler(self.client, dict(arguments)))
+        except ToolInputError as exc:
+            return _tool_error(exc.code, exc.message)
         except ApiError as exc:
             return _tool_error(exc.code, exc.message, status=exc.status)
         except Exception as exc:  # noqa: BLE001 - a tool failure is data, not a crash
