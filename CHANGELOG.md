@@ -1,9 +1,25 @@
 # Changelog
 
-All notable changes to this project are documented here.
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
+Every release lists each change with its issue/PR and the evidence that it was checked on the release build. Baseline for each release diff: the previous release tag.
 
 ## [Unreleased]
+
+No unreleased changes.
+
+## [0.1.0] — unreleased
+
+| Change | Issue/PR | Verified on (evidence) |
+|---|---|---|
+| Intent-to-journal pipeline and transaction-to-intent binding (paper) | #269, #274 | To be recorded on the release candidate |
+| Server-derived execution mode and gate record | #265 | To be recorded on the release candidate |
+| Paper trade screen and desktop first-run setup | #553, #552 | To be recorded on the release candidate |
+| Dependency licence gate and gateway supervisor | #551, #550 | To be recorded on the release candidate |
+| Strategy graph template and versioned stream contract | #549, #548 | To be recorded on the release candidate |
+| Rust migration waves through native-host routing | #380, #393, #397, #405, #408, #411, #415, #417, #419–#422, #426, #429, #432, #435, #436 | To be recorded on the release candidate |
+
+### Carry-forward
+
+Nothing is carried forward yet. Unfinished 0.1.0 items move to a post-launch version with a reason.
 
 ### Added
 
@@ -1123,3 +1139,5 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). SemVer.
 ## [0.0.0] — 2026-10-20
 
 Initial design drop. No runtime code.
+
+Release notes: [0.1.0](docs/release-notes/0.1.0.md). Public roadmap: [ROADMAP.md](ROADMAP.md).
