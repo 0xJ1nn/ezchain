@@ -1,8 +1,11 @@
 # ROADMAP — ezCHAIN
 
-> **ALPHA — PAPER ONLY.** Not ready for real-money trading. Official agent listings and
-> any live-mode claim wait for real-mode readiness to be measured; today's Hermes and
-> OpenClaw packs are local integrations, not official marketplace listings.
+> **ALPHA — PAPER IN THIS BUILD.** `0.1.0` targets real-money trading, but no build
+> enables live mode until the readiness gate in
+> [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) is satisfied and the maintainer enables
+> it. Official agent listings and any live-mode claim wait for that readiness measurement;
+> today's Hermes and OpenClaw packs are local integrations, not official marketplace
+> listings.
 
 ## What exists today
 
@@ -11,7 +14,8 @@ multi-chain market observation, per-chain quote ladders, an append-only paper le
 declarative and visual graph strategies, external Python strategy plugins in a supervised
 worker, an MCP server for agents, a backtester, migrations, authentication, observability,
 a complete operator surface and a full-code stress harness. Live execution, keys, wallet
-custody and a live UI are not built, and the unmerged executor foundation is not a claim.
+custody and a live UI are not built today; they are in scope for `0.1.0`, behind the
+readiness gate, and the unmerged executor foundation is not a claim.
 
 ## Done — live paper slice
 
@@ -41,33 +45,53 @@ endpoints, JSON logs and a runnable PAPER Compose stack are shipped. The verifie
 deployment is recorded against an earlier migration head, so a fresh drill at the current
 head remains open. The stress harness and labelled web fixtures are in place.
 
-## What is next
+## Versions
 
-- Re-drill the Compose stack at the current migration head and record the result.
-- Add dashboard equity-snapshot history and the remaining position-tile states.
-- Add per-user authentication and role-based access; today one deployment token serves one
-  paper workspace.
-- Close out the UI follow-ups: a generic automation builder, signal scoring and routing,
-  alert delivery channels and gallery polish.
-- Build a real, replayable ingest path with provider health and a stable reason-code
-  taxonomy before any execution work.
+This roadmap sets out the scope of each version, not a schedule: no dates are promised, the
+order may change, the product ships with no strategies, and no build enables real-money
+trading until the readiness gate in [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) passes
+and the maintainer enables live mode. `0.1.0` is the only launch lane and carries the
+complete product; `0.2.0` and later are post-launch version names kept as empty placeholders.
+The per-version change record is [CHANGELOG.md](CHANGELOG.md); the release workflow and how
+a download is verified are in [docs/RELEASES.md](docs/RELEASES.md).
 
-## Later
+### 0.1.0 — the complete product, including live
 
-- A single replayable execution pipeline against a simulated venue, with a venue adapter
-  that quotes a full-size sell and simulates before broadcasting.
-- An executor with an encrypted vault, a paper gate that cannot be forged from the client,
-  server-derived mode and a kill switch the executor honours.
-- Signed plugin and agent packages with reproducible provenance, plus a security review of
-  the MCP tool surface and the key lifecycle.
-- Multi-tenant ledger partitioning, or one workspace per hosted user.
-- Official agent listings only after real-mode readiness is measured, not planned.
+The first public release and the only launch lane. It carries the whole product: the paper
+surface and the remaining screens and onboarding, data ingest, authentication and roles,
+execution groundwork, the Rust and native work, and live execution with real money. The
+version identifier stays `0.1.0`. Live mode is targeted, not enabled: no build turns it on
+until the readiness gate in [docs/LIVE-EXECUTION.md](docs/LIVE-EXECUTION.md) passes and the
+maintainer enables it. The release-defining gates are a clean-clone install, a real paper
+trade in the default gate, version agreement and a publication audit, with the live
+readiness rollup, custody and key runbooks and a venue rehearsal recorded before live mode
+is enabled. No dates are promised.
+
+### 0.2.0 — post-launch placeholder
+
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
+
+### 0.3.0 — post-launch placeholder
+
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
+
+### 0.4.0 — post-launch placeholder
+
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
+
+### 1.0.0 — post-launch placeholder
+
+Empty. Work is added after `0.1.0` ships only if the owner adds it.
+
+Signed plugin and agent packages with reproducible provenance, a security review of the MCP
+tool surface and the key lifecycle, multi-tenant ledger partitioning, and official agent
+listings are not part of `0.1.0`; they belong to post-launch versions if added.
 
 ## Experimental — pump.fun firehose
 
 Near-native pump.fun market data is under investigation. Discovery events are hints only.
-Live pump.fun trading is not planned until a venue adapter, safety evidence and a recorded
-architecture decision are in place.
+A pump.fun live route needs a venue adapter, safety evidence and a recorded architecture
+decision before any live mode is enabled.
 
 ## Explicitly out of scope for v1
 

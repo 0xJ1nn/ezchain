@@ -2,12 +2,12 @@
 
 **One open-source, multi-chain crypto trading app. PAPER-first. Your strategies.**
 
-> **Language policy:** the core engine, P2P networking, consensus/validation, RPC server,
-> transaction execution and the shipped CLI are being migrated to **Rust** on the
-> `rust/migration` branch. **Python** remains the language for indexer/analytics, AI/ML and
-> strategy plugins; **TypeScript** owns the dashboard and all product UI. Every port is gated
-> on recorded behavioural parity — see ADR-0050. The app is still PAPER-only; live trading is
-> owner-blocked.
+> **Language policy (ADR-0054):** Python owns the product process, the API and the live
+> execution path. Rust owns the signer boundary, the parity-proven money kernels, the
+> independently verifiable ledger seal and replay, and the shipped operator CLI. P2P and
+> consensus stay frozen until a second machine must agree on the same tape; unreachable and
+> duplicate crates are not migration progress. Custody is a separate decision (ADR-0055).
+> **TypeScript** owns the UI. The app is still PAPER-only; live trading is owner-blocked.
 
 ezCHAIN is a self-hostable trading workstation: multi-chain market browsing, a real ledger,
 live-market positions on PAPER fills, automations, signals, backtests and a strategy plugin
@@ -31,6 +31,13 @@ SDK. It ships with **no strategies** — the platform, not the alpha, is the pro
 > Verified vs unverified is recorded in
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
+
+## Releases and roadmap
+
+0.1.0 is the first public release; it is unreleased. The [changelog](CHANGELOG.md) records
+each change with its issue or pull request, the [release notes](docs/release-notes/) record
+each version, and the [public roadmap](ROADMAP.md) sets out what is planned. No dates
+are promised and no `0.x` release enables real-money trading.
 
 ## Six structural edges, each with its evidence
 
