@@ -545,11 +545,7 @@ def _market_trend(client: EzchainClient, args: dict[str, Any]) -> Any:
     previous, latest = values[-2], values[-1]
     tolerance = FLAT_EPSILON * max(1.0, abs(previous), abs(latest))
     direction = (
-        "flat"
-        if abs(latest - previous) <= tolerance
-        else "up"
-        if latest > previous
-        else "down"
+        "flat" if abs(latest - previous) <= tolerance else "up" if latest > previous else "down"
     )
     return {
         "chain": chain,
@@ -593,9 +589,7 @@ def _chart_spec(client: EzchainClient, args: dict[str, Any]) -> Any:
             {
                 "name": "close",
                 "type": "line",
-                "values": [
-                    {"open_time": times[i], "value": close} for i, close in enumerate(raw)
-                ],
+                "values": [{"open_time": times[i], "value": close} for i, close in enumerate(raw)],
             }
         ],
         "overlays": [
