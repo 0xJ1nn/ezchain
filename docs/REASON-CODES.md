@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 286 codes across 17 categories, 6 layers.
+**Scale:** 288 codes across 17 categories, 6 layers.
 
 ---
 
@@ -58,6 +58,12 @@ Layer is where the code is emitted today: `core`, `sdk`, `adapters`, `api`, `eng
 `executor`. HTTP is the status the code actually returns at the HTTP edge; `—` means the
 code never crosses HTTP as an error (it is a persisted row reason, a WS-free body `reason`
 or a process-local refusal).
+
+### Request rate limits (1)
+
+| Code | Layer | HTTP | Retry | Severity | Meaning |
+|---|---|---|---|---|---|
+| `WRITE_RATE_LIMITED` | api | 429 | yes | warning | A principal exceeded its per-minute state-changing request budget; the request was refused before a handler ran. |
 
 ### Authentication, keys and scopes (15)
 
@@ -327,6 +333,7 @@ or a process-local refusal).
 | `PROFILE_PARAM_TYPE` | core | 422 | no | warning | A profile parameter has the wrong type. |
 | `PROFILE_PARAM_MISSING` | core | 422 | no | warning | A profile has no defaults. |
 | `PROFILE_PARAM_RANGE` | core | 422 | no | warning | A profile name, chain or value is out of range. |
+| `PROFILE_PRICE_INVALID` | core | 422 | no | warning | A supplied entry, peak or current price is not a positive exact decimal. |
 | `PROFILE_KIND_UNSUPPORTED` | core | 422 | no | warning | The profile kind is neither manual nor smart. |
 | `PROFILE_RULES_REQUIRED` | core | 422 | no | warning | A smart profile was saved with no rules. |
 | `PROFILE_RULES_NOT_ALLOWED` | core | 422 | no | warning | A manual profile was saved with rules. |

@@ -17,12 +17,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Literal
 
 ArmKind = Literal["stop_loss", "trailing_stop", "take_profit"]
 ArmStatus = Literal["armed", "triggered", "cancelled", "expired"]
 ProfileKind = Literal["manual", "smart"]
+ProfileAction = Literal["hold", "exit_stop", "exit_trailing", "exit_take_profit"]
 
 DEFAULT_STOP_LOSS_PCT = Decimal("8")
 DEFAULT_TRAILING_PCT = Decimal("5")
@@ -72,6 +73,34 @@ def _positive(value: Decimal, key: str) -> Decimal:
     if value <= 0:
         raise ProtectionValidationError("PROTECTION_PARAM_RANGE", f"{key} must be > 0")
     return value
+
+
+def _bounded_pct(
+    value: Decimal, key: str, *, cap: Decimal | None, inclusive: bool = True
+) -> Decimal:
+    """Bounds shared by profile construction and profile evaluation.
+
+    A stop may take the price to zero (100%); a trailing give-back must leave a
+    positive trigger, so 100% is refused. Take profit has no upper bound: a
+    200% gain is a valid expectation, finite and positive are the only limits.
+    """
+    if value <= 0 or not value.is_finite():
+        raise ProtectionValidationError("PROFILE_PARAM_RANGE", f"{key} must be > 0 and finite")
+    if cap is not None and (value > cap or (not inclusive and value == cap)):
+        operator = "<=" if inclusive else "<"
+        raise ProtectionValidationError("PROFILE_PARAM_RANGE", f"{key} must be {operator} {cap}")
+    return value
+
+
+def _profile_pct(
+    value: Any, key: str, *, cap: Decimal | None, inclusive: bool = True
+) -> Decimal | None:
+    """Kernel-side check: a typed profile carries exact Decimals, not floats."""
+    if value is None:
+        return None
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise ProtectionValidationError("PROFILE_PARAM_TYPE", f"{key} must be a finite Decimal")
+    return _bounded_pct(value, key, cap=cap, inclusive=inclusive)
 
 
 @dataclass(frozen=True)
@@ -279,6 +308,17 @@ class ArmEvaluation:
     inputs: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ProfileDecision:
+    """Result of one profile evaluation. All prices are exact Decimals."""
+
+    action: ProfileAction
+    trigger_price_usd: Decimal | None
+    peak_usd: Decimal
+    # Caller-supplied and computed prices, stringified for replay like ArmEvaluation.
+    inputs: dict[str, Any]
+
+
 def validate_profile(
     name: str,
     chain: str | None,
@@ -298,12 +338,17 @@ def validate_profile(
     if not isinstance(params, Mapping):
         raise ProtectionValidationError("PROFILE_PARAM_TYPE", "params must be an object")
     _reject_unknown(params, _PROFILE_KEYS)
+    bounds: dict[str, tuple[Decimal | None, bool]] = {
+        "stop_loss_pct": (Decimal(100), True),
+        "trailing_pct": (Decimal(100), False),
+        "take_profit_pct": (None, True),
+    }
     parsed: dict[str, Decimal] = {}
     for key in _PROFILE_KEYS:
         value = _optional_decimal(params, key)
         if value is not None:
-            _positive(value, key)
-            parsed[key] = value
+            cap, inclusive = bounds[key]
+            parsed[key] = _bounded_pct(value, key, cap=cap, inclusive=inclusive)
     if not parsed:
         raise ProtectionValidationError(
             "PROFILE_PARAM_MISSING", "a profile needs at least one default"
@@ -456,3 +501,81 @@ def evaluate_arm(
     if price_usd <= threshold:
         return ArmEvaluation("trigger", "TRAILING_STOP", params.sell_fraction, None, peak, inputs)
     return ArmEvaluation("hold", "ARMED", Decimal(0), None, peak, inputs)
+
+
+def _profile_price(value: Any, key: str) -> Decimal:
+    if not isinstance(value, Decimal) or not value.is_finite() or value <= 0:
+        raise ProtectionValidationError(
+            "PROFILE_PRICE_INVALID", f"{key} must be a positive finite Decimal"
+        )
+    return value
+
+
+def _scaled(price: Decimal, pct: Decimal, *, down: bool) -> Decimal:
+    """price * (1 +/- pct/100) with enough precision to stay exact decimal."""
+    precision = max(28, len(price.as_tuple().digits) + len(pct.as_tuple().digits) + 6)
+    with localcontext() as ctx:
+        ctx.prec = precision
+        rate = pct / Decimal(100)
+        return price * (Decimal(1) - rate if down else Decimal(1) + rate)
+
+
+def evaluate(
+    profile: ProtectionProfile, entry: Decimal, peak: Decimal | None, current: Decimal
+) -> ProfileDecision:
+    """Pure buy-only kernel over a whole protection profile.
+
+    ``entry`` is the position's average cost, ``peak`` is the highest price the
+    caller has observed so far (``None`` on the first tick) and ``current`` is
+    this mark. The caller owns every read and write: no clock, market, ledger or
+    order is touched here. Ratcheting uses ``max(peak, current)``, so a lower
+    mark never lowers the trigger; feed ``decision.peak_usd`` back as the next
+    ``peak`` to carry the ratchet across ticks. Trailing only arms above water:
+    a peak at or below entry never produces a trailing exit.
+
+    When several exits are due the order is stop loss, trailing profit, then
+    take profit: the downside exits win. Hold carries no trigger price; the
+    computed thresholds are always recorded in ``inputs`` for replay.
+
+    A sell-side mirror is deliberately absent: the position model is long-only
+    (``replay_position`` refuses negative quantities), so this profile is
+    buy-only. Shorts would need a new position model, not a mirrored branch.
+    """
+    stop = _profile_pct(profile.stop_loss_pct, "stop_loss_pct", cap=Decimal(100), inclusive=True)
+    trailing = _profile_pct(profile.trailing_pct, "trailing_pct", cap=Decimal(100), inclusive=False)
+    take_profit = _profile_pct(profile.take_profit_pct, "take_profit_pct", cap=None)
+    if stop is None and trailing is None and take_profit is None:
+        raise ProtectionValidationError(
+            "PROFILE_PARAM_MISSING", "a profile needs at least one threshold"
+        )
+
+    entry_usd = _profile_price(entry, "entry")
+    current_usd = _profile_price(current, "current")
+    observed_peak = entry_usd if peak is None else _profile_price(peak, "peak")
+    effective_peak = max(observed_peak, current_usd)
+    inputs: dict[str, Any] = {
+        "entry_usd": str(entry_usd),
+        "peak_usd": str(observed_peak),
+        "effective_peak_usd": str(effective_peak),
+        "current_usd": str(current_usd),
+    }
+
+    if stop is not None:
+        trigger = _scaled(entry_usd, stop, down=True)
+        inputs["stop_trigger_usd"] = str(trigger)
+        if current_usd <= trigger:
+            return ProfileDecision("exit_stop", trigger, effective_peak, inputs)
+
+    if trailing is not None and effective_peak > entry_usd:
+        trigger = _scaled(effective_peak, trailing, down=True)
+        inputs["trailing_trigger_usd"] = str(trigger)
+        if current_usd <= trigger:
+            return ProfileDecision("exit_trailing", trigger, effective_peak, inputs)
+
+    if take_profit is not None:
+        trigger = _scaled(entry_usd, take_profit, down=False)
+        inputs["take_profit_trigger_usd"] = str(trigger)
+        if current_usd >= trigger:
+            return ProfileDecision("exit_take_profit", trigger, effective_peak, inputs)
+
+    return ProfileDecision("hold", None, effective_peak, inputs)
