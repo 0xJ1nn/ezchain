@@ -688,8 +688,11 @@ engine runner that evaluates armed rows on scheduler ticks and fires the same
   ledger replay per arm per tick, then one sell intent with a stable idempotency key
   (`protection:<arm>:single|level-N`). A strategy close wins the position race first;
   an arm then sees `NO_POSITION`. Ladder levels stay armed until their last level
-  fires. The scheduler runs the pass after strategies on the same tick, so a
-  kill-switch outage skips both.
+  fires. The scheduler runs the pass after strategies on the same tick; an armed
+  kill switch skips strategy evaluation — and with it new risk — but the protection
+  pass still evaluates arms, whose bounded reduce-only exits settle through the one
+  `Intent → RiskDecision → Quote → Order → Fill → Journal` order path. The switch's
+  entry-only rule is ADR-0034; this ADR adds no second kill-switch rule.
 - `protection_arms` / `protection_profiles` hold only arm state (params, peak, ladder
   progress, expiry, ordering). Money still journals only through
   `paper.place_order` groups; profiles carry defaults (one home each in core) and,
