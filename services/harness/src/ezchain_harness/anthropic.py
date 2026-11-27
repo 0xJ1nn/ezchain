@@ -103,11 +103,13 @@ class AnthropicClient(ProviderClient):
         return f"{self._base_url}/v1/messages"
 
     def _headers(self, secret: str) -> dict[str, str]:
-        return {
+        headers = {
             "content-type": "application/json",
-            "x-api-key": secret,
             "anthropic-version": ANTHROPIC_VERSION,
         }
+        if secret:
+            headers["x-api-key"] = secret
+        return headers
 
     def _payload(self, request: ModelRequest) -> dict[str, Any]:
         system, messages = to_anthropic_messages(request.messages)

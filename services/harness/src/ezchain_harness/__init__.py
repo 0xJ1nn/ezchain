@@ -44,11 +44,27 @@ from .errors import (
     ProviderTimeout,
     ProviderTransportError,
 )
-from .factory import build, model_from_env
+from .factory import build, build_model, list_catalog, model_from_env
 from .openai import OpenAICompatibleClient
 from .pricing import ModelPricing
 from .record import RECORD_SCHEMA, RecordedTurn, SessionRecord
 from .redact import REDACTED, redact
+from .registry import (
+    MODELS,
+    PROVIDERS,
+    WIRE_CLIENTS,
+    ModelSpec,
+    ProviderSpec,
+    UnknownModel,
+    UnknownProvider,
+    get_model,
+    get_provider,
+    list_models,
+    list_providers,
+    model_catalog,
+    resolve_base_url,
+)
+from .secrets import provide_secret, secret_override
 from .trace import PREFIX, Trace, TracedModel, TracedToolbox, summarize
 from .transport import HttpRequest, HttpResponse, HttpxTransport, Transport
 
@@ -61,10 +77,15 @@ __all__ = [
     "DEFAULT_LIMITS",
     "DEFAULT_TIMEOUT_SECONDS",
     "ExitCode",
+    "MODELS",
+    "PROVIDERS",
+    "WIRE_CLIENTS",
     "HttpRequest",
     "HttpResponse",
     "HttpxTransport",
     "MissingCredential",
+    "ModelSpec",
+    "ProviderSpec",
     "ModelPricing",
     "OpenAICompatibleClient",
     "PREFIX",
@@ -83,16 +104,28 @@ __all__ = [
     "TracedModel",
     "TracedToolbox",
     "Transport",
+    "UnknownModel",
+    "UnknownProvider",
     "build",
     "build_limits",
+    "build_model",
     "build_parser",
     "exit_code",
+    "get_model",
+    "get_provider",
+    "list_catalog",
+    "list_models",
+    "list_providers",
     "load_model",
     "load_toolbox",
     "main",
+    "model_catalog",
     "model_from_env",
     "parse_answer",
+    "provide_secret",
     "redact",
+    "resolve_base_url",
+    "secret_override",
     "resolve_prompt",
     "run_session",
     "summarize",
