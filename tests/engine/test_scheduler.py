@@ -12,7 +12,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 import ezchain_api.models  # noqa: F401
-from ezchain_api.models import LedgerEntryRow, StrategyRow, StrategyRunRow
+from ezchain_api.models import LedgerEntryRow, ProtectionArmRow, StrategyRow, StrategyRunRow
 from ezchain_api.services.strategies import MissingOrderExecutor
 from ezchain_core.ledger import position_account
 from ezchain_core.types import OrderRequest, TokenSnapshot
@@ -508,6 +508,65 @@ async def test_scheduler_skips_the_pass_without_touching_market_data_while_armed
     assert inner.requests == []
     assert runs_for(session_factory, strategy_id) == []
     assert get_strategy(session_factory, strategy_id).last_run_at is None
+
+
+async def test_scheduler_runs_an_armed_protection_exit_while_the_kill_switch_is_armed(
+    session_factory: sessionmaker[Session], add_strategy: Any
+) -> None:
+    """The switch stops new strategy risk, not the stop-loss on an open position."""
+    strategy_id = add_strategy(params={"interval_minutes": 60})
+    with session_factory() as session:
+        session.add(
+            LedgerEntryRow(
+                group_id="g-prot-armed",
+                account=position_account(CHAIN, TOKEN),
+                asset=TOKEN,
+                amount=Decimal("100"),
+                usd_value=Decimal("100"),
+                kind="buy",
+            )
+        )
+        session.add(
+            ProtectionArmRow(
+                id="arm-armed-switch",
+                chain=CHAIN,
+                token_address=TOKEN,
+                token_symbol="TEST",
+                kind="stop_loss",
+                status="armed",
+                params={"price_usd": "0.90"},
+                peak_usd=None,
+                triggered_levels=[],
+                profile_id=None,
+            )
+        )
+        session.commit()
+
+    source = FakeSource(make_snapshot(price="0.85", change_h1="0"))
+    inner = FakeExecutor(order_id="ord-prot-armed")
+    guard = KillSwitchExecutor(inner, lambda: True)
+    scheduler = StrategyScheduler(session_factory, source, guard, interval_seconds=1)
+
+    assert guard.active is True
+    # No strategy decisions: the scheduler returns no RunResult, writes no run row and
+    # consumes no interval. The one market read below belongs to the arm, not a strategy.
+    assert await scheduler.run_once() == []
+    assert runs_for(session_factory, strategy_id) == []
+    assert get_strategy(session_factory, strategy_id).last_run_at is None
+    assert source.calls == [(CHAIN, TOKEN)]
+
+    # The armed arm still fires: a reduce-only sell with no strategy attribution.
+    assert len(inner.requests) == 1
+    request = inner.requests[0]
+    assert request.side == "sell"
+    assert request.reduce_only is True
+    assert request.strategy_id is None
+    assert request.quantity == Decimal("100")
+    with session_factory() as session:
+        arm = session.get(ProtectionArmRow, "arm-armed-switch")
+        assert arm is not None
+        assert arm.status == "triggered"
+        assert arm.order_id == "ord-prot-armed"
 
 
 async def test_an_arm_inside_a_tick_is_obeyed_by_that_same_tick(

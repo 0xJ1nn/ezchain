@@ -19,7 +19,7 @@ code is right and this table is the index.
 | Custody seam: `KeyHandle`, `SignerTransport`, typed refusals | **Built** — a *seam*, with a fake transport in tests; no shipped device or local-vault transport |
 | Broadcast outbox and reconciliation of claims without a journal | **Built** — `FileAttemptLog` + `Reconciler`; the durable log must be injected, the in-memory default is not durable |
 | Executor HTTP service, `executor_client`, HMAC loopback (§1) | **Not built** — no FastAPI app, no client module, no port |
-| Encrypted `vault.json` with argon2id + AES-GCM (§2) | **Not built** — the custody seam exists, the file format does not |
+| Encrypted `vault.json` with argon2id + AES-GCM (§2) | **Built**, import-only: versioned record, Argon2id KEK, AES-256-GCM with the header as associated data, typed refusals. No signing transport, CLI or auto-lock wiring |
 | Simulate stage and `SIMULATION_FAILED` (§3.4) | **Not built**. The code is registered for the pure preflight kernel; no pipeline stage emits it yet. |
 | Live tables `live_intents` / `live_orders` / `live_fills` (§3.1) | **Not built** — no live tables exist |
 | `live:` ledger account prefix (§3.8) | **Not built** — no live book. Paper accounts are `cash:USD`, `fees:USD`, `pnl:realized:USD`, `position:<chain>:<token>` |
@@ -103,25 +103,36 @@ satisfy when it is written, kept here because the custody argument depends on it
 
 ## 2. Vault
 
-**The custody seam is built; this file format is not** (§0). What exists is
-`services/executor/src/ezchain_executor/vault.py`: a `SignerTransport` seam, a
-`HardwareSignerVault` over it, a `VaultTransactionSigner` that binds a prepared transaction
-to an `ApprovedIntent`, and one typed refusal per failure. No key material is stored by
-anything in this repository yet.
+**The custody seam and an import-only encrypted file are built** (§0).
+`services/executor/src/ezchain_executor/vault.py` holds the signing seam: a
+`SignerTransport`, a `HardwareSignerVault` over it, a `VaultTransactionSigner` that binds
+a prepared transaction to an `ApprovedIntent`, and one typed refusal per failure.
+`vault_local.py` holds import validation, the versioned record and
+`EncryptedLocalVaultStore`. The store seals an imported secret with Argon2id
+(`argon2-cffi`) and AES-256-GCM (`cryptography`) into a mode-0600 file written atomically,
+and binds the version, id, family, address, fingerprint, KDF parameters and nonce as AEAD
+associated data. The vault passphrase must be non-empty, and version 1 reads only the
+reviewed Argon2id parameters this build writes; a header that asks for more work is
+refused before the KDF runs. Files over 8 MiB are refused before parsing. BIP39
+sentences are checked with `mnemonic`, including the optional passphrase. Derivation
+paths are bound as public metadata; no child key is derived here. Unlock compares the
+handle's owner, custody, address, chain and fingerprint before authenticating, and
+returns a `KeyHandle`, never the bytes it opened.
 
-The format below is the design an implementation must meet:
+What the rest of this section describes is still a design, not running code:
 
 - File `${EZCHAIN_DATA_DIR}/vault.json`, mode 0600. One record per key: `{id, label,
-  family (svm|evm), address, kdf: {alg: argon2id, salt, t: 3, m: 65536, p: 1}, cipher:
-  {alg: aes-256-gcm, nonce, ct}, created_at}`. Per-key DEK encrypted by a KEK derived from
-  the owner passphrase.
+  family (svm|evm), address, fingerprint, kdf: {alg: argon2id, salt, t: 3, m: 65536, p: 1},
+  cipher: {alg: aes-256-gcm, nonce, ct}, created_at}`. The KEK comes from Argon2id over the
+  owner's vault passphrase with that record's salt; the imported secret is sealed under
+  the KEK.
 - Unlock is explicit (passphrase, plus TOTP when 2FA is enabled) and auto-locks after
-  `EZCHAIN_VAULT_IDLE_MINUTES` (default 30). Every unlock/lock/sign is an audit row.
-- Keys are **generated inside the executor** (`ezchain-executor wallet new --family evm`)
-  or imported through the **executor CLI only** (`wallet import`, reads stdin, never
-  argv). There is no browser key entry (the ADR-0016 proposal, not a reviewed decision) and
-  **no key export** — backup is the
-  encrypted vault file itself. Neither subcommand exists yet.
+  `EZCHAIN_VAULT_IDLE_MINUTES` (default 30). Every unlock/lock/sign is an audit row. Only
+  the passphrase part is implemented; TOTP, idle timeout and audit rows are not built.
+- Keys are **imported only**: no generation, export, recovery kit or browser key entry, and
+  no wallet CLI. The public address and fingerprint are supplied by the caller, because
+  this tier has no chain signing library and derives neither. The encrypted file is the
+  only persistence, not a backup product.
 - The API stores wallet metadata (`wallets` table: id, label, family, address, custody
   `local_vault|watch`, chains, policy) — never key material.
 

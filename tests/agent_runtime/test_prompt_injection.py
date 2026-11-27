@@ -18,6 +18,7 @@ document in both directions.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -527,7 +528,12 @@ def test_the_mcp_surface_offers_no_admin_decision_or_secret_tool(allow_writes: b
         assert "ezchain_place_paper_order" in names if allow_writes else True
         for name in names:
             for hint in FORBIDDEN_TOOL_HINTS:
-                assert hint not in name, f"{name} looks like a {hint} tool"
+                # Hint at a token, not an arbitrary substring: "profile" is a protection
+                # read model, not a file tool. Names use snake_case, so a word boundary is
+                # the start of the string or any non-letter.
+                assert not re.search(rf"(?:^|[^a-z]){re.escape(hint)}", name), (
+                    f"{name} looks like a {hint} tool"
+                )
         assert not [name for name in names if "bucket" in name], names
         # No write tool and no mode switch: every order tool is a paper order.
         assert not [name for name in names if "live" in name and "readiness" not in name], names

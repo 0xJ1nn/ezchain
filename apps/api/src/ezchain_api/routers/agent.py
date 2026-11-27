@@ -32,6 +32,9 @@ READ_TOOLS = (
     "list_markets",
     "get_token",
     "get_candles",
+    "market_trend",
+    "chart_spec",
+    "list_protection_profiles",
     "get_account",
     "list_positions",
     "list_orders",
@@ -53,6 +56,7 @@ READ_TOOLS = (
 )
 WRITE_TOOLS = (
     "create_strategy",
+    "create_protection_profile",
     "update_strategy",
     "pause_strategy",
     "resume_strategy",

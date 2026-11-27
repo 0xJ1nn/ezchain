@@ -237,6 +237,23 @@ keystore, a hardware-wallet library, a custody API client — needs an ADR in
 The test `test_the_pinned_set_carries_no_signer_or_custody_library` fails when such a
 package appears in a lock without that decision being recorded in this document.
 
+### Local vault crypto pins (reviewed 2026-11-27)
+
+The import-only encrypted tier uses `cryptography==50.0.1` for AES-256-GCM,
+`argon2-cffi==25.1.0` for the Argon2id KEK and `mnemonic==0.21` for BIP39 validation and
+the optional passphrase seed. All three are in both Python locks. `cffi` is held at 2.0.0:
+2.1.x declares `MIT-0`, which the licence inventory does not recognise, while 2.0.0
+declares `MIT` and satisfies the cipher library's `cffi>=2.0.0` requirement. The resolved
+set also pins `argon2-cffi-bindings==26.2.0` (MIT) and `pycparser==3.12` (BSD-3-Clause).
+`cryptography==50.0.2` was rejected in review; 50.0.1 is a real wheel-backed release with
+no advisory in the OSV query made at review time.
+
+`bip-utils` was considered and is **not** pinned. Every release resolves `coincurve` and
+`ecdsa`, which the signer/custody tripwire above refuses without an ADR, and several of
+its transitive forks publish no licence expression the inventory accepts. The vault
+derives no child keys: derivation paths stay as validated public binding, and BIP39 seed
+derivation comes from `mnemonic`. No new signing boundary or chain SDK was added.
+
 ## 5. Reproducible build — two clean builds, one digest
 
 Pins and hashes make the *inputs* exact. The release claim is stronger: two independent

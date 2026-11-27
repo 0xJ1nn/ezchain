@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     paper_mark_max_order_usd: Decimal = Field(default=Decimal("250"))
     # Unauthenticated read rate limit. Zero disables it (development only).
     read_rate_limit_per_minute: int = Field(default=60, ge=0, le=100000)
+    # State-changing writes (orders, keys, approvals, backtests) have a tighter budget
+    # than reads so a burst cannot create unbounded rows. Zero disables it (dev only).
+    write_rate_limit_per_minute: int = Field(default=10, ge=0, le=100000)
     # Caps on a single quote request. Exceeded before any provider call.
     max_quote_notional_usd: Decimal = Field(default=Decimal("1000"), gt=0)
     max_quote_slippage_bps: int = Field(default=500, ge=0, le=10000)
@@ -224,6 +227,10 @@ class Settings(BaseSettings):
             raise ValueError("EZCHAIN_CORS_ORIGINS must not contain '*' in prod")
         if self.read_rate_limit_per_minute == 0:
             raise ValueError("EZCHAIN_READ_RATE_LIMIT_PER_MINUTE must be greater than zero in prod")
+        if self.write_rate_limit_per_minute == 0:
+            raise ValueError(
+                "EZCHAIN_WRITE_RATE_LIMIT_PER_MINUTE must be greater than zero in prod"
+            )
         if self.paper_no_risk:
             raise ValueError("EZCHAIN_PAPER_NO_RISK must be false in prod")
         return self

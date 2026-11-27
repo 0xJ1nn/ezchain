@@ -778,46 +778,49 @@ class StrategyScheduler:
 
         One failing strategy never stops the rest, and a strategy whose interval has not
         elapsed is not even opened: the run log records decisions, not scheduler ticks.
-        While the operator kill switch is armed the pass is skipped before any market
-        read, so an idle outage does not write a hold row per strategy per tick.
+        While the operator kill switch is armed the strategy pass is skipped before any
+        strategy market read, so an idle outage does not write a hold row per strategy per
+        tick. Protection arms still evaluate: an armed switch refuses new risk, not the
+        stop-loss on a position already held.
         """
-        if getattr(self._order_executor, "active", False):
-            logger.warning("strategy scheduler idle: operator kill switch is active")
-            return []
+        armed = getattr(self._order_executor, "active", False)
         now = self._now()
-        with self._session_factory() as session:
-            ids = list(
-                session.scalars(
-                    select(StrategyRow.id)
-                    .where(StrategyRow.status == "active")
-                    .order_by(StrategyRow.created_at)
-                ).all()
-            )
         results: list[RunResult] = []
-        for strategy_id in ids:
+        if armed:
+            logger.warning("strategy scheduler idle: operator kill switch is active")
+        else:
             with self._session_factory() as session:
-                strategy = session.get(StrategyRow, strategy_id)
-                if strategy is None or strategy.status != "active":
-                    continue
-                if not _due(strategy, now):
-                    continue
-                try:
-                    results.append(
-                        await evaluate_strategy(
-                            session,
-                            strategy,
-                            self._dexscreener,
-                            self._order_executor,
-                            graph_runtime=self._graph_runtime,
-                            plugin_runtime=self._plugin_runtime,
-                            plugin_host=self._plugin_host,
-                            plugin_registry=self._plugin_registry,
-                            now=now,
-                            max_mark_age_seconds=self._max_mark_age_seconds,
+                ids = list(
+                    session.scalars(
+                        select(StrategyRow.id)
+                        .where(StrategyRow.status == "active")
+                        .order_by(StrategyRow.created_at)
+                    ).all()
+                )
+            for strategy_id in ids:
+                with self._session_factory() as session:
+                    strategy = session.get(StrategyRow, strategy_id)
+                    if strategy is None or strategy.status != "active":
+                        continue
+                    if not _due(strategy, now):
+                        continue
+                    try:
+                        results.append(
+                            await evaluate_strategy(
+                                session,
+                                strategy,
+                                self._dexscreener,
+                                self._order_executor,
+                                graph_runtime=self._graph_runtime,
+                                plugin_runtime=self._plugin_runtime,
+                                plugin_host=self._plugin_host,
+                                plugin_registry=self._plugin_registry,
+                                now=now,
+                                max_mark_age_seconds=self._max_mark_age_seconds,
+                            )
                         )
-                    )
-                except Exception:
-                    logger.exception("strategy %s evaluation crashed", strategy_id)
+                    except Exception:
+                        logger.exception("strategy %s evaluation crashed", strategy_id)
         # Protection arms share this tick and this intent path. Evaluate them
         # after strategies so a strategy close wins the position race and an
         # arm then sees NO_POSITION instead of double-selling.
