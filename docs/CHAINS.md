@@ -54,6 +54,35 @@ Core code reads capabilities, never `chain.id`. A test lints chain-name literals
 | `QuoteRequest` | chain, pair, side, amount, slippage_cap, ttl, wallet |
 | `Quote` | buy quote, **full-size sell quote**, route identity, expected/min out, price impact, fees, account rent, source, observed_at, ttl |
 
+### 2.1 Chain-native transaction support (built, not live)
+
+Five families now have real unsigned-transaction decoders and builders under
+`packages/adapters/src/ezchain_adapters/chains/`, selected by the data registry in
+`chains/registry.py`. A decoder reads chain-native bytes — Solana's compact-u16 message,
+EVM's RLP legacy transaction, a TON single-cell BoC, Sui's BCS programmable transaction or
+a Cosmos protobuf `TxBody` — and produces the field map consumed by
+`ezchain_core.trust.decode_and_bind`. The neutral JSON envelope is no longer the only
+decoder. Every builder implements the shared `TransactionAdapter.prepare(approved)` protocol
+and takes only the immutable approval; quote adapters are not duplicated.
+
+| Family | Chains with a decoder + builder | Broadcast | Signing / executor `Venue.submit` | Confirmation → `Fill` |
+|---|---|---|---|---|
+| svm (Solana) | `solana` | `sendTransaction`, idempotent, time-bounded | **not wired** | **not built** |
+| evm | `ethereum`, `base`, `arbitrum`, `polygon`, `bsc`, `optimism`, `avalanche`, `blast`, `mantle`, `linea`, `scroll`, `zksync`, `fantom`, `cronos`, `celo`, `moonbeam`, `metis` | `eth_sendRawTransaction`, idempotent, time-bounded | **not wired** | **not built** |
+| tvm (TON) | `ton` | `sendBoc`, idempotent, time-bounded | **not wired** | **not built** |
+| move (Sui) | `sui` | `sui_executeTransactionBlock`, idempotent, time-bounded | **not wired** | **not built** |
+| cosmos | `osmosis`, `cosmos` | `broadcast_tx_sync`, idempotent, time-bounded | **not wired** | **not built** |
+
+A successful RPC call returns a **`submitted` receipt only**: it carries the transaction
+hash returned by the RPC, not a fill, not a balance delta and not a journal entry. There is
+no conversion from a submission receipt to a `Fill`, and no `Venue.submit` implementation in
+this change. That wiring stays undone until each chain has a reviewed confirmation/status
+path and reconciliation; an RPC accepting bytes is not evidence of execution. Ambiguous
+submissions (timeout, 5xx, transport failure, missing hash) raise a typed broadcast error
+and leave no receipt a caller could book. Tests use constructed public-format byte vectors
+and mocked HTTP transports — no funded address, real key, live venue or real transaction.
+`live_execute` remains `false` for every chain; none of this is live trading.
+
 The **sell-side quote is mandatory** even when buying: an entry with no executable exit
 is not an entry. The router enforces this with its full-size exit check
 (`QuoteRouter._has_exit` in `packages/adapters/src/ezchain_adapters/quotes.py`), applied
@@ -179,39 +208,42 @@ not a second paper pricing path. That is the same *quote* adapter surface as liv
 implementation. `Live execute` is `no` for every row because `ChainMeta.live_execute` defaults
 to `False` (`registry.py:71`) and nothing overrides it.
 
-| Chain (registry id) | Tier | Quote head | Paper fill | Live execute | Build/sign/submit adapter | Venue contract suite |
+| Chain (registry id) | Tier | Quote head | Paper fill | Live execute | Native decode/build; broadcast | Venue tests (no confirmation) |
 |---|---|---|---|---|---|---|
-| Solana (`solana`) | T1 | jupiter | yes | no | none | per-provider tests only |
-| Ethereum (`ethereum`) | T1 | kyberswap | yes | no | none | per-provider tests only |
-| Base (`base`) | T1 | kyberswap | yes | no | none | per-provider tests only |
-| Arbitrum One (`arbitrum`) | T1 | kyberswap | yes | no | none | per-provider tests only |
-| Polygon PoS (`polygon`) | T1 | kyberswap | yes | no | none | per-provider tests only |
-| BNB Chain (`bsc`) | T1 | kyberswap | yes | no | none | per-provider tests only |
-| Optimism (`optimism`) | T2 | kyberswap | yes | no | none | per-provider tests only |
-| Avalanche C (`avalanche`) | T2 | kyberswap | yes | no | none | per-provider tests only |
-| Blast (`blast`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| Mantle (`mantle`) | T2 | lifi | yes | no | none | per-provider tests only |
-| Linea (`linea`) | T2 | kyberswap | yes | no | none | per-provider tests only |
-| Scroll (`scroll`) | T2 | lifi | yes | no | none | per-provider tests only |
-| zkSync Era (`zksync`) | T2 | lifi | yes | no | none | per-provider tests only |
-| Sui (`sui`) | T2 | cetus | yes | no | none | per-provider tests only |
+| Solana (`solana`) | T1 | jupiter | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Ethereum (`ethereum`) | T1 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Base (`base`) | T1 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Arbitrum One (`arbitrum`) | T1 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Polygon PoS (`polygon`) | T1 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| BNB Chain (`bsc`) | T1 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Optimism (`optimism`) | T2 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Avalanche C (`avalanche`) | T2 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Blast (`blast`) | T2 | paper_mark | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Mantle (`mantle`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Linea (`linea`) | T2 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Scroll (`scroll`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| zkSync Era (`zksync`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Sui (`sui`) | T2 | cetus | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | Aptos (`aptos`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| TON (`ton`) | T2 | stonfi | yes | no | none | per-provider tests only |
+| TON (`ton`) | T2 | stonfi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | Tron (`tron`) | T2 | paper_mark | yes | no | none | per-provider tests only |
 | NEAR (`near`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| Osmosis (`osmosis`) | T2 | osmosis_sqs | yes | no | none | per-provider tests only |
-| Cosmos Hub (`cosmos`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| Fantom (`fantom`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| Cronos (`cronos`) | T2 | lifi | yes | no | none | per-provider tests only |
-| Celo (`celo`) | T2 | lifi | yes | no | none | per-provider tests only |
-| Moonbeam (`moonbeam`) | T2 | paper_mark | yes | no | none | per-provider tests only |
-| Metis (`metis`) | T2 | lifi | yes | no | none | per-provider tests only |
+| Osmosis (`osmosis`) | T2 | osmosis_sqs | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Cosmos Hub (`cosmos`) | T2 | paper_mark | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Fantom (`fantom`) | T2 | paper_mark | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Cronos (`cronos`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Celo (`celo`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Moonbeam (`moonbeam`) | T2 | paper_mark | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Metis (`metis`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 
 The last column names what exists today, not a passing gate: per-provider tests are
 `tests/adapters/test_jupiter.py`, `test_kyberswap.py`, `test_lifi.py`, `test_velora.py` and
 `test_svm_move_cosmos_quotes.py`, with one recorded response per quote path in
-`tests/adapters/fixtures/`. There is no single shared contract suite that every venue adapter
-must pass; adding one is work in the adapters field, recorded here as a gap. Note also that
+`tests/adapters/fixtures/`. The binding/decode/broadcast tests added for §2.1 cover every
+one of the five families, but they are not an execution contract suite: they stop at a
+`submitted` receipt and do not prove confirmation, a fill or a journal. There is still no
+shared suite that every venue adapter must pass; adding one, with a confirmation/status path
+per chain, is a gap. Note also that
 the §3 target tiers and the registry tiers differ for Osmosis, NEAR, Cosmos Hub and Moonbeam
 (T3 as a target, T2 in `ChainMeta`'s default); the target column is aspirational and a change
 to either column is a product decision, not a docs edit.
