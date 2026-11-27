@@ -20,6 +20,13 @@ the release manifest, computes one SHA-256 sidecar per artifact and renders all
 three package-manager manifests plus a machine-readable summary. A missing
 artifact fails the run before anything is written.
 
+`tools/release/stage-npm-platform.sh --target <target> --build-cli --out <dir>`
+builds the shipped Rust CLI on this host, stages the real binary into the
+matching platform package and packs the meta/platform pair. Use `--binary <path>`
+for an artifact produced on another host; the script refuses a cross-build and
+checks that the file is the expected executable format. The staged binary is
+gitignored and never committed.
+
 Run the checks with:
 
 ```bash

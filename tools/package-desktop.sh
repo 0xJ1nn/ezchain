@@ -3,13 +3,13 @@
 # the host cannot build is refused with a reason before any work starts, and is
 # recorded as unverified rather than silently skipped.
 #
-#   tools/package-desktop.sh --target linux|mac|win|all [--package] [--check-only]
+#   tools/package-desktop.sh --target linux|mac|win|all [--check-only] [--dry-run]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TARGET=""
 CHECK_ONLY=0
-PACKAGE=0
+DRY_RUN=0
 
 usage() { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; }
 fail() { printf 'package-desktop: %s\n' "$1" >&2; exit 2; }
@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --target) TARGET="${2:?--target needs a value}"; shift 2 ;;
     --target=*) TARGET="${1#*=}"; shift ;;
-    --package) PACKAGE=1; shift ;;
     --check-only) CHECK_ONLY=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) fail "unknown argument: $1" ;;
   esac
@@ -65,14 +65,24 @@ NODE
   exit 0
 fi
 
-# One heavy build at a time: the caller serializes this with /usr/bin/lockf.
-bash tools/build-desktop.sh $([ "$PACKAGE" -eq 1 ] && printf '%s' "--package")
+# The staging step derives its electron-builder platform from the host, so the
+# first build is never a Linux target on macOS. The final packaging step uses
+# only the target that survived the host check above.
 case "$TARGET" in
-  linux)
-    [ "$PACKAGE" -eq 1 ] || pnpm --filter @ezchain/desktop exec electron-builder --linux AppImage deb
-    ;;
-  mac) pnpm --filter @ezchain/desktop exec electron-builder --mac dmg zip ;;
-  win) pnpm --filter @ezchain/desktop exec electron-builder --win nsis zip ;;
-  all) pnpm --filter @ezchain/desktop exec electron-builder --linux AppImage deb --mac dmg zip --win nsis zip ;;
+  linux) final="--linux AppImage deb" ;;
+  mac) final="--mac dmg zip" ;;
+  win) final="--win nsis zip" ;;
+  all) fail "unreachable: all was checked against the host above" ;;
 esac
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf 'plan: bash tools/build-desktop.sh (host platform %s)\n' "$(bash tools/build-desktop.sh --print-platform)"
+  printf 'plan: pnpm --filter @ezchain/desktop exec electron-builder %s\n' "$final"
+  exit 0
+fi
+
+# One heavy build at a time: the caller serializes this with /usr/bin/lockf.
+bash tools/build-desktop.sh
+# shellcheck disable=SC2086
+pnpm --filter @ezchain/desktop exec electron-builder $final
 printf 'package-desktop: %s built unsigned from this checkout\n' "$TARGET"

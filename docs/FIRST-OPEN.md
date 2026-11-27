@@ -41,8 +41,10 @@ app is opened.
 The cask manifest and the npm platform packages are generated from the same
 release manifest and checksum files. See
 [distribution/package-managers](../distribution/package-managers/artifacts.json).
-The macOS package configuration exists; a macOS build and launch were not
-performed on the machine that prepared this guide, so they are **not verified**.
+On the Apple-silicon build host the unsigned arm64 `.dmg` and `.zip` were built,
+and the packaged sidecar answered its native-bridge smoke check. The graphical
+window was not launched and the x64 variant was not built, so those are
+**not verified**. No signature, notarization or store approval is claimed.
 
 ## Windows
 
@@ -139,8 +141,12 @@ These are four different claims and this guide keeps them apart:
 | Claim | What it means | State in this checkout |
 |---|---|---|
 | Configured | Build and package settings exist and are checked | npm packages, Homebrew/winget/Scoop manifests, Linux/macOS/Windows targets, Dockerfiles |
-| Built | An artifact was produced by a command recorded in the evidence | npm tarballs from a packed-artifact smoke test; the earlier Linux desktop build in [the evidence](evidence/desktop/linux-app.md) |
-| Launched | A built artifact was started and answered its health checks | Linux desktop on the previous candidate; npm launcher in the packed-artifact smoke test |
+| Built | An artifact was produced by a command recorded in the evidence | npm tarballs from a packed-artifact smoke test, including a real macOS arm64 CLI built from the committed Cargo lock; the earlier Linux desktop build in [the evidence](evidence/desktop/linux-app.md) |
+| Launched | A built artifact was started and answered its health checks | Linux desktop on the previous candidate; the packed macOS CLI answered `version`, `mode`, `help` and `gate` after a clean install |
+
+The read-only CLI reports its own crate version, which is separate from the
+workstation release version in the `VERSION` file. Neither value is a trading
+capability claim.
 | Published | A tag, registry release, tap or package manager publication exists | None — tag, release and publication are maintainer-only and were not performed |
 
 No item here is claimed as signed, notarized, store-approved or published.

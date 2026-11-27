@@ -156,10 +156,17 @@ resolves `ezchain-api.exe` on Windows without a special case at the call site.
 
 `tools/package-desktop.sh --target <linux|mac|win|all>` refuses any target that
 cannot be built on the current host before it starts work, and records that
-target as not built and not verified. macOS and Windows were **not built or
-launched** on the build host for this branch; each needs its own PyInstaller
-backend binary and an Electron build on that host. No signing, notarization or
-store approval is configured or claimed. See
+target as not built and not verified. The staging builder derives its
+electron-builder platform from the host, so a macOS run never starts with a
+Linux target.
+
+On this `darwin/arm64` host the unsigned macOS **arm64** `.dmg` and `.zip` were
+built from the staged web runtime and frozen API sidecar; the sidecar's native
+bridge import was proven inside the frozen build. The graphical window was not
+launched, and the x64 macOS variant was not built. Windows was **not built** on
+this host and is explicitly refused; it needs its own PyInstaller backend
+binary and an Electron build on that host. No signing, notarization or store
+approval is configured or claimed. See
 [docs/FIRST-OPEN.md](FIRST-OPEN.md) for install paths, the paper-only warning and
 the data/log locations, and [docs/RELEASES.md](RELEASES.md) for the status
 vocabulary.

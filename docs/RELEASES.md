@@ -112,8 +112,10 @@ manifests from those same digests. No channel carries a hand-maintained
 checksum, and there is no second upload path.
 
 - **npm.** `@ezchain/cli` is a launcher with five optional per-platform binary
-  packages and no install script. The native binary is staged into a platform
-  package from the release artifact at publication; the checkout carries no
+  packages and no install script. `tools/release/stage-npm-platform.sh` builds
+  the shipped read-only Rust CLI on the host, or accepts a binary produced on
+  that host, stages it into the matching package and packs both tarballs with
+  their SHA-256 digests. Cross-builds are refused. The checkout carries no
   binary. Registry integrity is npm provenance plus the published per-platform
   SHA-256, not code signing.
 - **Homebrew, winget and Scoop.** Their manifests are generated from the same
@@ -123,7 +125,12 @@ checksum, and there is no second upload path.
   images from a named release candidate and can run local health smoke checks.
   It never pushes an image.
 - **Local desktop.** `tools/package-desktop.sh` refuses a target the host cannot
-  build rather than attempting a cross-build and calling it verified.
+  build rather than attempting a cross-build and calling it verified. The
+  staging builder derives its electron-builder platform from the host, so a
+  macOS package run never begins with a Linux target. On the Apple-silicon host
+  this produced the unsigned arm64 `.dmg` and `.zip`, whose checksums, archive
+  verification and packaged sidecar smoke are recorded in the worker report.
+  The graphical window and the x64 variant were not launched or built.
 
 At publication the maintainer adds npm provenance and publishes the release
 assets. Until then every channel is **configured**, not published: a locally
