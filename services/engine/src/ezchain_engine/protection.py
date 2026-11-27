@@ -27,8 +27,11 @@ from ezchain_core.ledger import LedgerEntry, position_account, replay_position
 from ezchain_core.protection import (
     ArmKind,
     ArmStatus,
+    ProfileDecision,
     ProtectionArm,
+    ProtectionProfile,
     ProtectionValidationError,
+    evaluate,
     evaluate_arm,
     validate_arm,
 )
@@ -65,6 +68,18 @@ class ProtectionResult:
     order_id: str | None
     arm_status: str
     peak_usd: Decimal | None
+
+
+@dataclass(frozen=True)
+class ProfilePaperEvaluation:
+    """What the read-only paper seam observed and decided for a whole profile."""
+
+    profile_id: str
+    decision: ProfileDecision
+    mark_usd: Decimal
+    entry_usd: Decimal
+    peak_usd: Decimal | None
+    quantity: Decimal
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -173,6 +188,44 @@ def position_state(session: Session, chain: str, token_address: str) -> tuple[De
     quantity, cost = replay_position(entries)
     avg = Decimal(0) if quantity == 0 else cost / quantity
     return quantity, avg
+
+
+async def evaluate_profile_paper(
+    session: Session,
+    *,
+    profile: ProtectionProfile,
+    chain: str,
+    token_address: str,
+    peak_usd: Decimal | None,
+    token_source: TokenSource,
+    max_mark_age_seconds: float | None = None,
+) -> ProfilePaperEvaluation:
+    """Read-only paper seam for the whole-profile kernel.
+
+    Reuses the protection pass's one market read and ledger replay, then calls the
+    pure kernel. It places no order and writes no arm, event or ledger row; the
+    caller can inspect the typed decision before any existing arm path acts on it.
+    An unknown/stale mark or an absent position fails closed with a typed refusal.
+    """
+    snapshot = await token_source.get_token(
+        chain, token_address, max_age_seconds=max_mark_age_seconds
+    )
+    if snapshot.stale:
+        raise ProtectionValidationError("MARK_STALE", "mark is stale")
+    if snapshot.price_usd is None:
+        raise ProtectionValidationError("PROFILE_PRICE_INVALID", "current price is unknown")
+    quantity, avg_cost = position_state(session, chain, token_address)
+    if quantity <= 0:
+        raise ProtectionValidationError("NO_POSITION", "no open position to protect")
+    decision = evaluate(profile, avg_cost, peak_usd, snapshot.price_usd)
+    return ProfilePaperEvaluation(
+        profile_id=profile.id,
+        decision=decision,
+        mark_usd=snapshot.price_usd,
+        entry_usd=avg_cost,
+        peak_usd=peak_usd,
+        quantity=quantity,
+    )
 
 
 def _hold(row: ProtectionArmRow, reason: str, peak: Decimal | None) -> ProtectionResult:
