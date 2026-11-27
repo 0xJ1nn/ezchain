@@ -58,6 +58,21 @@ openclaw mcp add ezchain \
 openclaw mcp doctor ezchain --probe
 ```
 
+Market analysis and protection tools:
+
+- `ezchain_market_trend` — `{chain, token, window (1h|4h|1d|7d), series (sma|ema|rsi)}` over
+  stored candles; returns points, latest, direction and source/age.
+- `ezchain_chart_spec` — `{chain, token, window, overlays (sma|ema)}` returns a declarative
+  spec the web UI renders; it generates no image and pulls in no chart library.
+- `ezchain_list_protection_profiles` — the API's existing profile list, read-only.
+- `ezchain_create_protection_profile` — a scoped `trade` write that sends exact decimal
+  percentage strings through `POST /api/v1/protection/profiles`. `dry_run: true` validates
+  and previews the request without persisting it. It never arms protection or places an order.
+
+Each of these declares its API-key `scope`, an `outputSchema` and the standard `tool_call`
+trace event. Candle prices stay exact decimal strings; floats are confined to indicator
+arithmetic and its points, never to money.
+
 Resources: `ezchain://state`, `ezchain://capabilities`, `ezchain://markets`,
 `ezchain://positions`, `ezchain://account`, `ezchain://strategies`, `ezchain://plugins`,
 `ezchain://system`, `ezchain://ledger`, `ezchain://reconciliation`, plus per-strategy and

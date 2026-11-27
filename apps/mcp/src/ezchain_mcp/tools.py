@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from math import isfinite
 from typing import Any
 from urllib.parse import quote
 
@@ -34,6 +37,148 @@ def _object(properties: dict[str, Any], required: list[str] | None = None) -> di
     return schema
 
 
+class ToolInputError(ValueError):
+    """A refused argument, with the stable code the MCP client receives."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+# The scopes are the API's agent-key scopes. Reads stay on ``read``; the one mutation needs
+# ``trade`` as well. This is a declaration for the client, not a second permission check:
+# the server's write gate and the API's key scopes remain the enforcement points.
+SCOPE_READ = "read"
+SCOPE_TRADE = "trade"
+
+# The runtime's standard trace event is ``TraceEventKind.TOOL_CALL``. The MCP layer cannot
+# import the runtime (no new dependency), so it declares the same token as data.
+TRACE_EVENT = "tool_call"
+
+# Window -> (candle timeframe, bar count). Enough closed bars for a 14-period indicator,
+# including RSI which needs one more close than its period.
+WINDOWS: dict[str, tuple[str, int]] = {
+    "1h": ("1m", 60),
+    "4h": ("5m", 48),
+    "1d": ("1h", 24),
+    "7d": ("4h", 42),
+}
+SERIES_KINDS = ("sma", "ema", "rsi")
+OVERLAY_KINDS = ("sma", "ema")
+INDICATOR_PERIOD = 14
+FLAT_EPSILON = 1e-9
+ARITHMETIC_NOTE = (
+    "Candle prices stay exact decimal strings from the API; floats are used only for the "
+    "indicator arithmetic and its points, never for money."
+)
+
+_POINT_SCHEMA = _object(
+    {"open_time": {"type": "string"}, "value": {"type": "number"}},
+    ["open_time", "value"],
+)
+_SOURCE_SCHEMA = _object(
+    {
+        "name": {"type": "string"},
+        "url": {"type": ["string", "null"]},
+        "observed_at": {"type": "string"},
+    },
+    ["name", "observed_at"],
+)
+_PROFILE_SCHEMA = _object(
+    {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "chain": {"type": ["string", "null"]},
+        "kind": {"type": "string"},
+        "stop_loss_pct": {"type": ["string", "null"]},
+        "trailing_pct": {"type": ["string", "null"]},
+        "take_profit_pct": {"type": ["string", "null"]},
+        "rules": {"type": "array", "items": {"type": "string"}},
+        "created_at": {"type": "string"},
+        "updated_at": {"type": "string"},
+        "mode": {"type": "string"},
+    },
+    ["id", "name", "kind", "created_at", "updated_at"],
+)
+
+TREND_OUTPUT_SCHEMA = _object(
+    {
+        "chain": {"type": "string"},
+        "token": {"type": "string"},
+        "window": {"type": "string", "enum": list(WINDOWS)},
+        "series": {"type": "string", "enum": list(SERIES_KINDS)},
+        "timeframe": {"type": "string"},
+        "period": {"type": "integer"},
+        "points": {"type": "array", "items": _POINT_SCHEMA},
+        "latest": {"type": ["number", "null"]},
+        "direction": {"type": "string", "enum": ["up", "down", "flat"]},
+        "source": {"anyOf": [_SOURCE_SCHEMA, {"type": "null"}]},
+        "age_seconds": {"type": ["integer", "null"]},
+        "stale": {"type": "boolean"},
+        "arithmetic": {"type": "string"},
+    },
+    [
+        "chain",
+        "token",
+        "window",
+        "series",
+        "timeframe",
+        "period",
+        "points",
+        "latest",
+        "direction",
+        "age_seconds",
+        "stale",
+        "arithmetic",
+    ],
+)
+CHART_SPEC_OUTPUT_SCHEMA = _object(
+    {
+        "spec_version": {"type": "integer"},
+        "kind": {"type": "string"},
+        "chain": {"type": "string"},
+        "token": {"type": "string"},
+        "window": {"type": "string", "enum": list(WINDOWS)},
+        "timeframe": {"type": "string"},
+        "axes": {"type": "object"},
+        "series": {"type": "array", "items": {"type": "object"}},
+        "overlays": {"type": "array", "items": {"type": "object"}},
+        "source": {"anyOf": [_SOURCE_SCHEMA, {"type": "null"}]},
+        "age_seconds": {"type": ["integer", "null"]},
+        "stale": {"type": "boolean"},
+        "arithmetic": {"type": "string"},
+    },
+    [
+        "spec_version",
+        "kind",
+        "chain",
+        "token",
+        "window",
+        "timeframe",
+        "axes",
+        "series",
+        "overlays",
+        "age_seconds",
+        "stale",
+        "arithmetic",
+    ],
+)
+# The server wraps non-object handler results in a ``result`` field for structured content.
+PROFILES_OUTPUT_SCHEMA = _object(
+    {"result": {"type": "array", "items": _PROFILE_SCHEMA}}, ["result"]
+)
+CREATE_PROFILE_OUTPUT_SCHEMA = _object(
+    {
+        "dry_run": {"type": "boolean"},
+        "persisted": {"type": "boolean"},
+        "request": {"type": "object"},
+        "profile": {"anyOf": [_PROFILE_SCHEMA, {"type": "null"}]},
+    },
+    ["dry_run", "persisted", "request"],
+)
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -43,9 +188,14 @@ class Tool:
     handler: Callable[[EzchainClient, dict[str, Any]], Any]
     read_only: bool = True
     destructive: bool = False
+    # Optional contract metadata. Only tools that declare it emit it, so the existing
+    # catalogue's `tools/list` response is unchanged.
+    scope: str | None = None
+    output_schema: dict[str, Any] | None = None
+    trace_event: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        declared: dict[str, Any] = {
             "name": self.name,
             "title": self.title,
             "description": self.description,
@@ -57,6 +207,13 @@ class Tool:
                 "openWorldHint": True,
             },
         }
+        if self.scope is not None:
+            declared["scope"] = self.scope
+        if self.output_schema is not None:
+            declared["outputSchema"] = self.output_schema
+        if self.trace_event is not None:
+            declared["traceEvent"] = self.trace_event
+        return declared
 
 
 def _get_mode(client: EzchainClient, _: dict[str, Any]) -> Any:
@@ -255,6 +412,259 @@ def _validate_plugin_config(client: EzchainClient, args: dict[str, Any]) -> Any:
     )
 
 
+# -- market analysis -------------------------------------------------------
+#
+# Candle closes arrive as exact decimal strings. They are parsed to float *only* inside the
+# indicator helpers below: indicators are arithmetic, never money. Nothing here computes a
+# price that is later written to the ledger, and no candle value is rounded before display.
+
+
+def _window(args: dict[str, Any]) -> tuple[str, str, int]:
+    value = args.get("window")
+    if not isinstance(value, str) or value not in WINDOWS:
+        raise ToolInputError(
+            "INVALID_WINDOW", f"window must be one of {', '.join(WINDOWS)}, got {value!r}"
+        )
+    timeframe, limit = WINDOWS[value]
+    return value, timeframe, limit
+
+
+def _candles(
+    client: EzchainClient, *, chain: str, token: str, timeframe: str, limit: int
+) -> dict[str, Any]:
+    data = client.get(
+        f"/api/v1/tokens/{_seg(chain)}/{_seg(token)}/candles",
+        params={"timeframe": timeframe, "limit": limit},
+    )
+    if not isinstance(data, dict):
+        raise ToolInputError("CANDLES_MALFORMED", "the candle service did not return an object")
+    bars = data.get("candles")
+    if not isinstance(bars, list) or not bars or data.get("reason") in ("NO_POOL", "CANDLES_EMPTY"):
+        raise ToolInputError("UNKNOWN_TOKEN", f"no stored candles for {chain}:{token}")
+    return data
+
+
+def _closes(data: dict[str, Any]) -> tuple[list[float], list[str], list[str]]:
+    """(float closes for arithmetic, open times, original decimal close strings)."""
+    closes: list[float] = []
+    times: list[str] = []
+    raw: list[str] = []
+    for bar in data["candles"]:
+        if not isinstance(bar, dict):
+            raise ToolInputError("CANDLES_MALFORMED", "a candle is not an object")
+        try:
+            value = float(bar["close"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ToolInputError("CANDLES_MALFORMED", "a candle close is not a number") from exc
+        if not isfinite(value):
+            raise ToolInputError("CANDLES_MALFORMED", "a candle close is not finite")
+        closes.append(value)
+        times.append(str(bar.get("open_time", "")))
+        raw.append(str(bar["close"]))
+    return closes, times, raw
+
+
+def _indicator(closes: list[float], kind: str) -> list[float]:
+    """14-period SMA, EMA or Wilder RSI, aligned to the end of the closes."""
+    period = INDICATOR_PERIOD
+    if kind == "sma":
+        return [sum(closes[i - period : i]) / period for i in range(period, len(closes) + 1)]
+    if kind == "ema":
+        if len(closes) < period:
+            return []
+        seed = sum(closes[:period]) / period
+        multiplier = 2.0 / (period + 1)
+        out = [seed]
+        for value in closes[period:]:
+            out.append(out[-1] + multiplier * (value - out[-1]))
+        return out
+    if kind == "rsi":
+        if len(closes) <= period:
+            return []
+        gains: list[float] = []
+        losses: list[float] = []
+        for index in range(1, len(closes)):
+            change = closes[index] - closes[index - 1]
+            gains.append(max(change, 0.0))
+            losses.append(max(-change, 0.0))
+
+        def level(gain: float, loss: float) -> float:
+            if loss == 0:
+                return 100.0 if gain > 0 else 50.0
+            return 100.0 - 100.0 / (1.0 + gain / loss)
+
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
+        out = [level(avg_gain, avg_loss)]
+        for index in range(period, len(gains)):
+            avg_gain = (avg_gain * (period - 1) + gains[index]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[index]) / period
+            out.append(level(avg_gain, avg_loss))
+        return out
+    raise ToolInputError("INVALID_SERIES", f"unsupported series {kind!r}")
+
+
+def _points(times: list[str], values: list[float]) -> list[dict[str, Any]]:
+    offset = len(times) - len(values)
+    return [{"open_time": times[offset + i], "value": value} for i, value in enumerate(values)]
+
+
+def _freshness(data: dict[str, Any]) -> dict[str, Any]:
+    """Pass through the API's source and verdict; derive only the age from its clock."""
+    source = data.get("source")
+    age: int | None = None
+    if isinstance(source, dict) and isinstance(source.get("observed_at"), str):
+        try:
+            observed = datetime.fromisoformat(source["observed_at"].replace("Z", "+00:00"))
+        except ValueError:
+            observed = None
+        if observed is not None:
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=UTC)
+            delta = (datetime.now(UTC) - observed).total_seconds()
+            # A future-dated source has no usable age; never clamp it to a fresh-looking zero.
+            age = None if delta < 0 else int(delta)
+    return {"source": source, "age_seconds": age, "stale": bool(data.get("stale", False))}
+
+
+def _market_trend(client: EzchainClient, args: dict[str, Any]) -> Any:
+    window, timeframe, limit = _window(args)
+    kind = args.get("series")
+    if not isinstance(kind, str) or kind not in SERIES_KINDS:
+        raise ToolInputError(
+            "INVALID_SERIES", f"series must be one of {', '.join(SERIES_KINDS)}, got {kind!r}"
+        )
+    chain, token = args["chain"], args["token"]
+    data = _candles(client, chain=chain, token=token, timeframe=timeframe, limit=limit)
+    closes, times, _raw = _closes(data)
+    values = _indicator(closes, kind)
+    if len(values) < 2:
+        raise ToolInputError(
+            "INSUFFICIENT_CANDLES", f"{kind} needs more closed bars for {window} on {chain}:{token}"
+        )
+    previous, latest = values[-2], values[-1]
+    tolerance = FLAT_EPSILON * max(1.0, abs(previous), abs(latest))
+    direction = (
+        "flat"
+        if abs(latest - previous) <= tolerance
+        else "up"
+        if latest > previous
+        else "down"
+    )
+    return {
+        "chain": chain,
+        "token": token,
+        "window": window,
+        "series": kind,
+        "timeframe": timeframe,
+        "period": INDICATOR_PERIOD,
+        "points": _points(times, values),
+        "latest": latest,
+        "direction": direction,
+        **_freshness(data),
+        "arithmetic": ARITHMETIC_NOTE,
+    }
+
+
+def _chart_spec(client: EzchainClient, args: dict[str, Any]) -> Any:
+    window, timeframe, limit = _window(args)
+    overlays = args.get("overlays", [])
+    if not isinstance(overlays, list) or any(
+        not isinstance(name, str) or name not in OVERLAY_KINDS for name in overlays
+    ):
+        raise ToolInputError(
+            "INVALID_OVERLAY", f"overlays must be a list of {', '.join(OVERLAY_KINDS)}"
+        )
+    chain, token = args["chain"], args["token"]
+    data = _candles(client, chain=chain, token=token, timeframe=timeframe, limit=limit)
+    closes, times, raw = _closes(data)
+    return {
+        "spec_version": 1,
+        "kind": "line_chart",
+        "chain": chain,
+        "token": token,
+        "window": window,
+        "timeframe": timeframe,
+        "axes": {
+            "x": {"field": "open_time", "type": "time"},
+            "y": {"field": "value", "type": "price", "scale": "linear", "currency": "USD"},
+        },
+        "series": [
+            {
+                "name": "close",
+                "type": "line",
+                "values": [
+                    {"open_time": times[i], "value": close} for i, close in enumerate(raw)
+                ],
+            }
+        ],
+        "overlays": [
+            {
+                "name": name,
+                "period": INDICATOR_PERIOD,
+                "type": "line",
+                "values": _points(times, _indicator(closes, name)),
+            }
+            for name in dict.fromkeys(overlays)
+        ],
+        **_freshness(data),
+        "arithmetic": ARITHMETIC_NOTE,
+    }
+
+
+# -- protection profiles ---------------------------------------------------
+
+
+def _list_protection_profiles(client: EzchainClient, _: dict[str, Any]) -> Any:
+    return client.get("/api/v1/protection/profiles")
+
+
+def _percent(args: dict[str, Any], key: str) -> str | None:
+    if key not in args or args[key] is None:
+        return None
+    raw = args[key]
+    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+        raise ToolInputError("INVALID_PERCENTAGE", f"{key} must be a number")
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError) as exc:
+        raise ToolInputError("INVALID_PERCENTAGE", f"{key} must be a number") from exc
+    if not value.is_finite() or value <= 0:
+        raise ToolInputError("INVALID_PERCENTAGE", f"{key} must be a finite number above zero")
+    return format(value, "f")
+
+
+def _create_protection_profile(client: EzchainClient, args: dict[str, Any]) -> Any:
+    """Create a reusable manual profile through the API; this never arms or places an order.
+
+    Ranges, unknown parameters and the "at least one default" rule stay with the API's
+    ``validate_profile``. The tool only parses percentages into exact decimal strings so a
+    float cannot leak a binary expansion into a stored protection level. ``dry_run`` is a
+    local preview: it validates and returns the request without persisting anything.
+    """
+    name = args.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 120:
+        raise ToolInputError("INVALID_NAME", "name must be a non-empty string of at most 120 chars")
+    params = {
+        key: text
+        for key in ("stop_loss_pct", "trailing_pct", "take_profit_pct")
+        if (text := _percent(args, key)) is not None
+    }
+    if not params:
+        raise ToolInputError("INVALID_PERCENTAGE", "at least one percentage default is required")
+    payload: dict[str, Any] = {
+        "name": name.strip(),
+        "chain": None,
+        "kind": "manual",
+        "params": params,
+        "rules": [],
+    }
+    if args.get("dry_run", False):
+        return {"dry_run": True, "persisted": False, "request": payload, "profile": None}
+    profile = client.post("/api/v1/protection/profiles", json=payload)
+    return {"dry_run": False, "persisted": True, "request": payload, "profile": profile}
+
+
 READ_TOOLS: tuple[Tool, ...] = (
     Tool(
         "ezchain_get_mode",
@@ -315,6 +725,58 @@ READ_TOOLS: tuple[Tool, ...] = (
             ["chain", "address"],
         ),
         _get_candles,
+    ),
+    Tool(
+        "ezchain_market_trend",
+        "Market trend",
+        "SMA, EMA or RSI over stored candles for one window. Indicator points are floats; "
+        "candle prices stay exact decimal strings. No order is placed.",
+        _object(
+            {
+                "chain": {"type": "string"},
+                "token": {"type": "string"},
+                "window": {"type": "string", "enum": list(WINDOWS)},
+                "series": {"type": "string", "enum": list(SERIES_KINDS)},
+            },
+            ["chain", "token", "window", "series"],
+        ),
+        _market_trend,
+        scope=SCOPE_READ,
+        output_schema=TREND_OUTPUT_SCHEMA,
+        trace_event=TRACE_EVENT,
+    ),
+    Tool(
+        "ezchain_chart_spec",
+        "Chart spec",
+        "Declarative line-chart spec (axes, series, overlays, source and age) for the web UI. "
+        "No image generation and no new chart library.",
+        _object(
+            {
+                "chain": {"type": "string"},
+                "token": {"type": "string"},
+                "window": {"type": "string", "enum": list(WINDOWS)},
+                "overlays": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(OVERLAY_KINDS)},
+                    "default": [],
+                },
+            },
+            ["chain", "token", "window"],
+        ),
+        _chart_spec,
+        scope=SCOPE_READ,
+        output_schema=CHART_SPEC_OUTPUT_SCHEMA,
+        trace_event=TRACE_EVENT,
+    ),
+    Tool(
+        "ezchain_list_protection_profiles",
+        "List protection profiles",
+        "The protection profiles the API already exposes. Read-only.",
+        _object({}),
+        _list_protection_profiles,
+        scope=SCOPE_READ,
+        output_schema=PROFILES_OUTPUT_SCHEMA,
+        trace_event=TRACE_EVENT,
     ),
     Tool(
         "ezchain_get_account",
@@ -520,6 +982,28 @@ WRITE_TOOLS: tuple[Tool, ...] = (
         read_only=False,
     ),
     Tool(
+        "ezchain_create_protection_profile",
+        "Create protection profile",
+        "Create a reusable manual protection profile through the existing API. Percentages "
+        "are sent as exact decimal strings. It never arms protection or places an order; "
+        "dry_run previews the request without persisting it.",
+        _object(
+            {
+                "name": {"type": "string"},
+                "stop_loss_pct": {"type": ["number", "string"]},
+                "trailing_pct": {"type": ["number", "string"]},
+                "take_profit_pct": {"type": ["number", "string"]},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            ["name"],
+        ),
+        _create_protection_profile,
+        read_only=False,
+        scope=SCOPE_TRADE,
+        output_schema=CREATE_PROFILE_OUTPUT_SCHEMA,
+        trace_event=TRACE_EVENT,
+    ),
+    Tool(
         "ezchain_update_strategy",
         "Update strategy",
         "Rename, retune params, or pause/resume a strategy.",
@@ -637,4 +1121,11 @@ def tool_by_name(allow_writes: bool) -> dict[str, Tool]:
     return {tool.name: tool for tool in all_tools(allow_writes)}
 
 
-__all__ = ["READ_TOOLS", "WRITE_TOOLS", "Tool", "all_tools", "tool_by_name"]
+__all__ = [
+    "READ_TOOLS",
+    "WRITE_TOOLS",
+    "Tool",
+    "ToolInputError",
+    "all_tools",
+    "tool_by_name",
+]
