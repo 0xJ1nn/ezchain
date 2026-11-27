@@ -65,7 +65,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{record.manifest.kind} {record.manifest_path}"
             )
         for issue in result.issues:
-            print(f"ISSUE {issue.code} {issue.path}: {issue.message}")
+            print(f"issue {issue.code} {issue.path}: {issue.message}")
     return EXIT_INVALID if result.issues else EXIT_OK
 
 

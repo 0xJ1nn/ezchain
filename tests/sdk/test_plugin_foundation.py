@@ -501,7 +501,7 @@ def test_cli_validate_reports_issues_and_exits_one(
     write_plugin(tmp_path / "bad", manifest(kind="ui_widget", capabilities=["propose_order"]))
     assert main(["validate", "--path", str(tmp_path)]) == 1
     output = capsys.readouterr().out
-    assert "ISSUE PLUGIN_CAPABILITY_NOT_ALLOWED" in output
+    assert "issue PLUGIN_CAPABILITY_NOT_ALLOWED" in output
 
 
 def test_cli_json_output_is_structured(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
