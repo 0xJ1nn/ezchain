@@ -33,6 +33,7 @@ from ..observability import HTTP_METRICS, reject_series, render_prometheus
 from ..schemas import ChainOut, KillSwitchIn, KillSwitchOut
 from ..services.ops_signals import build_ops_snapshot
 from ..services.system_flags import read_kill_switch, set_kill_switch
+from ..version import PRODUCT_VERSION
 
 router = APIRouter(tags=["system"])
 
@@ -222,7 +223,7 @@ def healthz(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     The mode is the same derived value the capabilities document reports, so a probe and
     an agent cannot disagree about whether this deployment can trade.
     """
-    return {"status": "ok", "mode": mode_status(settings)}
+    return {"status": "ok", "mode": mode_status(settings), "version": PRODUCT_VERSION}
 
 
 @router.get("/readyz")
@@ -372,7 +373,7 @@ def health(
         "engine_inline": settings.engine_inline,
         "market_scan_inline": settings.market_scan_inline,
         "market_monitor": getattr(request.app.state, "market_monitor", None) is not None,
-        "version": "0.1.0",
+        "version": PRODUCT_VERSION,
     }
     return JSONResponse(status_code=200 if ok else 503, content=body)
 
