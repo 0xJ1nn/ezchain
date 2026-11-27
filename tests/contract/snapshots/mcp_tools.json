@@ -1,4 +1,289 @@
 {
+  "ezchain_chart_spec": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Declarative line-chart spec (axes, series, overlays, source and age) for the web UI. No image generation and no new chart library.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "overlays": {
+          "default": [],
+          "items": {
+            "enum": [
+              "sma",
+              "ema"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "token": {
+          "type": "string"
+        },
+        "window": {
+          "enum": [
+            "1h",
+            "4h",
+            "1d",
+            "7d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "token",
+        "window"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_chart_spec",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "age_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "arithmetic": {
+          "type": "string"
+        },
+        "axes": {
+          "type": "object"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "overlays": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "series": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "observed_at": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spec_version": {
+          "type": "integer"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "timeframe": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "window": {
+          "enum": [
+            "1h",
+            "4h",
+            "1d",
+            "7d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec_version",
+        "kind",
+        "chain",
+        "token",
+        "window",
+        "timeframe",
+        "axes",
+        "series",
+        "overlays",
+        "age_seconds",
+        "stale",
+        "arithmetic"
+      ],
+      "type": "object"
+    },
+    "scope": "read",
+    "title": "Chart spec",
+    "traceEvent": "tool_call"
+  },
+  "ezchain_create_protection_profile": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Create a reusable manual protection profile through the existing API. Percentages are sent as exact decimal strings. It never arms protection or places an order; dry_run previews the request without persisting it.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "stop_loss_pct": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "take_profit_pct": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "trailing_pct": {
+          "type": [
+            "number",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_create_protection_profile",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chain": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "rules": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "stop_loss_pct": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "take_profit_pct": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "trailing_pct": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updated_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "dry_run",
+        "persisted",
+        "request"
+      ],
+      "type": "object"
+    },
+    "scope": "trade",
+    "title": "Create protection profile",
+    "traceEvent": "tool_call"
+  },
   "ezchain_create_strategy": {
     "annotations": {
       "destructiveHint": false,
@@ -634,6 +919,97 @@
     "name": "ezchain_list_positions",
     "title": "List positions"
   },
+  "ezchain_list_protection_profiles": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "The protection profiles the API already exposes. Read-only.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "ezchain_list_protection_profiles",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "chain": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "rules": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "stop_loss_pct": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "take_profit_pct": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "trailing_pct": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "kind",
+              "created_at",
+              "updated_at"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object"
+    },
+    "scope": "read",
+    "title": "List protection profiles",
+    "traceEvent": "tool_call"
+  },
   "ezchain_list_strategies": {
     "annotations": {
       "destructiveHint": false,
@@ -649,6 +1025,177 @@
     },
     "name": "ezchain_list_strategies",
     "title": "List strategies"
+  },
+  "ezchain_market_trend": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "SMA, EMA or RSI over stored candles for one window. Indicator points are floats; candle prices stay exact decimal strings. No order is placed.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "type": "string"
+        },
+        "series": {
+          "enum": [
+            "sma",
+            "ema",
+            "rsi"
+          ],
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "window": {
+          "enum": [
+            "1h",
+            "4h",
+            "1d",
+            "7d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "token",
+        "window",
+        "series"
+      ],
+      "type": "object"
+    },
+    "name": "ezchain_market_trend",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "age_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "arithmetic": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "up",
+            "down",
+            "flat"
+          ],
+          "type": "string"
+        },
+        "latest": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "period": {
+          "type": "integer"
+        },
+        "points": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "open_time": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "open_time",
+              "value"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "series": {
+          "enum": [
+            "sma",
+            "ema",
+            "rsi"
+          ],
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "observed_at": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "observed_at"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "timeframe": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "window": {
+          "enum": [
+            "1h",
+            "4h",
+            "1d",
+            "7d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "chain",
+        "token",
+        "window",
+        "series",
+        "timeframe",
+        "period",
+        "points",
+        "latest",
+        "direction",
+        "age_seconds",
+        "stale",
+        "arithmetic"
+      ],
+      "type": "object"
+    },
+    "scope": "read",
+    "title": "Market trend",
+    "traceEvent": "tool_call"
   },
   "ezchain_pause_strategy": {
     "annotations": {
