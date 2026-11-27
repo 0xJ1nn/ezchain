@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 286 codes across 17 categories, 6 layers.
+**Scale:** 287 codes across 17 categories, 6 layers.
 
 ---
 
