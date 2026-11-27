@@ -1,0 +1,52 @@
+{
+  "schema": "ezchain.graph/1",
+  "name": "memecoin",
+  "version": "1.0.0",
+  "description": "Momentum paper strategy for a meme coin: buy a 5-minute surge above 5% while flat and outside the entry cooldown, then exit on a 20% take-profit or 8% stop-loss guard.",
+  "arming": {
+    "requires": ["backtest", "paper_forward"]
+  },
+  "nodes": [
+    {"id": "tick", "type": "event.tick", "params": {}, "ui": {}},
+    {"id": "seq", "type": "flow.sequence", "params": {}, "ui": {}},
+    {"id": "cooldown", "type": "flow.gate_cooldown", "params": {"minutes": "60"}, "ui": {}},
+    {"id": "change", "type": "data.change", "params": {"window": "5m"}, "ui": {}},
+    {"id": "surge_level", "type": "math.const", "params": {"value": "5"}, "ui": {}},
+    {"id": "surge", "type": "math.compare", "params": {"op": ">"}, "ui": {}},
+    {"id": "pos", "type": "pos.state", "params": {}, "ui": {}},
+    {"id": "flat", "type": "logic.not", "params": {}, "ui": {}},
+    {"id": "take_profit", "type": "guard.take_profit", "params": {"pct": "20"}, "ui": {}},
+    {"id": "stop_loss", "type": "guard.stop_loss", "params": {"pct": "8"}, "ui": {}},
+    {"id": "exit", "type": "logic.or", "params": {}, "ui": {}},
+    {"id": "buy_ok", "type": "logic.and", "params": {}, "ui": {}},
+    {"id": "sell_ok", "type": "logic.and", "params": {}, "ui": {}},
+    {"id": "buy_branch", "type": "flow.branch", "params": {}, "ui": {}},
+    {"id": "sell_branch", "type": "flow.branch", "params": {}, "ui": {}},
+    {"id": "buy", "type": "act.buy", "params": {"amount_usd": "25", "max_position_usd": "100"}, "ui": {}},
+    {"id": "sell", "type": "act.sell", "params": {"pct_position": "100"}, "ui": {}},
+    {"id": "version_note", "type": "act.notify", "params": {"message": "template=memecoin version=1.0.0", "level": "info"}, "ui": {}}
+  ],
+  "edges": [
+    {"from": {"node": "tick", "port": "out"}, "to": {"node": "seq", "port": "in"}},
+    {"from": {"node": "seq", "port": "then0"}, "to": {"node": "cooldown", "port": "in"}},
+    {"from": {"node": "cooldown", "port": "out"}, "to": {"node": "buy_branch", "port": "in"}},
+    {"from": {"node": "seq", "port": "then1"}, "to": {"node": "sell_branch", "port": "in"}},
+    {"from": {"node": "seq", "port": "then2"}, "to": {"node": "version_note", "port": "in"}},
+    {"from": {"node": "change", "port": "value"}, "to": {"node": "surge", "port": "a"}},
+    {"from": {"node": "surge_level", "port": "value"}, "to": {"node": "surge", "port": "b"}},
+    {"from": {"node": "surge", "port": "out"}, "to": {"node": "buy_ok", "port": "a"}},
+    {"from": {"node": "pos", "port": "open"}, "to": {"node": "flat", "port": "a"}},
+    {"from": {"node": "flat", "port": "out"}, "to": {"node": "buy_ok", "port": "b"}},
+    {"from": {"node": "take_profit", "port": "hit"}, "to": {"node": "exit", "port": "a"}},
+    {"from": {"node": "stop_loss", "port": "hit"}, "to": {"node": "exit", "port": "b"}},
+    {"from": {"node": "exit", "port": "out"}, "to": {"node": "sell_ok", "port": "a"}},
+    {"from": {"node": "pos", "port": "open"}, "to": {"node": "sell_ok", "port": "b"}},
+    {"from": {"node": "buy_ok", "port": "out"}, "to": {"node": "buy_branch", "port": "cond"}},
+    {"from": {"node": "sell_ok", "port": "out"}, "to": {"node": "sell_branch", "port": "cond"}},
+    {"from": {"node": "buy_branch", "port": "true"}, "to": {"node": "buy", "port": "in"}},
+    {"from": {"node": "sell_branch", "port": "true"}, "to": {"node": "sell", "port": "in"}}
+  ],
+  "comments": [
+    {"id": "about", "text": "Momentum: buy a 5-minute surge while flat and outside the cooldown, exit on a take-profit or stop-loss guard.", "ui": {}}
+  ]
+}

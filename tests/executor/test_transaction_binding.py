@@ -319,7 +319,7 @@ def pipeline(
             venue=venue,
             sink=journal,
             limits=limits(),
-            kill_switch=KillSwitch(),
+            kill_switch=KillSwitch(read=lambda: False),
             timeout_seconds=0.2,
             signing=signing,
             mode=mode,  # type: ignore[arg-type]

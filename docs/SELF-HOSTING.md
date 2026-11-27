@@ -321,11 +321,14 @@ Not verified by that test, and therefore not claimed here:
 
 - a download from a published release, because no release exists yet;
 - public DNS, a real TLS terminator and the firewall example in §4;
-- the restore commands in §10 at the current migration head. The last recorded
-  dump/restore drill is the 2026-10-22 Docker drill
-  ([docs/evidence/p0-production/docker-up.md](evidence/p0-production/docker-up.md)),
-  which ran at migration head `0003_paper_fill_order`; [PRODUCTION-READINESS §2](PRODUCTION-READINESS.md)
-  records that the stack has not been re-drilled at the current head.
+- the Docker-based restore commands in §10 at the current migration head. The last
+  recorded *container* drill is the 2026-10-22 Docker drill
+  ([docker-up.md](evidence/p0-production/docker-up.md)) at head `0003_paper_fill_order`.
+  A native dump/restore rehearsal has since been re-run at head
+  `0026_market_stored_order`
+  ([backup-restore-rehearsal.md](evidence/release-gate/backup-restore-rehearsal.md)), but it
+  starts no container; [PRODUCTION-READINESS §2](PRODUCTION-READINESS.md) records that the
+  stack has not been re-drilled in Docker at the current head `0031_pair_address_width`.
 
 Update this section with the release tag and the fresh-server result when both exist.
 

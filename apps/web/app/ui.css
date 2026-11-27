@@ -210,6 +210,10 @@ body.sidebar-collapsed {
 .sidebar-more .more-rail, .sidebar-foot .foot-rail { display: none; }
 .sidebar-more:hover { color: var(--ink); }
 .sidebar-foot .micro { margin-top: 2px; font-size: 8.5px; letter-spacing: .03em; }
+.sidebar-foot .sidebar-version {
+  display: block; margin-top: 2px; font-size: 8.5px; letter-spacing: .03em;
+  text-transform: none; color: var(--muted);
+}
 
 /* Collapsed rail: labels are hidden visually but every link keeps its aria-label and
    title, and the floating tip makes the label readable on hover and keyboard focus. */

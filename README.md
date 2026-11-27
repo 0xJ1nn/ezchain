@@ -2,12 +2,12 @@
 
 **One open-source, multi-chain crypto trading app. PAPER-first. Your strategies.**
 
-> **Language policy:** the core engine, P2P networking, consensus/validation, RPC server,
-> transaction execution and the shipped CLI are being migrated to **Rust** on the
-> `rust/migration` branch. **Python** remains the language for indexer/analytics, AI/ML and
-> strategy plugins; **TypeScript** owns the dashboard and all product UI. Every port is gated
-> on recorded behavioural parity — see ADR-0050. The app is still PAPER-only; live trading is
-> owner-blocked.
+> **Language policy (ADR-0054):** Python owns the product process, the API and the live
+> execution path. Rust owns the signer boundary, the parity-proven money kernels, the
+> independently verifiable ledger seal and replay, and the shipped operator CLI. P2P and
+> consensus stay frozen until a second machine must agree on the same tape; unreachable and
+> duplicate crates are not migration progress. Custody is a separate decision (ADR-0055).
+> **TypeScript** owns the UI. The app is still PAPER-only; live trading is owner-blocked.
 
 ezCHAIN is a self-hostable trading workstation: multi-chain market browsing, a real ledger,
 live-market positions on PAPER fills, automations, signals, backtests and a strategy plugin
@@ -31,6 +31,13 @@ SDK. It ships with **no strategies** — the platform, not the alpha, is the pro
 > Verified vs unverified is recorded in
 > [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md); the live executor
 > foundation is deliberately unmerged until its review blockers are closed.
+
+## Releases and roadmap
+
+0.1.0 is the first public release; it is unreleased. The [changelog](CHANGELOG.md) records
+each change with its issue or pull request, the [release notes](docs/release-notes/) record
+each version, and the [public roadmap](ROADMAP.md) sets out what is planned. No dates
+are promised and no `0.x` release enables real-money trading.
 
 ## Six structural edges, each with its evidence
 
@@ -350,6 +357,27 @@ server you own, use the one-command installer described in
 [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md). Services that do not exist yet (Redis, NATS,
 executor, ingest, a standalone engine) are recorded in `infra/compose.blueprint.yaml` and
 are not part of this stack.
+
+## Trademark and official channels
+
+The ezCHAIN name and logo are trademarks, separate from the AGPL and Apache code licences
+([TRADEMARKS.md](TRADEMARKS.md)). The canonical domain and repository are
+`github.com/0xJ1nn/ezchain`, and the tagged releases in that repository are the only official
+builds. No other domain, download site, social account, token or hosted service is an
+official ezCHAIN channel, and the project does not endorse third-party products.
+
+Official releases sign the archive checksum, the funding configuration and each build's
+attestation with the maintainer's release key. The public half of that key, its fingerprint and
+the signed assets are published by the maintainer with the first signed tag; a source checkout
+carries none of them. The steps for checking a download are in
+[docs/RELEASES.md](docs/RELEASES.md). Verify a release before running it. Settings → General
+shows a positive build badge only when the running build's attestation verifies against a key
+whose fingerprint matches the published one; when it does not, the page says why.
+
+Forking is welcome under the code licences, but a fork that is distributed or hosted must use
+its own name and logo, keep the [NOTICE](NOTICE) file and remove the ezCHAIN marks from its
+interface and listings. Describing a project as based on ezCHAIN is permitted; presenting it
+as ezCHAIN is not.
 
 ## Contributing
 

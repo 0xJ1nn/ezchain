@@ -537,6 +537,89 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "The transaction could not be signed.",
         severity="critical",
     ),
+    # Pre-broadcast preflight checks with no earlier home. Their stage is the pure trust
+    # kernel; the pipeline wiring is deliberately not part of this change.
+    _S(
+        "TRANSACTION_CHAIN_MISMATCH",
+        "signing",
+        "core",
+        "ezchain_core/trust/attestation.py",
+        "The chain changed after approval.",
+        "The transaction chain changed after approval.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_BLOCKHASH_STALE",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "The blockhash is stale or invalid, so the transaction cannot land.",
+        "The transaction blockhash is no longer valid.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_VERSION_UNSUPPORTED",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "The transaction version or size is outside policy.",
+        "The transaction version or size is not allowed.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_ACCOUNT_LIST_INVALID",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "The resolved account list is missing or over the policy cap.",
+        "The transaction account list is invalid.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_INSTRUCTION_LIMIT",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "The instruction count exceeds the approved policy cap.",
+        "The transaction has too many instructions.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_COMPUTE_BUDGET_EXCEEDED",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "A compute-unit limit or price exceeds the approved cap.",
+        "The transaction compute budget is over the cap.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_ALLOWANCE_UNBOUNDED",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "An ERC-20 approval is unlimited or goes to an unexpected spender.",
+        "The token allowance is unbounded.",
+        severity="critical",
+    ),
+    _S(
+        "SIMULATION_FAILED",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "The pre-broadcast simulation did not succeed.",
+        "Transaction simulation failed.",
+        severity="critical",
+    ),
+    _S(
+        "TRANSACTION_WALLET_IN_FLIGHT",
+        "signing",
+        "core",
+        "ezchain_core/trust/preflight.py",
+        "Another transaction is already in flight for this wallet.",
+        "This wallet already has a transaction in flight.",
+        severity="critical",
+    ),
     # ------------------------------------------------------------ core: governance
     _S(
         "KILL_SWITCH_ACTIVE",
@@ -2161,6 +2244,71 @@ _SPECS: Final[tuple[ReasonSpec, ...]] = (
         "An agent's bucket cap must be zero or greater.",
         http_status=422,
     ),
+    # ------------------------------------------------------------ api: session streaming
+    _S(
+        "STREAM_ERROR",
+        "observability",
+        "api",
+        "ezchain_api/services/stream.py",
+        "A session stream could not be opened or continued.",
+        "The session stream failed.",
+        http_status=400,
+    ),
+    _S(
+        "STREAM_SESSION_NOT_FOUND",
+        "validation",
+        "api",
+        "ezchain_api/services/stream.py",
+        "No streaming channel exists for that session id.",
+        "That session has no stream.",
+        http_status=404,
+    ),
+    _S(
+        "STREAM_SCOPE_DENIED",
+        "auth",
+        "api",
+        "ezchain_api/services/stream.py",
+        "The key's scopes do not cover the scope of that session's stream.",
+        "This key lacks the scope to watch that session.",
+        http_status=403,
+    ),
+    _S(
+        "STREAM_PRINCIPAL_MISMATCH",
+        "auth",
+        "api",
+        "ezchain_api/services/stream.py",
+        "The stream's owner and the requesting principal are different subjects.",
+        "This session belongs to a different principal.",
+        http_status=403,
+    ),
+    _S(
+        "STREAM_INVALID_LAST_EVENT_ID",
+        "validation",
+        "api",
+        "ezchain_api/services/stream.py",
+        "The Last-Event-ID is not a non-negative trace sequence number.",
+        "Last-Event-ID must be a non-negative integer.",
+        http_status=400,
+    ),
+    _S(
+        "STREAM_CURSOR_EXPIRED",
+        "validation",
+        "api",
+        "ezchain_api/services/stream.py",
+        "The cursor fell before the channel's retained tail; SSE returns 410 Gone.",
+        "That event is no longer retained; reconnect from a newer id.",
+        retryable=True,
+    ),
+    _S(
+        "STREAM_LAGGED",
+        "observability",
+        "api",
+        "ezchain_api/services/stream.py",
+        "A subscriber fell behind and was sent a reconnect control frame.",
+        "The subscriber lagged; reconnect with the last event id.",
+        retryable=True,
+        severity="info",
+    ),
     # ------------------------------------------------------------ api: observability reads
     _S(
         "NO_MARKET_ROWS",
@@ -2489,6 +2637,10 @@ VAULT_BOUNDARY_REQUIRED = "VAULT_BOUNDARY_REQUIRED"
 CUSTODY_OWNER_MISMATCH = "CUSTODY_OWNER_MISMATCH"
 AUTOMATION_CONSENT_REQUIRED = "AUTOMATION_CONSENT_REQUIRED"
 GATE_NOT_MET = "GATE_NOT_MET"
+QUOTE_STALE = "QUOTE_STALE"
+KILL_SWITCH_ACTIVE = "KILL_SWITCH_ACTIVE"
+KILL_SWITCH_ARMED = "KILL_SWITCH_ARMED"
+KILL_SWITCH_UNAVAILABLE = "KILL_SWITCH_UNAVAILABLE"
 
 # An agent's bucket refusals. ``ezchain_core.bucket`` exports the shorter ``BUCKET_*``
 # names it always had; they are aliases of these, never a second spelling.
@@ -2514,6 +2666,15 @@ TRANSACTION_APPROVAL_MISMATCH = "TRANSACTION_APPROVAL_MISMATCH"
 TRANSACTION_UNSIGNED = "TRANSACTION_UNSIGNED"
 TRANSACTION_BUILD_FAILED = "TRANSACTION_BUILD_FAILED"
 TRANSACTION_SIGN_FAILED = "TRANSACTION_SIGN_FAILED"
+TRANSACTION_CHAIN_MISMATCH = "TRANSACTION_CHAIN_MISMATCH"
+TRANSACTION_BLOCKHASH_STALE = "TRANSACTION_BLOCKHASH_STALE"
+TRANSACTION_VERSION_UNSUPPORTED = "TRANSACTION_VERSION_UNSUPPORTED"
+TRANSACTION_ACCOUNT_LIST_INVALID = "TRANSACTION_ACCOUNT_LIST_INVALID"
+TRANSACTION_INSTRUCTION_LIMIT = "TRANSACTION_INSTRUCTION_LIMIT"
+TRANSACTION_COMPUTE_BUDGET_EXCEEDED = "TRANSACTION_COMPUTE_BUDGET_EXCEEDED"
+TRANSACTION_ALLOWANCE_UNBOUNDED = "TRANSACTION_ALLOWANCE_UNBOUNDED"
+SIMULATION_FAILED = "SIMULATION_FAILED"
+TRANSACTION_WALLET_IN_FLIGHT = "TRANSACTION_WALLET_IN_FLIGHT"
 
 # ---------------------------------------------------------------------------------
 # Derived registries. These keep one home for the vocabulary while preserving the
