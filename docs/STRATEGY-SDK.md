@@ -96,6 +96,54 @@ The parameter schema supports `type`, `properties`, `required`,
 other keyword is refused rather than silently ignored. An object with `properties`
 rejects unknown keys unless it explicitly sets `additionalProperties: true`.
 
+### 2.1 Plugin manifest v2 (foundation)
+
+`ezchain.plugin.json` is a declarative description of a plugin: identity, kind,
+capabilities, requested scopes, config schema, version ranges, licence, author and a
+`sha256:` source hash. The host reads it **before** it imports any plugin code. The
+loader (`ezchain_sdk.plugin.discover_plugins`) reads JSON only, returns typed records
+and gives one structured issue per invalid plugin. Unknown kinds, unknown
+capabilities, a capability its kind may not request (for example a `ui_widget`
+asking for `propose_order`), a bad semver, a missing field or a bad hash are refused.
+A v1 manifest with no `schema` key still loads as `kind: strategy`, with
+`submit_intent` mapped to `propose_order`; v2 declares `"schema": "ezchain.plugin/2"`.
+
+The closed kind set is `data_source`, `venue`, `strategy`, `evaluator`,
+`automation_template`, `ui_widget`, `report_exporter` and `agent_tool`. The closed
+capability set is `read_market`, `read_account`, `propose_order`, `read_ledger`,
+`write_config` and `render_widget`. The registry (`ezchain_sdk.plugin.capabilities`)
+is data only: it answers whether a kind may request a capability and describes the
+host surface for it. It grants nothing. `required_scopes` are requests, never grants;
+the host computes effective capabilities at install and at call time.
+
+```python
+from ezchain_sdk.plugin import discover_plugins
+
+result = discover_plugins("/srv/ezchain/plugins", host_version="0.1.0")
+# result.records: validated data; result.issues: typed refusals
+```
+
+```bash
+python -m ezchain_sdk.plugin.cli list --path /srv/ezchain/plugins
+python -m ezchain_sdk.plugin.cli validate --path /srv/ezchain/plugins --json
+```
+
+Exit codes: `0` no issues, `1` an invalid plugin was found, `2` bad invocation.
+
+**Not enforced yet.** This is the manifest and loader foundation only. There is no
+execution engine and no sandbox at this layer: the loader never imports, starts or
+supervises plugin code. The source hash is checked for shape, not compared against
+installed files; the curated index is not consulted; no install record is written;
+and capabilities are not yet enforced at a call boundary. The strategy worker
+described in §6 is containment, not a security sandbox. Discovery is not proof that
+a plugin is safe. Isolation, brokers, install records and hash verification are
+later work.
+
+**Distribution rule.** Only reviewed plugins from the curated index install by
+default. Untrusted plugins are not allowed. A development escape hatch, if added,
+stays off by default and carries a persistent warning. No marketplace, payments,
+ratings or open upload path are implied.
+
 ## 3. The interface
 
 ```python
