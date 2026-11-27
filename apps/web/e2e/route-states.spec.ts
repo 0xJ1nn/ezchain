@@ -11,6 +11,10 @@ const SEGMENTS = {
 	"/ledger": { loading: "ledger", error: "ledger" },
 	"/operations": { loading: "operations", error: "operations" },
 	"/security": { loading: "security", error: "security" },
+	"/alerts": { loading: "alerts", error: "alerts" },
+	"/watchlist": { loading: "watchlist", error: "watchlist" },
+	"/reports": { loading: "reports", error: "reports" },
+	"/integrations": { loading: "integrations", error: "integrations" },
 } as const;
 const ROUTES = Object.keys(SEGMENTS) as Array<keyof typeof SEGMENTS>;
 

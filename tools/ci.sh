@@ -37,7 +37,7 @@ node tools/check-links.mjs
 step "4/6 secret scan"
 node tools/check-secrets.mjs
 
-step "5/6 dependency pins and advisory audit"
+step "5/6 dependency pins, licences and advisory audit"
 # Static and hermetic: the locks must be exact, hashed, and still satisfy the ranges
 # they were compiled from; every package pyproject must declare only pinned dependencies
 # (or a VCS gap named with a reason in tools/pins/unpinned.txt); and every Dockerfile
@@ -58,6 +58,19 @@ else
 fi
 # The Node lock's integrity hashes are covered by the check above; its advisories come
 # from a network service and are checked by the audit below.
+
+# Licence inventory of the locked set. The checker reads the committed locks, installed
+# metadata and cached crate manifests; it fetches nothing. A declaration that is
+# disallowed, unrecognised or empty fails here with the path of the file that declared
+# it, and so does a locked dependency without a declaration unless its set is recorded
+# in docs/DEPENDENCIES.md as not installed in this checkout.
+if [ -x .venv/bin/python ]; then
+  .venv/bin/python tools/check-licences.py
+elif command -v python3 >/dev/null 2>&1; then
+  python3 tools/check-licences.py
+else
+  echo "not present yet: dependency licences (no python)"
+fi
 
 # Advisory audit of the pinned sets. Unlike the static pin check this needs a network:
 # pip-audit consults OSV/PyPI and pnpm audit consults the npm registry. An air-gapped
@@ -228,6 +241,46 @@ if [ -f rust/Cargo.toml ]; then
   else
     echo "rust gates skipped: cargo not present (install rustup to run them)"
   fi
+fi
+
+# Phase 0 deployability: a green gate must mean the shipped image answers its own
+# health probe with the bridge present. A contributor Mac often has no Docker daemon;
+# that is announced as a skip, never as a pass, and never turns this gate red.
+step "deployability checks (when their tools are present)"
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  image="ezchain-api:gate"
+  docker build -f apps/api/Dockerfile -t "$image" .
+  docker run --rm "$image" python -c \
+    'import ezchain_bridge; assert hasattr(ezchain_bridge, "quantize_money")'
+  container="$(docker run -d --rm "$image")"
+  probe='import urllib.request; assert urllib.request.urlopen("http://127.0.0.1:8000/healthz", timeout=2).status == 200'
+  healthy=0
+  for _ in $(seq 1 30); do
+    if docker exec "$container" python -c "$probe" >/dev/null 2>&1; then
+      healthy=1
+      break
+    fi
+    sleep 1
+  done
+  docker stop "$container" >/dev/null 2>&1 || true
+  if [ "$healthy" -ne 1 ]; then
+    echo "deployability: the image did not answer /healthz within 30s" >&2
+    exit 1
+  fi
+  echo "deployability: image answers /healthz and imports ezchain_bridge"
+  ran=1
+else
+  echo "deployability: image checks skipped (no Docker daemon — not a pass)"
+fi
+# The same contract for the frozen sidecar. build-desktop.sh runs this smoke itself
+# immediately after freezing; when a freeze is already on disk the gate re-runs it.
+sidecar="apps/desktop/build/backend/ezchain-api/ezchain-api"
+if [ -x "$sidecar" ]; then
+  EZCHAIN_DESKTOP_SMOKE_NATIVE=1 "$sidecar"
+  echo "deployability: frozen sidecar imports ezchain_bridge"
+  ran=1
+else
+  echo "deployability: frozen sidecar check skipped (run bash tools/build-desktop.sh — not a pass)"
 fi
 if [ "$ran" -eq 0 ]; then
   echo "not present yet: ruff, mypy, pytest, eslint, tsc, playwright, cargo"

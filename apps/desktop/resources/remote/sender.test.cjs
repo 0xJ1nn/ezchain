@@ -141,6 +141,6 @@ test("the read-only views contain no write path and no credential", () => {
 	assert.match(sender.REMOTE_VIEWER_HTML, /readPanel\(/);
 	assert.match(sender.REMOTE_VIEWER_HTML, /Host unreachable/);
 	assert.match(sender.REMOTE_VIEWER_HTML, /Retry/);
-	assert.match(sender.FIRST_RUN_HTML, /remoteConnect\(/);
-	assert.match(sender.FIRST_RUN_HTML, /chooseLocal\(/);
+	assert.match(sender.FIRST_RUN_HTML, /finishSetup\(/);
+	assert.match(sender.FIRST_RUN_HTML, /backupNow\(/);
 });

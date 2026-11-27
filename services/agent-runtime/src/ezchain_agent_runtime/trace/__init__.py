@@ -65,6 +65,7 @@ from .recorder import TraceRecorder
 from .redaction import REDACTED, redact
 from .replay import SessionSummary, replay, summarize
 from .store import FileTraceLog, MemoryTraceLog
+from .tail import TraceTail
 
 __all__ = [
     "GENESIS",
@@ -85,6 +86,7 @@ __all__ = [
     "TraceRecorder",
     "TraceSink",
     "TraceStoreError",
+    "TraceTail",
     "TraceWriteFailed",
     "anchor_of",
     "canonical",

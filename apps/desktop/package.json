@@ -8,7 +8,7 @@
     "start": "electron .",
     "dist:dir": "electron-builder --linux dir",
     "dist:linux": "electron-builder --linux AppImage deb",
-    "test": "node installer/check-legal-files.mjs"
+    "test": "node --test resources/remote/*.test.cjs && node installer/check-legal-files.mjs"
   },
   "devDependencies": {
     "electron": "45.0.0",

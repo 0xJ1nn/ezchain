@@ -40,6 +40,7 @@ COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/web ./apps/web
 COPY packages/ui ./packages/ui
+COPY VERSION ./VERSION
 
 RUN pnpm --filter @ezchain/web build
 
@@ -63,6 +64,7 @@ COPY --from=builder --chown=ezchain:ezchain /app/packages ./packages
 COPY --from=builder --chown=ezchain:ezchain /app/package.json ./package.json
 COPY --from=builder --chown=ezchain:ezchain /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=builder --chown=ezchain:ezchain /app/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=builder --chown=ezchain:ezchain /app/VERSION ./VERSION
 
 WORKDIR /app/apps/web
 

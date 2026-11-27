@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 279 codes across 17 categories, 6 layers.
+**Scale:** 295 codes across 17 categories, 6 layers.
 
 ---
 
@@ -181,7 +181,7 @@ or a process-local refusal).
 | `AUTOMATION_TIER_UNKNOWN` | api | 409 | no | warning | The requested automation tier is not manual or full_auto. |
 | `EXECUTION_REFUSED` | api | — | no | warning | An approved execution ended without a more specific reason code. |
 
-### Transaction binding and signing (16)
+### Transaction binding and signing (25)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -201,6 +201,15 @@ or a process-local refusal).
 | `TRANSACTION_UNSIGNED` | core | — | no | critical | No signature is present on a payload that must be signed. |
 | `TRANSACTION_BUILD_FAILED` | core | — | no | critical | The adapter failed to build the unsigned transaction. |
 | `TRANSACTION_SIGN_FAILED` | core | — | no | critical | The signer failed. |
+| `TRANSACTION_CHAIN_MISMATCH` | core | — | no | critical | The chain changed after approval. |
+| `TRANSACTION_BLOCKHASH_STALE` | core | — | no | critical | The blockhash is stale or invalid, so the transaction cannot land. |
+| `TRANSACTION_VERSION_UNSUPPORTED` | core | — | no | critical | The transaction version or size is outside policy. |
+| `TRANSACTION_ACCOUNT_LIST_INVALID` | core | — | no | critical | The resolved account list is missing or over the policy cap. |
+| `TRANSACTION_INSTRUCTION_LIMIT` | core | — | no | critical | The instruction count exceeds the approved policy cap. |
+| `TRANSACTION_COMPUTE_BUDGET_EXCEEDED` | core | — | no | critical | A compute-unit limit or price exceeds the approved cap. |
+| `TRANSACTION_ALLOWANCE_UNBOUNDED` | core | — | no | critical | An ERC-20 approval is unlimited or goes to an unexpected spender. |
+| `SIMULATION_FAILED` | core | — | no | critical | The pre-broadcast simulation did not succeed. |
+| `TRANSACTION_WALLET_IN_FLIGHT` | core | — | no | critical | Another transaction is already in flight for this wallet. |
 
 ### Kill switch and operational governance (4)
 
@@ -393,6 +402,23 @@ or a process-local refusal).
 | `TOP_10_ABOVE_LIMIT` | api | — | no | warning | The top ten holders own at or above the configured concentration limit. |
 | `UNAVAILABLE` | api | — | no | warning | A metadata fetch failed, so the response carries nulls and a reason instead of a verdict. |
 | `WINDOW_EXCEEDS_PAIR_AGE` | api | — | no | info | The requested activity window is longer than the pair has existed. |
+
+### Session streaming (7)
+
+These codes guard the resumable session stream. `STREAM_CURSOR_EXPIRED` and `STREAM_LAGGED`
+are advisory: a client receives them and reconnects from its last event id. The cursor code
+crosses the SSE edge as 410 Gone, but the taxonomy's HTTP vocabulary has no 410, so the
+registry records no canonical status for it.
+
+| Code | Layer | HTTP | Retry | Severity | Meaning |
+|---|---|---|---|---|---|
+| `STREAM_ERROR` | api | 400 | no | warning | A session stream could not be opened or continued. |
+| `STREAM_SESSION_NOT_FOUND` | api | 404 | no | warning | No streaming channel exists for that session id. |
+| `STREAM_SCOPE_DENIED` | api | 403 | no | warning | The key's scopes do not cover the scope of that session's stream. |
+| `STREAM_PRINCIPAL_MISMATCH` | api | 403 | no | warning | The stream's owner and the requesting principal are different subjects. |
+| `STREAM_INVALID_LAST_EVENT_ID` | api | 400 | no | warning | The Last-Event-ID is not a non-negative trace sequence number. |
+| `STREAM_CURSOR_EXPIRED` | api | — | yes | warning | The requested cursor fell before the channel's retained tail (SSE returns 410 Gone). |
+| `STREAM_LAGGED` | api | — | yes | info | A subscriber fell behind and was sent a reconnect control frame. |
 
 ### Decision and informational outcomes (29)
 

@@ -1,0 +1,64 @@
+/* Trade-screen motion. The timing of the hold is enforced in the key component; this
+   file only draws the band. Reduced motion keeps the colour and the label, drops movement. */
+
+.holdKey {
+	position: relative;
+	overflow: hidden;
+	touch-action: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.holdFill {
+	position: absolute;
+	inset: 0;
+	transform: scaleX(0);
+	transform-origin: left center;
+	background: currentColor;
+	opacity: 0.22;
+	pointer-events: none;
+}
+
+.holding .holdFill {
+	transform: scaleX(1);
+	transition: transform 650ms linear;
+}
+
+.holdLabel {
+	position: relative;
+	z-index: 1;
+}
+
+.moment {
+	border-radius: var(--r-4, 8px);
+	border: 1px solid var(--line-1, var(--line));
+	background: var(--bg-1, var(--surface));
+	padding: 12px 16px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.animated.rocket {
+	animation: rocket-glow 900ms ease-out 1;
+}
+
+.animated.ath {
+	animation: ath-flash 900ms ease-out 1;
+}
+
+@keyframes rocket-glow {
+	0% { transform: translateX(-12px); opacity: 0.4; }
+	100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes ath-flash {
+	0%, 40% { box-shadow: 0 0 0 0 rgb(243 181 63 / 0); }
+	55% { box-shadow: 0 0 24px 4px rgb(243 181 63 / 0.45); }
+	100% { box-shadow: 0 0 0 0 rgb(243 181 63 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.holding .holdFill { transition: none; }
+	.animated { animation: none !important; }
+}
