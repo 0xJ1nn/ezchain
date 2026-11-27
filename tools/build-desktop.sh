@@ -1,22 +1,34 @@
 #!/usr/bin/env bash
-# Build the Linux desktop app: traced Next server, frozen FastAPI sidecar, Electron shell.
+# Stage the desktop app on this host: traced Next server, frozen FastAPI sidecar,
+# Electron unpacked build. The electron-builder platform is derived from the host,
+# never hard-coded to Linux; packaged targets are selected by package-desktop.sh.
 #
-#   bash tools/build-desktop.sh          # unpacked app (fast, for local launch)
-#   bash tools/build-desktop.sh --package # AppImage + .deb
+#   bash tools/build-desktop.sh            # unpacked app for this host
+#   bash tools/build-desktop.sh --print-platform  # print the host's builder platform
 #
 # The desktop app uses an embedded SQLite database and binds both sidecars to 127.0.0.1
 # on ephemeral ports. It is not a public web deployment.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-package=0
+print_platform=0
 for arg in "$@"; do
   case "$arg" in
-    --package) package=1 ;;
-    --help|-h) sed -n '2,12p' "$0"; exit 0 ;;
+    --print-platform) print_platform=1 ;;
+    --help|-h) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "build-desktop: unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
+
+# electron-builder names platforms differently from Node. Derive it once, from the
+# host, so a macOS staging run never asks for a Linux target.
+BUILDER_PLATFORM="$(node -p '({darwin:"mac",linux:"linux",win32:"win"})[process.platform] || ""')"
+if [ "$print_platform" -eq 1 ]; then
+  [ -n "$BUILDER_PLATFORM" ] || { echo "build-desktop: unsupported host $(uname -s)" >&2; exit 2; }
+  echo "$BUILDER_PLATFORM"
+  exit 0
+fi
+[ -n "$BUILDER_PLATFORM" ] || { echo "build-desktop: unsupported host $(uname -s)" >&2; exit 2; }
 
 step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
@@ -84,11 +96,8 @@ if [ ! -x "$sidecar" ]; then
 fi
 EZCHAIN_DESKTOP_SMOKE_NATIVE=1 "$sidecar"
 
-step "4/4 electron package"
-pnpm --filter @ezchain/desktop exec electron-builder --linux dir
-if [ "$package" -eq 1 ]; then
-  pnpm --filter @ezchain/desktop exec electron-builder --linux AppImage deb
-fi
+step "4/4 electron package (host platform: $BUILDER_PLATFORM)"
+pnpm --filter @ezchain/desktop exec electron-builder "--$BUILDER_PLATFORM" dir
 
-printf '\n\033[32mdesktop: built\033[0m\n'
+printf '\n\033[32mdesktop: staged for %s\033[0m\n' "$BUILDER_PLATFORM"
 echo "launch: pnpm --filter @ezchain/desktop exec electron apps/desktop"

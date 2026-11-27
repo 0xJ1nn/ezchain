@@ -11,8 +11,6 @@ import os
 
 import uvicorn
 
-from ezchain_api.main import app
-
 
 def smoke_native() -> None:
     """Post-freeze proof that the sidecar's own Python can load the bridge."""
@@ -27,6 +25,11 @@ def main() -> None:
     if os.environ.get("EZCHAIN_DESKTOP_SMOKE_NATIVE") == "1":
         smoke_native()
         return
+    # Import the app only when serving. The post-freeze smoke needs just the bridge;
+    # importing the app there would build a database engine on the default PostgreSQL
+    # URL and require a driver the embedded SQLite package deliberately excludes.
+    from ezchain_api.main import app
+
     port = int(os.environ["EZCHAIN_DESKTOP_API_PORT"])
     uvicorn.run(
         app,

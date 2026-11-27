@@ -96,6 +96,49 @@ can verify the sign and verify round trip and its failure paths; it cannot make 
 official, because the fingerprint pinned at release time is the maintainer's to publish. A
 A test that pins a deliberately invalid fingerprint proves a fork's own key is refused.
 
+## Distribution channels for 0.1.0
+
+The signing contract in sections 1–5 is the maintainer's release-authenticity
+mechanism for the source archive, the funding configuration and the build
+attestation. It is not code signing. The 0.1.0 desktop binaries are unsigned,
+unnotarized and not store-approved, and no publisher identity is embedded in
+them. Signing is revisited only when there is an entity to sign with.
+
+GitHub Releases is the artifact source for every channel. One release manifest,
+[`artifacts.json`](../distribution/package-managers/artifacts.json), names the
+artifacts; `tools/release/gen-package-manifests.mjs` computes each SHA-256
+sidecar from the artifact bytes and renders the Homebrew cask, winget and Scoop
+manifests from those same digests. No channel carries a hand-maintained
+checksum, and there is no second upload path.
+
+- **npm.** `@ezchain/cli` is a launcher with five optional per-platform binary
+  packages and no install script. `tools/release/stage-npm-platform.sh` builds
+  the shipped read-only Rust CLI on the host, or accepts a binary produced on
+  that host, stages it into the matching package and packs both tarballs with
+  their SHA-256 digests. Cross-builds are refused. The checkout carries no
+  binary. Registry integrity is npm provenance plus the published per-platform
+  SHA-256, not code signing.
+- **Homebrew, winget and Scoop.** Their manifests are generated from the same
+  release manifest and checksum files and point at the same release URLs.
+  Publication of a tap or a package-manager repository is maintainer-only.
+- **Docker.** `tools/release/build-release-images.sh` builds the API and web
+  images from a named release candidate and can run local health smoke checks.
+  It never pushes an image.
+- **Local desktop.** `tools/package-desktop.sh` refuses a target the host cannot
+  build rather than attempting a cross-build and calling it verified. The
+  staging builder derives its electron-builder platform from the host, so a
+  macOS package run never begins with a Linux target. On the Apple-silicon host
+  this produced the unsigned arm64 `.dmg` and `.zip`, whose checksums, archive
+  verification and packaged sidecar smoke are recorded in the worker report.
+  The graphical window and the x64 variant were not launched or built.
+
+At publication the maintainer adds npm provenance and publishes the release
+assets. Until then every channel is **configured**, not published: a locally
+packed tarball has no provenance, and nothing here is claimed as signed,
+notarized, store-approved or released. The vocabulary in
+[FIRST-OPEN.md](FIRST-OPEN.md) keeps configured, built, launched and published
+apart.
+
 ## 6. Version workflow
 
 ezCHAIN follows Semantic Versioning. Version `0.1.0` is the first public release and the

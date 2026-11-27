@@ -148,10 +148,28 @@ the window. The database is the durable state; restarting the app preserves posi
 ## Cross-platform
 
 The shell and sidecar contract are platform-neutral (Electron + PyInstaller + Next
-standalone), but this branch builds Linux only. macOS and Windows are **not built or
-verified** on this machine; each needs its own PyInstaller backend binary and an Electron
-build/notarization setup on that host. Do not claim those targets until a build and launch
-are recorded.
+standalone). Linux, macOS and Windows package targets are **configured** in
+`apps/desktop/package.json`; the macOS and Windows configurations are unsigned by
+design and produce a `.dmg`/`.zip` and a `.exe` installer respectively. The
+frozen sidecar's name follows the host executable convention, so the supervisor
+resolves `ezchain-api.exe` on Windows without a special case at the call site.
+
+`tools/package-desktop.sh --target <linux|mac|win|all>` refuses any target that
+cannot be built on the current host before it starts work, and records that
+target as not built and not verified. The staging builder derives its
+electron-builder platform from the host, so a macOS run never starts with a
+Linux target.
+
+On this `darwin/arm64` host the unsigned macOS **arm64** `.dmg` and `.zip` were
+built from the staged web runtime and frozen API sidecar; the sidecar's native
+bridge import was proven inside the frozen build. The graphical window was not
+launched, and the x64 macOS variant was not built. Windows was **not built** on
+this host and is explicitly refused; it needs its own PyInstaller backend
+binary and an Electron build on that host. No signing, notarization or store
+approval is configured or claimed. See
+[docs/FIRST-OPEN.md](FIRST-OPEN.md) for install paths, the paper-only warning and
+the data/log locations, and [docs/RELEASES.md](RELEASES.md) for the status
+vocabulary.
 
 ## Security
 

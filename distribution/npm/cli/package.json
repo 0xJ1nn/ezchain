@@ -1,0 +1,29 @@
+{
+  "name": "@ezchain/cli",
+  "version": "0.1.0",
+  "description": "ezCHAIN workstation launcher — resolves the native package for this host",
+  "bin": {
+    "ezchain": "bin/ezchain.cjs"
+  },
+  "optionalDependencies": {
+    "@ezchain/cli-darwin-arm64": "0.1.0",
+    "@ezchain/cli-darwin-x64": "0.1.0",
+    "@ezchain/cli-linux-x64": "0.1.0",
+    "@ezchain/cli-linux-arm64": "0.1.0",
+    "@ezchain/cli-win32-x64": "0.1.0"
+  },
+  "files": [
+    "bin",
+    "platform-map.cjs",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test ../test/*.test.cjs"
+  },
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xJ1nn/ezchain.git"
+  },
+  "homepage": "https://github.com/0xJ1nn/ezchain"
+}

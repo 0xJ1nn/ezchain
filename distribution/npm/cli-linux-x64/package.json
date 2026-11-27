@@ -1,0 +1,13 @@
+{
+  "name": "@ezchain/cli-linux-x64",
+  "version": "0.1.0",
+  "description": "Native ezCHAIN workstation binary for Linux x86_64 (unsigned; staged from a release artifact)",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin"],
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xJ1nn/ezchain.git"
+  }
+}
