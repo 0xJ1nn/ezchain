@@ -15,7 +15,9 @@ from a submission receipt to a ``Fill`` and no ``Venue.submit`` wiring: that sta
 until every chain has a reviewed confirmation/status path and reconciliation. Inventing
 confirmation here would put an unconfirmed claim into the ledger path, which violates the
 fail-closed rule. Durable reconciliation of an ambiguous claim remains the executor's
-outbox, exactly as it is today.
+outbox, exactly as it is today. Chains with no reviewed request shape are refused by
+:func:`unsupported_broadcast`; Sui is one of them, because a signed Sui execution needs a
+public key the signer contract does not carry.
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+from ezchain_core.reason_codes import BROADCAST_UNSUPPORTED
 
 from ..errors import AdapterError
 
@@ -47,6 +51,21 @@ class BroadcastError(AdapterError):
         super().__init__(message)
         self.code = code
         self.ambiguous = ambiguous
+
+
+def unsupported_broadcast(chain: str) -> None:
+    """Fail closed for a chain with no reviewed broadcast request shape.
+
+    Sui is the concrete case: `sui_executeTransactionBlock` needs signed transaction bytes,
+    a signature and the signer's public key. `SignedTransaction` and `VaultSignature` carry
+    no public key, and adapters must not handle key material, so no executable request can
+    be built here. Refusing is safer than shipping a mock-only shape that claims support.
+    """
+    raise BroadcastError(
+        f"broadcast is not supported for {chain}",
+        code=BROADCAST_UNSUPPORTED,
+        ambiguous=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -104,14 +123,6 @@ def evm_spec() -> BroadcastSpec:
 def ton_spec() -> BroadcastSpec:
     return BroadcastSpec(
         method="sendBoc",
-        params=lambda raw, key: [base64.b64encode(raw).decode("ascii")],
-        hash_from_result=_string_result,
-    )
-
-
-def sui_spec() -> BroadcastSpec:
-    return BroadcastSpec(
-        method="sui_executeTransactionBlock",
         params=lambda raw, key: [base64.b64encode(raw).decode("ascii")],
         hash_from_result=_string_result,
     )
@@ -210,6 +221,6 @@ __all__ = [
     "cosmos_spec",
     "evm_spec",
     "solana_spec",
-    "sui_spec",
     "ton_spec",
+    "unsupported_broadcast",
 ]

@@ -211,6 +211,8 @@ decoder reads chain-native bytes into the field map `decode_and_bind` compares. 
 decode and broadcast tests use constructed public-format byte vectors and mocked HTTP
 transports. There is no funded address, no real transaction and no live venue contact.
 
+Sui is deliberately excluded from broadcast. A signed Sui execution needs the signed transaction bytes, a signature and the signer's public key; `SignedTransaction` and `VaultSignature` carry no public key, and adapters must not handle key material. It therefore fails closed with `BROADCAST_UNSUPPORTED` rather than claiming a request shape that cannot execute.
+
 **A submission receipt is not a fill.** A successful RPC call returns a `submitted`
 receipt with the hash the RPC returned. It is not an executed trade, not a balance delta
 and not a journal entry. There is no conversion from that receipt to a `Fill`, and no
@@ -222,9 +224,9 @@ unconfirmed claim into the ledger path. Signing also still stays behind
 | Family | Chains | Live in v1 | Test harness |
 |---|---|---|---|
 | svm (Solana) | `solana` | no (`live_execute: false`) | constructed legacy-message bytes; `MockTransport` for `sendTransaction` |
-| evm | Ethereum, Base, Arbitrum, Polygon, BSC, Optimism, Avalanche, Linea and the other registered EVM chains | no (`live_execute: false`) | constructed RLP legacy bytes; `MockTransport` for `eth_sendRawTransaction` |
+| evm | Ethereum, Base, Arbitrum, Polygon, BSC, Optimism, Avalanche, Linea and the other registered EVM chains | no (`live_execute: false`) | constructed RLP legacy bytes with each chain's real EIP-155 `v`; `MockTransport` for `eth_sendRawTransaction` |
 | tvm (TON) | `ton` | no (`live_execute: false`) | constructed single-cell BoC bytes; `MockTransport` for `sendBoc` |
-| move (Sui) | `sui` | no (`live_execute: false`) | constructed BCS bytes; `MockTransport` for `sui_executeTransactionBlock` |
+| move (Sui) | `sui` | no (`live_execute: false`) | constructed BCS bytes for decode/bind; broadcast refused with `BROADCAST_UNSUPPORTED` |
 | cosmos | `osmosis`, `cosmos` | no (`live_execute: false`) | constructed protobuf `TxBody` bytes; `MockTransport` for `broadcast_tx_sync` |
 
 The old plan's forked-anvil and Solana-simulation harnesses do not exist in this

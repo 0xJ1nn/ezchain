@@ -10,7 +10,13 @@ confirmation/status path and reconciliation.
 
 from __future__ import annotations
 
-from .broadcast import BroadcastError, BroadcastReceipt, BroadcastSpec, ChainBroadcaster
+from .broadcast import (
+    BroadcastError,
+    BroadcastReceipt,
+    BroadcastSpec,
+    ChainBroadcaster,
+    unsupported_broadcast,
+)
 from .chainbind import ChainBindingDecodeError, decode_binding_payload, encode_binding_payload
 from .registry import SUPPORTED, ChainTxSupport, support_for
 
@@ -25,4 +31,5 @@ __all__ = [
     "decode_binding_payload",
     "encode_binding_payload",
     "support_for",
+    "unsupported_broadcast",
 ]

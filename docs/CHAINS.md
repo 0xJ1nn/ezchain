@@ -68,10 +68,12 @@ and takes only the immutable approval; quote adapters are not duplicated.
 | Family | Chains with a decoder + builder | Broadcast | Signing / executor `Venue.submit` | Confirmation → `Fill` |
 |---|---|---|---|---|
 | svm (Solana) | `solana` | `sendTransaction`, idempotent, time-bounded | **not wired** | **not built** |
-| evm | `ethereum`, `base`, `arbitrum`, `polygon`, `bsc`, `optimism`, `avalanche`, `blast`, `mantle`, `linea`, `scroll`, `zksync`, `fantom`, `cronos`, `celo`, `moonbeam`, `metis` | `eth_sendRawTransaction`, idempotent, time-bounded | **not wired** | **not built** |
+| evm | `ethereum`, `base`, `arbitrum`, `polygon`, `bsc`, `optimism`, `avalanche`, `blast`, `mantle`, `linea`, `scroll`, `zksync`, `fantom`, `cronos`, `celo`, `moonbeam`, `metis` | `eth_sendRawTransaction`, idempotent, time-bounded; EIP-155 `v` uses each chain's registered id | **not wired** | **not built** |
 | tvm (TON) | `ton` | `sendBoc`, idempotent, time-bounded | **not wired** | **not built** |
-| move (Sui) | `sui` | `sui_executeTransactionBlock`, idempotent, time-bounded | **not wired** | **not built** |
+| move (Sui) | `sui` | **refused** with `BROADCAST_UNSUPPORTED` | **not wired** | **not built** |
 | cosmos | `osmosis`, `cosmos` | `broadcast_tx_sync`, idempotent, time-bounded | **not wired** | **not built** |
+
+The EVM builder takes each chain's real EIP-155 id from the registry and writes it to `v`; the decoder refuses a transaction whose `v` names another chain than the approved one. Sui keeps its decoder and builder but has **no broadcast support**: `sui_executeTransactionBlock` needs signed transaction bytes, a signature and the signer's public key, and the signer contract carries no public key. It fails closed with `BROADCAST_UNSUPPORTED` instead of shipping a mock-only request shape.
 
 A successful RPC call returns a **`submitted` receipt only**: it carries the transaction
 hash returned by the RPC, not a fill, not a balance delta and not a journal entry. There is
@@ -223,7 +225,7 @@ to `False` (`registry.py:71`) and nothing overrides it.
 | Linea (`linea`) | T2 | kyberswap | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | Scroll (`scroll`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | zkSync Era (`zksync`) | T2 | lifi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
-| Sui (`sui`) | T2 | cetus | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
+| Sui (`sui`) | T2 | cetus | yes | no | decode+build; broadcast refused | binding/decode tests; broadcast refusal test |
 | Aptos (`aptos`) | T2 | paper_mark | yes | no | none | per-provider tests only |
 | TON (`ton`) | T2 | stonfi | yes | no | decode+build; submit receipt only | binding/decode/broadcast tests |
 | Tron (`tron`) | T2 | paper_mark | yes | no | none | per-provider tests only |

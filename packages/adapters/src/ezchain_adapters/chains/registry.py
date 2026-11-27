@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from ezchain_core import TransactionAdapter
 from ezchain_core.trust import DecodedFields
 
-from .broadcast import BroadcastSpec, cosmos_spec, evm_spec, solana_spec, sui_spec, ton_spec
+from ..registry import BY_ID
+from .broadcast import BroadcastSpec, cosmos_spec, evm_spec, solana_spec, ton_spec
 from .cosmos import CosmosBuilder, decode_cosmos_transaction
 from .evm import EvmBuilder, decode_evm_transaction
 from .solana import SolanaBuilder, decode_solana_transaction
@@ -29,9 +30,9 @@ class ChainTxSupport:
 
     chain: str
     family: str
-    builder: type[TransactionAdapter]
+    builder: Callable[[], TransactionAdapter]
     decoder: Decode
-    broadcast: Callable[[], BroadcastSpec]
+    broadcast: Callable[[], BroadcastSpec] | None
 
 
 _EVM_CHAINS = (
@@ -58,21 +59,35 @@ _EVM_CHAINS = (
 def _support(
     chain: str,
     family: str,
-    builder: type[TransactionAdapter],
+    builder: Callable[[], TransactionAdapter],
     decoder: Decode,
-    broadcast: Callable[[], BroadcastSpec],
+    broadcast: Callable[[], BroadcastSpec] | None,
 ) -> ChainTxSupport:
     return ChainTxSupport(chain, family, builder, decoder, broadcast)
+
+
+def _evm_builder(chain: str) -> Callable[[], TransactionAdapter]:
+    """Bind each EVM chain to its real EIP-155 id, read from the chain registry."""
+    meta = BY_ID.get(chain)
+    if meta is None or meta.evm_chain_id is None:
+        raise ValueError(f"{chain} has no registered EIP-155 chain id")
+    chain_id = meta.evm_chain_id
+
+    def factory() -> TransactionAdapter:
+        return EvmBuilder(chain_id)
+
+    return factory
 
 
 SUPPORTED: dict[str, ChainTxSupport] = {
     "solana": _support("solana", "svm", SolanaBuilder, decode_solana_transaction, solana_spec),
     **{
-        chain: _support(chain, "evm", EvmBuilder, decode_evm_transaction, evm_spec)
+        chain: _support(chain, "evm", _evm_builder(chain), decode_evm_transaction, evm_spec)
         for chain in _EVM_CHAINS
     },
     "ton": _support("ton", "tvm", TonBuilder, decode_ton_transaction, ton_spec),
-    "sui": _support("sui", "move", SuiBuilder, decode_sui_transaction, sui_spec),
+    # Sui keeps its decoder and builder, but has no reviewed signed-broadcast request shape.
+    "sui": _support("sui", "move", SuiBuilder, decode_sui_transaction, None),
     "osmosis": _support("osmosis", "cosmos", CosmosBuilder, decode_cosmos_transaction, cosmos_spec),
     "cosmos": _support("cosmos", "cosmos", CosmosBuilder, decode_cosmos_transaction, cosmos_spec),
 }

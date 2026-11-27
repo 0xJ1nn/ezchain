@@ -13,8 +13,10 @@ from dataclasses import replace
 from typing import Any, cast
 
 from ezchain_core import ApprovedIntent
+from ezchain_core.reason_codes import TRANSACTION_CHAIN_MISMATCH
 from ezchain_core.trust import DecodedFields
 
+from ..registry import BY_ID
 from .chainbind import (
     BINDING_MAGIC,
     ChainBindingDecodeError,
@@ -24,7 +26,13 @@ from .chainbind import (
 )
 
 _ROUTER = bytes((0xAA,)) * 20
-_CHAIN_ID = 1
+_DEFAULT_CHAIN_ID = 1  # used only when a caller has no registry entry to consult
+
+
+class EvmChainMismatch(ChainBindingDecodeError):
+    """The EIP-155 `v` value names another chain than the approved one."""
+
+    code = TRANSACTION_CHAIN_MISMATCH
 
 
 def rlp_encode(item: bytes | Sequence[Any]) -> bytes:
@@ -116,8 +124,15 @@ def _decode_one(raw: bytes, offset: int) -> tuple[bytes | list[object], int]:
     return _decode_items(raw[start:end]), end
 
 
-def build_evm_transaction(fields: DecodedFields) -> bytes:
-    """Build an unsigned EIP-155 legacy transaction carrying the binding payload."""
+def build_evm_transaction(fields: DecodedFields, chain_id: int = _DEFAULT_CHAIN_ID) -> bytes:
+    """Build an unsigned EIP-155 legacy transaction carrying the binding payload.
+
+    ``chain_id`` is the selected chain's real EIP-155 id, taken from the registry by the
+    builder; it is encoded in ``v``. A caller that has no registry entry must pass it
+    explicitly rather than let the default silently name Ethereum.
+    """
+    if not isinstance(chain_id, int) or isinstance(chain_id, bool) or chain_id <= 0:
+        raise ChainBindingDecodeError("the EIP-155 chain id is not positive")
     payload = encode_binding_payload(fields)
     tx: list[Any] = [
         b"",  # nonce 0
@@ -126,7 +141,7 @@ def build_evm_transaction(fields: DecodedFields) -> bytes:
         _ROUTER,
         b"",  # value 0
         payload,
-        bytes((_CHAIN_ID,)),  # v = chain id, r/s empty: this is not signed
+        chain_id.to_bytes((chain_id.bit_length() + 7) // 8, "big"),  # v = chain id; r/s empty
         b"",
         b"",
     ]
@@ -140,13 +155,25 @@ def decode_evm_transaction(raw: bytes) -> DecodedFields:
     item = rlp_decode(raw)
     if not isinstance(item, list) or len(item) != 9:
         raise ChainBindingDecodeError("the transaction is not a legacy RLP transaction")
-    to, data = item[3], item[5]
+    to, data, v = item[3], item[5], item[6]
     if not isinstance(to, bytes) or len(to) != 20 or not isinstance(data, bytes):
         raise ChainBindingDecodeError("the transaction has no router or data")
+    if not isinstance(v, bytes):
+        raise ChainBindingDecodeError("the transaction has no EIP-155 chain id")
+    chain_id = int.from_bytes(v, "big")
+    if chain_id <= 0:
+        raise ChainBindingDecodeError("the EIP-155 chain id is not positive")
     if not data.startswith(BINDING_MAGIC):
         raise ChainBindingDecodeError("the transaction has no binding payload")
+    fields = decode_binding_payload(data)
+    # The chain is bound twice: the approved string in the payload and the real EIP-155 id
+    # on the wire. A change to either refuses. Chains absent from the registry carry no
+    # expected id, so the approval comparison remains the authority for those test vectors.
+    meta = BY_ID.get(fields.chain)
+    if meta is not None and meta.family == "evm" and meta.evm_chain_id != chain_id:
+        raise EvmChainMismatch("the EIP-155 chain id does not match the approved chain")
     return replace(
-        decode_binding_payload(data),
+        fields,
         version="eip155-legacy",
         size_bytes=len(raw),
         instruction_count=1,
@@ -156,7 +183,12 @@ def decode_evm_transaction(raw: bytes) -> DecodedFields:
 
 
 class EvmBuilder:
-    """Builds unsigned EVM transactions from an immutable approval only."""
+    """Builds unsigned EVM transactions from an immutable approval and a registered chain id."""
+
+    def __init__(self, chain_id: int) -> None:
+        if not isinstance(chain_id, int) or isinstance(chain_id, bool) or chain_id <= 0:
+            raise ValueError("an EVM builder needs the selected chain's real chain id")
+        self.chain_id = chain_id
 
     async def prepare(self, approved: ApprovedIntent) -> bytes:
         fields = fields_from_approval(
@@ -165,11 +197,12 @@ class EvmBuilder:
             allowance_spender="0x" + _ROUTER.hex(),
             allowance_unlimited=False,
         )
-        return build_evm_transaction(fields)
+        return build_evm_transaction(fields, self.chain_id)
 
 
 __all__ = [
     "EvmBuilder",
+    "EvmChainMismatch",
     "build_evm_transaction",
     "decode_evm_transaction",
     "rlp_decode",

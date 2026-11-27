@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 285 codes across 17 categories, 6 layers.
+**Scale:** 286 codes across 17 categories, 6 layers.
 
 ---
 
@@ -352,7 +352,7 @@ or a process-local refusal).
 | `RECEIPT_EXCEEDS_ORDER` | executor | — | no | critical | The receipt fills more than the order asked for. |
 | `JOURNAL_FAILED` | executor | — | yes | critical | The ledger journal could not be written for a confirmed fill. |
 
-### Upstream providers and adapters (12)
+### Upstream providers and adapters (13)
 
 | Code | Layer | HTTP | Retry | Severity | Meaning |
 |---|---|---|---|---|---|
@@ -364,6 +364,7 @@ or a process-local refusal).
 | `PROVIDER_BUDGET_EXHAUSTED` | adapters | 429 | yes | warning | The provider's queue or wait budget is exhausted. |
 | `PROVIDER_KEY_UNAVAILABLE` | adapters | 503 | no | warning | A stored provider credential could not be loaded. |
 | `CANDLES_UNSUPPORTED_CHAIN` | adapters | 404 | no | warning | The chain has no candle provider; history is a capability, not a default. |
+| `BROADCAST_UNSUPPORTED` | adapters | — | no | critical | No reviewed broadcast request shape exists for this chain; submission is refused. |
 | `CANDLES_NOT_FOUND` | adapters | 404 | no | warning | The provider has no series for this token and timeframe. |
 | `CANDLES_EMPTY` | adapters | — | no | info | The provider returned no closed bars. |
 | `NO_POOL` | adapters | — | no | info | No dex pool exists for this token, so there is no price history. |

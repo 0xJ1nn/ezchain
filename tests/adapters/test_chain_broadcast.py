@@ -24,8 +24,8 @@ from ezchain_adapters.chains.broadcast import (
     cosmos_spec,
     evm_spec,
     solana_spec,
-    sui_spec,
     ton_spec,
+    unsupported_broadcast,
 )
 
 RAW = b"unsigned-transaction-bytes"
@@ -154,7 +154,6 @@ async def test_definite_rejection_is_not_ambiguous() -> None:
         (solana_spec(), "sendTransaction"),
         (evm_spec(), "eth_sendRawTransaction"),
         (ton_spec(), "sendBoc"),
-        (sui_spec(), "sui_executeTransactionBlock"),
         (cosmos_spec(), "broadcast_tx_sync"),
     ],
 )
@@ -165,6 +164,14 @@ async def test_every_family_has_a_broadcast_request_shape(spec: Any, method: str
     assert isinstance(params, list) and params
     result = {"txhash": "cosmos-hash"} if method == "broadcast_tx_sync" else "tx-hash"
     assert spec.hash_from_result(result)
+
+
+@pytest.mark.asyncio
+async def test_sui_execution_shape_is_refused_not_simulated() -> None:
+    with pytest.raises(BroadcastError) as caught:
+        unsupported_broadcast("sui")
+    assert caught.value.code == "BROADCAST_UNSUPPORTED"
+    assert caught.value.ambiguous is False
 
 
 @pytest.mark.asyncio
