@@ -254,6 +254,19 @@ its transitive forks publish no licence expression the inventory accepts. The va
 derives no child keys: derivation paths stay as validated public binding, and BIP39 seed
 derivation comes from `mnemonic`. No new signing boundary or chain SDK was added.
 
+### Chain parsing libraries (reviewed 2026-11-27)
+
+The chain-adapter field evaluated SDK/decoder libraries against the same tripwire plus the
+licence inventory. `rlp` 5.0.0 and `eth-utils` 6.0.0 (both MIT) are pure serialization and
+hashing and would be permissible, but adding them changes both hashed Python locks, needs a
+licence declaration from an installed package for `check-licences.py`, and needs a fresh
+advisory verdict; the strict RLP reader is pinned instead by the real Execution-APIs byte
+fixture with recorded provenance. `solders` (Apache-2.0), `eth-account` (MIT), `web3` (MIT,
+depends on `eth-account`), `pytoniq` (MIT), `pysui` (Apache-2.0) and `cosmpy` (Apache-2.0)
+all expose keypairs, wallets or signing and are refused by §4 regardless of permissive
+licence. `py-solana-xray` has no stable, reviewable PyPI artefact. No chain SDK, signer or
+custody library was added, and no pin, lock or gate was bypassed.
+
 ## 5. Reproducible build — two clean builds, one digest
 
 Pins and hashes make the *inputs* exact. The release claim is stronger: two independent

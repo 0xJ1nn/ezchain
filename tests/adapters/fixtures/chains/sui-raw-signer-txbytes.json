@@ -1,0 +1,10 @@
+{
+  "family": "sui",
+  "source_url": "https://github.com/MystenLabs/sui/blob/f3b5fdd73da64a0df65fb4323471512b0f57ec4d/sdk/typescript/test/e2e/raw-signer.test.ts",
+  "retrieved_at": "2026-11-27",
+  "sha256": "1456d85424a3f627b992986083958d0e23f7e0bc73e01518d7d5ed91d0bf30a0",
+  "why_no_secret": "The TX_BYTES constant from an official Mysten Labs SDK raw-signer test: BCS TransactionData with object IDs, addresses and gas data. Only this constant is copied; the test file's illustrative seed phrases and wallet keys are deliberately not included.",
+  "wire_layer": "BCS-serialized TransactionData (the txBytes input to sui_executeTransactionBlock), not a constructed minimal PTB.",
+  "encoding": "base64",
+  "bytes": "AAACAQDMdYtdFSLGe6VbgpuIsMksv9Ypzpvkq2jiYq0hAjUpOQIAAAAAAAAAIHGwPza+lUm6RuJV1vn9pA4y0PwVT7k/KMMbUViQS5ydACAMVn/9+BYsttUa90vgGZRDuS6CPUumztJN5cbEY3l9RgEBAQEAAAEBAHUFfdk1Tg9l6STLBoSBJbbUuehTDUlLH7p81kpqCKsaBCiJ034Ac84f1oqgmpz79O8L/UeLNDUpOUMa+LadeX93AgAAAAAAAAAgs1e67e789jSlrzOJUXq0bb7Bn/hji+3F5UoMAbze595xCSZCVjU1ItUC9G7KQjygNiBbzZe8t7YLPjRAQyGTzAIAAAAAAAAAIAujHFcrkJJhZfCmxmCHsBWxj5xkviUqB479oupdgMZu07b+hkrjyvCcX50dO30v3PszXFj7+lCNTUTuE4UI3eoCAAAAAAAAACBIv39dyVELUFTkNv72mat5R1uHFkQdViikc1lTMiSVlOD+eESUq3neyciBatafk9dHuhhrS37RaSflqKwFlwzPAgAAAAAAAAAg8gqL3hCkAho8bb0PoqshJdqQFoRP8ZmQMZDFvsGBqa11BX3ZNU4PZekkywaEgSW21LnoUw1JSx+6fNZKagirGgEAAAAAAAAAKgQAAAAAAAAA"
+}

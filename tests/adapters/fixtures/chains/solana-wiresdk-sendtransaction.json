@@ -1,0 +1,10 @@
+{
+  "family": "solana",
+  "source_url": "https://solana.com/developers/docs/rpc/http/sendtransaction",
+  "retrieved_at": "2026-11-27",
+  "sha256": "47fe51f4b4f3b4a3a8ae097acde3b85950711c1c80915d2681998744b55db784",
+  "why_no_secret": "Published Solana Foundation documentation cURL example: a signed devnet transfer with an expired blockhash. It contains only a public signature, public keys and instruction data; no private key or seed is published.",
+  "wire_layer": "Signed legacy Message: compact-u16 signature count 1, one 64-byte Ed25519 signature, then the legacy message header and keys.",
+  "encoding": "base64",
+  "bytes": "AX9ymHgILTd01GtdBsbQZ9by5D4z4UWh+1Tsh6LDuPHuZk/Z8LrIwoKZRp3le2RTb5lywL1xcJGQ8u3M3U0tyAgBAAEDXCL+JarHftfP5QgsRxpEsr+/YiRWQeCz7PI3jfzeppEvUc61u+TNHri9ChQdLN2evWGx+1O3MwbPFKV5rIqlxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAvOdVbvGn3R+uBkugNCq8C/Texc7ILBoYjbn4aVQV0OgBAgIAAQwCAAAAQEIPAAAAAAA="
+}

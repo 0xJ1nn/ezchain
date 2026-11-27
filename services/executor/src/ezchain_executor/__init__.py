@@ -5,6 +5,7 @@ and the custodian differ. Key material never leaves this package, and the ledger
 only accountant.
 """
 
+from .chain_status import ChainConfirmationVenue, ChainStatusReader
 from .journal import JournalSink, MemoryJournal
 from .kill_switch import KillSwitch, KillSwitchActive, KillSwitchUnavailable
 from .outbox import (
@@ -112,6 +113,8 @@ __all__ = [
     "WRONG_PASSWORD_MESSAGE",
     "AttemptLog",
     "BroadcastAttempt",
+    "ChainConfirmationVenue",
+    "ChainStatusReader",
     "CipherParams",
     "CorruptVaultFile",
     "DedupeStore",

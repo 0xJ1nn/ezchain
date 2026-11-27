@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -232,12 +232,21 @@ class PreparedTransaction:
 
 @dataclass(frozen=True)
 class SignedTransaction:
-    """Bytes a signer produced for one approval, with the digests to carry."""
+    """Bytes a signer produced for one approval, with the digests to carry.
+
+    ``public_key`` is the signer's *public* key, supplied by the custody signer when the
+    venue's signed request shape needs one (Sui's ``sui_executeTransactionBlock`` does).
+    It is optional: most chains' signed request shapes need only the signature. The field
+    carries no secret and no derivation material — adapters must never handle a private
+    key — and it is excluded from ``repr`` along with the signature so neither can leak
+    into a log or trace that renders this value.
+    """
 
     raw: bytes
-    signature: bytes
+    signature: bytes = field(repr=False)
     approved: ApprovedIntent
     payload_digest: str
+    public_key: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.raw:
@@ -246,6 +255,13 @@ class SignedTransaction:
             raise ValueError("a signed transaction needs a signature")
         if hashlib.sha256(self.raw).hexdigest() != self.payload_digest:
             raise ValueError("the signed payload digest does not cover these bytes")
+        if self.public_key is not None:
+            if not isinstance(self.public_key, bytes) or not self.public_key:
+                raise ValueError("a signed transaction needs real public-key bytes")
+            # Longer than any scheme this platform reviews; this is a public-key field,
+            # never somewhere a secret or a seed could be smuggled into an adapter.
+            if len(self.public_key) > 64:
+                raise ValueError("the public key is larger than a reviewed scheme allows")
 
     @property
     def approval_digest(self) -> str:

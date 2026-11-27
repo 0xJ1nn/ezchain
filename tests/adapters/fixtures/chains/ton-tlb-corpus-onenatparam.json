@@ -1,0 +1,10 @@
+{
+  "family": "ton",
+  "source_url": "https://github.com/ton-community/tlb-test-corpus/blob/main/tlb-corpus.ts",
+  "retrieved_at": "2026-11-27",
+  "sha256": "cf80466e3313a26edb8d9ef0f635e3bc69b73a9a5326f5e360d32c8ac074817d",
+  "why_no_secret": "TON community TL-B test corpus case OneNatParam, a published test vector encoding uint32 42. It is public test data with no keys, signatures or wallet state.",
+  "wire_layer": "Minimal single-cell Bag-of-Cells: b5ee9c72 magic, header flags, one cell descriptor and a four-byte body with CRC32. It proves the BoC framing subset, not a signed external message.",
+  "encoding": "base64",
+  "bytes": "te6cckEBAQEABgAACAAAACoFpvBE"
+}
