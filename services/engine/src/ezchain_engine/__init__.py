@@ -23,10 +23,12 @@ from .plugins import (
     PluginUnavailable,
 )
 from .protection import (
+    ProfilePaperEvaluation,
     ProtectionResult,
     arm_from_row,
     evaluate_all_arms,
     evaluate_arm_row,
+    evaluate_profile_paper,
     protection_idempotency_key,
 )
 from .scheduler import (
@@ -61,6 +63,7 @@ __all__ = [
     "PluginWorkerError",
     "OrderExecutor",
     "OrderRejected",
+    "ProfilePaperEvaluation",
     "ProtectionResult",
     "RunResult",
     "StrategyScheduler",
@@ -70,6 +73,7 @@ __all__ = [
     "evaluate_all_arms",
     "evaluate_arm_row",
     "evaluate_graph_strategy",
+    "evaluate_profile_paper",
     "evaluate_plugin_strategy",
     "evaluate_strategy",
     "graph_context_digest",

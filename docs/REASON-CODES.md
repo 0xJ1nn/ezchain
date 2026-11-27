@@ -9,7 +9,7 @@ the derived registries it exports) instead of re-typing a literal. A drift guard
 suite when a code is emitted anywhere without a row here, so this document cannot fall
 behind the code.
 
-**Scale:** 285 codes across 17 categories, 6 layers.
+**Scale:** 286 codes across 17 categories, 6 layers.
 
 ---
 
@@ -326,6 +326,7 @@ or a process-local refusal).
 | `PROFILE_PARAM_TYPE` | core | 422 | no | warning | A profile parameter has the wrong type. |
 | `PROFILE_PARAM_MISSING` | core | 422 | no | warning | A profile has no defaults. |
 | `PROFILE_PARAM_RANGE` | core | 422 | no | warning | A profile name, chain or value is out of range. |
+| `PROFILE_PRICE_INVALID` | core | 422 | no | warning | A supplied entry, peak or current price is not a positive exact decimal. |
 | `PROFILE_KIND_UNSUPPORTED` | core | 422 | no | warning | The profile kind is neither manual nor smart. |
 | `PROFILE_RULES_REQUIRED` | core | 422 | no | warning | A smart profile was saved with no rules. |
 | `PROFILE_RULES_NOT_ALLOWED` | core | 422 | no | warning | A manual profile was saved with rules. |
