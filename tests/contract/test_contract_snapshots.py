@@ -36,8 +36,18 @@ def test_the_manifest_uses_the_api_version_constant() -> None:
 def test_every_mcp_tool_is_snapshotted() -> None:
     from ezchain_mcp.tools import all_tools
 
+    harness_tools = {
+        "ezchain_market_trend",
+        "ezchain_chart_spec",
+        "ezchain_list_protection_profiles",
+        "ezchain_create_protection_profile",
+    }
     snapshot = _load_json(SNAPSHOT_DIR / "mcp_tools.json")
-    assert set(snapshot) == {tool.name for tool in all_tools(True)}
+    live = {tool.name for tool in all_tools(True)}
+
+    assert harness_tools <= live
+    assert harness_tools <= set(snapshot)
+    assert set(snapshot) == live
 
 
 def test_every_public_sdk_name_is_snapshotted() -> None:
